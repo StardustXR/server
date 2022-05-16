@@ -1,4 +1,4 @@
-use libstardustxr::fusion::scenegraph::Scenegraph;
+use super::scenegraph::Scenegraph;
 use libstardustxr::messenger::Messenger;
 use mio::net::UnixStream;
 use std::rc::{Rc, Weak};

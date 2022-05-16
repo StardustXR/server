@@ -22,7 +22,7 @@ impl EventLoop {
 		let mut socket = UnixListener::bind(socket_path.clone())?;
 		let (sender, mut receiver) = pipe::new()?;
 		let join_handle = Some(thread::spawn(move || -> Result<()> {
-			let mut clients: Slab<Client> = Slab::new();
+			let mut clients: Slab<Option<Client>> = Slab::new();
 			let mut poll = Poll::new()?;
 			let mut events = Events::with_capacity(1024);
 			const LISTENER: Token = Token(usize::MAX - 1);
@@ -37,8 +37,15 @@ impl EventLoop {
 					match event.token() {
 						LISTENER => loop {
 							match socket.accept() {
-								Ok((socket, _)) => {
-									clients.insert(Client::from_connection(socket));
+								Ok((mut socket, _)) => {
+									let client_number = clients.insert(None);
+									poll.registry().register(
+										&mut socket,
+										Token(client_number),
+										Interest::READABLE,
+									)?;
+									let client = Client::from_connection(socket);
+									*clients.get_mut(client_number).unwrap() = Some(client);
 								}
 								Err(e) => {
 									if e.kind() == std::io::ErrorKind::WouldBlock {
@@ -50,7 +57,7 @@ impl EventLoop {
 						},
 						STOP => return Ok(()),
 						token => loop {
-							match clients.get(token.0).unwrap().dispatch() {
+							match clients.get(token.0).unwrap().as_ref().unwrap().dispatch() {
 								Ok(_) => continue,
 								Err(e) => {
 									if e.kind() == std::io::ErrorKind::WouldBlock {
@@ -76,6 +83,11 @@ impl Drop for EventLoop {
 	fn drop(&mut self) {
 		let buf: [u8; 1] = [1; 1];
 		let _ = self.stop_write.write(buf.as_slice());
-		let _ = self.join_handle.take().unwrap().join();
+		let _ = self
+			.join_handle
+			.take()
+			.unwrap()
+			.join()
+			.expect("Couldn't join the event loop thread at drop");
 	}
 }
