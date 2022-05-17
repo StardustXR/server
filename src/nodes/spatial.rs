@@ -13,7 +13,7 @@ impl<'a> Spatial {
 	}
 
 	pub fn new_node(
-		client: Option<&'a mut Client<'a>>,
+		client: Option<&mut Client<'a>>,
 		path: &str,
 		transform: Mat4<f32>,
 	) -> Result<NodeRef<'a>> {
