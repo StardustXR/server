@@ -7,6 +7,8 @@ use std::{
 	vec::Vec,
 };
 
+use super::spatial::Spatial;
+
 type Signal<'a> = dyn Fn(&[u8]) + 'a;
 type Method<'a> = dyn Fn(&[u8]) -> Vec<u8> + 'a;
 
@@ -16,6 +18,8 @@ pub struct Node<'a> {
 	pub messenger: Weak<Messenger<'a>>,
 	local_signals: HashMap<String, Box<Signal<'a>>>,
 	local_methods: HashMap<String, Box<Method<'a>>>,
+
+	pub spatial: Option<Spatial<'a>>,
 }
 
 impl<'a> Node<'a> {
@@ -26,17 +30,28 @@ impl<'a> Node<'a> {
 		self.path.as_str()
 	}
 
-	pub fn from_path(client: &Client<'a>, path: &str) -> Result<Rc<Self>> {
+	pub fn from_path(client: Option<&Client<'a>>, path: &str) -> Result<Rc<Self>> {
 		ensure!(path.starts_with('/'), "Invalid path {}", path);
+		let mut weak_messenger = Weak::default();
+		if client.is_some() {
+			weak_messenger = client.unwrap().get_weak_messenger();
+		}
 		let node = Node {
 			path: path.to_string(),
 			trailing_slash_pos: path.rfind('/').ok_or(anyhow!("Invalid path {}", path))?,
-			messenger: client.get_weak_messenger(),
+			messenger: weak_messenger,
 			local_signals: HashMap::new(),
 			local_methods: HashMap::new(),
+
+			spatial: None,
 		};
 		let node_ref = Rc::new(node);
-		client.scenegraph.add_node(Rc::downgrade(&node_ref));
+		if client.is_some() {
+			client
+				.unwrap()
+				.scenegraph
+				.add_node(Rc::downgrade(&node_ref));
+		}
 		Ok(node_ref)
 	}
 
