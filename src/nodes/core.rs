@@ -10,8 +10,10 @@ use std::{
 
 use super::spatial::Spatial;
 
-type Signal<'a> = dyn Fn(&[u8]) + 'a;
-type Method<'a> = dyn Fn(&[u8]) -> Vec<u8> + 'a;
+pub type Signal<'a> = dyn Fn(&[u8]) + 'a;
+pub type Method<'a> = dyn Fn(&[u8]) -> Vec<u8> + 'a;
+
+pub type NodeRef<'a> = Weak<RefCell<Node<'a>>>;
 
 pub struct Node<'a> {
 	path: String,
@@ -31,7 +33,7 @@ impl<'a> Node<'a> {
 		self.path.as_str()
 	}
 
-	pub fn from_path(client: Option<&mut Client<'a>>, path: &str) -> Result<Weak<RefCell<Self>>> {
+	pub fn from_path(client: Option<&mut Client<'a>>, path: &str) -> Result<NodeRef<'a>> {
 		ensure!(path.starts_with('/'), "Invalid path {}", path);
 		let mut weak_messenger = Weak::default();
 		if client.is_some() {
