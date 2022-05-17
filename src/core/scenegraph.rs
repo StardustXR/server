@@ -24,9 +24,7 @@ impl<'a> Scenegraph<'a> {
 	}
 
 	pub fn get_node(&self, path: &str) -> Weak<RefCell<Node<'a>>> {
-		self.nodes
-			.get(path)
-			.map_or(Weak::default(), |node| Rc::downgrade(node))
+		self.nodes.get(path).map_or(Weak::default(), Rc::downgrade)
 	}
 }
 

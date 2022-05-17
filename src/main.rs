@@ -1,8 +1,6 @@
 mod core;
 mod nodes;
 use self::core::eventloop::EventLoop;
-
-use ctrlc;
 use std::sync::mpsc::channel;
 
 fn main() {

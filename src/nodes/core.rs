@@ -41,7 +41,9 @@ impl<'a> Node<'a> {
 		}
 		let node = Node {
 			path: path.to_string(),
-			trailing_slash_pos: path.rfind('/').ok_or(anyhow!("Invalid path {}", path))?,
+			trailing_slash_pos: path
+				.rfind('/')
+				.ok_or_else(|| anyhow!("Invalid path {}", path))?,
 			messenger: weak_messenger,
 			local_signals: HashMap::new(),
 			local_methods: HashMap::new(),
@@ -50,28 +52,29 @@ impl<'a> Node<'a> {
 		};
 		let node_ref = Rc::new(RefCell::new(node));
 		let weak_node = Rc::downgrade(&node_ref);
-		if client.is_some() {
-			client.unwrap().scenegraph.add_node(node_ref);
-		}
+		match client {
+			Some(client_) => client_.scenegraph.add_node(node_ref),
+			None => {}
+		};
 		Ok(weak_node)
 	}
 
 	pub fn send_local_signal(&self, method: &str, data: &[u8]) -> Result<()> {
 		self.local_signals
 			.get(method)
-			.ok_or(anyhow!("Signal {} not found", method))?(data);
+			.ok_or_else(|| anyhow!("Signal {} not found", method))?(data);
 		Ok(())
 	}
 	pub fn execute_local_method(&self, method: &str, data: &[u8]) -> Result<Vec<u8>> {
 		Ok(self
 			.local_methods
 			.get(method)
-			.ok_or(anyhow!("Method {} not found", method))?(data))
+			.ok_or_else(|| anyhow!("Method {} not found", method))?(data))
 	}
 	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
 		self.messenger
 			.upgrade()
-			.ok_or(anyhow!("Invalid messenger"))?
+			.ok_or_else(|| anyhow!("Invalid messenger"))?
 			.send_remote_signal(self.path.as_str(), method, data)
 			.map_err(|_| anyhow!("Unable to write in messenger"))
 	}
@@ -83,7 +86,7 @@ impl<'a> Node<'a> {
 	) -> Result<()> {
 		self.messenger
 			.upgrade()
-			.ok_or(anyhow!("Invalid messenger"))?
+			.ok_or_else(|| anyhow!("Invalid messenger"))?
 			.execute_remote_method(self.path.as_str(), method, data, callback)
 			.map_err(|_| anyhow!("Unable to write in messenger"))
 	}
