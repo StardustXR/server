@@ -15,7 +15,7 @@ impl<'a> Spatial {
 	}
 
 	pub fn new_node(
-		client: Option<&'a Client<'a>>,
+		client: Option<&'a mut Client<'a>>,
 		path: &str,
 		transform: Mat4<f32>,
 	) -> Result<Weak<RefCell<Node<'a>>>> {

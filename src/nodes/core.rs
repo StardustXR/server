@@ -31,11 +31,11 @@ impl<'a> Node<'a> {
 		self.path.as_str()
 	}
 
-	pub fn from_path(client: Option<&Client<'a>>, path: &str) -> Result<Weak<RefCell<Self>>> {
+	pub fn from_path(client: Option<&mut Client<'a>>, path: &str) -> Result<Weak<RefCell<Self>>> {
 		ensure!(path.starts_with('/'), "Invalid path {}", path);
 		let mut weak_messenger = Weak::default();
 		if client.is_some() {
-			weak_messenger = client.unwrap().get_weak_messenger();
+			weak_messenger = client.as_ref().unwrap().get_weak_messenger();
 		}
 		let node = Node {
 			path: path.to_string(),

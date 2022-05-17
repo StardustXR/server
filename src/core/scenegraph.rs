@@ -6,7 +6,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, rc::Weak};
 
 #[derive(Default)]
 pub struct Scenegraph<'a> {
-	nodes: RefCell<HashMap<String, Rc<RefCell<Node<'a>>>>>,
+	nodes: HashMap<String, Rc<RefCell<Node<'a>>>>,
 }
 
 impl<'a> Scenegraph<'a> {
@@ -14,18 +14,17 @@ impl<'a> Scenegraph<'a> {
 		Default::default()
 	}
 
-	pub fn add_node(&self, node: Rc<RefCell<Node<'a>>>) {
+	pub fn add_node(&mut self, node: Rc<RefCell<Node<'a>>>) {
 		let path = node.borrow().get_path().to_string();
-		self.nodes.borrow_mut().insert(path, node);
+		self.nodes.insert(path, node);
 	}
 
-	pub fn remove_node(&self, path: &str) {
-		self.nodes.borrow_mut().remove(path);
+	pub fn remove_node(&mut self, path: &str) {
+		self.nodes.remove(path);
 	}
 
 	pub fn get_node(&self, path: &str) -> Weak<RefCell<Node<'a>>> {
 		self.nodes
-			.borrow()
 			.get(path)
 			.map_or(Weak::default(), |node| Rc::downgrade(node))
 	}
@@ -34,7 +33,6 @@ impl<'a> Scenegraph<'a> {
 impl<'a> scenegraph::Scenegraph for Scenegraph<'a> {
 	fn send_signal(&self, path: &str, method: &str, data: &[u8]) -> Result<(), ScenegraphError> {
 		self.nodes
-			.borrow()
 			.get(path)
 			.ok_or(ScenegraphError::NodeNotFound)?
 			.borrow()
@@ -48,7 +46,6 @@ impl<'a> scenegraph::Scenegraph for Scenegraph<'a> {
 		data: &[u8],
 	) -> Result<Vec<u8>, ScenegraphError> {
 		self.nodes
-			.borrow()
 			.get(path)
 			.ok_or(ScenegraphError::NodeNotFound)?
 			.borrow()
