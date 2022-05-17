@@ -12,3 +12,4 @@ ctrlc = "3.2.2"
 mio = {version = "0.8.3", features = ["net", "os-poll", "os-ext"]}
 slab = "0.4.6"
 thiserror = "1.0.31"
+vek = "0.15.8"

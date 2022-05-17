@@ -2,11 +2,11 @@ use crate::nodes::core::Node;
 use anyhow::Result;
 use libstardustxr::scenegraph;
 use libstardustxr::scenegraph::ScenegraphError;
-use std::{cell::RefCell, collections::HashMap, rc::Weak};
+use std::{cell::RefCell, collections::HashMap, rc::Rc, rc::Weak};
 
 #[derive(Default)]
 pub struct Scenegraph<'a> {
-	nodes: RefCell<HashMap<String, Weak<Node<'a>>>>,
+	nodes: RefCell<HashMap<String, Rc<RefCell<Node<'a>>>>>,
 }
 
 impl<'a> Scenegraph<'a> {
@@ -14,26 +14,20 @@ impl<'a> Scenegraph<'a> {
 		Default::default()
 	}
 
-	pub fn add_node(&self, node: Weak<Node<'a>>) {
-		let node_ref = node.upgrade();
-		if node_ref.is_none() {
-			return;
-		}
+	pub fn add_node(&self, node: Rc<RefCell<Node<'a>>>) {
+		let path = node.borrow().get_path().to_string();
+		self.nodes.borrow_mut().insert(path, node);
+	}
+
+	pub fn remove_node(&self, path: &str) {
+		self.nodes.borrow_mut().remove(path);
+	}
+
+	pub fn get_node(&self, path: &str) -> Weak<RefCell<Node<'a>>> {
 		self.nodes
-			.borrow_mut()
-			.insert(String::from(node_ref.unwrap().get_path()), node);
-	}
-
-	pub fn remove_node(&self, node: Weak<Node<'a>>) {
-		let node_ref = node.upgrade();
-		if node_ref.is_none() {
-			return;
-		}
-		self.nodes.borrow_mut().remove(node_ref.unwrap().get_path());
-	}
-
-	pub fn get_node(&self, path: &str) -> Weak<Node<'a>> {
-		self.nodes.borrow().get(path).cloned().unwrap_or_default()
+			.borrow()
+			.get(path)
+			.map_or(Weak::default(), |node| Rc::downgrade(node))
 	}
 }
 
@@ -43,8 +37,7 @@ impl<'a> scenegraph::Scenegraph for Scenegraph<'a> {
 			.borrow()
 			.get(path)
 			.ok_or(ScenegraphError::NodeNotFound)?
-			.upgrade()
-			.ok_or(ScenegraphError::NodeNotFound)?
+			.borrow()
 			.send_local_signal(method, data)
 			.map_err(|_| ScenegraphError::MethodNotFound)
 	}
@@ -58,8 +51,7 @@ impl<'a> scenegraph::Scenegraph for Scenegraph<'a> {
 			.borrow()
 			.get(path)
 			.ok_or(ScenegraphError::NodeNotFound)?
-			.upgrade()
-			.ok_or(ScenegraphError::NodeNotFound)?
+			.borrow()
 			.execute_local_method(method, data)
 			.map_err(|_| ScenegraphError::MethodNotFound)
 	}
