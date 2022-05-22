@@ -2,12 +2,7 @@ use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use libstardustxr::messenger::Messenger;
 use rccell::{RcCell, WeakCell};
-use std::{
-	cell::RefCell,
-	collections::HashMap,
-	rc::{Rc, Weak},
-	vec::Vec,
-};
+use std::{collections::HashMap, rc::Weak, vec::Vec};
 
 use super::spatial::Spatial;
 
@@ -39,12 +34,16 @@ impl<'a> Node<'a> {
 		self.path.as_str()
 	}
 
-	pub fn from_path(client: Option<&mut Client<'a>>, path: &str) -> Result<NodeRef<'a>> {
+	pub fn from_path(
+		client: Option<&mut Client<'a>>,
+		path: &str,
+		data_closure: impl FnOnce(NodeRef<'a>) -> NodeData<'a>,
+	) -> Result<NodeRef<'a>> {
 		ensure!(path.starts_with('/'), "Invalid path {}", path);
 		let mut weak_messenger = Weak::default();
-		if client.is_some() {
-			weak_messenger = client.as_ref().unwrap().get_weak_messenger();
-		}
+		client
+			.as_ref()
+			.map(|c| weak_messenger = c.get_weak_messenger());
 		let node = Node {
 			path: path.to_string(),
 			trailing_slash_pos: path
@@ -58,10 +57,8 @@ impl<'a> Node<'a> {
 		};
 		let node_ref = RcCell::new(node);
 		let weak_node = node_ref.downgrade();
-		match client {
-			Some(client_) => client_.scenegraph.add_node(node_ref),
-			None => {}
-		};
+		node_ref.borrow_mut().data = data_closure(weak_node.clone());
+		client.map(|c| c.scenegraph.as_mut().unwrap().add_node(node_ref));
 		Ok(weak_node)
 	}
 

@@ -14,6 +14,13 @@ pub struct Scenegraph<'a> {
 }
 
 impl<'a> Scenegraph<'a> {
+	pub fn new(client: &mut Client<'a>) -> Self {
+		Scenegraph {
+			nodes: HashMap::new(),
+			root: Spatial::new_node(Some(client), "/", Default::default()).unwrap(),
+			hmd: Spatial::new_node(Some(client), "/hmd", Default::default()).unwrap(),
+		}
+	}
 	pub fn add_node(&mut self, node: RcCell<Node<'a>>) {
 		let path = node.borrow().get_path().to_string();
 		self.nodes.insert(path, node);
@@ -27,22 +34,6 @@ impl<'a> Scenegraph<'a> {
 		self.nodes
 			.get(path)
 			.map_or(WeakCell::new(), RcCell::downgrade)
-	}
-
-	pub fn add_interfaces(&mut self, client: &mut Client<'a>) -> Result<()> {
-		self.root = Spatial::new_node(Some(client), "/", Default::default())?;
-		self.hmd = Spatial::new_node(Some(client), "/hmd", Default::default())?;
-		Ok(())
-	}
-}
-
-impl<'a> Default for Scenegraph<'a> {
-	fn default() -> Self {
-		Scenegraph {
-			nodes: HashMap::new(),
-			root: WeakCell::new(),
-			hmd: WeakCell::new(),
-		}
 	}
 }
 
