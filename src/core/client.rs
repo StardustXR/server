@@ -5,7 +5,7 @@ use mio::net::UnixStream;
 use std::rc::{Rc, Weak};
 
 pub struct Client<'a> {
-	pub messenger: Rc<Messenger<'a>>,
+	messenger: Rc<Messenger<'a>>,
 	pub scenegraph: Scenegraph<'a>,
 }
 

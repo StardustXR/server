@@ -4,17 +4,17 @@ use crate::nodes::spatial::Spatial;
 use anyhow::Result;
 use libstardustxr::scenegraph;
 use libstardustxr::scenegraph::ScenegraphError;
-use std::{cell::RefCell, collections::HashMap, rc::Rc, rc::Weak};
+use rccell::{RcCell, WeakCell};
+use std::collections::HashMap;
 
-#[derive(Default)]
 pub struct Scenegraph<'a> {
-	nodes: HashMap<String, Rc<RefCell<Node<'a>>>>,
+	nodes: HashMap<String, RcCell<Node<'a>>>,
 	root: NodeRef<'a>,
 	hmd: NodeRef<'a>,
 }
 
 impl<'a> Scenegraph<'a> {
-	pub fn add_node(&mut self, node: Rc<RefCell<Node<'a>>>) {
+	pub fn add_node(&mut self, node: RcCell<Node<'a>>) {
 		let path = node.borrow().get_path().to_string();
 		self.nodes.insert(path, node);
 	}
@@ -23,14 +23,26 @@ impl<'a> Scenegraph<'a> {
 		self.nodes.remove(path);
 	}
 
-	pub fn get_node(&self, path: &str) -> Weak<RefCell<Node<'a>>> {
-		self.nodes.get(path).map_or(Weak::default(), Rc::downgrade)
+	pub fn get_node(&self, path: &str) -> WeakCell<Node<'a>> {
+		self.nodes
+			.get(path)
+			.map_or(WeakCell::new(), RcCell::downgrade)
 	}
 
 	pub fn add_interfaces(&mut self, client: &mut Client<'a>) -> Result<()> {
 		self.root = Spatial::new_node(Some(client), "/", Default::default())?;
 		self.hmd = Spatial::new_node(Some(client), "/hmd", Default::default())?;
 		Ok(())
+	}
+}
+
+impl<'a> Default for Scenegraph<'a> {
+	fn default() -> Self {
+		Scenegraph {
+			nodes: HashMap::new(),
+			root: WeakCell::new(),
+			hmd: WeakCell::new(),
+		}
 	}
 }
 

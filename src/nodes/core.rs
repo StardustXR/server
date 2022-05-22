@@ -1,6 +1,7 @@
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use libstardustxr::messenger::Messenger;
+use rccell::{RcCell, WeakCell};
 use std::{
 	cell::RefCell,
 	collections::HashMap,
@@ -13,7 +14,12 @@ use super::spatial::Spatial;
 pub type Signal<'a> = dyn Fn(&[u8]) + 'a;
 pub type Method<'a> = dyn Fn(&[u8]) -> Vec<u8> + 'a;
 
-pub type NodeRef<'a> = Weak<RefCell<Node<'a>>>;
+pub type NodeRef<'a> = WeakCell<Node<'a>>;
+
+pub enum NodeData<'a> {
+	None,
+	Spatial(Spatial<'a>),
+}
 
 pub struct Node<'a> {
 	path: String,
@@ -22,7 +28,7 @@ pub struct Node<'a> {
 	local_signals: HashMap<String, Box<Signal<'a>>>,
 	local_methods: HashMap<String, Box<Method<'a>>>,
 
-	pub spatial: Option<Spatial>,
+	pub data: NodeData<'a>,
 }
 
 impl<'a> Node<'a> {
@@ -48,10 +54,10 @@ impl<'a> Node<'a> {
 			local_signals: HashMap::new(),
 			local_methods: HashMap::new(),
 
-			spatial: None,
+			data: NodeData::None,
 		};
-		let node_ref = Rc::new(RefCell::new(node));
-		let weak_node = Rc::downgrade(&node_ref);
+		let node_ref = RcCell::new(node);
+		let weak_node = node_ref.downgrade();
 		match client {
 			Some(client_) => client_.scenegraph.add_node(node_ref),
 			None => {}
