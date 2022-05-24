@@ -31,15 +31,15 @@ impl<'a> Spatial<'a> {
 		weak_spatial
 	}
 
-	pub fn get_local_transform(&self) -> Mat4<f32> {
+	pub fn local_transform(&self) -> Mat4<f32> {
 		self.transform
 	}
-	pub fn get_global_transform(&self) -> Mat4<f32> {
+	pub fn global_transform(&self) -> Mat4<f32> {
 		match self.parent.upgrade() {
-			Some(value) => value.borrow().get_global_transform() * self.transform,
+			Some(value) => value.borrow().global_transform() * self.transform,
 			None => self.transform,
 		}
 	}
 
-	// pub fn get_transform(&self, space: NodeRef) {}
+	// pub fn relative_transform(&self, space: WeakCell<Spatial>) {}
 }
