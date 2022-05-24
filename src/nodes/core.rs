@@ -1,29 +1,17 @@
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use libstardustxr::messenger::Messenger;
-use rccell::{RcCell, WeakCell};
 use std::{collections::HashMap, rc::Weak, vec::Vec};
-
-use super::spatial::Spatial;
 
 pub type Signal<'a> = dyn Fn(&[u8]) + 'a;
 pub type Method<'a> = dyn Fn(&[u8]) -> Vec<u8> + 'a;
 
-pub type NodeRef<'a> = WeakCell<Node<'a>>;
-
-pub enum NodeData<'a> {
-	None,
-	Spatial(Spatial<'a>),
-}
-
 pub struct Node<'a> {
 	path: String,
 	trailing_slash_pos: usize,
-	pub messenger: Weak<Messenger<'a>>,
+	messenger: Weak<Messenger<'a>>,
 	local_signals: HashMap<String, Box<Signal<'a>>>,
 	local_methods: HashMap<String, Box<Method<'a>>>,
-
-	pub data: NodeData<'a>,
 }
 
 impl<'a> Node<'a> {
@@ -34,17 +22,13 @@ impl<'a> Node<'a> {
 		self.path.as_str()
 	}
 
-	pub fn from_path(
-		client: Option<&mut Client<'a>>,
-		path: &str,
-		data_closure: impl FnOnce(NodeRef<'a>) -> NodeData<'a>,
-	) -> Result<NodeRef<'a>> {
+	pub fn from_path(client: Option<&Client<'a>>, path: &str) -> Result<Node<'a>> {
 		ensure!(path.starts_with('/'), "Invalid path {}", path);
 		let mut weak_messenger = Weak::default();
-		client
-			.as_ref()
-			.map(|c| weak_messenger = c.get_weak_messenger());
-		let node = Node {
+		if let Some(c) = client.as_ref() {
+			weak_messenger = c.get_weak_messenger();
+		}
+		Ok(Node {
 			path: path.to_string(),
 			trailing_slash_pos: path
 				.rfind('/')
@@ -52,14 +36,7 @@ impl<'a> Node<'a> {
 			messenger: weak_messenger,
 			local_signals: HashMap::new(),
 			local_methods: HashMap::new(),
-
-			data: NodeData::None,
-		};
-		let node_ref = RcCell::new(node);
-		let weak_node = node_ref.downgrade();
-		node_ref.borrow_mut().data = data_closure(weak_node.clone());
-		client.map(|c| c.scenegraph.as_mut().unwrap().add_node(node_ref));
-		Ok(weak_node)
+		})
 	}
 
 	pub fn send_local_signal(&self, method: &str, data: &[u8]) -> Result<()> {
