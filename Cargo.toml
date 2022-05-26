@@ -9,8 +9,10 @@ version = "0.9.0"
 libstardustxr = {path = "../libstardustxr-rs"}
 anyhow = "1.0.57"
 ctrlc = "3.2.2"
+euler = {version = "0.4.0", features = ["mint"]}
+flexbuffers = "2.0.0"
+mint = "0.5.9"
 mio = {version = "0.8.3", features = ["net", "os-poll", "os-ext"]}
 rccell = "0.1.3"
 slab = "0.4.6"
 thiserror = "1.0.31"
-vek = "0.15.8"
