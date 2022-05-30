@@ -3,6 +3,7 @@ use libstardustxr::server;
 use mio::net::UnixListener;
 use mio::unix::pipe;
 use mio::{Events, Interest, Poll, Token};
+use rccell::RcCell;
 use slab::Slab;
 use std::io::Write;
 use std::thread::{self, JoinHandle};
@@ -22,7 +23,7 @@ impl EventLoop {
 		let mut socket = UnixListener::bind(socket_path.clone())?;
 		let (sender, mut receiver) = pipe::new()?;
 		let join_handle = Some(thread::spawn(move || -> Result<()> {
-			let mut clients: Slab<Option<Client>> = Slab::new();
+			let mut clients: Slab<Option<RcCell<Client>>> = Slab::new();
 			let mut poll = Poll::new()?;
 			let mut events = Events::with_capacity(1024);
 			const LISTENER: Token = Token(usize::MAX - 1);
@@ -57,7 +58,14 @@ impl EventLoop {
 						},
 						STOP => return Ok(()),
 						token => loop {
-							match clients.get(token.0).unwrap().as_ref().unwrap().dispatch() {
+							match clients
+								.get(token.0)
+								.unwrap()
+								.as_ref()
+								.unwrap()
+								.borrow()
+								.dispatch()
+							{
 								Ok(_) => continue,
 								Err(e) => {
 									if e.kind() == std::io::ErrorKind::WouldBlock {

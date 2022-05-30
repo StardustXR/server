@@ -1,22 +1,24 @@
 use crate::core::client::Client;
-use crate::core::scenegraph::Scenegraph;
 use anyhow::{anyhow, ensure, Result};
-use libstardustxr::messenger::Messenger;
-use std::{collections::HashMap, rc::Weak, vec::Vec};
+use rccell::{RcCell, WeakCell};
+use std::{collections::HashMap, vec::Vec};
 
 pub type Signal<'a> = Box<dyn Fn(&[u8]) -> Result<()> + 'a>;
 pub type Method<'a> = Box<dyn Fn(&[u8]) -> Result<Vec<u8>> + 'a>;
 
 pub struct Node<'a> {
+	client: WeakCell<Client<'a>>,
 	path: String,
 	trailing_slash_pos: usize,
-	messenger: Weak<Messenger<'a>>,
-	scenegraph: Option<&'a Scenegraph<'a>>,
 	local_signals: HashMap<String, Signal<'a>>,
 	local_methods: HashMap<String, Method<'a>>,
+	destroyable: bool,
 }
 
 impl<'a> Node<'a> {
+	pub fn get_client(&self) -> Option<RcCell<Client<'a>>> {
+		self.client.clone().upgrade()
+	}
 	pub fn get_name(&self) -> &str {
 		&self.path[self.trailing_slash_pos + 1..]
 	}
@@ -25,24 +27,20 @@ impl<'a> Node<'a> {
 	}
 
 	pub fn from_path(
-		client: Option<&Client<'a>>,
+		client: WeakCell<Client<'a>>,
 		path: &str,
 		destroyable: bool,
 	) -> Result<Node<'a>> {
 		ensure!(path.starts_with('/'), "Invalid path {}", path);
-		let mut weak_messenger = Weak::default();
-		if let Some(c) = client.as_ref() {
-			weak_messenger = c.get_weak_messenger();
-		}
 		Ok(Node {
+			client,
 			path: path.to_string(),
 			trailing_slash_pos: path
 				.rfind('/')
 				.ok_or_else(|| anyhow!("Invalid path {}", path))?,
-			messenger: weak_messenger,
-			scenegraph: client.as_ref().map(|f| f.scenegraph.as_ref().unwrap()),
 			local_signals: HashMap::new(),
 			local_methods: HashMap::new(),
+			destroyable,
 		})
 	}
 
@@ -61,9 +59,10 @@ impl<'a> Node<'a> {
 			.ok_or_else(|| anyhow!("Method {} not found", method))?(data)
 	}
 	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
-		self.messenger
-			.upgrade()
-			.ok_or_else(|| anyhow!("Invalid messenger"))?
+		self.get_client()
+			.ok_or(anyhow!("Node has no client, can't send remote signal!"))?
+			.borrow()
+			.get_messenger()
 			.send_remote_signal(self.path.as_str(), method, data)
 			.map_err(|_| anyhow!("Unable to write in messenger"))
 	}
@@ -73,9 +72,10 @@ impl<'a> Node<'a> {
 		data: &[u8],
 		callback: Box<dyn Fn(&[u8]) + 'a>,
 	) -> Result<()> {
-		self.messenger
-			.upgrade()
-			.ok_or_else(|| anyhow!("Invalid messenger"))?
+		self.get_client()
+			.ok_or(anyhow!("Node has no client, can't send remote signal!"))?
+			.borrow()
+			.get_messenger()
 			.execute_remote_method(self.path.as_str(), method, data, callback)
 			.map_err(|_| anyhow!("Unable to write in messenger"))
 	}

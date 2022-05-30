@@ -1,27 +1,36 @@
 use super::scenegraph::Scenegraph;
 use libstardustxr::messenger::Messenger;
 use mio::net::UnixStream;
-use std::rc::{Rc, Weak};
+use rccell::{RcCell, WeakCell};
 
 pub struct Client<'a> {
-	messenger: Rc<Messenger<'a>>,
-	pub scenegraph: Option<Scenegraph<'a>>,
+	weak_ref: WeakCell<Client<'a>>,
+	messenger: Messenger<'a>,
+	scenegraph: Option<Scenegraph<'a>>,
 }
 
 impl<'a> Client<'a> {
-	pub fn from_connection(connection: UnixStream) -> Self {
-		let mut client = Client {
+	pub fn from_connection(connection: UnixStream) -> RcCell<Self> {
+		let client = RcCell::new(Client {
+			weak_ref: WeakCell::new(),
 			scenegraph: None,
-			messenger: Rc::new(Messenger::new(connection)),
-		};
-		client.scenegraph = Some(Scenegraph::new(&mut client));
+			messenger: Messenger::new(connection),
+		});
+		client.borrow_mut().weak_ref = client.downgrade();
+		client.borrow_mut().scenegraph = Some(Scenegraph::new(client.clone()));
 		client
 	}
 	pub fn dispatch(&self) -> Result<(), std::io::Error> {
 		self.messenger.dispatch(self.scenegraph.as_ref().unwrap())
 	}
 
-	pub fn get_weak_messenger(&self) -> Weak<Messenger<'a>> {
-		Rc::downgrade(&self.messenger)
+	pub fn get_messenger(&self) -> &Messenger<'a> {
+		&self.messenger
+	}
+	pub fn get_scenegraph(&self) -> &Scenegraph<'a> {
+		self.scenegraph.as_ref().unwrap()
+	}
+	pub fn get_scenegraph_mut(&mut self) -> &mut Scenegraph<'a> {
+		self.scenegraph.as_mut().unwrap()
 	}
 }
