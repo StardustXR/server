@@ -3,8 +3,8 @@ use anyhow::{anyhow, ensure, Result};
 use rccell::{RcCell, WeakCell};
 use std::{collections::HashMap, vec::Vec};
 
-pub type Signal<'a> = Box<dyn Fn(&[u8]) -> Result<()> + 'a>;
-pub type Method<'a> = Box<dyn Fn(&[u8]) -> Result<Vec<u8>> + 'a>;
+pub type Signal<'a> = Box<dyn Fn(RcCell<Client>, &[u8]) -> Result<()> + 'a>;
+pub type Method<'a> = Box<dyn Fn(RcCell<Client>, &[u8]) -> Result<Vec<u8>> + 'a>;
 
 pub struct Node<'a> {
 	client: WeakCell<Client<'a>>,
@@ -48,15 +48,25 @@ impl<'a> Node<'a> {
 		self.local_signals.insert(method.to_string(), signal);
 	}
 
-	pub fn send_local_signal(&self, method: &str, data: &[u8]) -> Result<()> {
+	pub fn send_local_signal(
+		&self,
+		calling_client: RcCell<Client>,
+		method: &str,
+		data: &[u8],
+	) -> Result<()> {
 		self.local_signals
 			.get(method)
-			.ok_or_else(|| anyhow!("Signal {} not found", method))?(data)
+			.ok_or_else(|| anyhow!("Signal {} not found", method))?(calling_client, data)
 	}
-	pub fn execute_local_method(&self, method: &str, data: &[u8]) -> Result<Vec<u8>> {
+	pub fn execute_local_method(
+		&self,
+		calling_client: RcCell<Client>,
+		method: &str,
+		data: &[u8],
+	) -> Result<Vec<u8>> {
 		self.local_methods
 			.get(method)
-			.ok_or_else(|| anyhow!("Method {} not found", method))?(data)
+			.ok_or_else(|| anyhow!("Method {} not found", method))?(calling_client, data)
 	}
 	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
 		self.get_client()
