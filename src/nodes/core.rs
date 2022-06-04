@@ -1,4 +1,5 @@
 use crate::core::client::Client;
+use crate::nodes::spatial::Spatial;
 use anyhow::{anyhow, ensure, Result};
 use rccell::{RcCell, WeakCell};
 use std::{collections::HashMap, vec::Vec};
@@ -13,6 +14,8 @@ pub struct Node<'a> {
 	local_signals: HashMap<String, Signal<'a>>,
 	local_methods: HashMap<String, Method<'a>>,
 	destroyable: bool,
+
+	pub spatial: Option<Spatial<'a>>,
 }
 
 impl<'a> Node<'a> {
@@ -41,6 +44,7 @@ impl<'a> Node<'a> {
 			local_signals: HashMap::new(),
 			local_methods: HashMap::new(),
 			destroyable,
+			spatial: None,
 		})
 	}
 
@@ -54,9 +58,11 @@ impl<'a> Node<'a> {
 		method: &str,
 		data: &[u8],
 	) -> Result<()> {
-		self.local_signals
+		let signal = self
+			.local_signals
 			.get(method)
-			.ok_or_else(|| anyhow!("Signal {} not found", method))?(calling_client, data)
+			.ok_or_else(|| anyhow!("Signal {} not found", method))?;
+		signal(calling_client, data)
 	}
 	pub fn execute_local_method(
 		&self,

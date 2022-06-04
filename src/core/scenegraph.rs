@@ -1,5 +1,5 @@
 use crate::core::client::Client;
-use crate::nodes::spatial::Spatial;
+use crate::nodes::core::Node;
 use anyhow::Result;
 use libstardustxr::scenegraph;
 use libstardustxr::scenegraph::ScenegraphError;
@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 pub struct Scenegraph<'a> {
 	client: WeakCell<Client<'a>>,
-	pub spatial_nodes: HashMap<String, RcCell<Spatial<'a>>>,
+	pub nodes: HashMap<String, RcCell<Node<'a>>>,
 }
 
 impl<'a> Scenegraph<'a> {
@@ -17,7 +17,7 @@ impl<'a> Scenegraph<'a> {
 		// hmd: Spatial::new(Some(client), "/hmd", Default::default()),
 		Scenegraph {
 			client: client.downgrade(),
-			spatial_nodes: HashMap::new(),
+			nodes: HashMap::new(),
 		}
 	}
 }
@@ -26,18 +26,17 @@ impl<'a> Default for Scenegraph<'a> {
 	fn default() -> Self {
 		Scenegraph {
 			client: WeakCell::new(),
-			spatial_nodes: HashMap::new(),
+			nodes: HashMap::new(),
 		}
 	}
 }
 
 impl<'a> scenegraph::Scenegraph for Scenegraph<'a> {
 	fn send_signal(&self, path: &str, method: &str, data: &[u8]) -> Result<(), ScenegraphError> {
-		self.spatial_nodes
+		self.nodes
 			.get(path)
 			.ok_or(ScenegraphError::NodeNotFound)?
 			.borrow()
-			.node
 			.send_local_signal(self.client.upgrade().unwrap(), method, data)
 			.map_err(|_| ScenegraphError::MethodNotFound)
 	}
@@ -47,11 +46,10 @@ impl<'a> scenegraph::Scenegraph for Scenegraph<'a> {
 		method: &str,
 		data: &[u8],
 	) -> Result<Vec<u8>, ScenegraphError> {
-		self.spatial_nodes
+		self.nodes
 			.get(path)
 			.ok_or(ScenegraphError::NodeNotFound)?
 			.borrow()
-			.node
 			.execute_local_method(self.client.upgrade().unwrap(), method, data)
 			.map_err(|_| ScenegraphError::MethodNotFound)
 	}
