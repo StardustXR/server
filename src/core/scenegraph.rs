@@ -11,17 +11,6 @@ pub struct Scenegraph<'a> {
 	pub nodes: HashMap<String, RcCell<Node<'a>>>,
 }
 
-impl<'a> Scenegraph<'a> {
-	pub fn new(client: RcCell<Client<'a>>) -> Self {
-		// root: Spatial::new(Some(client), "/", Default::default()),
-		// hmd: Spatial::new(Some(client), "/hmd", Default::default()),
-		Scenegraph {
-			client: client.downgrade(),
-			nodes: HashMap::new(),
-		}
-	}
-}
-
 impl<'a> Default for Scenegraph<'a> {
 	fn default() -> Self {
 		Scenegraph {

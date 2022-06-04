@@ -13,11 +13,10 @@ impl<'a> Client<'a> {
 	pub fn from_connection(connection: UnixStream) -> RcCell<Self> {
 		let client = RcCell::new(Client {
 			weak_ref: WeakCell::new(),
-			scenegraph: None,
+			scenegraph: Default::default(),
 			messenger: Messenger::new(connection),
 		});
 		client.borrow_mut().weak_ref = client.downgrade();
-		client.borrow_mut().scenegraph = Some(Scenegraph::new(client.clone()));
 		client
 	}
 	pub fn dispatch(&self) -> Result<(), std::io::Error> {
