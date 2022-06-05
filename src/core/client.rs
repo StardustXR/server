@@ -5,20 +5,17 @@ use mio::net::UnixStream;
 use rccell::{RcCell, WeakCell};
 
 pub struct Client<'a> {
-	weak_ref: WeakCell<Client<'a>>,
-	messenger: Messenger<'a>,
+	pub messenger: Messenger<'a>,
 	scenegraph: Scenegraph<'a>,
 }
 
 impl<'a> Client<'a> {
 	pub fn from_connection(connection: UnixStream) -> RcCell<Self> {
 		let client = RcCell::new(Client {
-			weak_ref: WeakCell::new(),
 			scenegraph: Default::default(),
 			messenger: Messenger::new(connection),
 		});
 		client.borrow_mut().scenegraph.set_client(client.clone());
-		client.borrow_mut().weak_ref = client.downgrade();
 		spatial::create_interface(client.clone());
 		client
 	}
