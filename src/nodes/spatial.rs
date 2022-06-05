@@ -101,18 +101,22 @@ pub fn create_interface(client: RcCell<Client>) {
 				flex_vec.idx(0).get_str()?,
 				true,
 			);
-			let pos = flex_to_vec3!(flex_vec.idx(2)).ok_or(anyhow!("Position not found"))?;
-			let rot = flex_to_quat!(flex_vec.idx(3)).ok_or(anyhow!("Rotation not found"))?;
-			let scl = flex_to_vec3!(flex_vec.idx(4)).ok_or(anyhow!("Scale not found"))?;
+			let transform = Mat4::from_scale_rotation_translation(
+				flex_to_vec3!(flex_vec.idx(4))
+					.ok_or_else(|| anyhow!("Scale not found"))?
+					.into(),
+				flex_to_quat!(flex_vec.idx(3))
+					.ok_or_else(|| anyhow!("Rotation not found"))?
+					.into(),
+				flex_to_vec3!(flex_vec.idx(2))
+					.ok_or_else(|| anyhow!("Position not found"))?
+					.into(),
+			);
 			let node_rc = calling_client
 				.borrow_mut()
 				.get_scenegraph_mut()
 				.add_node(node);
-			Spatial::add_to(
-				node_rc,
-				WeakCell::new(),
-				Mat4::from_scale_rotation_translation(scl.into(), rot.into(), pos.into()),
-			)?;
+			Spatial::add_to(node_rc, WeakCell::new(), transform)?;
 			Ok(())
 		}),
 	);
