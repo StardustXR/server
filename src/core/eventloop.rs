@@ -1,4 +1,5 @@
 use super::client::Client;
+use anyhow::{anyhow, Result};
 use libstardustxr::server;
 use mio::net::UnixListener;
 use mio::unix::pipe;
@@ -7,8 +8,6 @@ use rccell::RcCell;
 use slab::Slab;
 use std::io::Write;
 use std::thread::{self, JoinHandle};
-
-use anyhow::Result;
 
 pub struct EventLoop {
 	pub socket_path: String,
@@ -22,63 +21,66 @@ impl EventLoop {
 			.ok_or_else(|| std::io::Error::from(std::io::ErrorKind::Other))?;
 		let mut socket = UnixListener::bind(socket_path.clone())?;
 		let (sender, mut receiver) = pipe::new()?;
-		let join_handle = Some(thread::spawn(move || -> Result<()> {
-			let mut clients: Slab<Option<RcCell<Client>>> = Slab::new();
-			let mut poll = Poll::new()?;
-			let mut events = Events::with_capacity(1024);
-			const LISTENER: Token = Token(usize::MAX - 1);
-			poll.registry()
-				.register(&mut socket, LISTENER, Interest::READABLE)?;
-			const STOP: Token = Token(usize::MAX);
-			poll.registry()
-				.register(&mut receiver, STOP, Interest::READABLE)?;
-			loop {
-				poll.poll(&mut events, timeout)?;
-				for event in &events {
-					match event.token() {
-						LISTENER => loop {
-							match socket.accept() {
-								Ok((mut socket, _)) => {
-									let client_number = clients.insert(None);
-									poll.registry().register(
-										&mut socket,
-										Token(client_number),
-										Interest::READABLE,
-									)?;
-									let client = Client::from_connection(socket);
-									*clients.get_mut(client_number).unwrap() = Some(client);
-								}
-								Err(e) => {
-									if e.kind() == std::io::ErrorKind::WouldBlock {
-										break;
+		let join_handle = thread::Builder::new()
+			.name("event_loop".to_owned())
+			.spawn(move || -> Result<()> {
+				let mut clients: Slab<Option<RcCell<Client>>> = Slab::new();
+				let mut poll = Poll::new()?;
+				let mut events = Events::with_capacity(1024);
+				const LISTENER: Token = Token(usize::MAX - 1);
+				poll.registry()
+					.register(&mut socket, LISTENER, Interest::READABLE)?;
+				const STOP: Token = Token(usize::MAX);
+				poll.registry()
+					.register(&mut receiver, STOP, Interest::READABLE)?;
+				loop {
+					poll.poll(&mut events, timeout)?;
+					for event in &events {
+						match event.token() {
+							LISTENER => loop {
+								match socket.accept() {
+									Ok((mut socket, _)) => {
+										let client_number = clients.insert(None);
+										poll.registry().register(
+											&mut socket,
+											Token(client_number),
+											Interest::READABLE,
+										)?;
+										let client = Client::from_connection(socket);
+										*clients.get_mut(client_number).unwrap() = Some(client);
 									}
-									return Err(e.into());
-								}
-							}
-						},
-						STOP => return Ok(()),
-						token => loop {
-							match clients
-								.get(token.0)
-								.unwrap()
-								.as_ref()
-								.unwrap()
-								.borrow()
-								.dispatch()
-							{
-								Ok(_) => continue,
-								Err(e) => {
-									if e.kind() == std::io::ErrorKind::WouldBlock {
-										break;
+									Err(e) => {
+										if e.kind() == std::io::ErrorKind::WouldBlock {
+											break;
+										}
+										return Err(e.into());
 									}
-									return Err(e.into());
 								}
-							}
-						},
+							},
+							STOP => return Ok(()),
+							token => loop {
+								match clients
+									.get(token.0)
+									.unwrap()
+									.as_ref()
+									.unwrap()
+									.borrow()
+									.dispatch()
+								{
+									Ok(_) => continue,
+									Err(e) => {
+										if e.kind() == std::io::ErrorKind::WouldBlock {
+											break;
+										}
+										return Err(e.into());
+									}
+								}
+							},
+						}
 					}
 				}
-			}
-		}));
+			})
+			.ok();
 		Ok(EventLoop {
 			socket_path,
 			join_handle,
@@ -94,8 +96,7 @@ impl Drop for EventLoop {
 		let _ = self
 			.join_handle
 			.take()
-			.unwrap()
-			.join()
+			.map(|handle| handle.join())
 			.expect("Couldn't join the event loop thread at drop");
 	}
 }
