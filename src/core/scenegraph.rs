@@ -11,6 +11,19 @@ pub struct Scenegraph<'a> {
 	pub nodes: HashMap<String, RcCell<Node<'a>>>,
 }
 
+impl<'a> Scenegraph<'a> {
+	pub fn set_client(&mut self, client: RcCell<Client<'a>>) {
+		self.client = client.downgrade();
+	}
+
+	pub fn add_node(&mut self, node: Node<'a>) -> RcCell<Node<'a>> {
+		let path = node.get_path().to_string();
+		let node_rc = RcCell::new(node);
+		self.nodes.insert(path, node_rc.clone());
+		node_rc
+	}
+}
+
 impl<'a> Default for Scenegraph<'a> {
 	fn default() -> Self {
 		Scenegraph {

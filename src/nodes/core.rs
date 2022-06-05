@@ -29,23 +29,24 @@ impl<'a> Node<'a> {
 		self.path.as_str()
 	}
 
-	pub fn from_path(
+	pub fn create(
 		client: WeakCell<Client<'a>>,
-		path: &str,
+		parent: &str,
+		name: &str,
 		destroyable: bool,
-	) -> Result<Node<'a>> {
-		ensure!(path.starts_with('/'), "Invalid path {}", path);
-		Ok(Node {
+	) -> Self {
+		let mut path = parent.to_string();
+		path.push('/');
+		path.push_str(name);
+		Node {
 			client,
-			path: path.to_string(),
-			trailing_slash_pos: path
-				.rfind('/')
-				.ok_or_else(|| anyhow!("Invalid path {}", path))?,
+			path: path,
+			trailing_slash_pos: parent.len(),
 			local_signals: HashMap::new(),
 			local_methods: HashMap::new(),
 			destroyable,
 			spatial: None,
-		})
+		}
 	}
 
 	pub fn add_local_signal(&mut self, method: &str, signal: Signal<'a>) {
