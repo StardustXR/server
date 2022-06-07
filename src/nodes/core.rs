@@ -4,18 +4,18 @@ use anyhow::{anyhow, Result};
 use std::rc::{Rc, Weak};
 use std::{collections::HashMap, vec::Vec};
 
-pub type Signal<'a> = Box<dyn Fn(Rc<Client>, &[u8]) -> Result<()> + 'a>;
-pub type Method<'a> = Box<dyn Fn(Rc<Client>, &[u8]) -> Result<Vec<u8>> + 'a>;
+pub type Signal = fn(&Node, Rc<Client>, &[u8]) -> Result<()>;
+pub type Method = fn(&Node, Rc<Client>, &[u8]) -> Result<Vec<u8>>;
 
 pub struct Node<'a> {
 	client: Weak<Client<'a>>,
 	path: String,
 	trailing_slash_pos: usize,
-	local_signals: HashMap<String, Signal<'a>>,
-	local_methods: HashMap<String, Method<'a>>,
+	local_signals: HashMap<String, Signal>,
+	local_methods: HashMap<String, Method>,
 	destroyable: bool,
 
-	pub spatial: Option<Spatial<'a>>,
+	pub spatial: Option<Rc<Spatial<'a>>>,
 }
 
 impl<'a> Node<'a> {
@@ -44,7 +44,7 @@ impl<'a> Node<'a> {
 		}
 	}
 
-	pub fn add_local_signal(&mut self, method: &str, signal: Signal<'a>) {
+	pub fn add_local_signal(&mut self, method: &str, signal: Signal) {
 		self.local_signals.insert(method.to_string(), signal);
 	}
 
@@ -58,7 +58,7 @@ impl<'a> Node<'a> {
 			.local_signals
 			.get(method)
 			.ok_or_else(|| anyhow!("Signal {} not found", method))?;
-		signal(calling_client, data)
+		signal(self, calling_client, data)
 	}
 	pub fn execute_local_method(
 		&self,
@@ -66,9 +66,11 @@ impl<'a> Node<'a> {
 		method: &str,
 		data: &[u8],
 	) -> Result<Vec<u8>> {
-		self.local_methods
+		let method = self
+			.local_methods
 			.get(method)
-			.ok_or_else(|| anyhow!("Method {} not found", method))?(calling_client, data)
+			.ok_or_else(|| anyhow!("Method {} not found", method))?;
+		method(self, calling_client, data)
 	}
 	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
 		self.get_client()
