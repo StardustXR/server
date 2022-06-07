@@ -1,9 +1,10 @@
 use super::core::Node;
 use crate::core::client::Client;
 use anyhow::{anyhow, bail, ensure, Result};
-use glam::{Mat4, Quat, Vec3};
+use glam::Mat4;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use rccell::{RcCell, WeakCell};
+use std::rc::Rc;
 
 pub struct Spatial<'a> {
 	node: WeakCell<Node<'a>>,
@@ -34,14 +35,11 @@ impl<'a> Spatial<'a> {
 				let client = node_captured
 					.borrow()
 					.get_client()
-					.ok_or(anyhow!("Node somehow has no client!"))?;
+					.ok_or_else(|| anyhow!("Node somehow has no client"))?;
 				let other_spatial = calling_client
-					.borrow()
 					.get_scenegraph()
-					.nodes
-					.get(flex_vec.idx(0).as_str())
-					.ok_or(anyhow!("Spatial node not found"))?
-					.clone();
+					.get_node(flex_vec.idx(0).as_str())
+					.ok_or_else(|| anyhow!("Other spatial node not found"))?;
 				ensure!(
 					other_spatial.borrow().spatial.is_some(),
 					"Node is not a Spatial!"
@@ -54,7 +52,7 @@ impl<'a> Spatial<'a> {
 					.spatial
 					.as_mut()
 					.unwrap()
-					.set_transform_components(client, other_spatial, pos.into(), rot, scl);
+					.set_transform_components(client, other_spatial, pos, rot, scl);
 				Ok(())
 			}),
 		);
@@ -76,7 +74,7 @@ impl<'a> Spatial<'a> {
 
 	pub fn set_transform_components(
 		&mut self,
-		calling_client: RcCell<Client>,
+		calling_client: Rc<Client>,
 		relative_space: RcCell<Node>,
 		pos: Option<mint::Vector3<f32>>,
 		rot: Option<mint::Quaternion<f32>>,
@@ -88,15 +86,15 @@ impl<'a> Spatial<'a> {
 	// pub fn relative_transform(&self, space: WeakCell<Spatial>) {}
 }
 
-pub fn create_interface(client: RcCell<Client>) {
-	let mut node = Node::create(client.downgrade(), "", "spatial", false);
+pub fn create_interface(client: Rc<Client>) {
+	let mut node = Node::create(Rc::downgrade(&client), "", "spatial", false);
 	node.add_local_signal(
 		"createSpatial",
 		Box::new(move |calling_client, data| {
 			let root = flexbuffers::Reader::get_root(data)?;
 			let flex_vec = root.get_vector()?;
 			let node = Node::create(
-				calling_client.downgrade(),
+				Rc::downgrade(&calling_client),
 				"/spatial",
 				flex_vec.idx(0).get_str()?,
 				true,
@@ -112,13 +110,10 @@ pub fn create_interface(client: RcCell<Client>) {
 					.ok_or_else(|| anyhow!("Position not found"))?
 					.into(),
 			);
-			let node_rc = calling_client
-				.borrow_mut()
-				.get_scenegraph_mut()
-				.add_node(node);
+			let node_rc = calling_client.get_scenegraph().add_node(node);
 			Spatial::add_to(node_rc, WeakCell::new(), transform)?;
 			Ok(())
 		}),
 	);
-	client.borrow_mut().get_scenegraph_mut().add_node(node);
+	client.get_scenegraph().add_node(node);
 }

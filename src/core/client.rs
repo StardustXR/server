@@ -2,20 +2,20 @@ use super::scenegraph::Scenegraph;
 use crate::nodes::spatial;
 use libstardustxr::messenger::Messenger;
 use mio::net::UnixStream;
-use rccell::{RcCell, WeakCell};
+use std::rc::Rc;
 
 pub struct Client<'a> {
-	pub messenger: Messenger<'a>,
+	messenger: Messenger<'a>,
 	scenegraph: Scenegraph<'a>,
 }
 
 impl<'a> Client<'a> {
-	pub fn from_connection(connection: UnixStream) -> RcCell<Self> {
-		let client = RcCell::new(Client {
-			scenegraph: Default::default(),
+	pub fn from_connection(connection: UnixStream) -> Rc<Self> {
+		let client = Rc::new(Client {
 			messenger: Messenger::new(connection),
+			scenegraph: Default::default(),
 		});
-		client.borrow_mut().scenegraph.set_client(client.clone());
+		client.scenegraph.set_client(&client);
 		spatial::create_interface(client.clone());
 		client
 	}
@@ -28,8 +28,5 @@ impl<'a> Client<'a> {
 	}
 	pub fn get_scenegraph(&self) -> &Scenegraph<'a> {
 		&self.scenegraph
-	}
-	pub fn get_scenegraph_mut(&mut self) -> &mut Scenegraph<'a> {
-		&mut self.scenegraph
 	}
 }

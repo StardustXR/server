@@ -1,12 +1,12 @@
 use super::client::Client;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use libstardustxr::server;
 use mio::net::UnixListener;
 use mio::unix::pipe;
 use mio::{Events, Interest, Poll, Token};
-use rccell::RcCell;
 use slab::Slab;
 use std::io::Write;
+use std::rc::Rc;
 use std::thread::{self, JoinHandle};
 
 pub struct EventLoop {
@@ -24,7 +24,7 @@ impl EventLoop {
 		let join_handle = thread::Builder::new()
 			.name("event_loop".to_owned())
 			.spawn(move || -> Result<()> {
-				let mut clients: Slab<Option<RcCell<Client>>> = Slab::new();
+				let mut clients: Slab<Option<Rc<Client>>> = Slab::new();
 				let mut poll = Poll::new()?;
 				let mut events = Events::with_capacity(1024);
 				const LISTENER: Token = Token(usize::MAX - 1);
@@ -59,14 +59,7 @@ impl EventLoop {
 							},
 							STOP => return Ok(()),
 							token => loop {
-								match clients
-									.get(token.0)
-									.unwrap()
-									.as_ref()
-									.unwrap()
-									.borrow()
-									.dispatch()
-								{
+								match clients.get(token.0).unwrap().as_ref().unwrap().dispatch() {
 									Ok(_) => continue,
 									Err(e) => {
 										if e.kind() == std::io::ErrorKind::WouldBlock {
