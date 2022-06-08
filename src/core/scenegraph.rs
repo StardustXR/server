@@ -34,6 +34,10 @@ impl<'a> Scenegraph<'a> {
 	pub fn get_node(&self, path: &str) -> Option<RcCell<Node<'a>>> {
 		Some(self.nodes.read().ok()?.get(path)?.clone())
 	}
+
+	pub fn remove_node(&self, path: &str) -> Option<RcCell<Node<'a>>> {
+		self.nodes.write().unwrap().remove(path)
+	}
 }
 
 impl<'a> scenegraph::Scenegraph for Scenegraph<'a> {

@@ -93,7 +93,7 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]
 	let flex_vec = root.get_vector()?;
 	let spatial = Node::create(
 		Rc::downgrade(&calling_client),
-		"/spatial",
+		"/spatial/spatial",
 		flex_vec.idx(0).get_str()?,
 		true,
 	);

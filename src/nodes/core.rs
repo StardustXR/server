@@ -28,12 +28,15 @@ impl<'a> Node<'a> {
 	pub fn get_path(&self) -> &str {
 		self.path.as_str()
 	}
+	pub fn is_destroyable(&self) -> bool {
+		self.destroyable
+	}
 
 	pub fn create(client: Weak<Client<'a>>, parent: &str, name: &str, destroyable: bool) -> Self {
 		let mut path = parent.to_string();
 		path.push('/');
 		path.push_str(name);
-		Node {
+		let mut node = Node {
 			client,
 			path,
 			trailing_slash_pos: parent.len(),
@@ -41,7 +44,21 @@ impl<'a> Node<'a> {
 			local_methods: HashMap::new(),
 			destroyable,
 			spatial: None,
+		};
+		node.add_local_signal("destroy", Node::destroy_flex);
+		node
+	}
+	pub fn destroy(&self) {
+		if let Some(client) = self.get_client() {
+			let _ = client.get_scenegraph().remove_node(self.get_path());
 		}
+	}
+
+	pub fn destroy_flex(node: &Node, _calling_client: Rc<Client>, _data: &[u8]) -> Result<()> {
+		if node.is_destroyable() {
+			node.destroy();
+		}
+		Ok(())
 	}
 
 	pub fn add_local_signal(&mut self, method: &str, signal: Signal) {
