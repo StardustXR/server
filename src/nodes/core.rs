@@ -17,7 +17,7 @@ pub struct Node<'a> {
 	destroyable: bool,
 
 	pub spatial: Option<Rc<Spatial>>,
-	pub field: Option<Rc<Box<dyn Field>>>,
+	pub field: Option<Rc<Field>>,
 }
 
 impl<'a> Node<'a> {

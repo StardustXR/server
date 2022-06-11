@@ -6,10 +6,11 @@ use glam::{vec2, vec3a, Mat4, Vec3A};
 use libstardustxr::flex_to_vec3;
 use libstardustxr::fusion::flex::FlexBuffable;
 use rccell::RcCell;
-use std::boxed::Box;
+use std::cell::Cell;
+use std::ops::Deref;
 use std::rc::Rc;
 
-pub trait Field {
+pub trait FieldTrait {
 	fn local_distance(&self, p: Vec3A) -> f32;
 	fn local_normal(&self, p: Vec3A, r: f32) -> Vec3A {
 		let d = self.local_distance(p);
@@ -140,9 +141,22 @@ pub trait Field {
 	fn spatial_ref(&self) -> &Spatial;
 }
 
-struct SphereField {
+pub enum Field {
+	Sphere(SphereField),
+}
+
+impl Deref for Field {
+	type Target = dyn FieldTrait;
+	fn deref(&self) -> &Self::Target {
+		match self {
+			Field::Sphere(field) => field,
+		}
+	}
+}
+
+pub struct SphereField {
 	space: Rc<Spatial>,
-	radius: f32,
+	radius: Cell<f32>,
 }
 
 impl SphereField {
@@ -153,23 +167,39 @@ impl SphereField {
 		);
 		let sphere_field = SphereField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
-			radius,
+			radius: Cell::new(radius),
 		};
 		sphere_field.add_field_methods(&node);
-		node.borrow_mut().field = Some(Rc::new(Box::new(sphere_field)));
+		node.borrow_mut().field = Some(Rc::new(Field::Sphere(sphere_field)));
+		Ok(())
+	}
+
+	pub fn set_radius(&self, radius: f32) {
+		self.radius.set(radius);
+	}
+
+	pub fn set_radius_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+		let root = flexbuffers::Reader::get_root(data)?;
+		let field = node
+			.field
+			.as_ref()
+			.ok_or_else(|| anyhow!("Node does not have a field"))?;
+		if let Field::Sphere(sphere_field) = field.as_ref() {
+			sphere_field.set_radius(root.as_f32());
+		}
 		Ok(())
 	}
 }
 
-impl Field for SphereField {
+impl FieldTrait for SphereField {
 	fn local_distance(&self, p: Vec3A) -> f32 {
-		p.length() - self.radius
+		p.length() - self.radius.get()
 	}
 	fn local_normal(&self, p: Vec3A, _r: f32) -> Vec3A {
 		-p.normalize()
 	}
 	fn local_closest_point(&self, p: Vec3A, _r: f32) -> Vec3A {
-		p.normalize() * self.radius
+		p.normalize() * self.radius.get()
 	}
 	fn spatial_ref(&self) -> &Spatial {
 		self.space.as_ref()
