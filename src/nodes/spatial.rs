@@ -1,7 +1,7 @@
 use super::core::Node;
 use crate::core::client::Client;
-use anyhow::{anyhow, bail, ensure, Result};
-use glam::Mat4;
+use anyhow::{anyhow, bail, Result};
+use glam::{Mat4, Quat, Vec3};
 use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::push_to_vec;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
@@ -37,28 +37,10 @@ impl<'a> Spatial<'a> {
 		Ok(())
 	}
 
-	pub fn set_transform_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
-		let root = flexbuffers::Reader::get_root(data)?;
-		let flex_vec = root.get_vector()?;
-		let client = node
-			.get_client()
-			.ok_or_else(|| anyhow!("Node somehow has no client"))?;
-		let other_spatial = calling_client
-			.get_scenegraph()
-			.get_node(flex_vec.idx(0).as_str())
-			.ok_or_else(|| anyhow!("Other spatial node not found"))?;
-		ensure!(
-			other_spatial.borrow().spatial.is_some(),
-			"Node is not a Spatial!"
-		);
-		let pos = flex_to_vec3!(flex_vec.idx(1));
-		let rot = flex_to_quat!(flex_vec.idx(2));
-		let scl = flex_to_vec3!(flex_vec.idx(3));
-		node.spatial
-			.as_ref()
-			.unwrap()
-			.set_transform_components(other_spatial, pos, rot, scl);
-		Ok(())
+	pub fn space_to_space_matrix(from: Option<&Spatial>, to: Option<&Spatial>) -> Mat4 {
+		let space_to_world_matrix = from.map_or(Mat4::IDENTITY, |from| from.global_transform());
+		let world_to_space_matrix = to.map_or(Mat4::IDENTITY, |to| to.global_transform().inverse());
+		world_to_space_matrix * space_to_world_matrix
 	}
 
 	pub fn local_transform(&self) -> Mat4 {
@@ -70,21 +52,35 @@ impl<'a> Spatial<'a> {
 			None => self.transform.get(),
 		}
 	}
-
-	pub fn set_transform_components(
-		&self,
-		relative_space: RcCell<Node>,
-		pos: Option<mint::Vector3<f32>>,
-		rot: Option<mint::Quaternion<f32>>,
-		scl: Option<mint::Vector3<f32>>,
-	) {
-		todo!()
+	pub fn set_local_transform(&self, transform: Mat4) {
+		self.transform.set(transform);
 	}
+	pub fn set_local_transform_components(
+		&self,
+		reference_space: Option<&Spatial>,
+		pos: Option<Vec3>,
+		rot: Option<Quat>,
+		scl: Option<Vec3>,
+	) {
+		let reference_to_parent_transform =
+			Spatial::space_to_space_matrix(reference_space, self.parent.borrow().as_deref());
+		let mut local_transform_in_reference_space =
+			reference_to_parent_transform.inverse() * self.local_transform();
+		let (mut reference_space_scl, mut reference_space_rot, mut reference_space_pos) =
+			local_transform_in_reference_space.to_scale_rotation_translation();
 
-	pub fn space_to_space_matrix(from: &Spatial, to: &Spatial) -> Mat4 {
-		let space_to_world_matrix = from.global_transform();
-		let world_to_space_matrix = to.global_transform().inverse();
-		world_to_space_matrix * space_to_world_matrix
+		pos.map(|pos| reference_space_pos = pos);
+		rot.map(|rot| reference_space_rot = rot);
+		scl.map(|scl| reference_space_scl = scl);
+
+		local_transform_in_reference_space = Mat4::from_scale_rotation_translation(
+			reference_space_scl,
+			reference_space_rot,
+			reference_space_pos,
+		);
+		self.set_local_transform(
+			reference_to_parent_transform * local_transform_in_reference_space,
+		);
 	}
 
 	pub fn get_transform_flex(
@@ -103,9 +99,11 @@ impl<'a> Spatial<'a> {
 			.and_then(|node| node.borrow().spatial.clone())
 			.ok_or_else(|| anyhow!("Space not found"))?;
 
-		let (scale, rotation, position) =
-			Spatial::space_to_space_matrix(this_spatial.as_ref(), relative_spatial.as_ref())
-				.to_scale_rotation_translation();
+		let (scale, rotation, position) = Spatial::space_to_space_matrix(
+			Some(this_spatial.as_ref()),
+			Some(relative_spatial.as_ref()),
+		)
+		.to_scale_rotation_translation();
 
 		Ok(flexbuffer_from_vector_arguments(|vec| {
 			push_to_vec!(
@@ -115,6 +113,37 @@ impl<'a> Spatial<'a> {
 				mint::Vector3::from(scale)
 			);
 		}))
+	}
+	pub fn set_transform_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+		let root = flexbuffers::Reader::get_root(data)?;
+		let flex_vec = root.get_vector()?;
+		let spatial = node
+			.spatial
+			.as_ref()
+			.ok_or_else(|| anyhow!("Node somehow is not spatial"))?;
+		let reference_space_path = flex_vec.idx(0).as_str();
+		let reference_space_transform = if reference_space_path != "" {
+			Some(
+				calling_client
+					.get_scenegraph()
+					.get_node(reference_space_path)
+					.ok_or_else(|| anyhow!("Other spatial node not found"))?
+					.borrow()
+					.spatial
+					.as_ref()
+					.ok_or_else(|| anyhow!("Node is not a Spatial!"))?
+					.clone(),
+			)
+		} else {
+			None
+		};
+		spatial.set_local_transform_components(
+			reference_space_transform.as_deref(),
+			flex_to_vec3!(flex_vec.idx(1)).map(|v| v.into()),
+			flex_to_quat!(flex_vec.idx(2)).map(|v| v.into()),
+			flex_to_vec3!(flex_vec.idx(3)).map(|v| v.into()),
+		);
+		Ok(())
 	}
 }
 
