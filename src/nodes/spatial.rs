@@ -77,7 +77,11 @@ impl<'a> Spatial<'a> {
 		todo!()
 	}
 
-	// pub fn relative_transform(&self, space: WeakCell<Spatial>) {}
+	pub fn space_to_space_matrix(from: &Spatial, to: &Spatial) -> Mat4 {
+		let space_to_world_matrix = from.global_transform();
+		let world_to_space_matrix = to.global_transform().inverse();
+		world_to_space_matrix * space_to_world_matrix
+	}
 }
 
 pub fn create_interface(client: Rc<Client>) {
