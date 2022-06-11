@@ -16,7 +16,11 @@ pub struct Spatial {
 }
 
 impl Spatial {
-	pub fn add_to(node: RcCell<Node>, parent: Option<Rc<Spatial>>, transform: Mat4) -> Result<()> {
+	pub fn add_to(
+		node: &RcCell<Node>,
+		parent: Option<Rc<Spatial>>,
+		transform: Mat4,
+	) -> Result<Rc<Spatial>> {
 		if node.borrow_mut().spatial.is_none() {
 			bail!("Node already has a Spatial aspect!");
 		}
@@ -29,8 +33,9 @@ impl Spatial {
 			.add_local_method("getTransform", Spatial::get_transform_flex);
 		node.borrow_mut()
 			.add_local_signal("setTransform", Spatial::set_transform_flex);
-		node.borrow_mut().spatial = Some(Rc::new(spatial));
-		Ok(())
+		let spatial_rc = Rc::new(spatial);
+		node.borrow_mut().spatial = Some(spatial_rc.clone());
+		Ok(spatial_rc)
 	}
 
 	pub fn space_to_space_matrix(from: Option<&Spatial>, to: Option<&Spatial>) -> Mat4 {
@@ -180,6 +185,6 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]
 			.into(),
 	);
 	let spatial_rc = calling_client.get_scenegraph().add_node(spatial);
-	Spatial::add_to(spatial_rc, parent, transform)?;
+	Spatial::add_to(&spatial_rc, parent, transform)?;
 	Ok(())
 }
