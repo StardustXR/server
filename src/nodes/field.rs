@@ -2,9 +2,9 @@ use super::core::Node;
 use super::spatial::Spatial;
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
-use glam::{vec2, vec3a, Mat4, Vec3A};
-use libstardustxr::flex_to_vec3;
+use glam::{vec2, vec3, vec3a, Mat4, Vec3, Vec3A};
 use libstardustxr::fusion::flex::FlexBuffable;
+use libstardustxr::{flex_to_quat, flex_to_vec3};
 use rccell::RcCell;
 use std::cell::Cell;
 use std::ops::Deref;
@@ -142,6 +142,7 @@ pub trait FieldTrait {
 }
 
 pub enum Field {
+	Box(BoxField),
 	Sphere(SphereField),
 }
 
@@ -149,8 +150,65 @@ impl Deref for Field {
 	type Target = dyn FieldTrait;
 	fn deref(&self) -> &Self::Target {
 		match self {
+			Field::Box(field) => field,
 			Field::Sphere(field) => field,
 		}
+	}
+}
+
+pub struct BoxField {
+	space: Rc<Spatial>,
+	size: Cell<Vec3>,
+}
+
+impl BoxField {
+	pub fn add_to(node: &RcCell<Node>, size: Vec3) -> Result<()> {
+		ensure!(
+			node.borrow().spatial.is_some(),
+			"Node does not have a spatial attached!"
+		);
+		let box_field = BoxField {
+			space: node.borrow().spatial.as_ref().unwrap().clone(),
+			size: Cell::new(size),
+		};
+		box_field.add_field_methods(&node);
+		node.borrow_mut()
+			.add_local_signal("setSize", BoxField::set_size_flex);
+		node.borrow_mut().field = Some(Rc::new(Field::Box(box_field)));
+		Ok(())
+	}
+
+	pub fn set_size(&self, size: Vec3) {
+		self.size.set(size);
+	}
+
+	pub fn set_size_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+		let root = flexbuffers::Reader::get_root(data)?;
+		let size = flex_to_vec3!(root).ok_or_else(|| anyhow!("Size is invalid"))?;
+		let field = node
+			.field
+			.as_ref()
+			.ok_or_else(|| anyhow!("Node does not have a field"))?;
+		if let Field::Box(box_field) = field.as_ref() {
+			box_field.set_size(size.into());
+		}
+		Ok(())
+	}
+}
+
+impl FieldTrait for BoxField {
+	fn local_distance(&self, p: Vec3A) -> f32 {
+		let size = self.size.get();
+		let q = vec3(
+			p.x.abs() - (size.x * 0.5_f32),
+			p.y.abs() - (size.y * 0.5_f32),
+			p.z.abs() - (size.z * 0.5_f32),
+		);
+		let v = vec3a(q.x.max(0_f32), q.y.max(0_f32), q.z.max(0_f32));
+		return v.length() + q.x.max(q.y.max(q.z)).min(0_f32);
+	}
+	fn spatial_ref(&self) -> &Spatial {
+		self.space.as_ref()
 	}
 }
 
@@ -170,6 +228,8 @@ impl SphereField {
 			radius: Cell::new(radius),
 		};
 		sphere_field.add_field_methods(&node);
+		node.borrow_mut()
+			.add_local_signal("setRadius", SphereField::set_radius_flex);
 		node.borrow_mut().field = Some(Rc::new(Field::Sphere(sphere_field)));
 		Ok(())
 	}
@@ -208,8 +268,37 @@ impl FieldTrait for SphereField {
 
 pub fn create_interface(client: Rc<Client>) {
 	let mut node = Node::create(Rc::downgrade(&client), "", "field", false);
+	node.add_local_signal("createBoxField", create_box_field_flex);
 	node.add_local_signal("createSphereField", create_sphere_field_flex);
 	client.get_scenegraph().add_node(node);
+}
+
+pub fn create_box_field_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+	let root = flexbuffers::Reader::get_root(data)?;
+	let flex_vec = root.get_vector()?;
+	let node = Node::create(
+		Rc::downgrade(&calling_client),
+		"/field",
+		flex_vec.idx(0).get_str()?,
+		true,
+	);
+	let parent = calling_client
+		.get_scenegraph()
+		.get_node(flex_vec.idx(1).as_str())
+		.and_then(|node| node.borrow().spatial.clone());
+	let transform = Mat4::from_rotation_translation(
+		flex_to_quat!(flex_vec.idx(3))
+			.ok_or_else(|| anyhow!("Rotation not found"))?
+			.into(),
+		flex_to_vec3!(flex_vec.idx(2))
+			.ok_or_else(|| anyhow!("Position not found"))?
+			.into(),
+	);
+	let size = flex_to_vec3!(flex_vec.idx(4)).ok_or_else(|| anyhow!("Size invalid"))?;
+	let node_rc = calling_client.get_scenegraph().add_node(node);
+	Spatial::add_to(&node_rc, parent, transform)?;
+	BoxField::add_to(&node_rc, size.into())?;
+	Ok(())
 }
 
 pub fn create_sphere_field_flex(
