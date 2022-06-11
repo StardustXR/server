@@ -2,6 +2,8 @@ use super::core::Node;
 use crate::core::client::Client;
 use anyhow::{anyhow, bail, ensure, Result};
 use glam::Mat4;
+use libstardustxr::flex::flexbuffer_from_vector_arguments;
+use libstardustxr::push_to_vec;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use rccell::{RcCell, WeakCell};
 use std::cell::{Cell, RefCell};
@@ -27,6 +29,8 @@ impl<'a> Spatial<'a> {
 			parent: RefCell::new(parent),
 			transform: Cell::new(transform),
 		};
+		node.borrow_mut()
+			.add_local_method("getTransform", Spatial::get_transform_flex);
 		node.borrow_mut()
 			.add_local_signal("setTransform", Spatial::set_transform_flex);
 		node.borrow_mut().spatial = Some(Rc::new(spatial));
@@ -81,6 +85,36 @@ impl<'a> Spatial<'a> {
 		let space_to_world_matrix = from.global_transform();
 		let world_to_space_matrix = to.global_transform().inverse();
 		world_to_space_matrix * space_to_world_matrix
+	}
+
+	pub fn get_transform_flex(
+		node: &Node,
+		calling_client: Rc<Client>,
+		data: &[u8],
+	) -> Result<Vec<u8>> {
+		let root = flexbuffers::Reader::get_root(data)?;
+		let this_spatial = node
+			.spatial
+			.clone()
+			.ok_or_else(|| anyhow!("Node doesn't have a spatial?"))?;
+		let relative_spatial = calling_client
+			.get_scenegraph()
+			.get_node(root.as_str())
+			.and_then(|node| node.borrow().spatial.clone())
+			.ok_or_else(|| anyhow!("Space not found"))?;
+
+		let (scale, rotation, position) =
+			Spatial::space_to_space_matrix(this_spatial.as_ref(), relative_spatial.as_ref())
+				.to_scale_rotation_translation();
+
+		Ok(flexbuffer_from_vector_arguments(|vec| {
+			push_to_vec!(
+				vec,
+				mint::Vector3::from(position),
+				mint::Quaternion::from(rotation),
+				mint::Vector3::from(scale)
+			);
+		}))
 	}
 }
 
