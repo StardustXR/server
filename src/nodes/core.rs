@@ -1,3 +1,4 @@
+use super::field::Field;
 use crate::core::client::Client;
 use crate::nodes::spatial::Spatial;
 use anyhow::{anyhow, Result};
@@ -16,6 +17,7 @@ pub struct Node<'a> {
 	destroyable: bool,
 
 	pub spatial: Option<Rc<Spatial>>,
+	pub field: Option<Rc<Box<dyn Field>>>,
 }
 
 impl<'a> Node<'a> {
@@ -44,6 +46,7 @@ impl<'a> Node<'a> {
 			local_methods: HashMap::new(),
 			destroyable,
 			spatial: None,
+			field: None,
 		};
 		node.add_local_signal("destroy", Node::destroy_flex);
 		node
