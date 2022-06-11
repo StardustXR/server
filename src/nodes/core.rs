@@ -61,8 +61,11 @@ impl<'a> Node<'a> {
 		Ok(())
 	}
 
-	pub fn add_local_signal(&mut self, method: &str, signal: Signal) {
-		self.local_signals.insert(method.to_string(), signal);
+	pub fn add_local_signal(&mut self, name: &str, signal: Signal) {
+		self.local_signals.insert(name.to_string(), signal);
+	}
+	pub fn add_local_method(&mut self, name: &str, method: Method) {
+		self.local_methods.insert(name.to_string(), method);
 	}
 
 	pub fn send_local_signal(
