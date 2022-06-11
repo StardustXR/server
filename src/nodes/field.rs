@@ -2,7 +2,7 @@ use super::core::Node;
 use super::spatial::Spatial;
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
-use glam::{vec2, vec3a, Vec3, Vec3A};
+use glam::{vec2, vec3a, Mat4, Vec3A};
 use libstardustxr::flex_to_vec3;
 use libstardustxr::fusion::flex::FlexBuffable;
 use rccell::RcCell;
@@ -140,7 +140,72 @@ pub trait Field {
 	fn spatial_ref(&self) -> &Spatial;
 }
 
+struct SphereField {
+	space: Rc<Spatial>,
+	radius: f32,
+}
+
+impl SphereField {
+	pub fn add_to(node: &RcCell<Node>, radius: f32) -> Result<()> {
+		ensure!(
+			node.borrow().spatial.is_some(),
+			"Node does not have a spatial attached!"
+		);
+		let sphere_field = SphereField {
+			space: node.borrow().spatial.as_ref().unwrap().clone(),
+			radius,
+		};
+		sphere_field.add_field_methods(&node);
+		node.borrow_mut().field = Some(Rc::new(Box::new(sphere_field)));
+		Ok(())
+	}
+}
+
+impl Field for SphereField {
+	fn local_distance(&self, p: Vec3A) -> f32 {
+		p.length() - self.radius
+	}
+	fn local_normal(&self, p: Vec3A, _r: f32) -> Vec3A {
+		-p.normalize()
+	}
+	fn local_closest_point(&self, p: Vec3A, _r: f32) -> Vec3A {
+		p.normalize() * self.radius
+	}
+	fn spatial_ref(&self) -> &Spatial {
+		self.space.as_ref()
+	}
+}
+
 pub fn create_interface(client: Rc<Client>) {
 	let mut node = Node::create(Rc::downgrade(&client), "", "field", false);
+	node.add_local_signal("createSphereField", create_sphere_field_flex);
 	client.get_scenegraph().add_node(node);
+}
+
+pub fn create_sphere_field_flex(
+	_node: &Node,
+	calling_client: Rc<Client>,
+	data: &[u8],
+) -> Result<()> {
+	let root = flexbuffers::Reader::get_root(data)?;
+	let flex_vec = root.get_vector()?;
+	let node = Node::create(
+		Rc::downgrade(&calling_client),
+		"/field",
+		flex_vec.idx(0).get_str()?,
+		true,
+	);
+	let parent = calling_client
+		.get_scenegraph()
+		.get_node(flex_vec.idx(1).as_str())
+		.and_then(|node| node.borrow().spatial.clone());
+	let transform = Mat4::from_translation(
+		flex_to_vec3!(flex_vec.idx(2))
+			.ok_or_else(|| anyhow!("Position not found"))?
+			.into(),
+	);
+	let node_rc = calling_client.get_scenegraph().add_node(node);
+	Spatial::add_to(&node_rc, parent, transform)?;
+	SphereField::add_to(&node_rc, flex_vec.idx(3).as_f32())?;
+	Ok(())
 }
