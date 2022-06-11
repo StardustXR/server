@@ -1,4 +1,5 @@
 use super::scenegraph::Scenegraph;
+use crate::nodes::field;
 use crate::nodes::spatial;
 use libstardustxr::messenger::Messenger;
 use mio::net::UnixStream;
@@ -17,6 +18,7 @@ impl<'a> Client<'a> {
 		});
 		client.scenegraph.set_client(&client);
 		spatial::create_interface(client.clone());
+		field::create_interface(client.clone());
 		client
 	}
 	pub fn dispatch(&self) -> Result<(), std::io::Error> {

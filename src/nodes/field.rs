@@ -1,5 +1,6 @@
 use super::core::Node;
 use super::spatial::Spatial;
+use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use glam::{vec2, vec3a, Vec3, Vec3A};
 use libstardustxr::flex_to_vec3;
@@ -137,4 +138,9 @@ pub trait Field {
 	}
 
 	fn spatial_ref(&self) -> &Spatial;
+}
+
+pub fn create_interface(client: Rc<Client>) {
+	let mut node = Node::create(Rc::downgrade(&client), "", "field", false);
+	client.get_scenegraph().add_node(node);
 }
