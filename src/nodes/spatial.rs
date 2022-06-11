@@ -5,12 +5,12 @@ use glam::{Mat4, Quat, Vec3};
 use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::push_to_vec;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
-use rccell::{RcCell, WeakCell};
+use rccell::RcCell;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 pub struct Spatial<'a> {
-	node: WeakCell<Node<'a>>,
+	// node: WeakCell<Node<'a>>,
 	parent: RefCell<Option<Rc<Spatial<'a>>>>,
 	transform: Cell<Mat4>,
 }
@@ -25,7 +25,7 @@ impl<'a> Spatial<'a> {
 			bail!("Node already has a Spatial aspect!");
 		}
 		let spatial = Spatial {
-			node: node.downgrade(),
+			// node: node.downgrade(),
 			parent: RefCell::new(parent),
 			transform: Cell::new(transform),
 		};
@@ -69,9 +69,15 @@ impl<'a> Spatial<'a> {
 		let (mut reference_space_scl, mut reference_space_rot, mut reference_space_pos) =
 			local_transform_in_reference_space.to_scale_rotation_translation();
 
-		pos.map(|pos| reference_space_pos = pos);
-		rot.map(|rot| reference_space_rot = rot);
-		scl.map(|scl| reference_space_scl = scl);
+		if let Some(pos) = pos {
+			reference_space_pos = pos
+		}
+		if let Some(rot) = rot {
+			reference_space_rot = rot
+		}
+		if let Some(scl) = scl {
+			reference_space_scl = scl
+		}
 
 		local_transform_in_reference_space = Mat4::from_scale_rotation_translation(
 			reference_space_scl,
@@ -122,7 +128,9 @@ impl<'a> Spatial<'a> {
 			.as_ref()
 			.ok_or_else(|| anyhow!("Node somehow is not spatial"))?;
 		let reference_space_path = flex_vec.idx(0).as_str();
-		let reference_space_transform = if reference_space_path != "" {
+		let reference_space_transform = if reference_space_path.is_empty() {
+			None
+		} else {
 			Some(
 				calling_client
 					.get_scenegraph()
@@ -134,8 +142,6 @@ impl<'a> Spatial<'a> {
 					.ok_or_else(|| anyhow!("Node is not a Spatial!"))?
 					.clone(),
 			)
-		} else {
-			None
 		};
 		spatial.set_local_transform_components(
 			reference_space_transform.as_deref(),

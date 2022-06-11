@@ -10,7 +10,7 @@ pub type Method = fn(&Node, Rc<Client>, &[u8]) -> Result<Vec<u8>>;
 pub struct Node<'a> {
 	client: Weak<Client<'a>>,
 	path: String,
-	trailing_slash_pos: usize,
+	// trailing_slash_pos: usize,
 	local_signals: HashMap<String, Signal>,
 	local_methods: HashMap<String, Method>,
 	destroyable: bool,
@@ -22,9 +22,9 @@ impl<'a> Node<'a> {
 	pub fn get_client(&self) -> Option<Rc<Client<'a>>> {
 		self.client.clone().upgrade()
 	}
-	pub fn get_name(&self) -> &str {
-		&self.path[self.trailing_slash_pos + 1..]
-	}
+	// pub fn get_name(&self) -> &str {
+	// 	&self.path[self.trailing_slash_pos + 1..]
+	// }
 	pub fn get_path(&self) -> &str {
 		self.path.as_str()
 	}
@@ -39,7 +39,7 @@ impl<'a> Node<'a> {
 		let mut node = Node {
 			client,
 			path,
-			trailing_slash_pos: parent.len(),
+			// trailing_slash_pos: parent.len(),
 			local_signals: HashMap::new(),
 			local_methods: HashMap::new(),
 			destroyable,
@@ -92,23 +92,23 @@ impl<'a> Node<'a> {
 			.ok_or_else(|| anyhow!("Method {} not found", method))?;
 		method(self, calling_client, data)
 	}
-	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
-		self.get_client()
-			.ok_or_else(|| anyhow!("Node has no client, can't send remote signal!"))?
-			.get_messenger()
-			.send_remote_signal(self.path.as_str(), method, data)
-			.map_err(|_| anyhow!("Unable to write in messenger"))
-	}
-	pub fn execute_remote_method(
-		&self,
-		method: &str,
-		data: &[u8],
-		callback: Box<dyn Fn(&[u8]) + 'a>,
-	) -> Result<()> {
-		self.get_client()
-			.ok_or_else(|| anyhow!("Node has no client, can't send remote signal!"))?
-			.get_messenger()
-			.execute_remote_method(self.path.as_str(), method, data, callback)
-			.map_err(|_| anyhow!("Unable to write in messenger"))
-	}
+	// pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
+	// 	self.get_client()
+	// 		.ok_or_else(|| anyhow!("Node has no client, can't send remote signal!"))?
+	// 		.get_messenger()
+	// 		.send_remote_signal(self.path.as_str(), method, data)
+	// 		.map_err(|_| anyhow!("Unable to write in messenger"))
+	// }
+	// pub fn execute_remote_method(
+	// 	&self,
+	// 	method: &str,
+	// 	data: &[u8],
+	// 	callback: Box<dyn Fn(&[u8]) + 'a>,
+	// ) -> Result<()> {
+	// 	self.get_client()
+	// 		.ok_or_else(|| anyhow!("Node has no client, can't send remote signal!"))?
+	// 		.get_messenger()
+	// 		.execute_remote_method(self.path.as_str(), method, data, callback)
+	// 		.map_err(|_| anyhow!("Unable to write in messenger"))
+	// }
 }
