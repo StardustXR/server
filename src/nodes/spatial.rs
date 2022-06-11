@@ -4,19 +4,19 @@ use anyhow::{anyhow, bail, ensure, Result};
 use glam::Mat4;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use rccell::{RcCell, WeakCell};
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 pub struct Spatial<'a> {
 	node: WeakCell<Node<'a>>,
-	parent: WeakCell<Node<'a>>,
+	parent: RefCell<Option<Rc<Spatial<'a>>>>,
 	transform: Cell<Mat4>,
 }
 
 impl<'a> Spatial<'a> {
 	pub fn add_to(
 		node: RcCell<Node<'a>>,
-		parent: WeakCell<Node<'a>>,
+		parent: Option<Rc<Spatial<'a>>>,
 		transform: Mat4,
 	) -> Result<()> {
 		if node.borrow_mut().spatial.is_none() {
@@ -24,7 +24,7 @@ impl<'a> Spatial<'a> {
 		}
 		let spatial = Spatial {
 			node: node.downgrade(),
-			parent,
+			parent: RefCell::new(parent),
 			transform: Cell::new(transform),
 		};
 		node.borrow_mut()
@@ -61,10 +61,8 @@ impl<'a> Spatial<'a> {
 		self.transform.get()
 	}
 	pub fn global_transform(&self) -> Mat4 {
-		match self.parent.upgrade() {
-			Some(value) => {
-				value.borrow().spatial.as_ref().unwrap().global_transform() * self.transform.get()
-			}
+		match self.parent.borrow().clone() {
+			Some(value) => value.global_transform() * self.transform.get(),
 			None => self.transform.get(),
 		}
 	}
@@ -97,6 +95,10 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]
 		flex_vec.idx(0).get_str()?,
 		true,
 	);
+	let parent = calling_client
+		.get_scenegraph()
+		.get_node(flex_vec.idx(1).as_str())
+		.and_then(|node| node.borrow().spatial.clone());
 	let transform = Mat4::from_scale_rotation_translation(
 		flex_to_vec3!(flex_vec.idx(4))
 			.ok_or_else(|| anyhow!("Scale not found"))?
@@ -109,6 +111,6 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]
 			.into(),
 	);
 	let spatial_rc = calling_client.get_scenegraph().add_node(spatial);
-	Spatial::add_to(spatial_rc, WeakCell::new(), transform)?;
+	Spatial::add_to(spatial_rc, parent, transform)?;
 	Ok(())
 }
