@@ -15,7 +15,7 @@ pub struct Node<'a> {
 	local_methods: HashMap<String, Method>,
 	destroyable: bool,
 
-	pub spatial: Option<Rc<Spatial<'a>>>,
+	pub spatial: Option<Rc<Spatial>>,
 }
 
 impl<'a> Node<'a> {

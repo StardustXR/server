@@ -9,18 +9,14 @@ use rccell::RcCell;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
-pub struct Spatial<'a> {
+pub struct Spatial {
 	// node: WeakCell<Node<'a>>,
-	parent: RefCell<Option<Rc<Spatial<'a>>>>,
+	parent: RefCell<Option<Rc<Spatial>>>,
 	transform: Cell<Mat4>,
 }
 
-impl<'a> Spatial<'a> {
-	pub fn add_to(
-		node: RcCell<Node<'a>>,
-		parent: Option<Rc<Spatial<'a>>>,
-		transform: Mat4,
-	) -> Result<()> {
+impl Spatial {
+	pub fn add_to(node: RcCell<Node>, parent: Option<Rc<Spatial>>, transform: Mat4) -> Result<()> {
 		if node.borrow_mut().spatial.is_none() {
 			bail!("Node already has a Spatial aspect!");
 		}
