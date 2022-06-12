@@ -167,7 +167,7 @@ impl BoxField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
 			size: Cell::new(size),
 		};
-		box_field.add_field_methods(&node);
+		box_field.add_field_methods(node);
 		node.borrow_mut()
 			.add_local_signal("setSize", BoxField::set_size_flex);
 		node.borrow_mut().field = Some(Rc::new(Field::Box(box_field)));
@@ -201,7 +201,7 @@ impl FieldTrait for BoxField {
 			p.z.abs() - (size.z * 0.5_f32),
 		);
 		let v = vec3a(q.x.max(0_f32), q.y.max(0_f32), q.z.max(0_f32));
-		return v.length() + q.x.max(q.y.max(q.z)).min(0_f32);
+		v.length() + q.x.max(q.y.max(q.z)).min(0_f32)
 	}
 	fn spatial_ref(&self) -> &Spatial {
 		self.space.as_ref()
@@ -229,7 +229,7 @@ impl CylinderField {
 			length: Cell::new(length),
 			radius: Cell::new(radius),
 		};
-		cylinder_field.add_field_methods(&node);
+		cylinder_field.add_field_methods(node);
 		node.borrow_mut()
 			.add_local_signal("setSize", CylinderField::set_size_flex);
 		node.borrow_mut().field = Some(Rc::new(Field::Cylinder(cylinder_field)));
@@ -295,7 +295,7 @@ impl SphereField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
 			radius: Cell::new(radius),
 		};
-		sphere_field.add_field_methods(&node);
+		sphere_field.add_field_methods(node);
 		node.borrow_mut()
 			.add_local_signal("setRadius", SphereField::set_radius_flex);
 		node.borrow_mut().field = Some(Rc::new(Field::Sphere(sphere_field)));
