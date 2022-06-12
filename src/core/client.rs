@@ -29,6 +29,9 @@ impl<'a> Client<'a> {
 		self.messenger.dispatch(&self.scenegraph)
 	}
 
+	pub fn get_event_loop(&self) -> Arc<EventLoop> {
+		self.event_loop.upgrade().unwrap()
+	}
 	// pub fn get_messenger(&self) -> &Messenger<'a> {
 	// 	&self.messenger
 	// }
