@@ -1,18 +1,17 @@
 use crate::core::client::Client;
 use crate::nodes::core::Node;
 use anyhow::Result;
+use dashmap::DashMap;
 use libstardustxr::scenegraph;
 use libstardustxr::scenegraph::ScenegraphError;
-use parking_lot::RwLock;
 use rccell::RcCell;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::{Rc, Weak};
 
 #[derive(Default)]
 pub struct Scenegraph<'a> {
 	client: RefCell<Weak<Client<'a>>>,
-	pub nodes: RwLock<HashMap<String, RcCell<Node<'a>>>>,
+	nodes: DashMap<String, RcCell<Node<'a>>>,
 }
 
 impl<'a> Scenegraph<'a> {
@@ -27,16 +26,17 @@ impl<'a> Scenegraph<'a> {
 	pub fn add_node(&self, node: Node<'a>) -> RcCell<Node<'a>> {
 		let path = node.get_path().to_string();
 		let node_rc = RcCell::new(node);
-		self.nodes.write().insert(path, node_rc.clone());
+		self.nodes.insert(path, node_rc.clone());
 		node_rc
 	}
 
 	pub fn get_node(&self, path: &str) -> Option<RcCell<Node<'a>>> {
-		Some(self.nodes.read().get(path)?.clone())
+		Some(self.nodes.get(path)?.clone())
 	}
 
 	pub fn remove_node(&self, path: &str) -> Option<RcCell<Node<'a>>> {
-		self.nodes.write().remove(path)
+		let (_, node) = self.nodes.remove(path)?;
+		Some(node)
 	}
 }
 
