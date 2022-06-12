@@ -13,7 +13,7 @@ impl<T> Registry<T> {
 			.ok_or_else(|| anyhow!("Registry has been poisoned"))?
 			.insert(t))
 	}
-	pub fn iterate<F: FnOnce(Iter<'_, T>)>(&self, index: usize, closure: F) -> Result<()> {
+	pub fn iterate<F: FnOnce(Iter<'_, T>)>(&self, closure: F) -> Result<()> {
 		closure(
 			self.0
 				.read()
