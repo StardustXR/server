@@ -29,29 +29,23 @@ pub trait FieldTrait {
 		p - (self.local_normal(p, r) * self.local_distance(p))
 	}
 
-	fn distance(&self, local_space: &Spatial, reference_space: &Spatial, p: Vec3A) -> f32 {
+	fn distance(&self, reference_space: &Spatial, p: Vec3A) -> f32 {
 		let reference_to_local_space =
-			Spatial::space_to_space_matrix(Some(reference_space), Some(local_space));
+			Spatial::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
 		let local_p = reference_to_local_space.transform_point3a(p);
 		self.local_distance(local_p)
 	}
-	fn normal(&self, local_space: &Spatial, reference_space: &Spatial, p: Vec3A, r: f32) -> Vec3A {
+	fn normal(&self, reference_space: &Spatial, p: Vec3A, r: f32) -> Vec3A {
 		let reference_to_local_space =
-			Spatial::space_to_space_matrix(Some(reference_space), Some(local_space));
+			Spatial::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
 		let local_p = reference_to_local_space.transform_point3a(p);
 		reference_to_local_space
 			.inverse()
 			.transform_vector3a(self.local_normal(local_p, r))
 	}
-	fn closest_point(
-		&self,
-		local_space: &Spatial,
-		reference_space: &Spatial,
-		p: Vec3A,
-		r: f32,
-	) -> Vec3A {
+	fn closest_point(&self, reference_space: &Spatial, p: Vec3A, r: f32) -> Vec3A {
 		let reference_to_local_space =
-			Spatial::space_to_space_matrix(Some(reference_space), Some(local_space));
+			Spatial::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
 		let local_p = reference_to_local_space.transform_point3a(p);
 		reference_to_local_space
 			.inverse()
@@ -80,8 +74,7 @@ pub trait FieldTrait {
 					.field
 					.as_ref()
 					.ok_or_else(|| anyhow!("Node does not have a field!"))?;
-				let spatial = field.spatial_ref();
-				let distance = field.distance(spatial, reference_space.as_ref(), point.into());
+				let distance = field.distance(reference_space.as_ref(), point.into());
 				Ok(FlexBuffable::from(distance).build_singleton())
 			});
 		node.borrow_mut()
@@ -105,9 +98,7 @@ pub trait FieldTrait {
 					.field
 					.as_ref()
 					.ok_or_else(|| anyhow!("Node does not have a field!"))?;
-				let spatial = field.spatial_ref();
-				let normal =
-					field.normal(spatial, reference_space.as_ref(), point.into(), 0.001_f32);
+				let normal = field.normal(reference_space.as_ref(), point.into(), 0.001_f32);
 				Ok(FlexBuffable::from(mint::Vector3::from(normal)).build_singleton())
 			});
 		node.borrow_mut()
@@ -131,9 +122,8 @@ pub trait FieldTrait {
 					.field
 					.as_ref()
 					.ok_or_else(|| anyhow!("Node does not have a field!"))?;
-				let spatial = field.spatial_ref();
 				let closest_point =
-					field.closest_point(spatial, reference_space.as_ref(), point.into(), 0.001_f32);
+					field.closest_point(reference_space.as_ref(), point.into(), 0.001_f32);
 				Ok(FlexBuffable::from(mint::Vector3::from(closest_point)).build_singleton())
 			});
 	}
