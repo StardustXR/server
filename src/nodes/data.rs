@@ -27,6 +27,7 @@ impl PulseSender {
 			.upgrade()
 			.and_then(|event_loop| event_loop.pulse_senders.add(sender.clone()).ok());
 		*sender.registry_idx.write().unwrap() = idx;
+		node.borrow_mut().pulse_sender = Some(sender);
 		Ok(())
 	}
 }

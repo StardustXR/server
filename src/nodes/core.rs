@@ -1,8 +1,10 @@
+use super::data::PulseSender;
 use super::field::Field;
+use super::spatial::Spatial;
 use crate::core::client::Client;
-use crate::nodes::spatial::Spatial;
 use anyhow::{anyhow, Result};
 use std::rc::{Rc, Weak};
+use std::sync::Arc;
 use std::{collections::HashMap, vec::Vec};
 
 pub type Signal = fn(&Node, Rc<Client>, &[u8]) -> Result<()>;
@@ -18,6 +20,7 @@ pub struct Node<'a> {
 
 	pub spatial: Option<Rc<Spatial>>,
 	pub field: Option<Rc<Field>>,
+	pub pulse_sender: Option<Arc<PulseSender>>,
 }
 
 impl<'a> Node<'a> {
@@ -45,8 +48,10 @@ impl<'a> Node<'a> {
 			local_signals: HashMap::new(),
 			local_methods: HashMap::new(),
 			destroyable,
+
 			spatial: None,
 			field: None,
+			pulse_sender: None,
 		};
 		node.add_local_signal("destroy", Node::destroy_flex);
 		node
