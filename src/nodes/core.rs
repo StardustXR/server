@@ -2,7 +2,8 @@ use super::data::PulseSender;
 use super::field::Field;
 use super::spatial::Spatial;
 use crate::core::client::Client;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
+use libstardustxr::scenegraph::ScenegraphError;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::{collections::HashMap, vec::Vec};
@@ -81,24 +82,28 @@ impl<'a> Node<'a> {
 		calling_client: Rc<Client>,
 		method: &str,
 		data: &[u8],
-	) -> Result<()> {
+	) -> Result<(), ScenegraphError> {
 		let signal = self
 			.local_signals
 			.get(method)
-			.ok_or_else(|| anyhow!("Signal {} not found", method))?;
-		signal(self, calling_client, data)
+			.ok_or(ScenegraphError::SignalNotFound)?;
+		signal(self, calling_client, data).map_err(|err| ScenegraphError::SignalError {
+			error: format!("{}", err),
+		})
 	}
 	pub fn execute_local_method(
 		&self,
 		calling_client: Rc<Client>,
 		method: &str,
 		data: &[u8],
-	) -> Result<Vec<u8>> {
+	) -> Result<Vec<u8>, ScenegraphError> {
 		let method = self
 			.local_methods
 			.get(method)
-			.ok_or_else(|| anyhow!("Method {} not found", method))?;
-		method(self, calling_client, data)
+			.ok_or(ScenegraphError::MethodNotFound)?;
+		method(self, calling_client, data).map_err(|err| ScenegraphError::MethodError {
+			error: format!("{}", err),
+		})
 	}
 	// pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
 	// 	self.get_client()

@@ -48,7 +48,6 @@ impl<'a> scenegraph::Scenegraph for Scenegraph<'a> {
 			.ok_or(ScenegraphError::NodeNotFound)?
 			.borrow()
 			.send_local_signal(self.get_client(), method, data)
-			.map_err(|_| ScenegraphError::SignalNotFound)
 	}
 	fn execute_method(
 		&self,
@@ -60,6 +59,5 @@ impl<'a> scenegraph::Scenegraph for Scenegraph<'a> {
 			.ok_or(ScenegraphError::NodeNotFound)?
 			.borrow()
 			.execute_local_method(self.get_client(), method, data)
-			.map_err(|_| ScenegraphError::MethodNotFound)
 	}
 }
