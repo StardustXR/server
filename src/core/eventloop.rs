@@ -10,10 +10,15 @@ use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 use std::thread::{self, JoinHandle};
 
+use super::registry::Registry;
+use crate::nodes::data::PulseSender;
+
 pub struct EventLoop {
 	pub socket_path: String,
 	join_handle: RwLock<Option<JoinHandle<Result<()>>>>,
 	stop_write: pipe::Sender,
+
+	pub pulse_senders: Registry<Arc<PulseSender>>,
 }
 
 impl EventLoop {
@@ -26,6 +31,8 @@ impl EventLoop {
 			socket_path,
 			join_handle: RwLock::new(None),
 			stop_write: sender,
+
+			pulse_senders: Default::default(),
 		});
 		let event_loop_arc_captured = event_loop_arc.clone();
 		let join_handle = thread::Builder::new()
