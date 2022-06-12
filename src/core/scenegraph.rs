@@ -1,14 +1,15 @@
 use crate::core::client::Client;
 use crate::nodes::core::Node;
 use anyhow::Result;
-use core::hash::BuildHasherDefault;
-use dashmap::DashMap;
 use libstardustxr::scenegraph;
 use libstardustxr::scenegraph::ScenegraphError;
 use rccell::RcCell;
-use rustc_hash::FxHasher;
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
+
+use core::hash::BuildHasherDefault;
+use dashmap::DashMap;
+use rustc_hash::FxHasher;
 
 #[derive(Default)]
 pub struct Scenegraph<'a> {

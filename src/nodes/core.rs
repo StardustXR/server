@@ -8,6 +8,9 @@ use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::{collections::HashMap, vec::Vec};
 
+use core::hash::BuildHasherDefault;
+use rustc_hash::FxHasher;
+
 pub type Signal = fn(&Node, Rc<Client>, &[u8]) -> Result<()>;
 pub type Method = fn(&Node, Rc<Client>, &[u8]) -> Result<Vec<u8>>;
 
@@ -15,8 +18,8 @@ pub struct Node<'a> {
 	client: Weak<Client<'a>>,
 	path: String,
 	// trailing_slash_pos: usize,
-	local_signals: HashMap<String, Signal>,
-	local_methods: HashMap<String, Method>,
+	local_signals: HashMap<String, Signal, BuildHasherDefault<FxHasher>>,
+	local_methods: HashMap<String, Method, BuildHasherDefault<FxHasher>>,
 	destroyable: bool,
 
 	pub spatial: Option<Rc<Spatial>>,
@@ -46,8 +49,8 @@ impl<'a> Node<'a> {
 			client,
 			path,
 			// trailing_slash_pos: parent.len(),
-			local_signals: HashMap::new(),
-			local_methods: HashMap::new(),
+			local_signals: Default::default(),
+			local_methods: Default::default(),
 			destroyable,
 
 			spatial: None,
