@@ -1,22 +1,18 @@
-use super::eventloop::EventLoop;
 use super::scenegraph::Scenegraph;
 use crate::nodes::field;
 use crate::nodes::spatial;
 use libstardustxr::messenger::Messenger;
 use mio::net::UnixStream;
 use std::rc::Rc;
-use std::sync::{Arc, Weak};
 
 pub struct Client<'a> {
-	event_loop: Weak<EventLoop>,
 	messenger: Messenger<'a>,
 	scenegraph: Scenegraph<'a>,
 }
 
 impl<'a> Client<'a> {
-	pub fn from_connection(connection: UnixStream, event_loop_ref: &Arc<EventLoop>) -> Rc<Self> {
+	pub fn from_connection(connection: UnixStream) -> Rc<Self> {
 		let client = Rc::new(Client {
-			event_loop: Arc::downgrade(event_loop_ref),
 			messenger: Messenger::new(connection),
 			scenegraph: Default::default(),
 		});
@@ -29,9 +25,6 @@ impl<'a> Client<'a> {
 		self.messenger.dispatch(&self.scenegraph)
 	}
 
-	pub fn get_event_loop(&self) -> Arc<EventLoop> {
-		self.event_loop.upgrade().unwrap()
-	}
 	// pub fn get_messenger(&self) -> &Messenger<'a> {
 	// 	&self.messenger
 	// }

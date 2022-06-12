@@ -14,6 +14,7 @@ glam = {version = "0.20.5", features = ["mint"]}
 lazy_static = "1.4.0"
 mint = "0.5.9"
 mio = {version = "0.8.3", features = ["net", "os-poll", "os-ext"]}
+parking_lot = "0.12.1"
 rccell = "0.1.3"
 slab = "0.4.6"
 thiserror = "1.0.31"
