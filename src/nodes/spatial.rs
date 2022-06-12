@@ -1,6 +1,6 @@
 use super::core::Node;
 use crate::core::client::Client;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, ensure, Result};
 use glam::{Mat4, Quat, Vec3};
 use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::push_to_vec;
@@ -21,9 +21,10 @@ impl Spatial {
 		parent: Option<Rc<Spatial>>,
 		transform: Mat4,
 	) -> Result<Rc<Spatial>> {
-		if node.borrow_mut().spatial.is_none() {
-			bail!("Node already has a Spatial aspect!");
-		}
+		ensure!(
+			node.borrow_mut().spatial.is_none(),
+			"Node already has a Spatial aspect!"
+		);
 		let spatial = Spatial {
 			// node: node.downgrade(),
 			parent: RefCell::new(parent),
