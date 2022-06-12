@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use slab::{Iter, Slab};
 use std::sync::RwLock;
 
-struct Registry<T>(RwLock<Slab<T>>);
+pub struct Registry<T>(RwLock<Slab<T>>);
 
 impl<T> Registry<T> {
 	pub fn add(&self, t: T) -> Result<usize> {
