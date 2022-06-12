@@ -1,4 +1,4 @@
-use super::data::PulseSender;
+use super::data::{PulseReceiver, PulseSender};
 use super::field::Field;
 use super::spatial::Spatial;
 use crate::core::client::Client;
@@ -9,12 +9,14 @@ use std::sync::Arc;
 use std::{collections::HashMap, vec::Vec};
 
 use core::hash::BuildHasherDefault;
+use nanoid::nanoid;
 use rustc_hash::FxHasher;
 
 pub type Signal = fn(&Node, Rc<Client>, &[u8]) -> Result<()>;
 pub type Method = fn(&Node, Rc<Client>, &[u8]) -> Result<Vec<u8>>;
 
 pub struct Node<'a> {
+	uid: String,
 	client: Weak<Client<'a>>,
 	path: String,
 	// trailing_slash_pos: usize,
@@ -46,6 +48,7 @@ impl<'a> Node<'a> {
 		path.push('/');
 		path.push_str(name);
 		let mut node = Node {
+			uid: nanoid!(),
 			client,
 			path,
 			// trailing_slash_pos: parent.len(),
