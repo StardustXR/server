@@ -23,7 +23,7 @@ impl Spatial {
 	) -> Result<Rc<Spatial>> {
 		ensure!(
 			node.borrow_mut().spatial.is_none(),
-			"Node already has a Spatial aspect!"
+			"Internal: Node already has a Spatial aspect!"
 		);
 		let spatial = Spatial {
 			// node: node.downgrade(),

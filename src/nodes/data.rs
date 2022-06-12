@@ -14,7 +14,7 @@ impl PulseSender {
 	pub fn add_to(node: &RcCell<Node>) -> Result<()> {
 		ensure!(
 			node.borrow().spatial.is_some(),
-			"Node does not have a spatial attached!"
+			"Internal: Node does not have a spatial attached!"
 		);
 
 		let sender = PulseSender {};

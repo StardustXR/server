@@ -157,11 +157,11 @@ impl BoxField {
 	pub fn add_to(node: &RcCell<Node>, size: Vec3) -> Result<()> {
 		ensure!(
 			node.borrow().spatial.is_some(),
-			"Node does not have a spatial attached!"
+			"Internal: Node does not have a spatial attached!"
 		);
 		ensure!(
 			node.borrow().field.is_none(),
-			"Node already has a field attached!"
+			"Internal: Node already has a field attached!"
 		);
 		let box_field = BoxField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
@@ -218,11 +218,11 @@ impl CylinderField {
 	pub fn add_to(node: &RcCell<Node>, length: f32, radius: f32) -> Result<()> {
 		ensure!(
 			node.borrow().spatial.is_some(),
-			"Node does not have a spatial attached!"
+			"Internal: Node does not have a spatial attached!"
 		);
 		ensure!(
 			node.borrow().field.is_none(),
-			"Node already has a field attached!"
+			"Internal: Node already has a field attached!"
 		);
 		let cylinder_field = CylinderField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
@@ -285,11 +285,11 @@ impl SphereField {
 	pub fn add_to(node: &RcCell<Node>, radius: f32) -> Result<()> {
 		ensure!(
 			node.borrow().spatial.is_some(),
-			"Node does not have a spatial attached!"
+			"Internal: Node does not have a spatial attached!"
 		);
 		ensure!(
 			node.borrow().field.is_none(),
-			"Node already has a field attached!"
+			"Internal: Node already has a field attached!"
 		);
 		let sphere_field = SphereField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
