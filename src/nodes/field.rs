@@ -2,7 +2,7 @@ use super::core::Node;
 use super::spatial::Spatial;
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
-use glam::{vec2, vec3, vec3a, Mat4, Vec3, Vec3A};
+use glam::{swizzles::*, vec2, vec3, vec3a, Mat4, Vec3, Vec3A};
 use libstardustxr::fusion::flex::FlexBuffable;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use rccell::RcCell;
@@ -143,6 +143,7 @@ pub trait FieldTrait {
 
 pub enum Field {
 	Box(BoxField),
+	Cylinder(CylinderField),
 	Sphere(SphereField),
 }
 
@@ -151,6 +152,7 @@ impl Deref for Field {
 	fn deref(&self) -> &Self::Target {
 		match self {
 			Field::Box(field) => field,
+			Field::Cylinder(field) => field,
 			Field::Sphere(field) => field,
 		}
 	}
@@ -206,6 +208,70 @@ impl FieldTrait for BoxField {
 		);
 		let v = vec3a(q.x.max(0_f32), q.y.max(0_f32), q.z.max(0_f32));
 		return v.length() + q.x.max(q.y.max(q.z)).min(0_f32);
+	}
+	fn spatial_ref(&self) -> &Spatial {
+		self.space.as_ref()
+	}
+}
+
+pub struct CylinderField {
+	space: Rc<Spatial>,
+	length: Cell<f32>,
+	radius: Cell<f32>,
+}
+
+impl CylinderField {
+	pub fn add_to(node: &RcCell<Node>, length: f32, radius: f32) -> Result<()> {
+		ensure!(
+			node.borrow().spatial.is_some(),
+			"Node does not have a spatial attached!"
+		);
+		let cylinder_field = CylinderField {
+			space: node.borrow().spatial.as_ref().unwrap().clone(),
+			length: Cell::new(length),
+			radius: Cell::new(radius),
+		};
+		cylinder_field.add_field_methods(&node);
+		node.borrow_mut()
+			.add_local_signal("setSize", CylinderField::set_size_flex);
+		node.borrow_mut().field = Some(Rc::new(Field::Cylinder(cylinder_field)));
+		Ok(())
+	}
+
+	pub fn set_size(&self, length: f32, radius: f32) {
+		self.length.set(length);
+		self.radius.set(radius);
+	}
+
+	pub fn set_size_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+		let root = flexbuffers::Reader::get_root(data)?;
+		let flex_vec = root.get_vector()?;
+		let length = flex_vec.idx(0).as_f32();
+		let radius = flex_vec.idx(1).as_f32();
+		let field = node
+			.field
+			.as_ref()
+			.ok_or_else(|| anyhow!("Node does not have a field"))?;
+		if let Field::Cylinder(cylinder_field) = field.as_ref() {
+			cylinder_field.set_size(length, radius);
+		}
+		Ok(())
+	}
+}
+
+impl FieldTrait for CylinderField {
+	fn local_distance(&self, p: Vec3A) -> f32 {
+		let d = vec2(
+			p.xy().length().abs() - self.radius.get(),
+			p.z.abs() - (self.length.get() * 0.5),
+		);
+
+		d.x.max(d.y).min(0_f32)
+			+ (if d.x >= 0_f32 && d.y >= 0_f32 {
+				d.length()
+			} else {
+				0_f32
+			})
 	}
 	fn spatial_ref(&self) -> &Spatial {
 		self.space.as_ref()
@@ -269,6 +335,7 @@ impl FieldTrait for SphereField {
 pub fn create_interface(client: Rc<Client>) {
 	let mut node = Node::create(Rc::downgrade(&client), "", "field", false);
 	node.add_local_signal("createBoxField", create_box_field_flex);
+	node.add_local_signal("createCylinderField", create_cylinder_field_flex);
 	node.add_local_signal("createSphereField", create_sphere_field_flex);
 	client.get_scenegraph().add_node(node);
 }
@@ -298,6 +365,39 @@ pub fn create_box_field_flex(_node: &Node, calling_client: Rc<Client>, data: &[u
 	let node_rc = calling_client.get_scenegraph().add_node(node);
 	Spatial::add_to(&node_rc, parent, transform)?;
 	BoxField::add_to(&node_rc, size.into())?;
+	Ok(())
+}
+
+pub fn create_cylinder_field_flex(
+	_node: &Node,
+	calling_client: Rc<Client>,
+	data: &[u8],
+) -> Result<()> {
+	let root = flexbuffers::Reader::get_root(data)?;
+	let flex_vec = root.get_vector()?;
+	let node = Node::create(
+		Rc::downgrade(&calling_client),
+		"/field",
+		flex_vec.idx(0).get_str()?,
+		true,
+	);
+	let parent = calling_client
+		.get_scenegraph()
+		.get_node(flex_vec.idx(1).as_str())
+		.and_then(|node| node.borrow().spatial.clone());
+	let transform = Mat4::from_rotation_translation(
+		flex_to_quat!(flex_vec.idx(3))
+			.ok_or_else(|| anyhow!("Rotation not found"))?
+			.into(),
+		flex_to_vec3!(flex_vec.idx(2))
+			.ok_or_else(|| anyhow!("Position not found"))?
+			.into(),
+	);
+	let length = flex_vec.idx(0).as_f32();
+	let radius = flex_vec.idx(1).as_f32();
+	let node_rc = calling_client.get_scenegraph().add_node(node);
+	Spatial::add_to(&node_rc, parent, transform)?;
+	CylinderField::add_to(&node_rc, length, radius)?;
 	Ok(())
 }
 
