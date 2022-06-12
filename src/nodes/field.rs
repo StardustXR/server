@@ -169,6 +169,10 @@ impl BoxField {
 			node.borrow().spatial.is_some(),
 			"Node does not have a spatial attached!"
 		);
+		ensure!(
+			node.borrow().field.is_none(),
+			"Node already has a field attached!"
+		);
 		let box_field = BoxField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
 			size: Cell::new(size),
@@ -225,6 +229,10 @@ impl CylinderField {
 		ensure!(
 			node.borrow().spatial.is_some(),
 			"Node does not have a spatial attached!"
+		);
+		ensure!(
+			node.borrow().field.is_none(),
+			"Node already has a field attached!"
 		);
 		let cylinder_field = CylinderField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
@@ -288,6 +296,10 @@ impl SphereField {
 		ensure!(
 			node.borrow().spatial.is_some(),
 			"Node does not have a spatial attached!"
+		);
+		ensure!(
+			node.borrow().field.is_none(),
+			"Node already has a field attached!"
 		);
 		let sphere_field = SphereField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
