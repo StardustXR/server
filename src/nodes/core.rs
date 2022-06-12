@@ -87,9 +87,7 @@ impl<'a> Node<'a> {
 			.local_signals
 			.get(method)
 			.ok_or(ScenegraphError::SignalNotFound)?;
-		signal(self, calling_client, data).map_err(|err| ScenegraphError::SignalError {
-			error: format!("{}", err),
-		})
+		signal(self, calling_client, data).map_err(|error| ScenegraphError::SignalError { error })
 	}
 	pub fn execute_local_method(
 		&self,
@@ -101,9 +99,7 @@ impl<'a> Node<'a> {
 			.local_methods
 			.get(method)
 			.ok_or(ScenegraphError::MethodNotFound)?;
-		method(self, calling_client, data).map_err(|err| ScenegraphError::MethodError {
-			error: format!("{}", err),
-		})
+		method(self, calling_client, data).map_err(|error| ScenegraphError::MethodError { error })
 	}
 	// pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
 	// 	self.get_client()
