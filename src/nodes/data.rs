@@ -1,12 +1,16 @@
 use super::core::Node;
-use crate::core::eventloop::EventLoop;
+use crate::core::registry::{Registry, RegistryEntry};
 use anyhow::{ensure, Result};
+use lazy_static::lazy_static;
 use rccell::RcCell;
-use std::sync::{Arc, RwLock, Weak};
+use std::sync::RwLock;
+
+lazy_static! {
+	static ref PULSE_SENDER_REGISTRY: Registry<PulseSender> = Default::default();
+}
 
 pub struct PulseSender {
-	event_loop: Weak<EventLoop>,
-	registry_idx: RwLock<Option<usize>>,
+	registry_idx: RwLock<usize>,
 }
 
 impl PulseSender {
@@ -16,32 +20,23 @@ impl PulseSender {
 			"Node does not have a spatial attached!"
 		);
 
-		let sender = Arc::new(PulseSender {
-			event_loop: node.borrow().get_client().map_or(Weak::new(), |client| {
-				Arc::downgrade(&client.get_event_loop())
-			}),
-			registry_idx: RwLock::new(None),
-		});
-		let idx = sender
-			.event_loop
-			.upgrade()
-			.and_then(|event_loop| event_loop.pulse_senders.add(sender.clone()).ok());
-		*sender.registry_idx.write().unwrap() = idx;
+		let sender = PulseSender {
+			registry_idx: Default::default(),
+		};
+		let sender = PULSE_SENDER_REGISTRY.add(sender)?;
 		node.borrow_mut().pulse_sender = Some(sender);
 		Ok(())
 	}
 }
 
+impl RegistryEntry for PulseSender {
+	fn store_idx(&self, store_idx: usize) {
+		*self.registry_idx.write().unwrap() = store_idx;
+	}
+}
+
 impl Drop for PulseSender {
 	fn drop(&mut self) {
-		let event_loop = self.event_loop.upgrade();
-		let idx = self
-			.registry_idx
-			.write()
-			.ok()
-			.and_then(|registry_idx| registry_idx.clone());
-		event_loop
-			.zip(idx)
-			.and_then(|(event_loop, idx)| event_loop.pulse_senders.remove(idx).ok());
+		let _ = PULSE_SENDER_REGISTRY.remove(*self.registry_idx.read().unwrap());
 	}
 }

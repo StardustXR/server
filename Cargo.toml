@@ -11,6 +11,7 @@ anyhow = "1.0.57"
 ctrlc = "3.2.2"
 flexbuffers = "2.0.0"
 glam = {version = "0.20.5", features = ["mint"]}
+lazy_static = "1.4.0"
 mint = "0.5.9"
 mio = {version = "0.8.3", features = ["net", "os-poll", "os-ext"]}
 rccell = "0.1.3"
