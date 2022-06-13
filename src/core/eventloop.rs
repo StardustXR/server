@@ -61,12 +61,14 @@ impl EventLoop {
 							token => loop {
 								match clients.get(token.0).unwrap().as_ref().unwrap().dispatch() {
 									Ok(_) => continue,
-									Err(e) => {
-										if e.kind() == std::io::ErrorKind::WouldBlock {
+									Err(e) => match e.kind() {
+										std::io::ErrorKind::UnexpectedEof => {
+											clients.remove(token.0);
 											break;
 										}
-										return Err(e.into());
-									}
+										std::io::ErrorKind::WouldBlock => break,
+										_ => return Err(e.into()),
+									},
 								}
 							},
 						}
@@ -86,11 +88,8 @@ impl Drop for EventLoop {
 	fn drop(&mut self) {
 		let buf: [u8; 1] = [1; 1];
 		let _ = self.stop_write.write(buf.as_slice());
-		let _ = self
-			.join_handle
-			.take()
-			.and_then(|handle| handle.join().ok())
-			.as_ref()
-			.expect("Couldn't join the event loop thread at drop");
+		if let Some(handle) = self.join_handle.take() {
+			handle.join().unwrap().unwrap();
+		}
 	}
 }
