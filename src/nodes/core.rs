@@ -2,7 +2,7 @@ use super::data::{PulseReceiver, PulseSender};
 use super::field::Field;
 use super::spatial::Spatial;
 use crate::core::client::Client;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use libstardustxr::scenegraph::ScenegraphError;
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
@@ -107,13 +107,13 @@ impl<'a> Node<'a> {
 			.ok_or(ScenegraphError::MethodNotFound)?;
 		method(self, calling_client, data).map_err(|error| ScenegraphError::MethodError { error })
 	}
-	// pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
-	// 	self.get_client()
-	// 		.ok_or_else(|| anyhow!("Node has no client, can't send remote signal!"))?
-	// 		.get_messenger()
-	// 		.send_remote_signal(self.path.as_str(), method, data)
-	// 		.map_err(|_| anyhow!("Unable to write in messenger"))
-	// }
+	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
+		self.get_client()
+			.ok_or_else(|| anyhow!("Node has no client, can't send remote signal!"))?
+			.get_messenger()
+			.send_remote_signal(self.path.as_str(), method, data)
+			.map_err(|_| anyhow!("Unable to write in messenger"))
+	}
 	// pub fn execute_remote_method(
 	// 	&self,
 	// 	method: &str,
