@@ -25,9 +25,9 @@ impl<'a> Client<'a> {
 		self.messenger.dispatch(&self.scenegraph)
 	}
 
-	// pub fn get_messenger(&self) -> &Messenger<'a> {
-	// 	&self.messenger
-	// }
+	pub fn get_messenger(&self) -> &Messenger<'a> {
+		&self.messenger
+	}
 	pub fn get_scenegraph(&self) -> &Scenegraph<'a> {
 		&self.scenegraph
 	}
