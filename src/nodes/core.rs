@@ -18,7 +18,7 @@ pub type Method = fn(&Node, Rc<Client>, &[u8]) -> Result<Vec<u8>>;
 
 pub struct Node {
 	uid: String,
-	client: Weak<Client>,
+	pub(crate) client: Weak<Client>,
 	path: String,
 	// trailing_slash_pos: usize,
 	local_signals: HashMap<String, Signal, BuildHasherDefault<FxHasher>>,
@@ -45,13 +45,13 @@ impl Node {
 		self.destroyable
 	}
 
-	pub fn create(client: Weak<Client>, parent: &str, name: &str, destroyable: bool) -> Self {
+	pub fn create(parent: &str, name: &str, destroyable: bool) -> Self {
 		let mut path = parent.to_string();
 		path.push('/');
 		path.push_str(name);
 		let mut node = Node {
 			uid: nanoid!(),
-			client,
+			client: Weak::new(),
 			path,
 			// trailing_slash_pos: parent.len(),
 			local_signals: Default::default(),

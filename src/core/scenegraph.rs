@@ -27,6 +27,8 @@ impl Scenegraph {
 	}
 
 	pub fn add_node(&self, node: Node) -> RcCell<Node> {
+		let mut node = node;
+		node.client = Rc::downgrade(&self.get_client());
 		let path = node.get_path().to_string();
 		let node_rc = RcCell::new(node);
 		self.nodes.insert(path, node_rc.clone());

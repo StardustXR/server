@@ -7,7 +7,6 @@ use libstardustxr::push_to_vec;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::RwLock;
 use rccell::RcCell;
-use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -158,7 +157,7 @@ impl Spatial {
 }
 
 pub fn create_interface(client: Rc<Client>) {
-	let mut node = Node::create(Rc::downgrade(&client), "", "spatial", false);
+	let mut node = Node::create("", "spatial", false);
 	node.add_local_signal("createSpatial", create_spatial_flex);
 	client.get_scenegraph().add_node(node);
 }
@@ -166,12 +165,7 @@ pub fn create_interface(client: Rc<Client>) {
 pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
-	let spatial = Node::create(
-		Rc::downgrade(&calling_client),
-		"/spatial/spatial",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
+	let spatial = Node::create("/spatial/spatial", flex_vec.idx(0).get_str()?, true);
 	let parent = calling_client
 		.get_scenegraph()
 		.get_node(flex_vec.idx(1).as_str())

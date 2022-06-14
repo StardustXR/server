@@ -336,7 +336,7 @@ impl FieldTrait for SphereField {
 }
 
 pub fn create_interface(client: Rc<Client>) {
-	let mut node = Node::create(Rc::downgrade(&client), "", "field", false);
+	let mut node = Node::create("", "field", false);
 	node.add_local_signal("createBoxField", create_box_field_flex);
 	node.add_local_signal("createCylinderField", create_cylinder_field_flex);
 	node.add_local_signal("createSphereField", create_sphere_field_flex);
@@ -346,12 +346,7 @@ pub fn create_interface(client: Rc<Client>) {
 pub fn create_box_field_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
-	let node = Node::create(
-		Rc::downgrade(&calling_client),
-		"/field",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
+	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
 	let parent = calling_client
 		.get_scenegraph()
 		.get_node(flex_vec.idx(1).as_str())
@@ -378,12 +373,7 @@ pub fn create_cylinder_field_flex(
 ) -> Result<()> {
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
-	let node = Node::create(
-		Rc::downgrade(&calling_client),
-		"/field",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
+	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
 	let parent = calling_client
 		.get_scenegraph()
 		.get_node(flex_vec.idx(1).as_str())
@@ -411,12 +401,7 @@ pub fn create_sphere_field_flex(
 ) -> Result<()> {
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
-	let node = Node::create(
-		Rc::downgrade(&calling_client),
-		"/field",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
+	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
 	let parent = calling_client
 		.get_scenegraph()
 		.get_node(flex_vec.idx(1).as_str())
