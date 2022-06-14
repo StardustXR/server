@@ -6,24 +6,23 @@ use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::push_to_vec;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::RwLock;
-use rccell::RcCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
 pub struct Spatial {
-	// node: WeakCell<Node>,
+	// node: Weak<Node>,
 	parent: RwLock<Option<Arc<Spatial>>>,
 	transform: RwLock<Mat4>,
 }
 
 impl Spatial {
 	pub fn add_to(
-		node: &RcCell<Node>,
+		node: &Arc<Node>,
 		parent: Option<Arc<Spatial>>,
 		transform: Mat4,
 	) -> Result<Arc<Spatial>> {
 		ensure!(
-			node.borrow_mut().spatial.is_none(),
+			node.spatial.read().is_none(),
 			"Internal: Node already has a Spatial aspect!"
 		);
 		let spatial = Spatial {
@@ -31,12 +30,10 @@ impl Spatial {
 			parent: RwLock::new(parent),
 			transform: RwLock::new(transform),
 		};
-		node.borrow_mut()
-			.add_local_method("getTransform", Spatial::get_transform_flex);
-		node.borrow_mut()
-			.add_local_signal("setTransform", Spatial::set_transform_flex);
+		node.add_local_method("getTransform", Spatial::get_transform_flex);
+		node.add_local_signal("setTransform", Spatial::set_transform_flex);
 		let spatial_arc = Arc::new(spatial);
-		node.borrow_mut().spatial = Some(spatial_arc.clone());
+		*node.spatial.write() = Some(spatial_arc.clone());
 		Ok(spatial_arc)
 	}
 
@@ -100,12 +97,13 @@ impl Spatial {
 		let root = flexbuffers::Reader::get_root(data)?;
 		let this_spatial = node
 			.spatial
+			.read()
 			.clone()
 			.ok_or_else(|| anyhow!("Node doesn't have a spatial?"))?;
 		let relative_spatial = calling_client
-			.get_scenegraph()
+			.scenegraph
 			.get_node(root.as_str())
-			.and_then(|node| node.borrow().spatial.clone())
+			.and_then(|node| node.spatial.read().clone())
 			.ok_or_else(|| anyhow!("Space not found"))?;
 
 		let (scale, rotation, position) = Spatial::space_to_space_matrix(
@@ -126,40 +124,40 @@ impl Spatial {
 	pub fn set_transform_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
 		let root = flexbuffers::Reader::get_root(data)?;
 		let flex_vec = root.get_vector()?;
-		let spatial = node
-			.spatial
-			.as_ref()
-			.ok_or_else(|| anyhow!("Node somehow is not spatial"))?;
 		let reference_space_path = flex_vec.idx(0).as_str();
 		let reference_space_transform = if reference_space_path.is_empty() {
 			None
 		} else {
 			Some(
 				calling_client
-					.get_scenegraph()
+					.scenegraph
 					.get_node(reference_space_path)
 					.ok_or_else(|| anyhow!("Other spatial node not found"))?
-					.borrow()
 					.spatial
+					.read()
 					.as_ref()
 					.ok_or_else(|| anyhow!("Node is not a Spatial!"))?
 					.clone(),
 			)
 		};
-		spatial.set_local_transform_components(
-			reference_space_transform.as_deref(),
-			flex_to_vec3!(flex_vec.idx(1)).map(|v| v.into()),
-			flex_to_quat!(flex_vec.idx(2)).map(|v| v.into()),
-			flex_to_vec3!(flex_vec.idx(3)).map(|v| v.into()),
-		);
+		node.spatial
+			.read()
+			.as_ref()
+			.unwrap()
+			.set_local_transform_components(
+				reference_space_transform.as_deref(),
+				flex_to_vec3!(flex_vec.idx(1)).map(|v| v.into()),
+				flex_to_quat!(flex_vec.idx(2)).map(|v| v.into()),
+				flex_to_vec3!(flex_vec.idx(3)).map(|v| v.into()),
+			);
 		Ok(())
 	}
 }
 
 pub fn create_interface(client: Rc<Client>) {
-	let mut node = Node::create("", "spatial", false);
+	let node = Node::create("", "spatial", false);
 	node.add_local_signal("createSpatial", create_spatial_flex);
-	client.get_scenegraph().add_node(node);
+	client.scenegraph.add_node(node);
 }
 
 pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
@@ -167,9 +165,9 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]
 	let flex_vec = root.get_vector()?;
 	let spatial = Node::create("/spatial/spatial", flex_vec.idx(0).get_str()?, true);
 	let parent = calling_client
-		.get_scenegraph()
+		.scenegraph
 		.get_node(flex_vec.idx(1).as_str())
-		.and_then(|node| node.borrow().spatial.clone());
+		.and_then(|node| node.spatial.read().clone());
 	let transform = Mat4::from_scale_rotation_translation(
 		flex_to_vec3!(flex_vec.idx(4))
 			.ok_or_else(|| anyhow!("Scale not found"))?
@@ -181,7 +179,7 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]
 			.ok_or_else(|| anyhow!("Position not found"))?
 			.into(),
 	);
-	let spatial_rc = calling_client.get_scenegraph().add_node(spatial);
+	let spatial_rc = calling_client.scenegraph.add_node(spatial);
 	Spatial::add_to(&spatial_rc, parent, transform)?;
 	Ok(())
 }

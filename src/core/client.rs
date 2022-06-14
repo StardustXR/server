@@ -6,8 +6,8 @@ use mio::net::UnixStream;
 use std::rc::Rc;
 
 pub struct Client {
-	messenger: Messenger,
-	scenegraph: Scenegraph,
+	pub messenger: Messenger,
+	pub scenegraph: Scenegraph,
 }
 
 impl Client {
@@ -23,12 +23,5 @@ impl Client {
 	}
 	pub fn dispatch(&self) -> Result<(), std::io::Error> {
 		self.messenger.dispatch(&self.scenegraph)
-	}
-
-	pub fn get_messenger(&self) -> &Messenger {
-		&self.messenger
-	}
-	pub fn get_scenegraph(&self) -> &Scenegraph {
-		&self.scenegraph
 	}
 }
