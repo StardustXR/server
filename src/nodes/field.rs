@@ -5,10 +5,13 @@ use anyhow::{anyhow, ensure, Result};
 use glam::{swizzles::*, vec2, vec3, vec3a, Mat4, Vec3, Vec3A};
 use libstardustxr::fusion::flex::FlexBuffable;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
+use parking_lot::Mutex;
+use portable_atomic::AtomicF32;
 use rccell::RcCell;
-use std::cell::Cell;
 use std::ops::Deref;
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
 
 pub trait FieldTrait {
 	fn local_distance(&self, p: Vec3A) -> f32;
@@ -149,8 +152,8 @@ impl Deref for Field {
 }
 
 pub struct BoxField {
-	space: Rc<Spatial>,
-	size: Cell<Vec3>,
+	space: Arc<Spatial>,
+	size: Mutex<Vec3>,
 }
 
 impl BoxField {
@@ -165,17 +168,17 @@ impl BoxField {
 		);
 		let box_field = BoxField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
-			size: Cell::new(size),
+			size: Mutex::new(size),
 		};
 		box_field.add_field_methods(node);
 		node.borrow_mut()
 			.add_local_signal("setSize", BoxField::set_size_flex);
-		node.borrow_mut().field = Some(Rc::new(Field::Box(box_field)));
+		node.borrow_mut().field = Some(Arc::new(Field::Box(box_field)));
 		Ok(())
 	}
 
 	pub fn set_size(&self, size: Vec3) {
-		self.size.set(size);
+		*self.size.lock() = size;
 	}
 
 	pub fn set_size_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
@@ -194,7 +197,7 @@ impl BoxField {
 
 impl FieldTrait for BoxField {
 	fn local_distance(&self, p: Vec3A) -> f32 {
-		let size = self.size.get();
+		let size = self.size.lock();
 		let q = vec3(
 			p.x.abs() - (size.x * 0.5_f32),
 			p.y.abs() - (size.y * 0.5_f32),
@@ -209,9 +212,9 @@ impl FieldTrait for BoxField {
 }
 
 pub struct CylinderField {
-	space: Rc<Spatial>,
-	length: Cell<f32>,
-	radius: Cell<f32>,
+	space: Arc<Spatial>,
+	length: AtomicF32,
+	radius: AtomicF32,
 }
 
 impl CylinderField {
@@ -226,19 +229,19 @@ impl CylinderField {
 		);
 		let cylinder_field = CylinderField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
-			length: Cell::new(length),
-			radius: Cell::new(radius),
+			length: AtomicF32::new(length),
+			radius: AtomicF32::new(radius),
 		};
 		cylinder_field.add_field_methods(node);
 		node.borrow_mut()
 			.add_local_signal("setSize", CylinderField::set_size_flex);
-		node.borrow_mut().field = Some(Rc::new(Field::Cylinder(cylinder_field)));
+		node.borrow_mut().field = Some(Arc::new(Field::Cylinder(cylinder_field)));
 		Ok(())
 	}
 
 	pub fn set_size(&self, length: f32, radius: f32) {
-		self.length.set(length);
-		self.radius.set(radius);
+		self.length.store(length, Ordering::Relaxed);
+		self.radius.store(radius, Ordering::Relaxed);
 	}
 
 	pub fn set_size_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
@@ -259,10 +262,8 @@ impl CylinderField {
 
 impl FieldTrait for CylinderField {
 	fn local_distance(&self, p: Vec3A) -> f32 {
-		let d = vec2(
-			p.xy().length().abs() - self.radius.get(),
-			p.z.abs() - (self.length.get() * 0.5),
-		);
+		let radius = self.length.load(Ordering::Relaxed);
+		let d = vec2(p.xy().length().abs() - radius, p.z.abs() - (radius * 0.5));
 
 		d.x.max(d.y).min(0_f32)
 			+ (if d.x >= 0_f32 && d.y >= 0_f32 {
@@ -277,8 +278,8 @@ impl FieldTrait for CylinderField {
 }
 
 pub struct SphereField {
-	space: Rc<Spatial>,
-	radius: Cell<f32>,
+	space: Arc<Spatial>,
+	radius: AtomicF32,
 }
 
 impl SphereField {
@@ -293,17 +294,17 @@ impl SphereField {
 		);
 		let sphere_field = SphereField {
 			space: node.borrow().spatial.as_ref().unwrap().clone(),
-			radius: Cell::new(radius),
+			radius: AtomicF32::new(radius),
 		};
 		sphere_field.add_field_methods(node);
 		node.borrow_mut()
 			.add_local_signal("setRadius", SphereField::set_radius_flex);
-		node.borrow_mut().field = Some(Rc::new(Field::Sphere(sphere_field)));
+		node.borrow_mut().field = Some(Arc::new(Field::Sphere(sphere_field)));
 		Ok(())
 	}
 
 	pub fn set_radius(&self, radius: f32) {
-		self.radius.set(radius);
+		self.radius.store(radius, Ordering::Relaxed);
 	}
 
 	pub fn set_radius_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
@@ -321,13 +322,13 @@ impl SphereField {
 
 impl FieldTrait for SphereField {
 	fn local_distance(&self, p: Vec3A) -> f32 {
-		p.length() - self.radius.get()
+		p.length() - self.radius.load(Ordering::Relaxed)
 	}
 	fn local_normal(&self, p: Vec3A, _r: f32) -> Vec3A {
 		-p.normalize()
 	}
 	fn local_closest_point(&self, p: Vec3A, _r: f32) -> Vec3A {
-		p.normalize() * self.radius.get()
+		p.normalize() * self.radius.load(Ordering::Relaxed)
 	}
 	fn spatial_ref(&self) -> &Spatial {
 		self.space.as_ref()

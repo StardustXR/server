@@ -17,6 +17,7 @@ mint = "0.5.9"
 mio = {version = "0.8.3", features = ["net", "os-poll", "os-ext"]}
 nanoid = "0.4.0"
 parking_lot = "0.12.1"
+portable-atomic = {version = "0.3.0", features = ["float", "std"]}
 rccell = "0.1.3"
 rustc-hash = "1.1.0"
 slab = "0.4.6"

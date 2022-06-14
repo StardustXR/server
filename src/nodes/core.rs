@@ -26,8 +26,8 @@ pub struct Node<'a> {
 	destroyable: bool,
 
 	alias: Option<Alias<'a>>,
-	pub spatial: Option<Rc<Spatial>>,
-	pub field: Option<Rc<Field>>,
+	pub spatial: Option<Arc<Spatial>>,
+	pub field: Option<Arc<Field>>,
 	pub pulse_sender: Option<Arc<PulseSender>>,
 }
 

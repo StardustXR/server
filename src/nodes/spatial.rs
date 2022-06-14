@@ -5,38 +5,40 @@ use glam::{Mat4, Quat, Vec3};
 use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::push_to_vec;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
+use parking_lot::RwLock;
 use rccell::RcCell;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct Spatial {
 	// node: WeakCell<Node<'a>>,
-	parent: RefCell<Option<Rc<Spatial>>>,
-	transform: Cell<Mat4>,
+	parent: RwLock<Option<Arc<Spatial>>>,
+	transform: RwLock<Mat4>,
 }
 
 impl Spatial {
 	pub fn add_to(
 		node: &RcCell<Node>,
-		parent: Option<Rc<Spatial>>,
+		parent: Option<Arc<Spatial>>,
 		transform: Mat4,
-	) -> Result<Rc<Spatial>> {
+	) -> Result<Arc<Spatial>> {
 		ensure!(
 			node.borrow_mut().spatial.is_none(),
 			"Internal: Node already has a Spatial aspect!"
 		);
 		let spatial = Spatial {
 			// node: node.downgrade(),
-			parent: RefCell::new(parent),
-			transform: Cell::new(transform),
+			parent: RwLock::new(parent),
+			transform: RwLock::new(transform),
 		};
 		node.borrow_mut()
 			.add_local_method("getTransform", Spatial::get_transform_flex);
 		node.borrow_mut()
 			.add_local_signal("setTransform", Spatial::set_transform_flex);
-		let spatial_rc = Rc::new(spatial);
-		node.borrow_mut().spatial = Some(spatial_rc.clone());
-		Ok(spatial_rc)
+		let spatial_arc = Arc::new(spatial);
+		node.borrow_mut().spatial = Some(spatial_arc.clone());
+		Ok(spatial_arc)
 	}
 
 	pub fn space_to_space_matrix(from: Option<&Spatial>, to: Option<&Spatial>) -> Mat4 {
@@ -46,16 +48,16 @@ impl Spatial {
 	}
 
 	pub fn local_transform(&self) -> Mat4 {
-		self.transform.get()
+		*self.transform.read()
 	}
 	pub fn global_transform(&self) -> Mat4 {
-		match self.parent.borrow().clone() {
-			Some(value) => value.global_transform() * self.transform.get(),
-			None => self.transform.get(),
+		match self.parent.read().clone() {
+			Some(value) => value.global_transform() * *self.transform.read(),
+			None => *self.transform.read(),
 		}
 	}
 	pub fn set_local_transform(&self, transform: Mat4) {
-		self.transform.set(transform);
+		*self.transform.write() = transform;
 	}
 	pub fn set_local_transform_components(
 		&self,
@@ -65,7 +67,7 @@ impl Spatial {
 		scl: Option<Vec3>,
 	) {
 		let reference_to_parent_transform =
-			Spatial::space_to_space_matrix(reference_space, self.parent.borrow().as_deref());
+			Spatial::space_to_space_matrix(reference_space, self.parent.read().as_deref());
 		let mut local_transform_in_reference_space =
 			reference_to_parent_transform.inverse() * self.local_transform();
 		let (mut reference_space_scl, mut reference_space_rot, mut reference_space_pos) =
