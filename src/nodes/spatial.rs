@@ -12,7 +12,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 pub struct Spatial {
-	// node: WeakCell<Node<'a>>,
+	// node: WeakCell<Node>,
 	parent: RwLock<Option<Arc<Spatial>>>,
 	transform: RwLock<Mat4>,
 }

@@ -5,12 +5,12 @@ use libstardustxr::messenger::Messenger;
 use mio::net::UnixStream;
 use std::rc::Rc;
 
-pub struct Client<'a> {
-	messenger: Messenger<'a>,
-	scenegraph: Scenegraph<'a>,
+pub struct Client {
+	messenger: Messenger,
+	scenegraph: Scenegraph,
 }
 
-impl<'a> Client<'a> {
+impl Client {
 	pub fn from_connection(connection: UnixStream) -> Rc<Self> {
 		let client = Rc::new(Client {
 			messenger: Messenger::new(connection),
@@ -25,10 +25,10 @@ impl<'a> Client<'a> {
 		self.messenger.dispatch(&self.scenegraph)
 	}
 
-	pub fn get_messenger(&self) -> &Messenger<'a> {
+	pub fn get_messenger(&self) -> &Messenger {
 		&self.messenger
 	}
-	pub fn get_scenegraph(&self) -> &Scenegraph<'a> {
+	pub fn get_scenegraph(&self) -> &Scenegraph {
 		&self.scenegraph
 	}
 }

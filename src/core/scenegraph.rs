@@ -12,38 +12,38 @@ use dashmap::DashMap;
 use rustc_hash::FxHasher;
 
 #[derive(Default)]
-pub struct Scenegraph<'a> {
-	client: RefCell<Weak<Client<'a>>>,
-	nodes: DashMap<String, RcCell<Node<'a>>, BuildHasherDefault<FxHasher>>,
+pub struct Scenegraph {
+	client: RefCell<Weak<Client>>,
+	nodes: DashMap<String, RcCell<Node>, BuildHasherDefault<FxHasher>>,
 }
 
-impl<'a> Scenegraph<'a> {
-	pub fn get_client(&self) -> Rc<Client<'a>> {
+impl Scenegraph {
+	pub fn get_client(&self) -> Rc<Client> {
 		self.client.borrow().upgrade().unwrap()
 	}
 
-	pub fn set_client(&self, client: &Rc<Client<'a>>) {
+	pub fn set_client(&self, client: &Rc<Client>) {
 		*self.client.borrow_mut() = Rc::downgrade(client);
 	}
 
-	pub fn add_node(&self, node: Node<'a>) -> RcCell<Node<'a>> {
+	pub fn add_node(&self, node: Node) -> RcCell<Node> {
 		let path = node.get_path().to_string();
 		let node_rc = RcCell::new(node);
 		self.nodes.insert(path, node_rc.clone());
 		node_rc
 	}
 
-	pub fn get_node(&self, path: &str) -> Option<RcCell<Node<'a>>> {
+	pub fn get_node(&self, path: &str) -> Option<RcCell<Node>> {
 		Some(self.nodes.get(path)?.clone())
 	}
 
-	pub fn remove_node(&self, path: &str) -> Option<RcCell<Node<'a>>> {
+	pub fn remove_node(&self, path: &str) -> Option<RcCell<Node>> {
 		let (_, node) = self.nodes.remove(path)?;
 		Some(node)
 	}
 }
 
-impl<'a> scenegraph::Scenegraph for Scenegraph<'a> {
+impl scenegraph::Scenegraph for Scenegraph {
 	fn send_signal(&self, path: &str, method: &str, data: &[u8]) -> Result<(), ScenegraphError> {
 		self.get_node(path)
 			.ok_or(ScenegraphError::NodeNotFound)?

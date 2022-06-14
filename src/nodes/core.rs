@@ -16,23 +16,23 @@ use rustc_hash::FxHasher;
 pub type Signal = fn(&Node, Rc<Client>, &[u8]) -> Result<()>;
 pub type Method = fn(&Node, Rc<Client>, &[u8]) -> Result<Vec<u8>>;
 
-pub struct Node<'a> {
+pub struct Node {
 	uid: String,
-	client: Weak<Client<'a>>,
+	client: Weak<Client>,
 	path: String,
 	// trailing_slash_pos: usize,
 	local_signals: HashMap<String, Signal, BuildHasherDefault<FxHasher>>,
 	local_methods: HashMap<String, Method, BuildHasherDefault<FxHasher>>,
 	destroyable: bool,
 
-	alias: Option<Alias<'a>>,
+	alias: Option<Alias>,
 	pub spatial: Option<Arc<Spatial>>,
 	pub field: Option<Arc<Field>>,
 	pub pulse_sender: Option<Arc<PulseSender>>,
 }
 
-impl<'a> Node<'a> {
-	pub fn get_client(&self) -> Option<Rc<Client<'a>>> {
+impl Node {
+	pub fn get_client(&self) -> Option<Rc<Client>> {
 		self.client.clone().upgrade()
 	}
 	// pub fn get_name(&self) -> &str {
@@ -45,7 +45,7 @@ impl<'a> Node<'a> {
 		self.destroyable
 	}
 
-	pub fn create(client: Weak<Client<'a>>, parent: &str, name: &str, destroyable: bool) -> Self {
+	pub fn create(client: Weak<Client>, parent: &str, name: &str, destroyable: bool) -> Self {
 		let mut path = parent.to_string();
 		path.push('/');
 		path.push_str(name);
@@ -157,16 +157,16 @@ impl<'a> Node<'a> {
 	// }
 }
 
-struct Alias<'a> {
-	original: WeakCell<Node<'a>>,
+struct Alias {
+	original: WeakCell<Node>,
 
 	signals: Vec<String>,
 	methods: Vec<String>,
 }
-impl<'a> Alias<'a> {
+impl Alias {
 	pub fn add_to(
-		node: &RcCell<Node<'a>>,
-		original: &RcCell<Node<'a>>,
+		node: &RcCell<Node>,
+		original: &RcCell<Node>,
 		signals: Vec<String>,
 		methods: Vec<String>,
 	) {
