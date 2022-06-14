@@ -1,9 +1,10 @@
-use super::data::{PulseReceiver, PulseSender};
+use super::data::PulseSender;
 use super::field::Field;
 use super::spatial::Spatial;
 use crate::core::client::Client;
 use anyhow::{anyhow, Result};
 use libstardustxr::scenegraph::ScenegraphError;
+use rccell::{RcCell, WeakCell};
 use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::{collections::HashMap, vec::Vec};
@@ -24,6 +25,7 @@ pub struct Node<'a> {
 	local_methods: HashMap<String, Method, BuildHasherDefault<FxHasher>>,
 	destroyable: bool,
 
+	alias: Option<Alias<'a>>,
 	pub spatial: Option<Rc<Spatial>>,
 	pub field: Option<Rc<Field>>,
 	pub pulse_sender: Option<Arc<PulseSender>>,
@@ -56,6 +58,7 @@ impl<'a> Node<'a> {
 			local_methods: Default::default(),
 			destroyable,
 
+			alias: None,
 			spatial: None,
 			field: None,
 			pulse_sender: None,
@@ -89,11 +92,24 @@ impl<'a> Node<'a> {
 		method: &str,
 		data: &[u8],
 	) -> Result<(), ScenegraphError> {
-		let signal = self
-			.local_signals
-			.get(method)
-			.ok_or(ScenegraphError::SignalNotFound)?;
-		signal(self, calling_client, data).map_err(|error| ScenegraphError::SignalError { error })
+		if let Some(alias) = self.alias.as_ref() {
+			if !alias.signals.contains(&method.to_string()) {
+				return Err(ScenegraphError::SignalNotFound);
+			}
+			alias
+				.original
+				.upgrade()
+				.ok_or_else(|| ScenegraphError::BrokenAlias)?
+				.borrow()
+				.send_local_signal(calling_client, method, data)
+		} else {
+			let signal = self
+				.local_signals
+				.get(method)
+				.ok_or(ScenegraphError::SignalNotFound)?;
+			signal(self, calling_client, data)
+				.map_err(|error| ScenegraphError::SignalError { error })
+		}
 	}
 	pub fn execute_local_method(
 		&self,
@@ -101,11 +117,24 @@ impl<'a> Node<'a> {
 		method: &str,
 		data: &[u8],
 	) -> Result<Vec<u8>, ScenegraphError> {
-		let method = self
-			.local_methods
-			.get(method)
-			.ok_or(ScenegraphError::MethodNotFound)?;
-		method(self, calling_client, data).map_err(|error| ScenegraphError::MethodError { error })
+		if let Some(alias) = self.alias.as_ref() {
+			if !alias.methods.contains(&method.to_string()) {
+				return Err(ScenegraphError::MethodNotFound);
+			}
+			alias
+				.original
+				.upgrade()
+				.ok_or_else(|| ScenegraphError::BrokenAlias)?
+				.borrow()
+				.execute_local_method(calling_client, method, data)
+		} else {
+			let method = self
+				.local_methods
+				.get(method)
+				.ok_or(ScenegraphError::MethodNotFound)?;
+			method(self, calling_client, data)
+				.map_err(|error| ScenegraphError::MethodError { error })
+		}
 	}
 	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
 		self.get_client()
@@ -126,4 +155,25 @@ impl<'a> Node<'a> {
 	// 		.execute_remote_method(self.path.as_str(), method, data, callback)
 	// 		.map_err(|_| anyhow!("Unable to write in messenger"))
 	// }
+}
+
+struct Alias<'a> {
+	original: WeakCell<Node<'a>>,
+
+	signals: Vec<String>,
+	methods: Vec<String>,
+}
+impl<'a> Alias<'a> {
+	pub fn add_to(
+		node: &RcCell<Node<'a>>,
+		original: &RcCell<Node<'a>>,
+		signals: Vec<String>,
+		methods: Vec<String>,
+	) {
+		node.borrow_mut().alias = Some(Alias {
+			original: original.downgrade(),
+			signals,
+			methods,
+		});
+	}
 }
