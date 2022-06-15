@@ -64,12 +64,10 @@ pub trait FieldTrait {
 }
 
 fn field_distance_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<Vec<u8>> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
-	let reference_space_path = flex_vec.idx(0).as_str();
+	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let reference_space = calling_client
 		.scenegraph
-		.get_node(reference_space_path)
+		.get_node(flex_vec.idx(0).as_str())
 		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
 		.spatial
 		.get()
@@ -85,12 +83,10 @@ fn field_distance_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> 
 	Ok(FlexBuffable::from(distance).build_singleton())
 }
 fn field_normal_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<Vec<u8>> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
-	let reference_space_path = flex_vec.idx(0).as_str();
+	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let reference_space = calling_client
 		.scenegraph
-		.get_node(reference_space_path)
+		.get_node(flex_vec.idx(0).as_str())
 		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
 		.spatial
 		.get()
@@ -110,12 +106,10 @@ fn field_closest_point_flex(
 	calling_client: Rc<Client>,
 	data: &[u8],
 ) -> Result<Vec<u8>> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
-	let reference_space_path = flex_vec.idx(0).as_str();
+	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let reference_space = calling_client
 		.scenegraph
-		.get_node(reference_space_path)
+		.get_node(flex_vec.idx(0).as_str())
 		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
 		.spatial
 		.get()
@@ -236,8 +230,7 @@ impl CylinderField {
 	}
 
 	pub fn set_size_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
-		let root = flexbuffers::Reader::get_root(data)?;
-		let flex_vec = root.get_vector()?;
+		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 		let length = flex_vec.idx(0).as_f32();
 		let radius = flex_vec.idx(1).as_f32();
 		if let Field::Cylinder(cylinder_field) = node.field.get().unwrap().as_ref() {
@@ -326,8 +319,7 @@ pub fn create_interface(client: &Rc<Client>) {
 }
 
 pub fn create_box_field_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
+	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_rotation_translation(
@@ -350,8 +342,7 @@ pub fn create_cylinder_field_flex(
 	calling_client: Rc<Client>,
 	data: &[u8],
 ) -> Result<()> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
+	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_rotation_translation(
@@ -375,8 +366,7 @@ pub fn create_sphere_field_flex(
 	calling_client: Rc<Client>,
 	data: &[u8],
 ) -> Result<()> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
+	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_translation(

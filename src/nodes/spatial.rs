@@ -124,8 +124,7 @@ impl Spatial {
 		}))
 	}
 	pub fn set_transform_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
-		let root = flexbuffers::Reader::get_root(data)?;
-		let flex_vec = root.get_vector()?;
+		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 		let reference_space_path = flex_vec.idx(0).as_str();
 		let reference_space_transform = if reference_space_path.is_empty() {
 			None
@@ -185,8 +184,7 @@ pub fn create_interface(client: &Rc<Client>) {
 }
 
 pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
+	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let spatial = Node::create("/spatial/spatial", flex_vec.idx(0).get_str()?, true);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_scale_rotation_translation(
