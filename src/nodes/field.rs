@@ -8,7 +8,6 @@ use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::Mutex;
 use portable_atomic::AtomicF32;
 use std::ops::Deref;
-use std::rc::Rc;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -63,7 +62,7 @@ pub trait FieldTrait {
 	fn spatial_ref(&self) -> &Spatial;
 }
 
-fn field_distance_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<Vec<u8>> {
+fn field_distance_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<Vec<u8>> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let reference_space = calling_client
 		.scenegraph
@@ -82,7 +81,7 @@ fn field_distance_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> 
 		.distance(reference_space.as_ref(), point.into());
 	Ok(FlexBuffable::from(distance).build_singleton())
 }
-fn field_normal_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<Vec<u8>> {
+fn field_normal_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<Vec<u8>> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let reference_space = calling_client
 		.scenegraph
@@ -103,7 +102,7 @@ fn field_normal_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Re
 }
 fn field_closest_point_flex(
 	node: &Node,
-	calling_client: Rc<Client>,
+	calling_client: Arc<Client>,
 	data: &[u8],
 ) -> Result<Vec<u8>> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
@@ -171,7 +170,7 @@ impl BoxField {
 		*self.size.lock() = size;
 	}
 
-	pub fn set_size_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_size_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let root = flexbuffers::Reader::get_root(data)?;
 		let size = flex_to_vec3!(root).ok_or_else(|| anyhow!("Size is invalid"))?;
 		if let Field::Box(box_field) = node.field.get().unwrap().as_ref() {
@@ -229,7 +228,7 @@ impl CylinderField {
 		self.radius.store(radius, Ordering::Relaxed);
 	}
 
-	pub fn set_size_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_size_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 		let length = flex_vec.idx(0).as_f32();
 		let radius = flex_vec.idx(1).as_f32();
@@ -286,7 +285,7 @@ impl SphereField {
 		self.radius.store(radius, Ordering::Relaxed);
 	}
 
-	pub fn set_radius_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_radius_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let root = flexbuffers::Reader::get_root(data)?;
 		if let Field::Sphere(sphere_field) = node.field.get().unwrap().as_ref() {
 			sphere_field.set_radius(root.as_f32());
@@ -310,7 +309,7 @@ impl FieldTrait for SphereField {
 	}
 }
 
-pub fn create_interface(client: &Rc<Client>) {
+pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create("", "field", false);
 	node.add_local_signal("createBoxField", create_box_field_flex);
 	node.add_local_signal("createCylinderField", create_cylinder_field_flex);
@@ -318,7 +317,7 @@ pub fn create_interface(client: &Rc<Client>) {
 	client.scenegraph.add_node(node);
 }
 
-pub fn create_box_field_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_box_field_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
@@ -339,7 +338,7 @@ pub fn create_box_field_flex(_node: &Node, calling_client: Rc<Client>, data: &[u
 
 pub fn create_cylinder_field_flex(
 	_node: &Node,
-	calling_client: Rc<Client>,
+	calling_client: Arc<Client>,
 	data: &[u8],
 ) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
@@ -363,7 +362,7 @@ pub fn create_cylinder_field_flex(
 
 pub fn create_sphere_field_flex(
 	_node: &Node,
-	calling_client: Rc<Client>,
+	calling_client: Arc<Client>,
 	data: &[u8],
 ) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;

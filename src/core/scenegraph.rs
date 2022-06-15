@@ -4,8 +4,7 @@ use anyhow::Result;
 use libstardustxr::scenegraph;
 use libstardustxr::scenegraph::ScenegraphError;
 use std::cell::RefCell;
-use std::rc::{Rc, Weak};
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use core::hash::BuildHasherDefault;
 use dashmap::DashMap;
@@ -18,17 +17,17 @@ pub struct Scenegraph {
 }
 
 impl Scenegraph {
-	pub fn get_client(&self) -> Rc<Client> {
+	pub fn get_client(&self) -> Arc<Client> {
 		self.client.borrow().upgrade().unwrap()
 	}
 
-	pub fn set_client(&self, client: &Rc<Client>) {
-		*self.client.borrow_mut() = Rc::downgrade(client);
+	pub fn set_client(&self, client: &Arc<Client>) {
+		*self.client.borrow_mut() = Arc::downgrade(client);
 	}
 
 	pub fn add_node(&self, node: Node) -> Arc<Node> {
 		let mut node = node;
-		node.client = Rc::downgrade(&self.get_client());
+		node.client = Arc::downgrade(&self.get_client());
 		let path = node.get_path().to_string();
 		let node_arc = Arc::new(node);
 		self.nodes.insert(path, node_arc.clone());

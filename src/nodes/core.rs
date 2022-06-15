@@ -6,17 +6,16 @@ use anyhow::{anyhow, Result};
 use libstardustxr::scenegraph::ScenegraphError;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
-use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Weak as WeakArc};
+use std::sync::{Arc, Weak};
 use std::vec::Vec;
 
 use core::hash::BuildHasherDefault;
 use dashmap::DashMap;
 use rustc_hash::FxHasher;
 
-pub type Signal = fn(&Node, Rc<Client>, &[u8]) -> Result<()>;
-pub type Method = fn(&Node, Rc<Client>, &[u8]) -> Result<Vec<u8>>;
+pub type Signal = fn(&Node, Arc<Client>, &[u8]) -> Result<()>;
+pub type Method = fn(&Node, Arc<Client>, &[u8]) -> Result<Vec<u8>>;
 
 pub struct Node {
 	uid: String,
@@ -34,7 +33,7 @@ pub struct Node {
 }
 
 impl Node {
-	pub fn get_client(&self) -> Option<Rc<Client>> {
+	pub fn get_client(&self) -> Option<Arc<Client>> {
 		self.client.clone().upgrade()
 	}
 	// pub fn get_name(&self) -> &str {
@@ -74,7 +73,7 @@ impl Node {
 		}
 	}
 
-	pub fn destroy_flex(node: &Node, _calling_client: Rc<Client>, _data: &[u8]) -> Result<()> {
+	pub fn destroy_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
 		if node.is_destroyable() {
 			node.destroy();
 		}
@@ -90,7 +89,7 @@ impl Node {
 
 	pub fn send_local_signal(
 		&self,
-		calling_client: Rc<Client>,
+		calling_client: Arc<Client>,
 		method: &str,
 		data: &[u8],
 	) -> Result<(), ScenegraphError> {
@@ -114,7 +113,7 @@ impl Node {
 	}
 	pub fn execute_local_method(
 		&self,
-		calling_client: Rc<Client>,
+		calling_client: Arc<Client>,
 		method: &str,
 		data: &[u8],
 	) -> Result<Vec<u8>, ScenegraphError> {
@@ -158,7 +157,7 @@ impl Node {
 }
 
 pub struct Alias {
-	original: WeakArc<Node>,
+	original: Weak<Node>,
 
 	signals: Vec<String>,
 	methods: Vec<String>,

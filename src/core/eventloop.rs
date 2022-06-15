@@ -6,7 +6,7 @@ use mio::unix::pipe;
 use mio::{Events, Interest, Poll, Token};
 use slab::Slab;
 use std::io::Write;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
 pub struct EventLoop {
@@ -24,7 +24,7 @@ impl EventLoop {
 		let join_handle = thread::Builder::new()
 			.name("event_loop".to_owned())
 			.spawn(move || -> Result<()> {
-				let mut clients: Slab<Option<Rc<Client>>> = Slab::new();
+				let mut clients: Slab<Option<Arc<Client>>> = Slab::new();
 				let mut poll = Poll::new()?;
 				let mut events = Events::with_capacity(1024);
 				const LISTENER: Token = Token(usize::MAX - 1);

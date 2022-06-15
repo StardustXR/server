@@ -3,7 +3,7 @@ use crate::nodes::field;
 use crate::nodes::spatial;
 use libstardustxr::messenger::Messenger;
 use mio::net::UnixStream;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct Client {
 	pub messenger: Messenger,
@@ -11,8 +11,8 @@ pub struct Client {
 }
 
 impl Client {
-	pub fn from_connection(connection: UnixStream) -> Rc<Self> {
-		let client = Rc::new(Client {
+	pub fn from_connection(connection: UnixStream) -> Arc<Self> {
+		let client = Arc::new(Client {
 			messenger: Messenger::new(connection),
 			scenegraph: Default::default(),
 		});

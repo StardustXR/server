@@ -6,7 +6,6 @@ use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::push_to_vec;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::RwLock;
-use std::rc::Rc;
 use std::sync::Arc;
 
 pub struct Spatial {
@@ -91,7 +90,7 @@ impl Spatial {
 
 	pub fn get_transform_flex(
 		node: &Node,
-		calling_client: Rc<Client>,
+		calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<Vec<u8>> {
 		let root = flexbuffers::Reader::get_root(data)?;
@@ -123,7 +122,7 @@ impl Spatial {
 			);
 		}))
 	}
-	pub fn set_transform_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_transform_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 		let reference_space_path = flex_vec.idx(0).as_str();
 		let reference_space_transform = if reference_space_path.is_empty() {
@@ -151,7 +150,7 @@ impl Spatial {
 }
 
 pub fn get_spatial_parent_flex(
-	calling_client: &Rc<Client>,
+	calling_client: &Arc<Client>,
 	node_path: &str,
 ) -> Result<Arc<Spatial>> {
 	Ok(calling_client
@@ -177,13 +176,13 @@ pub fn get_transform_pose_flex<B: flexbuffers::Buffer>(
 	))
 }
 
-pub fn create_interface(client: &Rc<Client>) {
+pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create("", "spatial", false);
 	node.add_local_signal("createSpatial", create_spatial_flex);
 	client.scenegraph.add_node(node);
 }
 
-pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let spatial = Node::create("/spatial/spatial", flex_vec.idx(0).get_str()?, true);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
