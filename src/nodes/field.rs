@@ -1,5 +1,5 @@
 use super::core::Node;
-use super::spatial::Spatial;
+use super::spatial::{get_spatial_parent, Spatial};
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use glam::{swizzles::*, vec2, vec3, vec3a, Mat4, Vec3, Vec3A};
@@ -72,16 +72,14 @@ fn field_distance_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> 
 		.get_node(reference_space_path)
 		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
 		.spatial
-		.read()
-		.as_ref()
+		.get()
 		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
 		.clone();
 	let point = flex_to_vec3!(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
 
 	let distance = node
 		.field
-		.read()
-		.as_ref()
+		.get()
 		.unwrap()
 		.distance(reference_space.as_ref(), point.into());
 	Ok(FlexBuffable::from(distance).build_singleton())
@@ -95,13 +93,12 @@ fn field_normal_flex(node: &Node, calling_client: Rc<Client>, data: &[u8]) -> Re
 		.get_node(reference_space_path)
 		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
 		.spatial
-		.read()
-		.as_ref()
+		.get()
 		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
 		.clone();
 	let point = flex_to_vec3!(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
 
-	let normal = node.field.read().as_ref().unwrap().normal(
+	let normal = node.field.get().as_ref().unwrap().normal(
 		reference_space.as_ref(),
 		point.into(),
 		0.001_f32,
@@ -121,17 +118,16 @@ fn field_closest_point_flex(
 		.get_node(reference_space_path)
 		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
 		.spatial
-		.read()
-		.as_ref()
+		.get()
 		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
 		.clone();
 	let point = flex_to_vec3!(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
 
-	let closest_point = node.field.read().as_ref().unwrap().closest_point(
-		reference_space.as_ref(),
-		point.into(),
-		0.001_f32,
-	);
+	let closest_point =
+		node.field
+			.get()
+			.unwrap()
+			.closest_point(reference_space.as_ref(), point.into(), 0.001_f32);
 	Ok(FlexBuffable::from(mint::Vector3::from(closest_point)).build_singleton())
 }
 
@@ -160,20 +156,20 @@ pub struct BoxField {
 impl BoxField {
 	pub fn add_to(node: &Arc<Node>, size: Vec3) -> Result<()> {
 		ensure!(
-			node.spatial.read().is_some(),
+			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
 		);
 		ensure!(
-			node.field.read().is_none(),
+			node.field.get().is_none(),
 			"Internal: Node already has a field attached!"
 		);
 		let box_field = BoxField {
-			space: node.spatial.read().as_ref().unwrap().clone(),
+			space: node.spatial.get().unwrap().clone(),
 			size: Mutex::new(size),
 		};
 		box_field.add_field_methods(node);
 		node.add_local_signal("setSize", BoxField::set_size_flex);
-		*node.field.write() = Some(Arc::new(Field::Box(box_field)));
+		let _ = node.field.set(Arc::new(Field::Box(box_field)));
 		Ok(())
 	}
 
@@ -184,7 +180,7 @@ impl BoxField {
 	pub fn set_size_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
 		let root = flexbuffers::Reader::get_root(data)?;
 		let size = flex_to_vec3!(root).ok_or_else(|| anyhow!("Size is invalid"))?;
-		if let Field::Box(box_field) = node.field.read().as_ref().unwrap().as_ref() {
+		if let Field::Box(box_field) = node.field.get().unwrap().as_ref() {
 			box_field.set_size(size.into());
 		}
 		Ok(())
@@ -216,21 +212,21 @@ pub struct CylinderField {
 impl CylinderField {
 	pub fn add_to(node: &Arc<Node>, length: f32, radius: f32) -> Result<()> {
 		ensure!(
-			node.spatial.read().is_some(),
+			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
 		);
 		ensure!(
-			node.field.read().is_none(),
+			node.field.get().is_none(),
 			"Internal: Node already has a field attached!"
 		);
 		let cylinder_field = CylinderField {
-			space: node.spatial.read().as_ref().unwrap().clone(),
+			space: node.spatial.get().unwrap().clone(),
 			length: AtomicF32::new(length),
 			radius: AtomicF32::new(radius),
 		};
 		cylinder_field.add_field_methods(node);
 		node.add_local_signal("setSize", CylinderField::set_size_flex);
-		*node.field.write() = Some(Arc::new(Field::Cylinder(cylinder_field)));
+		let _ = node.field.set(Arc::new(Field::Cylinder(cylinder_field)));
 		Ok(())
 	}
 
@@ -244,7 +240,7 @@ impl CylinderField {
 		let flex_vec = root.get_vector()?;
 		let length = flex_vec.idx(0).as_f32();
 		let radius = flex_vec.idx(1).as_f32();
-		if let Field::Cylinder(cylinder_field) = node.field.read().as_ref().unwrap().as_ref() {
+		if let Field::Cylinder(cylinder_field) = node.field.get().unwrap().as_ref() {
 			cylinder_field.set_size(length, radius);
 		}
 		Ok(())
@@ -276,20 +272,20 @@ pub struct SphereField {
 impl SphereField {
 	pub fn add_to(node: &Arc<Node>, radius: f32) -> Result<()> {
 		ensure!(
-			node.spatial.read().is_some(),
+			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
 		);
 		ensure!(
-			node.field.read().is_none(),
+			node.field.get().is_none(),
 			"Internal: Node already has a field attached!"
 		);
 		let sphere_field = SphereField {
-			space: node.spatial.read().as_ref().unwrap().clone(),
+			space: node.spatial.get().unwrap().clone(),
 			radius: AtomicF32::new(radius),
 		};
 		sphere_field.add_field_methods(node);
 		node.add_local_signal("setRadius", SphereField::set_radius_flex);
-		*node.field.write() = Some(Arc::new(Field::Sphere(sphere_field)));
+		let _ = node.field.set(Arc::new(Field::Sphere(sphere_field)));
 		Ok(())
 	}
 
@@ -299,7 +295,7 @@ impl SphereField {
 
 	pub fn set_radius_flex(node: &Node, _calling_client: Rc<Client>, data: &[u8]) -> Result<()> {
 		let root = flexbuffers::Reader::get_root(data)?;
-		if let Field::Sphere(sphere_field) = node.field.read().as_ref().unwrap().as_ref() {
+		if let Field::Sphere(sphere_field) = node.field.get().unwrap().as_ref() {
 			sphere_field.set_radius(root.as_f32());
 		}
 		Ok(())
@@ -333,10 +329,7 @@ pub fn create_box_field_flex(_node: &Node, calling_client: Rc<Client>, data: &[u
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
 	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
-	let parent = calling_client
-		.scenegraph
-		.get_node(flex_vec.idx(1).as_str())
-		.and_then(|node| node.spatial.read().clone());
+	let parent = get_spatial_parent(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_rotation_translation(
 		flex_to_quat!(flex_vec.idx(3))
 			.ok_or_else(|| anyhow!("Rotation not found"))?
@@ -347,7 +340,7 @@ pub fn create_box_field_flex(_node: &Node, calling_client: Rc<Client>, data: &[u
 	);
 	let size = flex_to_vec3!(flex_vec.idx(4)).ok_or_else(|| anyhow!("Size invalid"))?;
 	let node_rc = calling_client.scenegraph.add_node(node);
-	Spatial::add_to(&node_rc, parent, transform)?;
+	Spatial::add_to(&node_rc, Some(parent), transform)?;
 	BoxField::add_to(&node_rc, size.into())?;
 	Ok(())
 }
@@ -360,10 +353,7 @@ pub fn create_cylinder_field_flex(
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
 	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
-	let parent = calling_client
-		.scenegraph
-		.get_node(flex_vec.idx(1).as_str())
-		.and_then(|node| node.spatial.read().clone());
+	let parent = get_spatial_parent(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_rotation_translation(
 		flex_to_quat!(flex_vec.idx(3))
 			.ok_or_else(|| anyhow!("Rotation not found"))?
@@ -375,7 +365,7 @@ pub fn create_cylinder_field_flex(
 	let length = flex_vec.idx(0).as_f32();
 	let radius = flex_vec.idx(1).as_f32();
 	let node_rc = calling_client.scenegraph.add_node(node);
-	Spatial::add_to(&node_rc, parent, transform)?;
+	Spatial::add_to(&node_rc, Some(parent), transform)?;
 	CylinderField::add_to(&node_rc, length, radius)?;
 	Ok(())
 }
@@ -388,17 +378,14 @@ pub fn create_sphere_field_flex(
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
 	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
-	let parent = calling_client
-		.scenegraph
-		.get_node(flex_vec.idx(1).as_str())
-		.and_then(|node| node.spatial.read().clone());
+	let parent = get_spatial_parent(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_translation(
 		flex_to_vec3!(flex_vec.idx(2))
 			.ok_or_else(|| anyhow!("Position not found"))?
 			.into(),
 	);
 	let node_rc = calling_client.scenegraph.add_node(node);
-	Spatial::add_to(&node_rc, parent, transform)?;
+	Spatial::add_to(&node_rc, Some(parent), transform)?;
 	SphereField::add_to(&node_rc, flex_vec.idx(3).as_f32())?;
 	Ok(())
 }

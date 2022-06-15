@@ -5,7 +5,7 @@ use crate::core::client::Client;
 use anyhow::{anyhow, Result};
 use libstardustxr::scenegraph::ScenegraphError;
 use nanoid::nanoid;
-use parking_lot::RwLock;
+use once_cell::sync::OnceCell;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak as WeakArc};
@@ -27,10 +27,10 @@ pub struct Node {
 	local_methods: DashMap<String, Method, BuildHasherDefault<FxHasher>>,
 	destroyable: AtomicBool,
 
-	alias: RwLock<Option<Alias>>,
-	pub spatial: RwLock<Option<Arc<Spatial>>>,
-	pub field: RwLock<Option<Arc<Field>>>,
-	pub pulse_sender: RwLock<Option<Arc<PulseSender>>>,
+	alias: OnceCell<Alias>,
+	pub spatial: OnceCell<Arc<Spatial>>,
+	pub field: OnceCell<Arc<Field>>,
+	pub pulse_sender: OnceCell<Arc<PulseSender>>,
 }
 
 impl Node {
@@ -60,10 +60,10 @@ impl Node {
 			local_methods: Default::default(),
 			destroyable: AtomicBool::from(destroyable),
 
-			alias: RwLock::new(None),
-			spatial: RwLock::new(None),
-			field: RwLock::new(None),
-			pulse_sender: RwLock::new(None),
+			alias: OnceCell::new(),
+			spatial: OnceCell::new(),
+			field: OnceCell::new(),
+			pulse_sender: OnceCell::new(),
 		};
 		node.add_local_signal("destroy", Node::destroy_flex);
 		node
@@ -94,7 +94,7 @@ impl Node {
 		method: &str,
 		data: &[u8],
 	) -> Result<(), ScenegraphError> {
-		if let Some(alias) = self.alias.read().as_ref() {
+		if let Some(alias) = self.alias.get().as_ref() {
 			if !alias.signals.contains(&method.to_string()) {
 				return Err(ScenegraphError::SignalNotFound);
 			}
@@ -118,7 +118,7 @@ impl Node {
 		method: &str,
 		data: &[u8],
 	) -> Result<Vec<u8>, ScenegraphError> {
-		if let Some(alias) = self.alias.read().as_ref() {
+		if let Some(alias) = self.alias.get().as_ref() {
 			if !alias.methods.contains(&method.to_string()) {
 				return Err(ScenegraphError::MethodNotFound);
 			}
@@ -170,7 +170,7 @@ impl Alias {
 		signals: Vec<String>,
 		methods: Vec<String>,
 	) {
-		*node.alias.write() = Some(Alias {
+		let _ = node.alias.set(Alias {
 			original: Arc::downgrade(original),
 			signals,
 			methods,

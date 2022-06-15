@@ -16,6 +16,7 @@ lazy_static = "1.4.0"
 mint = "0.5.9"
 mio = {version = "0.8.3", features = ["net", "os-poll", "os-ext"]}
 nanoid = "0.4.0"
+once_cell = "1.12.0"
 parking_lot = "0.12.1"
 portable-atomic = {version = "0.3.0", features = ["float", "std"]}
 rccell = "0.1.3"

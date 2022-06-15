@@ -13,13 +13,13 @@ pub struct PulseSender {}
 impl PulseSender {
 	pub fn add_to(node: &Arc<Node>) -> Result<()> {
 		ensure!(
-			node.spatial.read().is_some(),
+			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
 		);
 
 		let sender = PulseSender {};
 		let sender = PULSE_SENDER_REGISTRY.add(sender)?;
-		*node.pulse_sender.write() = Some(sender);
+		let _ = node.pulse_sender.set(sender);
 		Ok(())
 	}
 }
