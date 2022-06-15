@@ -1,5 +1,5 @@
 use super::core::Node;
-use super::spatial::{get_spatial_parent, Spatial};
+use super::spatial::{get_spatial_parent_flex, Spatial};
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use glam::{swizzles::*, vec2, vec3, vec3a, Mat4, Vec3, Vec3A};
@@ -329,7 +329,7 @@ pub fn create_box_field_flex(_node: &Node, calling_client: Rc<Client>, data: &[u
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
 	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
-	let parent = get_spatial_parent(&calling_client, flex_vec.idx(1).get_str()?)?;
+	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_rotation_translation(
 		flex_to_quat!(flex_vec.idx(3))
 			.ok_or_else(|| anyhow!("Rotation not found"))?
@@ -353,7 +353,7 @@ pub fn create_cylinder_field_flex(
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
 	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
-	let parent = get_spatial_parent(&calling_client, flex_vec.idx(1).get_str()?)?;
+	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_rotation_translation(
 		flex_to_quat!(flex_vec.idx(3))
 			.ok_or_else(|| anyhow!("Rotation not found"))?
@@ -378,7 +378,7 @@ pub fn create_sphere_field_flex(
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
 	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
-	let parent = get_spatial_parent(&calling_client, flex_vec.idx(1).get_str()?)?;
+	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_translation(
 		flex_to_vec3!(flex_vec.idx(2))
 			.ok_or_else(|| anyhow!("Position not found"))?

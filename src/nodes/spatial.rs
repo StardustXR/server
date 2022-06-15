@@ -151,7 +151,10 @@ impl Spatial {
 	}
 }
 
-pub fn get_spatial_parent(calling_client: &Rc<Client>, node_path: &str) -> Result<Arc<Spatial>> {
+pub fn get_spatial_parent_flex(
+	calling_client: &Rc<Client>,
+	node_path: &str,
+) -> Result<Arc<Spatial>> {
 	Ok(calling_client
 		.scenegraph
 		.get_node(node_path)
@@ -160,6 +163,19 @@ pub fn get_spatial_parent(calling_client: &Rc<Client>, node_path: &str) -> Resul
 		.get()
 		.ok_or_else(|| anyhow!("Spatial parent node is not a spatial"))?
 		.clone())
+}
+pub fn get_transform_pose_flex<B: flexbuffers::Buffer>(
+	translation: &flexbuffers::Reader<B>,
+	rotation: &flexbuffers::Reader<B>,
+) -> Result<Mat4> {
+	Ok(Mat4::from_rotation_translation(
+		flex_to_quat!(rotation)
+			.ok_or_else(|| anyhow!("Rotation not found"))?
+			.into(),
+		flex_to_vec3!(translation)
+			.ok_or_else(|| anyhow!("Position not found"))?
+			.into(),
+	))
 }
 
 pub fn create_interface(client: &Rc<Client>) {
@@ -172,7 +188,7 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Rc<Client>, data: &[u8]
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
 	let spatial = Node::create("/spatial/spatial", flex_vec.idx(0).get_str()?, true);
-	let parent = get_spatial_parent(&calling_client, flex_vec.idx(1).get_str()?)?;
+	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_scale_rotation_translation(
 		flex_to_vec3!(flex_vec.idx(4))
 			.ok_or_else(|| anyhow!("Scale not found"))?
