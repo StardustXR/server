@@ -3,7 +3,7 @@ use crate::nodes::core::Node;
 use anyhow::Result;
 use libstardustxr::scenegraph;
 use libstardustxr::scenegraph::ScenegraphError;
-use std::cell::RefCell;
+use once_cell::sync::OnceCell;
 use std::sync::{Arc, Weak};
 
 use core::hash::BuildHasherDefault;
@@ -12,17 +12,13 @@ use rustc_hash::FxHasher;
 
 #[derive(Default)]
 pub struct Scenegraph {
-	client: RefCell<Weak<Client>>,
+	pub(super) client: OnceCell<Weak<Client>>,
 	nodes: DashMap<String, Arc<Node>, BuildHasherDefault<FxHasher>>,
 }
 
 impl Scenegraph {
 	pub fn get_client(&self) -> Arc<Client> {
-		self.client.borrow().upgrade().unwrap()
-	}
-
-	pub fn set_client(&self, client: &Arc<Client>) {
-		*self.client.borrow_mut() = Arc::downgrade(client);
+		self.client.get().unwrap().upgrade().unwrap()
 	}
 
 	pub fn add_node(&self, node: Node) -> Arc<Node> {

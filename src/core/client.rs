@@ -16,7 +16,7 @@ impl Client {
 			messenger: Messenger::new(connection),
 			scenegraph: Default::default(),
 		});
-		client.scenegraph.set_client(&client);
+		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
 		spatial::create_interface(&client);
 		field::create_interface(&client);
 		client
