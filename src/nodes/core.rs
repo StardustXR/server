@@ -157,7 +157,7 @@ impl Node {
 	// }
 }
 
-struct Alias {
+pub struct Alias {
 	original: WeakArc<Node>,
 
 	signals: Vec<String>,
