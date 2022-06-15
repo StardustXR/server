@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Result};
 use parking_lot::RwLock;
-use slab::{Iter, Slab};
+use slab::Slab;
 use std::sync::{Arc, Weak};
 
 pub struct Registry<T>(RwLock<Slab<Weak<T>>>);
@@ -11,9 +11,12 @@ impl<T> Registry<T> {
 		self.0.write().insert(Arc::downgrade(&t_arc));
 		Ok(t_arc)
 	}
-	pub fn iterate<F: FnOnce(Iter<'_, Weak<T>>)>(&self, closure: F) -> Result<()> {
-		closure(self.0.read().iter());
-		Ok(())
+	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
+		self.0
+			.read()
+			.iter()
+			.filter_map(|(_, item)| item.upgrade())
+			.collect()
 	}
 	pub fn remove(&self, t: &T) -> Result<()> {
 		let mut del_idx: Option<usize> = None;
