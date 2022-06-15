@@ -317,7 +317,7 @@ impl FieldTrait for SphereField {
 	}
 }
 
-pub fn create_interface(client: Rc<Client>) {
+pub fn create_interface(client: &Rc<Client>) {
 	let node = Node::create("", "field", false);
 	node.add_local_signal("createBoxField", create_box_field_flex);
 	node.add_local_signal("createCylinderField", create_cylinder_field_flex);

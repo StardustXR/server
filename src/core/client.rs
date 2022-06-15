@@ -17,8 +17,8 @@ impl Client {
 			scenegraph: Default::default(),
 		});
 		client.scenegraph.set_client(&client);
-		spatial::create_interface(client.clone());
-		field::create_interface(client.clone());
+		spatial::create_interface(&client);
+		field::create_interface(&client);
 		client
 	}
 	pub fn dispatch(&self) -> Result<(), std::io::Error> {

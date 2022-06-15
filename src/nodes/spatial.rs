@@ -162,7 +162,7 @@ pub fn get_spatial_parent(calling_client: &Rc<Client>, node_path: &str) -> Resul
 		.clone())
 }
 
-pub fn create_interface(client: Rc<Client>) {
+pub fn create_interface(client: &Rc<Client>) {
 	let node = Node::create("", "spatial", false);
 	node.add_local_signal("createSpatial", create_spatial_flex);
 	client.scenegraph.add_node(node);
