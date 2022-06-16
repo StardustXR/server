@@ -18,7 +18,7 @@ pub type Signal = fn(&Node, Arc<Client>, &[u8]) -> Result<()>;
 pub type Method = fn(&Node, Arc<Client>, &[u8]) -> Result<Vec<u8>>;
 
 pub struct Node {
-	uid: String,
+	pub(super) uid: String,
 	pub(crate) client: Weak<Client>,
 	path: String,
 	// trailing_slash_pos: usize,
