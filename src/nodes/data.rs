@@ -173,6 +173,7 @@ impl<'a> PulseReceiver {
 		let receiver = PULSE_RECEIVER_REGISTRY.add(receiver)?;
 		let _ = node.pulse_receiver.set(receiver);
 		node.add_local_signal("setMask", PulseReceiver::set_mask_flex);
+		node.add_local_signal("sendData", PulseReceiver::send_data_flex);
 		Ok(())
 	}
 	fn get_field(&self) -> Option<Arc<Field>> {
