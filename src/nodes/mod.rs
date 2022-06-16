@@ -1,3 +1,4 @@
+pub mod root;
 pub mod core;
 pub mod data;
 pub mod field;

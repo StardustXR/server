@@ -1,5 +1,6 @@
 use super::scenegraph::Scenegraph;
 use crate::nodes::field;
+use crate::nodes::root;
 use crate::nodes::spatial;
 use libstardustxr::messenger::Messenger;
 use mio::net::UnixStream;
@@ -17,6 +18,7 @@ impl Client {
 			scenegraph: Default::default(),
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
+		root::create_root(&client);
 		spatial::create_interface(&client);
 		field::create_interface(&client);
 		client
