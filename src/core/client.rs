@@ -1,4 +1,5 @@
 use super::scenegraph::Scenegraph;
+use crate::nodes::data;
 use crate::nodes::field;
 use crate::nodes::root;
 use crate::nodes::spatial;
@@ -21,6 +22,7 @@ impl Client {
 		root::create_root(&client);
 		spatial::create_interface(&client);
 		field::create_interface(&client);
+		data::create_interface(&client);
 		client
 	}
 	pub fn dispatch(&self) -> Result<(), std::io::Error> {
