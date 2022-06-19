@@ -137,7 +137,7 @@ impl PulseSender {
 					&receiver_alias,
 					receiver.node.upgrade().as_ref().unwrap(),
 					vec![],
-					vec!["sendData".to_owned()],
+					vec!["sendData"],
 				);
 				aliases[i] = "".to_owned();
 				fbb.push(receiver.uid.as_str());

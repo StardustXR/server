@@ -96,7 +96,7 @@ impl Node {
 		data: &[u8],
 	) -> Result<(), ScenegraphError> {
 		if let Some(alias) = self.alias.get().as_ref() {
-			if !alias.signals.contains(&method.to_string()) {
+			if !alias.signals.iter().any(|e| e == &method) {
 				return Err(ScenegraphError::SignalNotFound);
 			}
 			alias
@@ -120,7 +120,7 @@ impl Node {
 		data: &[u8],
 	) -> Result<Vec<u8>, ScenegraphError> {
 		if let Some(alias) = self.alias.get().as_ref() {
-			if !alias.methods.contains(&method.to_string()) {
+			if !alias.methods.iter().any(|e| e == &method) {
 				return Err(ScenegraphError::MethodNotFound);
 			}
 			alias
@@ -161,15 +161,15 @@ impl Node {
 pub struct Alias {
 	original: Weak<Node>,
 
-	signals: Vec<String>,
-	methods: Vec<String>,
+	signals: Vec<&'static str>,
+	methods: Vec<&'static str>,
 }
 impl Alias {
 	pub fn add_to(
 		node: &Arc<Node>,
 		original: &Arc<Node>,
-		signals: Vec<String>,
-		methods: Vec<String>,
+		signals: Vec<&'static str>,
+		methods: Vec<&'static str>,
 	) {
 		let _ = node.alias.set(Alias {
 			original: Arc::downgrade(original),
