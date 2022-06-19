@@ -2,6 +2,7 @@ use super::core::{Alias, Node};
 use super::field::Field;
 use super::spatial::{get_spatial_parent_flex, get_transform_pose_flex, Spatial};
 use crate::core::client::Client;
+use crate::core::nodelist::LifeLinkedNodeList;
 use crate::core::registry::Registry;
 use anyhow::{anyhow, ensure, Result};
 use glam::{vec3a, Mat4};
@@ -65,7 +66,7 @@ fn mask_get_map_at_root(binary: &[u8]) -> Result<flexbuffers::MapReader<&[u8]>> 
 #[derive(Default)]
 pub struct PulseSender {
 	mask: RwLock<Mask>,
-	aliases: Mutex<Vec<String>>,
+	aliases: LifeLinkedNodeList,
 }
 impl PulseSender {
 	pub fn add_to(node: &Arc<Node>) -> Result<()> {
@@ -125,11 +126,7 @@ impl PulseSender {
 		distance_sorted_receivers.sort_by(|(d1, _), (d2, _)| d1.partial_cmp(d2).unwrap());
 
 		Ok(flexbuffer_from_vector_arguments(move |fbb| {
-			let mut aliases = sender.aliases.lock();
-			for alias in aliases.iter() {
-				node.get_client().unwrap().scenegraph.remove_node(alias);
-			}
-			*aliases = Vec::with_capacity(distance_sorted_receivers.len());
+			sender.aliases.clear();
 			for (i, (_, receiver)) in distance_sorted_receivers.iter().enumerate() {
 				let receiver_alias = Node::create(node.get_path(), receiver.uid.as_str(), false);
 				let receiver_alias = calling_client.scenegraph.add_node(receiver_alias);
@@ -139,7 +136,7 @@ impl PulseSender {
 					vec![],
 					vec!["sendData"],
 				);
-				aliases[i] = "".to_owned();
+				sender.aliases.add(Arc::downgrade(&receiver_alias));
 				fbb.push(receiver.uid.as_str());
 			}
 		}))
