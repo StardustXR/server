@@ -151,7 +151,7 @@ impl PulseSender {
 }
 impl Drop for PulseSender {
 	fn drop(&mut self) {
-		let _ = PULSE_SENDER_REGISTRY.remove(self);
+		PULSE_SENDER_REGISTRY.remove(self);
 	}
 }
 
@@ -219,7 +219,7 @@ impl<'a> PulseReceiver {
 
 impl Drop for PulseReceiver {
 	fn drop(&mut self) {
-		let _ = PULSE_RECEIVER_REGISTRY.remove(self);
+		PULSE_RECEIVER_REGISTRY.remove(self);
 	}
 }
 
