@@ -9,7 +9,7 @@ use glam::{vec3a, Mat4};
 use lazy_static::lazy_static;
 use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
-use parking_lot::{Mutex, RwLock};
+use parking_lot::RwLock;
 use std::sync::{Arc, Weak};
 
 lazy_static! {
@@ -127,7 +127,7 @@ impl PulseSender {
 
 		Ok(flexbuffer_from_vector_arguments(move |fbb| {
 			sender.aliases.clear();
-			for (i, (_, receiver)) in distance_sorted_receivers.iter().enumerate() {
+			for (_, receiver) in distance_sorted_receivers.iter() {
 				let receiver_alias = Node::create(
 					&calling_client,
 					node.get_path(),
