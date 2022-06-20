@@ -7,15 +7,16 @@ use libstardustxr::messenger::Messenger;
 use mio::net::UnixStream;
 use std::sync::Arc;
 
+#[derive(Default)]
 pub struct Client {
-	pub messenger: Messenger,
+	pub messenger: Option<Messenger>,
 	pub scenegraph: Scenegraph,
 }
 
 impl Client {
 	pub fn from_connection(connection: UnixStream) -> Arc<Self> {
 		let client = Arc::new(Client {
-			messenger: Messenger::new(connection),
+			messenger: Some(Messenger::new(connection)),
 			scenegraph: Default::default(),
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
@@ -26,6 +27,10 @@ impl Client {
 		client
 	}
 	pub fn dispatch(&self) -> Result<(), std::io::Error> {
-		self.messenger.dispatch(&self.scenegraph)
+		if let Some(messenger) = &self.messenger {
+			messenger.dispatch(&self.scenegraph)
+		} else {
+			Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+		}
 	}
 }

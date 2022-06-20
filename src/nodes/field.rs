@@ -310,16 +310,16 @@ impl FieldTrait for SphereField {
 }
 
 pub fn create_interface(client: &Arc<Client>) {
-	let node = Node::create("", "field", false);
+	let node = Node::create(client, "", "field", false);
 	node.add_local_signal("createBoxField", create_box_field_flex);
 	node.add_local_signal("createCylinderField", create_cylinder_field_flex);
 	node.add_local_signal("createSphereField", create_sphere_field_flex);
-	client.scenegraph.add_node(node);
+	node.add_to_scenegraph();
 }
 
 pub fn create_box_field_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
+	let node = Node::create(&calling_client, "/field", flex_vec.idx(0).get_str()?, true);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_rotation_translation(
 		flex_to_quat!(flex_vec.idx(3))
@@ -330,9 +330,9 @@ pub fn create_box_field_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 			.into(),
 	);
 	let size = flex_to_vec3!(flex_vec.idx(4)).ok_or_else(|| anyhow!("Size invalid"))?;
-	let node_rc = calling_client.scenegraph.add_node(node);
-	Spatial::add_to(&node_rc, Some(parent), transform)?;
-	BoxField::add_to(&node_rc, size.into())?;
+	let node = node.add_to_scenegraph();
+	Spatial::add_to(&node, Some(parent), transform)?;
+	BoxField::add_to(&node, size.into())?;
 	Ok(())
 }
 
@@ -342,7 +342,7 @@ pub fn create_cylinder_field_flex(
 	data: &[u8],
 ) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
+	let node = Node::create(&calling_client, "/field", flex_vec.idx(0).get_str()?, true);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_rotation_translation(
 		flex_to_quat!(flex_vec.idx(3))
@@ -354,9 +354,9 @@ pub fn create_cylinder_field_flex(
 	);
 	let length = flex_vec.idx(0).as_f32();
 	let radius = flex_vec.idx(1).as_f32();
-	let node_rc = calling_client.scenegraph.add_node(node);
-	Spatial::add_to(&node_rc, Some(parent), transform)?;
-	CylinderField::add_to(&node_rc, length, radius)?;
+	let node = node.add_to_scenegraph();
+	Spatial::add_to(&node, Some(parent), transform)?;
+	CylinderField::add_to(&node, length, radius)?;
 	Ok(())
 }
 
@@ -366,15 +366,15 @@ pub fn create_sphere_field_flex(
 	data: &[u8],
 ) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create("/field", flex_vec.idx(0).get_str()?, true);
+	let node = Node::create(&calling_client, "/field", flex_vec.idx(0).get_str()?, true);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_translation(
 		flex_to_vec3!(flex_vec.idx(2))
 			.ok_or_else(|| anyhow!("Position not found"))?
 			.into(),
 	);
-	let node_rc = calling_client.scenegraph.add_node(node);
-	Spatial::add_to(&node_rc, Some(parent), transform)?;
-	SphereField::add_to(&node_rc, flex_vec.idx(3).as_f32())?;
+	let node = node.add_to_scenegraph();
+	Spatial::add_to(&node, Some(parent), transform)?;
+	SphereField::add_to(&node, flex_vec.idx(3).as_f32())?;
 	Ok(())
 }

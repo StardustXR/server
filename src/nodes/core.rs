@@ -2,6 +2,7 @@ use super::data::{PulseReceiver, PulseSender};
 use super::field::Field;
 use super::spatial::Spatial;
 use crate::core::client::Client;
+use crate::core::registry::Registry;
 use anyhow::{anyhow, Result};
 use libstardustxr::scenegraph::ScenegraphError;
 use nanoid::nanoid;
@@ -26,7 +27,9 @@ pub struct Node {
 	local_methods: DashMap<String, Method, BuildHasherDefault<FxHasher>>,
 	destroyable: AtomicBool,
 
-	alias: OnceCell<Alias>,
+	alias: OnceCell<Arc<Alias>>,
+	aliases: Registry<Alias>,
+
 	pub spatial: OnceCell<Arc<Spatial>>,
 	pub field: OnceCell<Arc<Field>>,
 	pub pulse_sender: OnceCell<Arc<PulseSender>>,
@@ -34,8 +37,8 @@ pub struct Node {
 }
 
 impl Node {
-	pub fn get_client(&self) -> Option<Arc<Client>> {
-		self.client.clone().upgrade()
+	pub fn get_client(&self) -> Arc<Client> {
+		self.client.clone().upgrade().unwrap()
 	}
 	// pub fn get_name(&self) -> &str {
 	// 	&self.path[self.trailing_slash_pos + 1..]
@@ -47,13 +50,13 @@ impl Node {
 		self.destroyable.load(Ordering::Relaxed)
 	}
 
-	pub fn create(parent: &str, name: &str, destroyable: bool) -> Self {
+	pub fn create(client: &Arc<Client>, parent: &str, name: &str, destroyable: bool) -> Self {
 		let mut path = parent.to_string();
 		path.push('/');
 		path.push_str(name);
 		let node = Node {
 			uid: nanoid!(),
-			client: Weak::new(),
+			client: Arc::downgrade(client),
 			path,
 			// trailing_slash_pos: parent.len(),
 			local_signals: Default::default(),
@@ -61,6 +64,8 @@ impl Node {
 			destroyable: AtomicBool::from(destroyable),
 
 			alias: OnceCell::new(),
+			aliases: Default::default(),
+
 			spatial: OnceCell::new(),
 			field: OnceCell::new(),
 			pulse_sender: OnceCell::new(),
@@ -69,10 +74,11 @@ impl Node {
 		node.add_local_signal("destroy", Node::destroy_flex);
 		node
 	}
+	pub fn add_to_scenegraph(self) -> Arc<Node> {
+		self.get_client().scenegraph.add_node(self)
+	}
 	pub fn destroy(&self) {
-		if let Some(client) = self.get_client() {
-			let _ = client.scenegraph.remove_node(self.get_path());
-		}
+		let _ = self.get_client().scenegraph.remove_node(self.get_path());
 	}
 
 	pub fn destroy_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
@@ -96,7 +102,7 @@ impl Node {
 		data: &[u8],
 	) -> Result<(), ScenegraphError> {
 		if let Some(alias) = self.alias.get().as_ref() {
-			if !alias.signals.iter().any(|e| e == &method) {
+			if !alias.local_signals.iter().any(|e| e == &method) {
 				return Err(ScenegraphError::SignalNotFound);
 			}
 			alias
@@ -120,7 +126,7 @@ impl Node {
 		data: &[u8],
 	) -> Result<Vec<u8>, ScenegraphError> {
 		if let Some(alias) = self.alias.get().as_ref() {
-			if !alias.methods.iter().any(|e| e == &method) {
+			if !alias.local_methods.iter().any(|e| e == &method) {
 				return Err(ScenegraphError::MethodNotFound);
 			}
 			alias
@@ -138,9 +144,21 @@ impl Node {
 		}
 	}
 	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
+		self.aliases
+			.get_valid_contents()
+			.iter()
+			.filter(|alias| alias.remote_signals.iter().any(|e| e == &method))
+			.for_each(|alias| {
+				let _ = alias
+					.node
+					.upgrade()
+					.unwrap()
+					.send_remote_signal(method, data);
+			});
 		self.get_client()
-			.ok_or_else(|| anyhow!("Node has no client, can't send remote signal!"))?
 			.messenger
+			.as_ref()
+			.ok_or_else(|| anyhow!("Node's client has no messenger"))?
 			.send_remote_signal(self.path.as_str(), method, data)
 			.map_err(|_| anyhow!("Unable to write in messenger"))
 	}
@@ -150,31 +168,53 @@ impl Node {
 	// 	data: &[u8],
 	// 	callback: Box<dyn Fn(&[u8]) + 'a>,
 	// ) -> Result<()> {
+	// 	self.aliases
+	// 		.get_valid_contents()
+	// 		.iter()
+	// 		.filter(|alias| alias.remote_methods.iter().any(|e| e == &method))
+	// 		.for_each(|alias| {
+	// 			alias
+	// 				.node
+	// 				.upgrade()
+	// 				.unwrap()
+	// 				.execute_remote_method(method, data, callback);
+	// 		});
 	// 	self.get_client()
-	// 		.ok_or_else(|| anyhow!("Node has no client, can't send remote signal!"))?
 	// 		.messenger
+	// 		.as_ref()
+	// 		.ok_or_else(|| anyhow!("Node's client has no messenger"))?
 	// 		.execute_remote_method(self.path.as_str(), method, data, callback)
 	// 		.map_err(|_| anyhow!("Unable to write in messenger"))
 	// }
 }
 
 pub struct Alias {
+	node: Weak<Node>,
 	original: Weak<Node>,
 
-	signals: Vec<&'static str>,
-	methods: Vec<&'static str>,
+	local_signals: Vec<&'static str>,
+	local_methods: Vec<&'static str>,
+	remote_signals: Vec<&'static str>,
+	remote_methods: Vec<&'static str>,
 }
 impl Alias {
 	pub fn add_to(
 		node: &Arc<Node>,
 		original: &Arc<Node>,
-		signals: Vec<&'static str>,
-		methods: Vec<&'static str>,
+		local_signals: Vec<&'static str>,
+		local_methods: Vec<&'static str>,
+		remote_signals: Vec<&'static str>,
+		remote_methods: Vec<&'static str>,
 	) {
-		let _ = node.alias.set(Alias {
+		let alias = Alias {
+			node: Arc::downgrade(node),
 			original: Arc::downgrade(original),
-			signals,
-			methods,
-		});
+			local_signals,
+			local_methods,
+			remote_signals,
+			remote_methods,
+		};
+		let alias = original.aliases.add(alias);
+		let _ = node.alias.set(alias);
 	}
 }

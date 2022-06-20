@@ -177,14 +177,19 @@ pub fn get_transform_pose_flex<B: flexbuffers::Buffer>(
 }
 
 pub fn create_interface(client: &Arc<Client>) {
-	let node = Node::create("", "spatial", false);
+	let node = Node::create(client, "", "spatial", false);
 	node.add_local_signal("createSpatial", create_spatial_flex);
-	client.scenegraph.add_node(node);
+	node.add_to_scenegraph();
 }
 
 pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let spatial = Node::create("/spatial/spatial", flex_vec.idx(0).get_str()?, true);
+	let node = Node::create(
+		&calling_client,
+		"/spatial/spatial",
+		flex_vec.idx(0).get_str()?,
+		true,
+	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_scale_rotation_translation(
 		flex_to_vec3!(flex_vec.idx(4))
@@ -197,7 +202,7 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8
 			.ok_or_else(|| anyhow!("Position not found"))?
 			.into(),
 	);
-	let spatial_rc = calling_client.scenegraph.add_node(spatial);
-	Spatial::add_to(&spatial_rc, Some(parent), transform)?;
+	let node = node.add_to_scenegraph();
+	Spatial::add_to(&node, Some(parent), transform)?;
 	Ok(())
 }

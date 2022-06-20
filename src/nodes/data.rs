@@ -128,13 +128,20 @@ impl PulseSender {
 		Ok(flexbuffer_from_vector_arguments(move |fbb| {
 			sender.aliases.clear();
 			for (i, (_, receiver)) in distance_sorted_receivers.iter().enumerate() {
-				let receiver_alias = Node::create(node.get_path(), receiver.uid.as_str(), false);
-				let receiver_alias = calling_client.scenegraph.add_node(receiver_alias);
+				let receiver_alias = Node::create(
+					&calling_client,
+					node.get_path(),
+					receiver.uid.as_str(),
+					false,
+				)
+				.add_to_scenegraph();
 				Alias::add_to(
 					&receiver_alias,
 					receiver.node.upgrade().as_ref().unwrap(),
 					vec![],
 					vec!["sendData"],
+					vec![],
+					vec![],
 				);
 				sender.aliases.add(Arc::downgrade(&receiver_alias));
 				fbb.push(receiver.uid.as_str());
@@ -217,10 +224,10 @@ impl Drop for PulseReceiver {
 }
 
 pub fn create_interface(client: &Arc<Client>) {
-	let node = Node::create("", "data", false);
+	let node = Node::create(client, "", "data", false);
 	node.add_local_signal("createPulseSender", create_pulse_sender_flex);
 	node.add_local_signal("createPulseReceiver", create_pulse_receiver_flex);
-	client.scenegraph.add_node(node);
+	node.add_to_scenegraph();
 }
 
 // pub fn mask_get_map_pulse_sender_create_args(mask: &Mask) -> Result<flexbuffers::MapReader<&[u8]>> {
@@ -238,7 +245,12 @@ pub fn create_pulse_sender_flex(
 ) -> Result<()> {
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
-	let node = Node::create("/data/sender", flex_vec.idx(0).get_str()?, true);
+	let node = Node::create(
+		&calling_client,
+		"/data/sender",
+		flex_vec.idx(0).get_str()?,
+		true,
+	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_rotation_translation(
 		flex_to_quat!(flex_vec.idx(3))
@@ -248,9 +260,9 @@ pub fn create_pulse_sender_flex(
 			.ok_or_else(|| anyhow!("Position not found"))?
 			.into(),
 	);
-	let node_rc = calling_client.scenegraph.add_node(node);
-	Spatial::add_to(&node_rc, Some(parent), transform)?;
-	PulseSender::add_to(&node_rc)?;
+	let node = node.add_to_scenegraph();
+	Spatial::add_to(&node, Some(parent), transform)?;
+	PulseSender::add_to(&node)?;
 	Ok(())
 }
 
@@ -271,7 +283,12 @@ pub fn create_pulse_receiver_flex(
 ) -> Result<()> {
 	let root = flexbuffers::Reader::get_root(data)?;
 	let flex_vec = root.get_vector()?;
-	let node = Node::create("/data/receiver", flex_vec.idx(0).get_str()?, true);
+	let node = Node::create(
+		&calling_client,
+		"/data/receiver",
+		flex_vec.idx(0).get_str()?,
+		true,
+	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = get_transform_pose_flex(&flex_vec.idx(2), &flex_vec.idx(3))?;
 	let field = calling_client
@@ -283,8 +300,8 @@ pub fn create_pulse_receiver_flex(
 		.ok_or_else(|| anyhow!("Field node is not a field"))?
 		.clone();
 
-	let node_rc = calling_client.scenegraph.add_node(node);
-	Spatial::add_to(&node_rc, Some(parent), transform)?;
-	PulseReceiver::add_to(&node_rc, field)?;
+	let node = node.add_to_scenegraph();
+	Spatial::add_to(&node, Some(parent), transform)?;
+	PulseReceiver::add_to(&node, field)?;
 	Ok(())
 }
