@@ -76,7 +76,7 @@ impl PulseSender {
 		);
 
 		let sender = Default::default();
-		let sender = PULSE_SENDER_REGISTRY.add(sender)?;
+		let sender = PULSE_SENDER_REGISTRY.add(sender);
 		let _ = node.pulse_sender.set(sender);
 		node.add_local_signal("setMask", PulseSender::set_mask_flex);
 		node.add_local_method("getReceivers", PulseSender::get_receivers_flex);
@@ -167,7 +167,7 @@ impl<'a> PulseReceiver {
 			field: Arc::downgrade(&field),
 			mask: Default::default(),
 		};
-		let receiver = PULSE_RECEIVER_REGISTRY.add(receiver)?;
+		let receiver = PULSE_RECEIVER_REGISTRY.add(receiver);
 		let _ = node.pulse_receiver.set(receiver);
 		node.add_local_signal("setMask", PulseReceiver::set_mask_flex);
 		node.add_local_signal("sendData", PulseReceiver::send_data_flex);

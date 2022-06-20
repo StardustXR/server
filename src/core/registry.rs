@@ -6,10 +6,10 @@ use std::sync::{Arc, Weak};
 pub struct Registry<T>(RwLock<Slab<Weak<T>>>);
 
 impl<T> Registry<T> {
-	pub fn add(&self, t: T) -> Result<Arc<T>> {
+	pub fn add(&self, t: T) -> Arc<T> {
 		let t_arc = Arc::new(t);
 		self.0.write().insert(Arc::downgrade(&t_arc));
-		Ok(t_arc)
+		t_arc
 	}
 	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
 		self.0
