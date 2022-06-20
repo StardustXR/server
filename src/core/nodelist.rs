@@ -17,9 +17,8 @@ impl LifeLinkedNodeList {
 			.read()
 			.iter()
 			.filter_map(|node| node.upgrade())
-			.filter_map(|node| node.get_client().zip(Some(node.get_path().to_string())))
-			.for_each(|(client, path)| {
-				client.scenegraph.remove_node(&path);
+			.for_each(|node| {
+				node.destroy();
 			});
 		self.nodes.write().clear();
 	}
