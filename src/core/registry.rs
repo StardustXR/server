@@ -22,7 +22,6 @@ impl<T> Registry<T> {
 			.collect()
 	}
 	pub fn remove(&self, t: &T) {
-		let mut del_idx: Option<usize> = None;
 		for item in self.0.read().iter() {
 			let (idx, item) = item;
 			if let Some(item) = item.upgrade() {
