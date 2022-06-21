@@ -205,7 +205,7 @@ impl Alias {
 		local_methods: Vec<&'static str>,
 		remote_signals: Vec<&'static str>,
 		remote_methods: Vec<&'static str>,
-	) {
+	) -> Arc<Alias> {
 		let alias = Alias {
 			node: Arc::downgrade(node),
 			original: Arc::downgrade(original),
@@ -215,6 +215,7 @@ impl Alias {
 			remote_methods,
 		};
 		let alias = original.aliases.add(alias);
-		let _ = node.alias.set(alias);
+		let _ = node.alias.set(alias.clone());
+		alias
 	}
 }
