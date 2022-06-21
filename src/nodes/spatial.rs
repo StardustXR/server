@@ -5,13 +5,13 @@ use glam::{Mat4, Quat, Vec3};
 use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::push_to_vec;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use std::sync::Arc;
 
 pub struct Spatial {
 	// node: Weak<Node>,
-	parent: RwLock<Option<Arc<Spatial>>>,
-	transform: RwLock<Mat4>,
+	parent: Mutex<Option<Arc<Spatial>>>,
+	transform: Mutex<Mat4>,
 }
 
 impl Spatial {
@@ -26,8 +26,8 @@ impl Spatial {
 		);
 		let spatial = Spatial {
 			// node: node.downgrade(),
-			parent: RwLock::new(parent),
-			transform: RwLock::new(transform),
+			parent: Mutex::new(parent),
+			transform: Mutex::new(transform),
 		};
 		node.add_local_method("getTransform", Spatial::get_transform_flex);
 		node.add_local_signal("setTransform", Spatial::set_transform_flex);
@@ -43,16 +43,16 @@ impl Spatial {
 	}
 
 	pub fn local_transform(&self) -> Mat4 {
-		*self.transform.read()
+		*self.transform.lock()
 	}
 	pub fn global_transform(&self) -> Mat4 {
-		match self.parent.read().clone() {
-			Some(value) => value.global_transform() * *self.transform.read(),
-			None => *self.transform.read(),
+		match self.parent.lock().clone() {
+			Some(value) => value.global_transform() * *self.transform.lock(),
+			None => *self.transform.lock(),
 		}
 	}
 	pub fn set_local_transform(&self, transform: Mat4) {
-		*self.transform.write() = transform;
+		*self.transform.lock() = transform;
 	}
 	pub fn set_local_transform_components(
 		&self,
@@ -62,7 +62,7 @@ impl Spatial {
 		scl: Option<Vec3>,
 	) {
 		let reference_to_parent_transform =
-			Spatial::space_to_space_matrix(reference_space, self.parent.read().as_deref());
+			Spatial::space_to_space_matrix(reference_space, self.parent.lock().as_deref());
 		let mut local_transform_in_reference_space =
 			reference_to_parent_transform.inverse() * self.local_transform();
 		let (mut reference_space_scl, mut reference_space_rot, mut reference_space_pos) =

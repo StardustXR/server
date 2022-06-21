@@ -1,9 +1,9 @@
 use anyhow::{anyhow, Result};
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use slab::Slab;
 use std::sync::{Arc, Weak};
 
-pub struct Registry<T>(RwLock<Slab<Weak<T>>>);
+pub struct Registry<T>(Mutex<Slab<Weak<T>>>);
 
 impl<T> Registry<T> {
 	pub fn add(&self, t: T) -> Arc<T> {
@@ -12,21 +12,21 @@ impl<T> Registry<T> {
 		t_arc
 	}
 	pub fn add_raw(&self, t: &Arc<T>) {
-		self.0.write().insert(Arc::downgrade(t));
+		self.0.lock().insert(Arc::downgrade(t));
 	}
 	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
 		self.0
-			.read()
+			.lock()
 			.iter()
 			.filter_map(|(_, item)| item.upgrade())
 			.collect()
 	}
 	pub fn remove(&self, t: &T) {
-		for item in self.0.read().iter() {
+		for item in self.0.lock().iter() {
 			let (idx, item) = item;
 			if let Some(item) = item.upgrade() {
 				if std::ptr::eq(item.as_ref(), t) {
-					self.0.write().remove(idx);
+					self.0.lock().remove(idx);
 					break;
 				}
 			}
@@ -36,6 +36,6 @@ impl<T> Registry<T> {
 
 impl<T> Default for Registry<T> {
 	fn default() -> Self {
-		Registry::<T>(RwLock::new(Slab::new()))
+		Registry::<T>(Mutex::new(Slab::new()))
 	}
 }

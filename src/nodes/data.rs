@@ -9,7 +9,7 @@ use glam::{vec3a, Mat4};
 use lazy_static::lazy_static;
 use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use std::sync::{Arc, Weak};
 
 lazy_static! {
@@ -65,7 +65,7 @@ fn mask_get_map_at_root(binary: &[u8]) -> Result<flexbuffers::MapReader<&[u8]>> 
 
 #[derive(Default)]
 pub struct PulseSender {
-	mask: RwLock<Mask>,
+	mask: Mutex<Mask>,
 	aliases: LifeLinkedNodeList,
 }
 impl PulseSender {
@@ -91,7 +91,7 @@ impl PulseSender {
 			.get()
 			.unwrap()
 			.mask
-			.write()
+			.lock()
 			.set_mask(data.to_vec(), mask_get_map_at_root);
 		Ok(())
 	}
@@ -112,7 +112,7 @@ impl PulseSender {
 		let mut distance_sorted_receivers: Vec<(f32, &PulseReceiver)> = valid_receivers
 			.iter()
 			.filter(|receiver| receiver.get_field().is_some())
-			.filter(|receiver| mask_matches(&*sender.mask.read(), &*receiver.mask.read()))
+			.filter(|receiver| mask_matches(&*sender.mask.lock(), &*receiver.mask.lock()))
 			.map(|receiver| {
 				(
 					receiver
@@ -158,7 +158,7 @@ impl Drop for PulseSender {
 pub struct PulseReceiver {
 	uid: String,
 	node: Weak<Node>,
-	pub mask: RwLock<Mask>,
+	pub mask: Mutex<Mask>,
 	field: Weak<Field>,
 }
 impl<'a> PulseReceiver {
@@ -188,7 +188,7 @@ impl<'a> PulseReceiver {
 			node.pulse_receiver.get().is_some(),
 			"Internal: Node does not have a pulse receiver aspect"
 		);
-		let receiver_mask = node.pulse_receiver.get().unwrap().mask.read();
+		let receiver_mask = node.pulse_receiver.get().unwrap().mask.lock();
 		let data_mask = Mask {
 			binary: data.to_vec(),
 			get_fn: mask_get_map_at_root,
@@ -211,7 +211,7 @@ impl<'a> PulseReceiver {
 			.get()
 			.unwrap()
 			.mask
-			.write()
+			.lock()
 			.set_mask(data.to_vec(), mask_get_map_at_root);
 		Ok(())
 	}

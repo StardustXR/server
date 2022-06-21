@@ -1,25 +1,25 @@
 use crate::nodes::core::Node;
-use parking_lot::RwLock;
+use parking_lot::Mutex;
 use std::sync::Weak;
 
 #[derive(Default)]
 pub struct LifeLinkedNodeList {
-	nodes: RwLock<Vec<Weak<Node>>>,
+	nodes: Mutex<Vec<Weak<Node>>>,
 }
 impl LifeLinkedNodeList {
 	pub fn add(&self, node: Weak<Node>) {
-		self.nodes.write().push(node);
+		self.nodes.lock().push(node);
 	}
 
 	pub fn clear(&self) {
 		self.nodes
-			.read()
+			.lock()
 			.iter()
 			.filter_map(|node| node.upgrade())
 			.for_each(|node| {
 				node.destroy();
 			});
-		self.nodes.write().clear();
+		self.nodes.lock().clear();
 	}
 }
 impl Drop for LifeLinkedNodeList {
