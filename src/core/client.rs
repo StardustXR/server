@@ -3,9 +3,14 @@ use crate::nodes::data;
 use crate::nodes::field;
 use crate::nodes::root;
 use crate::nodes::spatial;
+use lazy_static::lazy_static;
 use libstardustxr::messenger::Messenger;
 use mio::net::UnixStream;
 use std::sync::Arc;
+
+lazy_static! {
+	pub static ref INTERNAL_CLIENT: Arc<Client> = Default::default();
+}
 
 #[derive(Default)]
 pub struct Client {
