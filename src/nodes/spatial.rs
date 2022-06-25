@@ -6,10 +6,10 @@ use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::push_to_vec;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::Mutex;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 pub struct Spatial {
-	// node: Weak<Node>,
+	pub(super) node: Weak<Node>,
 	parent: Mutex<Option<Arc<Spatial>>>,
 	transform: Mutex<Mat4>,
 }
@@ -25,7 +25,7 @@ impl Spatial {
 			"Internal: Node already has a Spatial aspect!"
 		);
 		let spatial = Spatial {
-			// node: node.downgrade(),
+			node: Arc::downgrade(node),
 			parent: Mutex::new(parent),
 			transform: Mutex::new(transform),
 		};
