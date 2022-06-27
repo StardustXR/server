@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Result};
 use parking_lot::Mutex;
 use slab::Slab;
 use std::sync::{Arc, Weak};
