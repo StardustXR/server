@@ -72,7 +72,15 @@ pub struct TypeInfo {
 	acceptors: Registry<ItemAcceptor>,
 }
 
-pub trait Item {
+pub trait AsItemTrait {
+	fn as_trait(&self) -> &dyn Item;
+}
+impl<T: Item + Sized> AsItemTrait for T {
+	fn as_trait(&self) -> &dyn Item {
+		self
+	}
+}
+pub trait Item: AsItemTrait {
 	fn get_type_info(&self) -> &'static TypeInfo;
 	fn get_data(&self) -> &ItemData;
 	fn get_node(&self) -> Arc<Node> {
