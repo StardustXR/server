@@ -195,6 +195,7 @@ impl Node {
 	// }
 }
 
+#[allow(dead_code)]
 pub struct Alias {
 	node: Weak<Node>,
 	original: Weak<Node>,
