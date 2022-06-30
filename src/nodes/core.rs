@@ -1,6 +1,6 @@
 use super::data::{PulseReceiver, PulseSender};
 use super::field::Field;
-use super::item::{ItemAcceptor, ItemType, ItemUI};
+use super::item::{Item, ItemAcceptor, ItemUI};
 use super::spatial::Spatial;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
@@ -35,7 +35,7 @@ pub struct Node {
 	pub field: OnceCell<Arc<Field>>,
 	pub pulse_sender: OnceCell<Arc<PulseSender>>,
 	pub pulse_receiver: OnceCell<Arc<PulseReceiver>>,
-	pub item: OnceCell<Arc<ItemType>>,
+	pub item: OnceCell<Arc<Item>>,
 	pub item_acceptor: OnceCell<Arc<ItemAcceptor>>,
 	pub item_ui: OnceCell<Arc<ItemUI>>,
 }
