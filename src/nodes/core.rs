@@ -1,5 +1,6 @@
 use super::data::{PulseReceiver, PulseSender};
 use super::field::Field;
+use super::input::{InputHandler, InputMethod};
 use super::item::{Item, ItemAcceptor, ItemUI};
 use super::spatial::Spatial;
 use crate::core::client::Client;
@@ -38,6 +39,8 @@ pub struct Node {
 	pub item: OnceCell<Arc<Item>>,
 	pub item_acceptor: OnceCell<Arc<ItemAcceptor>>,
 	pub item_ui: OnceCell<Arc<ItemUI>>,
+	pub input_method: OnceCell<Arc<InputMethod>>,
+	pub input_handler: OnceCell<Arc<InputHandler>>,
 }
 
 impl Node {
@@ -77,6 +80,8 @@ impl Node {
 			item: OnceCell::new(),
 			item_acceptor: OnceCell::new(),
 			item_ui: OnceCell::new(),
+			input_method: OnceCell::new(),
+			input_handler: OnceCell::new(),
 		};
 		node.add_local_signal("destroy", Node::destroy_flex);
 		node
