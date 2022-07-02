@@ -1,6 +1,7 @@
 use super::scenegraph::Scenegraph;
 use crate::nodes::data;
 use crate::nodes::field;
+use crate::nodes::input;
 use crate::nodes::item;
 use crate::nodes::root;
 use crate::nodes::spatial;
@@ -31,6 +32,7 @@ impl Client {
 		field::create_interface(&client);
 		data::create_interface(&client);
 		item::create_interface(&client);
+		input::create_interface(&client);
 		client
 	}
 	pub fn dispatch(&self) -> Result<(), std::io::Error> {
