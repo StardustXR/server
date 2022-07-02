@@ -6,8 +6,11 @@ use mio::unix::pipe;
 use mio::{Events, Interest, Poll, Token};
 use slab::Slab;
 use std::io::Write;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
+
+pub static FRAME: AtomicU64 = AtomicU64::new(0);
 
 pub struct EventLoop {
 	pub socket_path: String,
