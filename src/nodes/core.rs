@@ -174,30 +174,19 @@ impl Node {
 			.send_remote_signal(self.path.as_str(), method, data)
 			.map_err(|_| anyhow!("Unable to write in messenger"))
 	}
-	// pub fn execute_remote_method(
-	// 	&self,
-	// 	method: &str,
-	// 	data: &[u8],
-	// 	callback: Box<dyn Fn(&[u8]) + 'a>,
-	// ) -> Result<()> {
-	// 	self.aliases
-	// 		.get_valid_contents()
-	// 		.iter()
-	// 		.filter(|alias| alias.remote_methods.iter().any(|e| e == &method))
-	// 		.for_each(|alias| {
-	// 			alias
-	// 				.node
-	// 				.upgrade()
-	// 				.unwrap()
-	// 				.execute_remote_method(method, data, callback);
-	// 		});
-	// 	self.get_client()
-	// 		.messenger
-	// 		.as_ref()
-	// 		.ok_or_else(|| anyhow!("Node's client has no messenger"))?
-	// 		.execute_remote_method(self.path.as_str(), method, data, callback)
-	// 		.map_err(|_| anyhow!("Unable to write in messenger"))
-	// }
+	pub fn execute_remote_method(
+		&self,
+		method: &str,
+		data: &[u8],
+		callback: Box<dyn FnOnce(&[u8]) + Send + Sync>,
+	) -> Result<()> {
+		self.get_client()
+			.messenger
+			.as_ref()
+			.ok_or_else(|| anyhow!("Node's client has no messenger"))?
+			.execute_remote_method(self.path.as_str(), method, data, callback)
+			.map_err(|_| anyhow!("Unable to write in messenger"))
+	}
 }
 
 #[allow(dead_code)]
