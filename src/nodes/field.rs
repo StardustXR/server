@@ -378,3 +378,58 @@ pub fn create_sphere_field_flex(
 	SphereField::add_to(&node, flex_vec.idx(3).as_f32())?;
 	Ok(())
 }
+
+pub struct Ray {
+	origin: Vec3,
+	direction: Vec3,
+	space: Arc<Spatial>,
+}
+
+pub struct RayMarchResult {
+	ray: Ray,
+	distance: f32,
+	deepest_point_distance: f32,
+	ray_length: f32,
+	ray_steps: u32,
+}
+
+const MIN_RAY_STEPS: u32 = 0;
+const MAX_RAY_STEPS: u32 = 1000;
+
+const MIN_RAY_MARCH: f32 = 0.001_f32;
+const MAX_RAY_MARCH: f32 = f32::MAX;
+
+const MIN_RAY_LENGTH: f32 = 0_f32;
+const MAX_RAY_LENGTH: f32 = 1000_f32;
+
+pub fn ray_march(ray: Ray, field: &Field) -> RayMarchResult {
+	let mut result = RayMarchResult {
+		ray,
+		distance: f32::MAX,
+		deepest_point_distance: 0_f32,
+		ray_length: 0_f32,
+		ray_steps: 0,
+	};
+
+	let ray_to_field_matrix =
+		Spatial::space_to_space_matrix(Some(&result.ray.space), Some(field.spatial_ref()));
+	let ray_point = ray_to_field_matrix.transform_point3a(result.ray.origin.into());
+	let ray_direction = ray_to_field_matrix.transform_vector3a(result.ray.direction.into());
+
+	while result.ray_steps < MAX_RAY_STEPS && result.ray_length < MAX_RAY_LENGTH {
+		let distance = field.local_distance(ray_point);
+		let march_distance = distance.clamp(MIN_RAY_MARCH, MAX_RAY_MARCH);
+
+		result.ray_length += march_distance;
+		ray_point += ray_direction * march_distance;
+
+		if result.distance > distance {
+			result.deepest_point_distance = result.ray_length;
+		}
+		result.distance = distance.min(result.distance);
+
+		result.ray_steps += 1;
+	}
+
+	result
+}
