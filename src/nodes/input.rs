@@ -5,7 +5,9 @@ use crate::core::client::Client;
 use crate::core::eventloop::FRAME;
 use crate::core::registry::Registry;
 use anyhow::{anyhow, ensure, Result};
+use glam::Mat4;
 use lazy_static::lazy_static;
+use libstardustxr::schemas::input::{InputData, InputDataArgs, InputDataRaw};
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
@@ -16,8 +18,17 @@ lazy_static! {
 }
 
 pub trait InputSpecializationTrait {
-	fn distance(&self, space: &Spatial, field: &Field) -> f32;
-	fn serialize(&self, space: &Spatial, distance: f32) -> Vec<u8>;
+	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
+	fn serialize(
+		&self,
+		fbb: &mut flatbuffers::FlatBufferBuilder,
+		distance_link: &DistanceLink,
+		local_to_handler_matrix: Mat4,
+	) -> (
+		InputDataRaw,
+		flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
+	);
+	fn serialize_datamap(&self) -> Vec<u8>;
 }
 enum InputSpecialization {}
 impl Deref for InputSpecialization {
@@ -31,7 +42,8 @@ impl Deref for InputSpecialization {
 }
 
 pub struct InputMethod {
-	spatial: Arc<Spatial>,
+	uid: String,
+	pub spatial: Arc<Spatial>,
 	specialization: InputSpecialization,
 }
 impl InputMethod {
@@ -42,6 +54,7 @@ impl InputMethod {
 		);
 
 		let method = InputMethod {
+			uid: node.uid.clone(),
 			spatial: node.spatial.get().unwrap().clone(),
 			specialization,
 		};
@@ -61,10 +74,10 @@ impl Drop for InputMethod {
 	}
 }
 
-struct DistanceLink {
-	distance: f32,
-	method: Weak<InputMethod>,
-	handler: Weak<InputHandler>,
+pub struct DistanceLink {
+	pub distance: f32,
+	pub method: Weak<InputMethod>,
+	pub handler: Weak<InputHandler>,
 }
 impl DistanceLink {
 	fn from(method: &Arc<InputMethod>, handler: &Arc<InputHandler>) -> Option<Self> {
@@ -77,18 +90,44 @@ impl DistanceLink {
 	fn serialize(&self) -> Option<Vec<u8>> {
 		self.method.upgrade().and_then(|method| {
 			self.handler.upgrade().map(|handler| {
-				method
-					.specialization
-					.serialize(&handler.spatial.upgrade().unwrap(), self.distance)
+				let mut fbb = flatbuffers::FlatBufferBuilder::with_capacity(1024);
+				let uid = Some(fbb.create_string(&method.uid));
+				let datamap = Some(fbb.create_vector(&self.serialize_datamap()));
+
+				let (input_type, input_data) = method.specialization.serialize(
+					&mut fbb,
+					self,
+					Spatial::space_to_space_matrix(Some(&method.spatial), Some(&handler.spatial)),
+				);
+
+				let root = InputData::create(
+					&mut fbb,
+					&InputDataArgs {
+						uid,
+						input_type,
+						input: Some(input_data),
+						distance: self.distance,
+						datamap,
+					},
+				);
+				fbb.finish(root, None);
+				Vec::from(fbb.finished_data())
 			})
 		})
+	}
+	fn serialize_datamap(&self) -> Vec<u8> {
+		if let Some(method) = self.method.upgrade() {
+			method.specialization.serialize_datamap()
+		} else {
+			Default::default()
+		}
 	}
 }
 
 pub struct InputHandler {
 	node: Weak<Node>,
-	spatial: Weak<Spatial>,
-	field: Weak<Field>,
+	spatial: Arc<Spatial>,
+	pub field: Weak<Field>,
 }
 impl InputHandler {
 	pub fn add_to(node: &Arc<Node>, field: &Arc<Field>) -> Result<()> {
@@ -99,7 +138,7 @@ impl InputHandler {
 
 		let handler = InputHandler {
 			node: Arc::downgrade(node),
-			spatial: Arc::downgrade(node.spatial.get().unwrap()),
+			spatial: node.spatial.get().unwrap().clone(),
 			field: Arc::downgrade(field),
 		};
 		let handler = INPUT_HANDLER_REGISTRY.add(handler);
@@ -117,7 +156,9 @@ impl InputHandler {
 			return;
 		}
 
-		if let Some(data) = distance_link.serialize() {
+		let serialized_data = distance_link.serialize();
+
+		if let Some(data) = serialized_data {
 			let _ = self.node.upgrade().unwrap().execute_remote_method(
 				"input",
 				&data,
