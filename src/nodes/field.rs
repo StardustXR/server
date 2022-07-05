@@ -413,7 +413,7 @@ pub fn ray_march(ray: Ray, field: &Field) -> RayMarchResult {
 
 	let ray_to_field_matrix =
 		Spatial::space_to_space_matrix(Some(&result.ray.space), Some(field.spatial_ref()));
-	let ray_point = ray_to_field_matrix.transform_point3a(result.ray.origin.into());
+	let mut ray_point = ray_to_field_matrix.transform_point3a(result.ray.origin.into());
 	let ray_direction = ray_to_field_matrix.transform_vector3a(result.ray.direction.into());
 
 	while result.ray_steps < MAX_RAY_STEPS && result.ray_length < MAX_RAY_LENGTH {
