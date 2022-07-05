@@ -380,17 +380,17 @@ pub fn create_sphere_field_flex(
 }
 
 pub struct Ray {
-	origin: Vec3,
-	direction: Vec3,
-	space: Arc<Spatial>,
+	pub origin: Vec3,
+	pub direction: Vec3,
+	pub space: Arc<Spatial>,
 }
 
 pub struct RayMarchResult {
-	ray: Ray,
-	distance: f32,
-	deepest_point_distance: f32,
-	ray_length: f32,
-	ray_steps: u32,
+	pub ray: Ray,
+	pub distance: f32,
+	pub deepest_point_distance: f32,
+	pub ray_length: f32,
+	pub ray_steps: u32,
 }
 
 // const MIN_RAY_STEPS: u32 = 0;
