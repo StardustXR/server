@@ -393,13 +393,13 @@ pub struct RayMarchResult {
 	ray_steps: u32,
 }
 
-const MIN_RAY_STEPS: u32 = 0;
+// const MIN_RAY_STEPS: u32 = 0;
 const MAX_RAY_STEPS: u32 = 1000;
 
 const MIN_RAY_MARCH: f32 = 0.001_f32;
 const MAX_RAY_MARCH: f32 = f32::MAX;
 
-const MIN_RAY_LENGTH: f32 = 0_f32;
+// const MIN_RAY_LENGTH: f32 = 0_f32;
 const MAX_RAY_LENGTH: f32 = 1000_f32;
 
 pub fn ray_march(ray: Ray, field: &Field) -> RayMarchResult {
