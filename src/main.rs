@@ -1,17 +1,23 @@
 mod core;
 mod nodes;
+
 use self::core::eventloop::EventLoop;
-use std::sync::mpsc::{channel, TryRecvError};
+use stereokit_rs::functions::*;
 
 fn main() {
-	let (tx, rx) = channel();
+	ctrlc::set_handler(move || sk_shutdown()).expect("Error setting Ctrl-C handler");
 
-	ctrlc::set_handler(move || tx.send(()).unwrap()).expect("Error setting Ctrl-C handler");
+	SKSettings::default().app_name("Stardust XR").init();
 
 	let event_loop = EventLoop::new(None).expect("Couldn't create server socket");
 	println!("Stardust socket created at {}", event_loop.socket_path);
 
-	while let Err(TryRecvError::Empty) = rx.try_recv() {
-		std::thread::sleep(std::time::Duration::from_millis(1000 / 60));
-	}
+	sk_run_data(
+		&mut Box::new(&mut || {
+			// println!("hii uwu");
+		}),
+		&mut Box::new(&mut || {
+			println!("Shutting down...");
+		}),
+	);
 }

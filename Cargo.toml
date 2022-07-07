@@ -26,3 +26,8 @@ thiserror = "1.0.31"
 
 [dependencies.libstardustxr]
 path = "../libstardustxr-rs"
+
+[dependencies.stereokit-rs]
+path = "../stereokit-rs"
+default-features = false
+features = ["linux-egl"]
