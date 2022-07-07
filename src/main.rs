@@ -5,7 +5,7 @@ use self::core::eventloop::EventLoop;
 use stereokit_rs::functions::*;
 
 fn main() {
-	ctrlc::set_handler(move || sk_shutdown()).expect("Error setting Ctrl-C handler");
+	ctrlc::set_handler(|| sk_quit()).expect("Error setting Ctrl-C handler");
 
 	SKSettings::default().app_name("Stardust XR").init();
 
@@ -20,4 +20,6 @@ fn main() {
 			println!("Shutting down...");
 		}),
 	);
+
+	sk_shutdown();
 }
