@@ -4,6 +4,7 @@ mod nodes;
 use self::core::eventloop::EventLoop;
 use anyhow::{ensure, Result};
 use clap::Parser;
+use stereokit_rs as sk;
 use stereokit_rs::enums::DisplayMode;
 use stereokit_rs::functions::*;
 
@@ -30,7 +31,8 @@ fn main() -> Result<()> {
 
 	sk_run(
 		&mut Box::new(&mut || {
-			// println!("hii uwu");
+			let time = unsafe { sk::sys::time_get() };
+			nodes::root::logic_step(time);
 		}),
 		&mut Box::new(&mut || {
 			println!("Shutting down...");
