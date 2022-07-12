@@ -18,7 +18,7 @@ struct CliArgs {
 
 fn main() -> Result<()> {
 	let cli_args = CliArgs::parse();
-	ctrlc::set_handler(|| sk_quit()).expect("Error setting Ctrl-C handler");
+	ctrlc::set_handler(sk_quit).expect("Error setting Ctrl-C handler");
 
 	let mut init_settings = SKSettings::default().app_name("Stardust XR");
 	if cli_args.flatscreen {
