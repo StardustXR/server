@@ -52,12 +52,10 @@ impl EventLoop {
 										let client = Client::from_connection(socket);
 										*clients.get_mut(client_number).unwrap() = Some(client);
 									}
-									Err(e) => {
-										if e.kind() == std::io::ErrorKind::WouldBlock {
-											break;
-										}
-										return Err(e.into());
-									}
+									Err(e) => match e.kind() {
+										std::io::ErrorKind::WouldBlock => break,
+										_ => return Err(e.into()),
+									},
 								}
 							},
 							STOP => return Ok(()),
@@ -66,7 +64,8 @@ impl EventLoop {
 									clients.get(token.0).and_then(|client| client.as_ref());
 								if let Some(client) = client {
 									loop {
-										match client.dispatch() {
+										let dispatch_result = client.dispatch();
+										match dispatch_result {
 											Ok(_) => continue,
 											Err(e) => match e.kind() {
 												std::io::ErrorKind::WouldBlock => break,
@@ -97,7 +96,8 @@ impl Drop for EventLoop {
 		let buf: [u8; 1] = [1; 1];
 		let _ = self.stop_write.write(buf.as_slice());
 		if let Some(handle) = self.join_handle.take() {
-			handle.join().unwrap().unwrap();
+			let _ = handle.join();
+			// handle.join().unwrap().unwrap();
 		}
 	}
 }

@@ -29,10 +29,12 @@ fn main() -> Result<()> {
 	let event_loop = EventLoop::new(None).expect("Couldn't create server socket");
 	println!("Stardust socket created at {}", event_loop.socket_path);
 
+	let mut previous_time = 0_f64;
 	sk_run(
-		&mut Box::new(&mut || {
-			let time = unsafe { sk::sys::time_get() };
-			nodes::root::logic_step(time);
+		&mut Box::new(&mut move || {
+			let current_time = unsafe { sk::sys::time_get() };
+			nodes::root::Root::logic_step(current_time - previous_time);
+			previous_time = current_time;
 		}),
 		&mut Box::new(&mut || {
 			println!("Shutting down...");
