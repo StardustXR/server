@@ -65,12 +65,11 @@ impl EventLoop {
 								match clients.get(token.0).unwrap().as_ref().unwrap().dispatch() {
 									Ok(_) => continue,
 									Err(e) => match e.kind() {
-										std::io::ErrorKind::UnexpectedEof => {
+										std::io::ErrorKind::WouldBlock => break,
+										_ => {
 											clients.remove(token.0);
 											break;
 										}
-										std::io::ErrorKind::WouldBlock => break,
-										_ => return Err(e.into()),
 									},
 								}
 							},
