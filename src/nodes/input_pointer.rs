@@ -8,18 +8,19 @@ use libstardustxr::schemas::input_pointer;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+#[derive(Default)]
 pub struct Pointer {
 	grab: AtomicBool,
 	select: AtomicBool,
 }
-impl Default for Pointer {
-	fn default() -> Self {
-		Pointer {
-			grab: Default::default(),
-			select: Default::default(),
-		}
-	}
-}
+// impl Default for Pointer {
+// 	fn default() -> Self {
+// 		Pointer {
+// 			grab: Default::default(),
+// 			select: Default::default(),
+// 		}
+// 	}
+// }
 impl Pointer {
 	fn ray_march(&self, space: &Arc<Spatial>, field: &Field) -> RayMarchResult {
 		ray_march(
