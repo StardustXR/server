@@ -61,18 +61,24 @@ impl EventLoop {
 								}
 							},
 							STOP => return Ok(()),
-							token => loop {
-								match clients.get(token.0).unwrap().as_ref().unwrap().dispatch() {
-									Ok(_) => continue,
-									Err(e) => match e.kind() {
-										std::io::ErrorKind::WouldBlock => break,
-										_ => {
-											clients.remove(token.0);
-											break;
+							token => {
+								let client =
+									clients.get(token.0).and_then(|client| client.as_ref());
+								if let Some(client) = client {
+									loop {
+										match client.dispatch() {
+											Ok(_) => continue,
+											Err(e) => match e.kind() {
+												std::io::ErrorKind::WouldBlock => break,
+												_ => {
+													clients.remove(token.0);
+													break;
+												}
+											},
 										}
-									},
+									}
 								}
-							},
+							}
 						}
 					}
 				}
