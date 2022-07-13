@@ -52,7 +52,14 @@ impl EventLoop {
 		poll.registry()
 			.register(&mut stop_receiver, STOP, Interest::READABLE)?;
 		'event_loop: loop {
-			poll.poll(&mut events, timeout)?;
+			match poll.poll(&mut events, timeout) {
+				Err(e) => {
+					if e.kind() == std::io::ErrorKind::Interrupted {
+						continue 'event_loop;
+					}
+				}
+				_ => {}
+			}
 			for event in &events {
 				match event.token() {
 					LISTENER => EventLoop::accept_client(&socket, &mut clients, &poll)?,
