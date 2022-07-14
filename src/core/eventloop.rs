@@ -69,6 +69,7 @@ impl EventLoop {
 			}
 		}
 
+		clients.clear(); // for better log messages
 		println!("Event loop gracefully finished");
 		Ok(())
 	}
