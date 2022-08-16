@@ -3,8 +3,6 @@ edition = "2018"
 name = "stardust-xr"
 version = "0.9.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 anyhow = "1.0.57"
 clap = { version = "3.1.6", features = ["derive"] }
@@ -15,7 +13,6 @@ flexbuffers = "2.0.0"
 glam = {version = "0.20.5", features = ["mint"]}
 lazy_static = "1.4.0"
 mint = "0.5.9"
-mio = {version = "0.8.3", features = ["net", "os-poll", "os-ext"]}
 nanoid = "0.4.0"
 once_cell = "1.12.0"
 parking_lot = "0.12.1"
@@ -23,12 +20,13 @@ portable-atomic = {version = "0.3.0", features = ["float", "std"]}
 rccell = "0.1.3"
 rustc-hash = "1.1.0"
 slab = "0.4.6"
+tokio = { version = "1", features = ["full"] }
 thiserror = "1.0.31"
 
 [dependencies.libstardustxr]
 path = "../libstardustxr-rs"
 
-[dependencies.stereokit-rs]
+[dependencies.stereokit]
 path = "../stereokit-rs"
 default-features = false
 features = ["linux-egl"]

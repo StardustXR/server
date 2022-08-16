@@ -5,6 +5,7 @@ use super::item::{Item, ItemAcceptor, ItemUI};
 use super::spatial::Spatial;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
+use crate::TOKIO_HANDLE;
 use anyhow::{anyhow, Result};
 use libstardustxr::scenegraph::ScenegraphError;
 use nanoid::nanoid;
@@ -156,7 +157,8 @@ impl Node {
 		}
 	}
 	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
-		self.aliases
+		let _ = self
+			.aliases
 			.get_valid_contents()
 			.iter()
 			.filter(|alias| alias.remote_signals.iter().any(|e| e == &method))
@@ -167,25 +169,28 @@ impl Node {
 					.unwrap()
 					.send_remote_signal(method, data);
 			});
-		self.get_client()
-			.messenger
-			.as_ref()
-			.ok_or_else(|| anyhow!("Node's client has no messenger"))?
-			.send_remote_signal(self.path.as_str(), method, data)
-			.map_err(|_| anyhow!("Unable to write in messenger"))
+		let client = self.get_client();
+		let path = self.path.clone();
+		let method = method.to_string();
+		let data = data.to_vec();
+		TOKIO_HANDLE.lock().as_ref().unwrap().spawn(async move {
+			if let Some(messenger) = client.messenger.as_ref() {
+				let _ = messenger
+					.send_remote_signal(path.as_str(), method.as_str(), data.as_slice())
+					.await;
+			}
+		});
+		Ok(())
 	}
-	pub fn execute_remote_method(
-		&self,
-		method: &str,
-		data: &[u8],
-		callback: Box<dyn FnOnce(&[u8]) + Send + Sync>,
-	) -> Result<()> {
-		self.get_client()
-			.messenger
-			.as_ref()
-			.ok_or_else(|| anyhow!("Node's client has no messenger"))?
-			.execute_remote_method(self.path.as_str(), method, data, callback)
-			.map_err(|_| anyhow!("Unable to write in messenger"))
+	pub async fn execute_remote_method(&self, method: &str, data: Vec<u8>) -> Result<Vec<u8>> {
+		match self.get_client().messenger.as_ref() {
+			None => Err(anyhow!("Messenger does not exist for this node's client")),
+			Some(messenger) => {
+				messenger
+					.execute_remote_method(self.path.as_str(), method, &data)
+					.await
+			}
+		}
 	}
 }
 

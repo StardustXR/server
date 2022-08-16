@@ -156,23 +156,23 @@ impl InputHandler {
 			return;
 		}
 
-		let serialized_data = distance_link.serialize();
+		match distance_link.serialize() {
+			None => InputHandler::next_input(old_frame, distance_links),
+			Some(data) => {
+				let node = self.node.upgrade().unwrap();
 
-		if let Some(data) = serialized_data {
-			let _ = self.node.upgrade().unwrap().execute_remote_method(
-				"input",
-				&data,
-				Box::new(move |data| {
-					let capture = flexbuffers::Reader::get_root(data)
-						.and_then(|data| data.get_bool())
-						.unwrap_or(false);
-					if !distance_links.is_empty() && !capture {
-						InputHandler::next_input(old_frame, distance_links);
+				tokio::spawn(async move {
+					let data = node.execute_remote_method("input", data).await;
+					if let Ok(data) = data {
+						let capture = flexbuffers::Reader::get_root(data.as_slice())
+							.and_then(|data| data.get_bool())
+							.unwrap_or(false);
+						if !distance_links.is_empty() && !capture {
+							InputHandler::next_input(old_frame, distance_links);
+						}
 					}
-				}),
-			);
-		} else {
-			InputHandler::next_input(old_frame, distance_links);
+				});
+			}
 		}
 	}
 

@@ -1,3 +1,4 @@
+use super::eventloop::EventLoop;
 use super::scenegraph::Scenegraph;
 use crate::nodes::data;
 use crate::nodes::field;
@@ -5,32 +6,52 @@ use crate::nodes::input;
 use crate::nodes::item;
 use crate::nodes::root::Root;
 use crate::nodes::spatial;
+use anyhow::Result;
 use lazy_static::lazy_static;
 use libstardustxr::messenger::Messenger;
-use mio::net::UnixStream;
 use once_cell::sync::OnceCell;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
+use tokio::net::UnixStream;
+use tokio::sync::Notify;
+use tokio::task::JoinHandle;
 
 lazy_static! {
-	pub static ref INTERNAL_CLIENT: Arc<Client> = Client::new_local();
+	pub static ref INTERNAL_CLIENT: Arc<Client> = Arc::new(Client {
+		event_loop: Weak::new(),
+		index: 0,
+
+		stop_notifier: Default::default(),
+		join_handle: OnceCell::new(),
+
+		messenger: None,
+		scenegraph: Default::default(),
+		root: OnceCell::new(),
+	});
 }
 
 pub struct Client {
+	event_loop: Weak<EventLoop>,
+	index: usize,
+	stop_notifier: Arc<Notify>,
+	join_handle: OnceCell<JoinHandle<Result<()>>>,
+
 	pub messenger: Option<Messenger>,
 	pub scenegraph: Scenegraph,
 	pub root: OnceCell<Arc<Root>>,
 }
 impl Client {
-	pub fn new_local() -> Arc<Self> {
-		Arc::new(Client {
-			messenger: None,
-			scenegraph: Default::default(),
-			root: OnceCell::new(),
-		})
-	}
-	pub fn from_connection(connection: UnixStream) -> Arc<Self> {
+	pub fn from_connection(
+		index: usize,
+		event_loop: &Arc<EventLoop>,
+		connection: UnixStream,
+	) -> Arc<Self> {
 		println!("New client connected");
 		let client = Arc::new(Client {
+			event_loop: Arc::downgrade(event_loop),
+			index,
+			stop_notifier: Default::default(),
+			join_handle: OnceCell::new(),
+
 			messenger: Some(Messenger::new(connection)),
 			scenegraph: Default::default(),
 			root: OnceCell::new(),
@@ -42,18 +63,44 @@ impl Client {
 		data::create_interface(&client);
 		item::create_interface(&client);
 		input::create_interface(&client);
+
+		let _ = client.join_handle.set(tokio::spawn({
+			let client = client.clone();
+			async move {
+				let dispatch_loop = async {
+					loop {
+						client.dispatch().await?
+					}
+				};
+
+				let result = tokio::select! {
+					_ = client.stop_notifier.notified() => Ok(()),
+					e = dispatch_loop => e,
+				};
+				client.disconnect().await;
+				result
+			}
+		}));
 		client
 	}
-	pub fn dispatch(&self) -> Result<(), std::io::Error> {
-		if let Some(messenger) = &self.messenger {
-			messenger.dispatch(&self.scenegraph)
-		} else {
-			Err(std::io::Error::from(std::io::ErrorKind::Unsupported))
+
+	pub async fn dispatch(&self) -> Result<(), std::io::Error> {
+		match &self.messenger {
+			Some(messenger) => messenger.dispatch(&self.scenegraph).await,
+			None => Err(std::io::Error::from(std::io::ErrorKind::Unsupported)),
+		}
+	}
+
+	pub async fn disconnect(&self) {
+		self.stop_notifier.notify_one();
+		if let Some(event_loop) = self.event_loop.upgrade() {
+			event_loop.clients.lock().await.remove(self.index);
 		}
 	}
 }
 impl Drop for Client {
 	fn drop(&mut self) {
+		self.stop_notifier.notify_one();
 		println!("Client disconnected");
 	}
 }
