@@ -4,6 +4,7 @@ use crate::nodes::data;
 use crate::nodes::field;
 use crate::nodes::input;
 use crate::nodes::item;
+use crate::nodes::model;
 use crate::nodes::root::Root;
 use crate::nodes::spatial;
 use anyhow::Result;
@@ -60,6 +61,7 @@ impl Client {
 		let _ = client.root.set(Root::create(&client));
 		spatial::create_interface(&client);
 		field::create_interface(&client);
+		model::create_interface(&client);
 		data::create_interface(&client);
 		item::create_interface(&client);
 		input::create_interface(&client);

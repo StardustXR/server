@@ -2,6 +2,7 @@ use super::data::{PulseReceiver, PulseSender};
 use super::field::Field;
 use super::input::{InputHandler, InputMethod};
 use super::item::{Item, ItemAcceptor, ItemUI};
+use super::model::Model;
 use super::spatial::Spatial;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
@@ -35,6 +36,7 @@ pub struct Node {
 
 	pub spatial: OnceCell<Arc<Spatial>>,
 	pub field: OnceCell<Arc<Field>>,
+	pub model: OnceCell<Arc<Model>>,
 	pub pulse_sender: OnceCell<Arc<PulseSender>>,
 	pub pulse_receiver: OnceCell<Arc<PulseReceiver>>,
 	pub item: OnceCell<Arc<Item>>,
@@ -76,6 +78,7 @@ impl Node {
 
 			spatial: OnceCell::new(),
 			field: OnceCell::new(),
+			model: OnceCell::new(),
 			pulse_sender: OnceCell::new(),
 			pulse_receiver: OnceCell::new(),
 			item: OnceCell::new(),

@@ -1,6 +1,8 @@
 mod core;
 mod nodes;
 
+use crate::nodes::model::{MODELS_TO_DROP, MODEL_REGISTRY};
+
 use self::core::eventloop::EventLoop;
 use anyhow::Result;
 use clap::Parser;
@@ -44,8 +46,12 @@ fn main() -> Result<()> {
 		.spawn(move || event_loop(event_stop_rx))?;
 
 	stereokit.run(
-		|_draw_ctx| {
+		|draw_ctx| {
 			nodes::root::Root::logic_step(stereokit.time_elapsed());
+			for model in MODEL_REGISTRY.get_valid_contents() {
+				model.draw(&stereokit, draw_ctx);
+			}
+			MODELS_TO_DROP.lock().clear();
 		},
 		|| {
 			println!("Cleanly shut down StereoKit");

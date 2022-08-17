@@ -22,6 +22,8 @@ rustc-hash = "1.1.0"
 slab = "0.4.6"
 tokio = { version = "1", features = ["full"] }
 thiserror = "1.0.31"
+send_wrapper = "0.6.0"
+prisma = "0.1.1"
 
 [dependencies.libstardustxr]
 path = "../libstardustxr-rs"
