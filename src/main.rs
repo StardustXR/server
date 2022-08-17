@@ -8,7 +8,7 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use stereokit::{lifecycle::DisplayMode, Settings};
-use tokio::runtime::Handle;
+use tokio::{runtime::Handle, sync::oneshot};
 
 static TOKIO_HANDLE: Lazy<Mutex<Option<Handle>>> = Lazy::new(Default::default);
 
@@ -38,18 +38,21 @@ fn main() -> Result<()> {
 		.init()
 		.expect("StereoKit failed to initialize");
 
+	let (event_stop_tx, event_stop_rx) = oneshot::channel::<()>();
 	let event_thread = std::thread::Builder::new()
 		.name("event_loop".to_owned())
-		.spawn(event_loop)?;
+		.spawn(move || event_loop(event_stop_rx))?;
 
 	stereokit.run(
 		|_draw_ctx| {
 			nodes::root::Root::logic_step(stereokit.time_elapsed());
 		},
 		|| {
-			println!("Shut down StereoKit");
+			println!("Cleanly shut down StereoKit");
 		},
 	);
+
+	let _ = event_stop_tx.send(());
 	event_thread
 		.join()
 		.expect("Failed to cleanly shut down event loop")?;
@@ -58,7 +61,7 @@ fn main() -> Result<()> {
 }
 
 #[tokio::main]
-async fn event_loop() -> anyhow::Result<()> {
+async fn event_loop(stop_rx: oneshot::Receiver<()>) -> anyhow::Result<()> {
 	TOKIO_HANDLE.lock().replace(Handle::current());
 
 	let (event_loop, event_loop_join_handle) =
@@ -69,9 +72,11 @@ async fn event_loop() -> anyhow::Result<()> {
 	let result = tokio::select! {
 		biased;
 		_ = tokio::signal::ctrl_c() => Ok(()),
-		// e = task => e?,
+		_ = stop_rx => Ok(()),
 		e = event_loop_join_handle => e?,
 	};
+
+	println!("Cleanly shut down event loop");
 
 	unsafe {
 		stereokit::sys::sk_quit();
