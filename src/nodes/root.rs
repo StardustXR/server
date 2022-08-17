@@ -4,14 +4,11 @@ use crate::core::client::Client;
 use crate::core::registry::Registry;
 use anyhow::Result;
 use glam::Mat4;
-use lazy_static::lazy_static;
 use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-lazy_static! {
-	static ref ROOT_REGISTRY: Registry<Root> = Default::default();
-}
+static ROOT_REGISTRY: Registry<Root> = Registry::new();
 
 pub struct Root {
 	node: Arc<Node>,

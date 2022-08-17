@@ -74,7 +74,7 @@ impl Node {
 			destroyable: AtomicBool::from(destroyable),
 
 			alias: OnceCell::new(),
-			aliases: Default::default(),
+			aliases: Registry::new(),
 
 			spatial: OnceCell::new(),
 			field: OnceCell::new(),

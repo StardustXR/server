@@ -5,11 +5,15 @@ use std::sync::{Arc, Weak};
 
 use core::hash::BuildHasherDefault;
 use dashmap::DashMap;
+use once_cell::sync::Lazy;
 use rustc_hash::FxHasher;
 
-pub struct Registry<T>(DashMap<usize, Weak<T>, BuildHasherDefault<FxHasher>>);
+pub struct Registry<T>(Lazy<DashMap<usize, Weak<T>, BuildHasherDefault<FxHasher>>>);
 
 impl<T> Registry<T> {
+	pub const fn new() -> Self {
+		Registry(Lazy::new(|| DashMap::default()))
+	}
 	pub fn add(&self, t: T) -> Arc<T> {
 		let t_arc = Arc::new(t);
 		self.add_raw(&t_arc);
@@ -30,11 +34,5 @@ impl<T> Registry<T> {
 	}
 	pub fn clear(&self) {
 		self.0.clear();
-	}
-}
-
-impl<T> Default for Registry<T> {
-	fn default() -> Self {
-		Registry(DashMap::default())
 	}
 }

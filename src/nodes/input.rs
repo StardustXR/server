@@ -6,16 +6,13 @@ use crate::core::eventloop::FRAME;
 use crate::core::registry::Registry;
 use anyhow::{anyhow, ensure, Result};
 use glam::Mat4;
-use lazy_static::lazy_static;
 use libstardustxr::schemas::input::{InputData, InputDataArgs, InputDataRaw};
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
-lazy_static! {
-	static ref INPUT_METHOD_REGISTRY: Registry<InputMethod> = Default::default();
-	static ref INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Default::default();
-}
+static INPUT_METHOD_REGISTRY: Registry<InputMethod> = Registry::new();
+static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
 
 pub trait InputSpecializationTrait {
 	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;

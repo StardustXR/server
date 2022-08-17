@@ -18,8 +18,8 @@ use stereokit::lifecycle::DrawContext;
 use stereokit::model::Model as SKModel;
 use stereokit::StereoKit;
 
+pub static MODEL_REGISTRY: Registry<Model> = Registry::new();
 lazy_static! {
-	pub static ref MODEL_REGISTRY: Registry<Model> = Default::default();
 	pub static ref MODELS_TO_DROP: Mutex<Vec<SendWrapper<SKModel>>> = Default::default();
 }
 

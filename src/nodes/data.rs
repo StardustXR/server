@@ -6,16 +6,13 @@ use crate::core::nodelist::LifeLinkedNodeList;
 use crate::core::registry::Registry;
 use anyhow::{anyhow, ensure, Result};
 use glam::{vec3a, Mat4};
-use lazy_static::lazy_static;
 use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::Mutex;
 use std::sync::{Arc, Weak};
 
-lazy_static! {
-	static ref PULSE_SENDER_REGISTRY: Registry<PulseSender> = Default::default();
-	static ref PULSE_RECEIVER_REGISTRY: Registry<PulseReceiver> = Default::default();
-}
+static PULSE_SENDER_REGISTRY: Registry<PulseSender> = Registry::new();
+static PULSE_RECEIVER_REGISTRY: Registry<PulseReceiver> = Registry::new();
 
 fn mask_matches(mask_map_lesser: &Mask, mask_map_greater: &Mask) -> bool {
 	(|| -> Result<_> {

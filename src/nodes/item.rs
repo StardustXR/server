@@ -29,8 +29,8 @@ lazy_static! {
 		aliased_remote_signals: vec![],
 		aliased_remote_methods: vec![],
 		ui: Default::default(),
-		items: Default::default(),
-		acceptors: Default::default(),
+		items: Registry::new(),
+		acceptors: Registry::new(),
 	};
 	static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
 		type_name: "panel",
@@ -55,8 +55,8 @@ lazy_static! {
 		aliased_remote_signals: vec![],
 		aliased_remote_methods: vec![],
 		ui: Default::default(),
-		items: Default::default(),
-		acceptors: Default::default(),
+		items: Registry::new(),
+		acceptors: Registry::new(),
 	};
 }
 
@@ -268,7 +268,7 @@ impl ItemAcceptor {
 			node: Arc::downgrade(node),
 			type_info,
 			field: Mutex::new(field),
-			accepted: Default::default(),
+			accepted: Registry::new(),
 		});
 		if let Some(ui) = type_info.ui.lock().upgrade() {
 			ui.handle_create_acceptor(&acceptor);
