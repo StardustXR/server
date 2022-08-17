@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use std::ptr;
 use std::sync::{Arc, Weak};
 
@@ -25,6 +27,9 @@ impl<T> Registry<T> {
 	}
 	pub fn remove(&self, t: &T) {
 		self.0.remove(&(ptr::addr_of!(*t) as usize));
+	}
+	pub fn clear(&self) {
+		self.0.clear();
 	}
 }
 
