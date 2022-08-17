@@ -48,7 +48,7 @@ pub struct Node {
 
 impl Node {
 	pub fn get_client(&self) -> Arc<Client> {
-		self.client.clone().upgrade().unwrap()
+		self.client.upgrade().unwrap()
 	}
 	// pub fn get_name(&self) -> &str {
 	// 	&self.path[self.trailing_slash_pos + 1..]
