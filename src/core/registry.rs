@@ -3,16 +3,15 @@
 use std::ptr;
 use std::sync::{Arc, Weak};
 
-use core::hash::BuildHasherDefault;
-use dashmap::DashMap;
 use once_cell::sync::Lazy;
-use rustc_hash::FxHasher;
+use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 
-pub struct Registry<T>(Lazy<DashMap<usize, Weak<T>, BuildHasherDefault<FxHasher>>>);
+pub struct Registry<T>(Lazy<Mutex<FxHashMap<usize, Weak<T>>>>);
 
-impl<T> Registry<T> {
+impl<T: Send + Sync> Registry<T> {
 	pub const fn new() -> Self {
-		Registry(Lazy::new(|| DashMap::default()))
+		Registry(Lazy::new(|| Mutex::new(FxHashMap::default())))
 	}
 	pub fn add(&self, t: T) -> Arc<T> {
 		let t_arc = Arc::new(t);
@@ -21,18 +20,20 @@ impl<T> Registry<T> {
 	}
 	pub fn add_raw(&self, t: &Arc<T>) {
 		self.0
-			.insert(ptr::addr_of!(**t) as usize, Arc::downgrade(t));
+			.lock()
+			.insert(Arc::as_ptr(t) as usize, Arc::downgrade(t));
 	}
 	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
 		self.0
+			.lock()
 			.iter()
-			.filter_map(|pair| pair.value().upgrade())
+			.filter_map(|pair| pair.1.upgrade())
 			.collect()
 	}
 	pub fn remove(&self, t: &T) {
-		self.0.remove(&(ptr::addr_of!(*t) as usize));
+		self.0.lock().remove(&(ptr::addr_of!(*t) as usize));
 	}
 	pub fn clear(&self) {
-		self.0.clear();
+		self.0.lock().clear();
 	}
 }
