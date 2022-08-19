@@ -5,6 +5,7 @@ use crate::core::registry::Registry;
 use anyhow::Result;
 use glam::Mat4;
 use libstardustxr::flex::flexbuffer_from_vector_arguments;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ impl Root {
 	pub fn create(client: &Arc<Client>) -> Arc<Self> {
 		let node = Node::create(client, "", "", false);
 		node.add_local_signal("subscribeLogicStep", Root::subscribe_logic_step);
+		node.add_local_signal("setBasePrefixes", Root::set_base_prefixes);
 		let node = node.add_to_scenegraph();
 		let _ = Spatial::add_to(&node, None, Mat4::IDENTITY);
 
@@ -47,6 +49,17 @@ impl Root {
 				let _ = root.node.send_remote_signal("logicStep", &data);
 			}
 		}
+	}
+
+	fn set_base_prefixes(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+		*calling_client.base_resource_prefixes.lock() = flex_vec
+			.iter()
+			.filter_map(|prefix| prefix.get_str().ok())
+			.map(|prefix| PathBuf::from(prefix))
+			.filter(|prefix| prefix.is_absolute())
+			.collect();
+		Ok(())
 	}
 }
 

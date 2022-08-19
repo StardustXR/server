@@ -11,6 +11,8 @@ use anyhow::Result;
 use lazy_static::lazy_static;
 use libstardustxr::messenger::Messenger;
 use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
+use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use tokio::net::UnixStream;
 use tokio::sync::Notify;
@@ -27,6 +29,7 @@ lazy_static! {
 		messenger: None,
 		scenegraph: Default::default(),
 		root: OnceCell::new(),
+		base_resource_prefixes: Default::default(),
 	});
 }
 
@@ -39,6 +42,7 @@ pub struct Client {
 	pub messenger: Option<Messenger>,
 	pub scenegraph: Scenegraph,
 	pub root: OnceCell<Arc<Root>>,
+	pub base_resource_prefixes: Mutex<Vec<PathBuf>>,
 }
 impl Client {
 	pub fn from_connection(
@@ -56,6 +60,7 @@ impl Client {
 			messenger: Some(Messenger::new(connection)),
 			scenegraph: Default::default(),
 			root: OnceCell::new(),
+			base_resource_prefixes: Default::default(),
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
 		let _ = client.root.set(Root::create(&client));
