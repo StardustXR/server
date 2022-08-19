@@ -1,3 +1,4 @@
+pub mod resource;
 pub mod client;
 pub mod eventloop;
 pub mod nodelist;
