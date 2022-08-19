@@ -2,6 +2,7 @@ use super::core::Node;
 use super::spatial::{get_spatial_parent_flex, Spatial};
 use crate::core::client::Client;
 use crate::core::registry::Registry;
+use crate::core::resource::{NamespacedResourceID, ResourceID};
 use anyhow::{anyhow, bail, ensure, Result};
 use flexbuffers::FlexBufferType;
 use glam::Mat4;
@@ -32,13 +33,14 @@ pub enum MaterialParameter {
 
 pub struct Model {
 	space: Arc<Spatial>,
+	resource_id: ResourceID,
 	pending_model_path: OnceCell<PathBuf>,
 	pending_material_parameters: Mutex<FxHashMap<(u32, String), MaterialParameter>>,
 	sk_model: OnceCell<SendWrapper<SKModel>>,
 }
 
 impl Model {
-	pub fn add_to(node: &Arc<Node>, path: String) -> Result<Arc<Model>> {
+	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Model>> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
@@ -49,13 +51,19 @@ impl Model {
 		);
 		let model = Model {
 			space: node.spatial.get().unwrap().clone(),
+			resource_id,
 			pending_model_path: OnceCell::new(),
 			pending_material_parameters: Mutex::new(FxHashMap::default()),
 			sk_model: OnceCell::new(),
 		};
 		node.add_local_signal("setMaterialParameter", Model::set_material_parameter);
 		let model_arc = MODEL_REGISTRY.add(model);
-		let _ = model_arc.pending_model_path.set(PathBuf::from(path));
+		let _ = model_arc.pending_model_path.set(
+			model_arc
+				.resource_id
+				.get_file(&node.get_client().base_resource_prefixes.lock().clone())
+				.ok_or(anyhow!("Resource not found"))?,
+		);
 		let _ = node.model.set(model_arc.clone());
 		Ok(model_arc)
 	}
@@ -141,6 +149,7 @@ impl Drop for Model {
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "drawable", false);
 	node.add_local_signal("createModelFromFile", create_from_file);
+	node.add_local_signal("createModelFromResource", create_from_resource);
 	node.add_to_scenegraph();
 }
 
@@ -153,7 +162,7 @@ pub fn create_from_file(_node: &Node, calling_client: Arc<Client>, data: &[u8]) 
 		true,
 	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let path = flex_vec.idx(2).get_str()?.to_string();
+	let path = PathBuf::from(flex_vec.idx(2).get_str()?);
 	let transform = Mat4::from_scale_rotation_translation(
 		flex_to_vec3!(flex_vec.idx(5))
 			.ok_or_else(|| anyhow!("Scale not found"))?
@@ -167,6 +176,35 @@ pub fn create_from_file(_node: &Node, calling_client: Arc<Client>, data: &[u8]) 
 	);
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
-	Model::add_to(&node, path)?;
+	Model::add_to(&node, Box::new(path))?;
+	Ok(())
+}
+pub fn create_from_resource(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+	let node = Node::create(
+		&calling_client,
+		"/drawable/model",
+		flex_vec.idx(0).get_str()?,
+		true,
+	);
+	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
+	let resource_id = NamespacedResourceID {
+		namespace: flex_vec.idx(2).get_str()?.to_string(),
+		path: PathBuf::from(flex_vec.idx(3).get_str()?),
+	};
+	let transform = Mat4::from_scale_rotation_translation(
+		flex_to_vec3!(flex_vec.idx(6))
+			.ok_or_else(|| anyhow!("Scale not found"))?
+			.into(),
+		flex_to_quat!(flex_vec.idx(5))
+			.ok_or_else(|| anyhow!("Rotation not found"))?
+			.into(),
+		flex_to_vec3!(flex_vec.idx(4))
+			.ok_or_else(|| anyhow!("Position not found"))?
+			.into(),
+	);
+	let node = node.add_to_scenegraph();
+	Spatial::add_to(&node, Some(parent), transform)?;
+	Model::add_to(&node, Box::new(resource_id))?;
 	Ok(())
 }
