@@ -3,7 +3,7 @@ use super::spatial::{get_spatial_parent_flex, Spatial};
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use glam::{swizzles::*, vec2, vec3, vec3a, Mat4, Vec3, Vec3A};
-use libstardustxr::fusion::flex::FlexBuffable;
+use libstardustxr::flex::FlexBuffable;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::Mutex;
 use portable_atomic::AtomicF32;
