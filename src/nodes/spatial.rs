@@ -61,8 +61,11 @@ impl Spatial {
 		rot: Option<Quat>,
 		scl: Option<Vec3>,
 	) {
-		let reference_to_parent_transform =
-			Spatial::space_to_space_matrix(reference_space, self.parent.lock().as_deref());
+		let reference_to_parent_transform = reference_space
+			.map(|reference_space| {
+				Spatial::space_to_space_matrix(Some(reference_space), self.parent.lock().as_deref())
+			})
+			.unwrap_or(Mat4::IDENTITY);
 		let mut local_transform_in_reference_space =
 			reference_to_parent_transform.inverse() * self.local_transform();
 		let (mut reference_space_scl, mut reference_space_rot, mut reference_space_pos) =
