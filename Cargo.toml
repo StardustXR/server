@@ -27,6 +27,7 @@ prisma = "0.1.1"
 
 [dependencies.libstardustxr]
 path = "../libstardustxr-rs"
+default-features = false
 
 [dependencies.stereokit]
 path = "../stereokit-rs"
