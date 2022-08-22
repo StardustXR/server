@@ -29,14 +29,16 @@ struct CliArgs {
 fn main() -> Result<()> {
 	let cli_args = Arc::new(CliArgs::parse());
 
-	let mut init_settings = Settings::default()
+	let stereokit = Settings::default()
 		.app_name("Stardust XR")
 		.overlay_app(cli_args.overlay)
-		.overlay_priority(u32::MAX);
-	if cli_args.flatscreen {
-		init_settings = init_settings.display_preference(DisplayMode::Flatscreen);
-	}
-	let stereokit = init_settings
+		.overlay_priority(u32::MAX)
+		.disable_desktop_input_window(true)
+		.display_preference(if cli_args.flatscreen {
+			DisplayMode::Flatscreen
+		} else {
+			DisplayMode::MixedReality
+		})
 		.init()
 		.expect("StereoKit failed to initialize");
 
