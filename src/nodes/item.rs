@@ -212,7 +212,11 @@ impl ItemUI {
 			aliases: Default::default(),
 		});
 		*type_info.ui.lock() = Arc::downgrade(&ui);
-		let _ = node.item_ui.set(ui);
+		let _ = node.item_ui.set(ui.clone());
+
+		for item in type_info.items.get_valid_contents() {
+			ui.handle_create_item(&item);
+		}
 		Ok(())
 	}
 	fn send_state(&self, state: &str, name: &str) {
