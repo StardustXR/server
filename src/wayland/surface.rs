@@ -1,7 +1,8 @@
-use std::{cell::RefCell, fmt::Error, sync::Arc};
+use std::{fmt::Error, sync::Arc};
 
 use glam::vec2;
 use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
 use smithay::backend::renderer::{gles2::Gles2Texture, Texture};
 use stereokit::{
@@ -14,15 +15,15 @@ use stereokit::{
 use super::shaders::SIMULA_SHADER_BYTES;
 
 pub struct CoreSurface {
-	pub wl_tex: RefCell<Option<SendWrapper<Gles2Texture>>>,
-	sk_tex: OnceCell<SKTexture>,
+	pub wl_tex: Mutex<Option<SendWrapper<Gles2Texture>>>,
+	sk_tex: OnceCell<SendWrapper<SKTexture>>,
 	pub sk_mat: OnceCell<Arc<SendWrapper<Material>>>,
 }
 
 impl CoreSurface {
 	pub fn new() -> Self {
 		CoreSurface {
-			wl_tex: RefCell::new(None),
+			wl_tex: Mutex::new(None),
 			sk_tex: OnceCell::new(),
 			sk_mat: OnceCell::new(),
 		}
@@ -32,7 +33,9 @@ impl CoreSurface {
 		let sk_tex = self
 			.sk_tex
 			.get_or_try_init(|| {
-				SKTexture::create(sk, TextureType::ImageNoMips, TextureFormat::RGBA32).ok_or(Error)
+				SKTexture::create(sk, TextureType::ImageNoMips, TextureFormat::RGBA32)
+					.ok_or(Error)
+					.map(SendWrapper::new)
 			})
 			.unwrap();
 		let sk_mat = self
@@ -42,13 +45,13 @@ impl CoreSurface {
 				Material::create(sk, &shader)
 					.ok_or(Error)
 					.map(|mat| {
-						mat.set_parameter("diffuse", self.sk_tex.get().unwrap());
+						mat.set_parameter("diffuse", &**self.sk_tex.get().unwrap());
 						mat
 					})
 					.map(|mat| Arc::new(SendWrapper::new(mat)))
 			})
 			.unwrap();
-		if let Some(smithay_tex) = self.wl_tex.borrow().as_ref() {
+		if let Some(smithay_tex) = self.wl_tex.lock().as_ref() {
 			unsafe {
 				sk_tex.set_native(
 					smithay_tex.tex_id() as usize,

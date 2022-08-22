@@ -24,13 +24,11 @@ impl CompositorHandler for WaylandState {
 		compositor::with_states(surface, |data| {
 			if let Some(surface_states) = data.data_map.get::<RendererSurfaceStateUserData>() {
 				if let Some(core_surface) = data.data_map.get::<CoreSurface>() {
-					core_surface.wl_tex.replace(
-						surface_states
-							.borrow()
-							.texture(&self.renderer)
-							.cloned()
-							.map(SendWrapper::new),
-					);
+					*core_surface.wl_tex.lock() = surface_states
+						.borrow()
+						.texture(&self.renderer)
+						.cloned()
+						.map(SendWrapper::new);
 				}
 			}
 		});

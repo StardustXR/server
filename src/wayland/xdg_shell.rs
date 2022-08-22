@@ -28,9 +28,9 @@ impl XdgShellHandler for WaylandState {
 		surface.send_configure();
 
 		compositor::with_states(surface.wl_surface(), |data| {
-			data.data_map.insert_if_missing(CoreSurface::new);
+			data.data_map.insert_if_missing_threadsafe(CoreSurface::new);
 			data.data_map
-				.insert_if_missing(|| PanelItem::create(surface.wl_surface().clone()));
+				.insert_if_missing_threadsafe(|| PanelItem::create(surface.wl_surface().clone()));
 		});
 	}
 

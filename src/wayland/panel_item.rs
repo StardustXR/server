@@ -5,7 +5,7 @@ use crate::{
 	},
 	nodes::{
 		core::Node,
-		item::{Item, ItemType, TypeInfo},
+		item::{register_item_ui_flex, Item, ItemType, TypeInfo},
 		spatial::Spatial,
 	},
 };
@@ -68,7 +68,7 @@ impl PanelItem {
 
 	fn apply_surface_material(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-		let material_idx = flex_vec.idx(0).get_u64()?;
+		let material_idx = flex_vec.idx(1).get_u64()?;
 		let model_node = calling_client
 			.scenegraph
 			.get_node(flex_vec.idx(0).as_str())
@@ -80,17 +80,29 @@ impl PanelItem {
 
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			compositor::with_states(&panel_item.toplevel_surface, |states| {
-				if let Some(core_surface) = states.data_map.get::<CoreSurface>() {
-					if let Some(sk_mat) = core_surface.sk_mat.get() {
-						model
-							.pending_material_replacements
-							.lock()
-							.insert(material_idx as u32, sk_mat.clone());
-					}
-				}
+				let sk_mat = states
+					.data_map
+					.get::<CoreSurface>()
+					.unwrap()
+					.sk_mat
+					.get()
+					.unwrap()
+					.clone();
+				model
+					.pending_material_replacements
+					.lock()
+					.insert(material_idx as u32, sk_mat);
 			});
 		}
 
 		Ok(())
 	}
+}
+
+pub fn register_panel_item_ui_flex(
+	_node: &Node,
+	calling_client: Arc<Client>,
+	_data: &[u8],
+) -> Result<()> {
+	register_item_ui_flex(calling_client, &ITEM_TYPE_INFO_PANEL)
 }

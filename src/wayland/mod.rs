@@ -1,5 +1,5 @@
-pub mod panel_item;
 pub mod compositor;
+pub mod panel_item;
 pub mod shaders;
 pub mod surface;
 pub mod xdg_decoration;

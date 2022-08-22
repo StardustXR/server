@@ -4,7 +4,7 @@ use super::spatial::{get_spatial_parent_flex, get_transform_pose_flex, Spatial};
 use crate::core::client::{Client, INTERNAL_CLIENT};
 use crate::core::nodelist::LifeLinkedNodeList;
 use crate::core::registry::Registry;
-use crate::wayland::panel_item::PanelItem;
+use crate::wayland::panel_item::{register_panel_item_ui_flex, PanelItem};
 use anyhow::{anyhow, ensure, Result};
 use lazy_static::lazy_static;
 use nanoid::nanoid;
@@ -316,6 +316,7 @@ pub fn create_interface(client: &Arc<Client>) {
 		"registerEnvironmentItemUI",
 		register_environment_item_ui_flex,
 	);
+	node.add_local_signal("registerPanelItemUI", register_panel_item_ui_flex);
 	node.add_local_signal(
 		"createEnvironmentItemAcceptor",
 		create_environment_item_acceptor_flex,
