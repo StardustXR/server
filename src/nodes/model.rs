@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use stereokit::enums::RenderLayer;
 use stereokit::lifecycle::DrawContext;
+use stereokit::material::Material;
 use stereokit::model::Model as SKModel;
 use stereokit::texture::Texture;
 use stereokit::StereoKit;
@@ -36,6 +37,7 @@ pub struct Model {
 	resource_id: ResourceID,
 	pending_model_path: OnceCell<PathBuf>,
 	pending_material_parameters: Mutex<FxHashMap<(u32, String), MaterialParameter>>,
+	pub pending_material_replacements: Mutex<FxHashMap<u32, Arc<SendWrapper<Material>>>>,
 	sk_model: OnceCell<SendWrapper<SKModel>>,
 }
 
@@ -54,6 +56,7 @@ impl Model {
 			resource_id,
 			pending_model_path: OnceCell::new(),
 			pending_material_parameters: Mutex::new(FxHashMap::default()),
+			pending_material_replacements: Mutex::new(FxHashMap::default()),
 			sk_model: OnceCell::new(),
 		};
 		node.add_local_signal("setMaterialParameter", Model::set_material_parameter);
@@ -81,20 +84,30 @@ impl Model {
 			.ok();
 
 		if let Some(sk_model) = sk_model {
-			for ((material_idx, parameter_name), parameter_value) in
-				self.pending_material_parameters.lock().iter()
 			{
-				if let Some(material) = sk_model.get_material(sk, *material_idx as i32) {
-					match parameter_value {
-						MaterialParameter::Texture(path) => {
-							if let Some(tex) = Texture::from_file(sk, path.as_path(), true, 0) {
-								material.set_parameter(parameter_name.as_str(), &tex);
+				let mut material_replacements = self.pending_material_replacements.lock();
+				for (material_idx, replacement_material) in material_replacements.iter() {
+					sk_model.set_material(*material_idx as i32, replacement_material);
+				}
+				material_replacements.clear();
+			}
+
+			{
+				let mut material_parameters = self.pending_material_parameters.lock();
+				for ((material_idx, parameter_name), parameter_value) in material_parameters.iter()
+				{
+					if let Some(material) = sk_model.get_material(sk, *material_idx as i32) {
+						match parameter_value {
+							MaterialParameter::Texture(path) => {
+								if let Some(tex) = Texture::from_file(sk, path.as_path(), true, 0) {
+									material.set_parameter(parameter_name.as_str(), &tex);
+								}
 							}
 						}
 					}
 				}
+				material_parameters.clear();
 			}
-			self.pending_material_parameters.lock().clear();
 
 			sk_model.draw(
 				draw_ctx,
