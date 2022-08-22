@@ -11,8 +11,7 @@ use stereokit::{
 	StereoKit,
 };
 
-// const GAMMA_SHADER_BYTES: &[u8] = include_bytes!("shader_unlit_gamma.sks");
-const SIMULA_SHADER_BYTES: &[u8] = include_bytes!("shader_unlit_simula.sks");
+use super::shaders::SIMULA_SHADER_BYTES;
 
 pub struct CoreSurface {
 	pub(crate) wl_tex: RefCell<Option<SendWrapper<Gles2Texture>>>,

@@ -1,7 +1,8 @@
 pub mod compositor;
+pub mod shaders;
 pub mod surface;
 pub mod xdg_decoration;
-mod xdg_shell;
+pub mod xdg_shell;
 use std::{ffi::c_void, sync::Arc};
 
 use anyhow::{ensure, Result};
