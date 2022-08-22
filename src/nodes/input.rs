@@ -44,6 +44,7 @@ pub struct InputMethod {
 	specialization: InputSpecialization,
 }
 impl InputMethod {
+	#[allow(dead_code)]
 	fn add_to(node: &Arc<Node>, specialization: InputSpecialization) -> Result<()> {
 		ensure!(
 			node.spatial.get().is_some(),
