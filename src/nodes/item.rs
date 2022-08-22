@@ -130,7 +130,7 @@ impl Item {
 		item
 	}
 	fn make_alias(&self, client: &Arc<Client>, parent: &str) -> (Arc<Node>, Arc<Alias>) {
-		let node = Node::create(client, parent, "", true).add_to_scenegraph();
+		let node = Node::create(client, parent, &self.uid, true).add_to_scenegraph();
 		let alias = Alias::add_to(
 			&node,
 			&self.node.upgrade().unwrap(),
