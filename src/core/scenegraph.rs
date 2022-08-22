@@ -22,8 +22,6 @@ impl Scenegraph {
 	}
 
 	pub fn add_node(&self, node: Node) -> Arc<Node> {
-		let mut node = node;
-		node.client = Arc::downgrade(&self.get_client());
 		let path = node.get_path().to_string();
 		let node_arc = Arc::new(node);
 		self.nodes.insert(path, node_arc.clone());
