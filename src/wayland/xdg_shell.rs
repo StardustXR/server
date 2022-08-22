@@ -4,10 +4,10 @@ use smithay::{
 		decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode,
 		shell::server::xdg_toplevel::State,
 	},
-	wayland::shell::xdg::XdgShellHandler,
+	wayland::{compositor, shell::xdg::XdgShellHandler},
 };
 
-use super::WaylandState;
+use super::{surface::CoreSurface, WaylandState};
 
 impl XdgShellHandler for WaylandState {
 	fn xdg_shell_state(&mut self) -> &mut smithay::wayland::shell::xdg::XdgShellState {
@@ -26,6 +26,10 @@ impl XdgShellHandler for WaylandState {
 			state.decoration_mode = Some(Mode::ServerSide);
 		});
 		surface.send_configure();
+
+		compositor::with_states(surface.wl_surface(), |data| {
+			data.data_map.insert_if_missing(|| CoreSurface::new());
+		});
 	}
 
 	fn new_popup(
@@ -37,6 +41,10 @@ impl XdgShellHandler for WaylandState {
 		self.output
 			.enter(&self.display_handle, surface.wl_surface());
 		let _ = surface.send_configure();
+
+		compositor::with_states(surface.wl_surface(), |data| {
+			data.data_map.insert_if_missing(|| CoreSurface::new());
+		});
 	}
 
 	fn grab(

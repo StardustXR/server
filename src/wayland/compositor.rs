@@ -1,8 +1,11 @@
-use super::WaylandState;
+use super::{surface::CoreSurface, WaylandState};
+use send_wrapper::SendWrapper;
 use smithay::{
-	backend::renderer::utils::{import_surface_tree, on_commit_buffer_handler},
+	backend::renderer::utils::{
+		import_surface_tree, on_commit_buffer_handler, RendererSurfaceStateUserData,
+	},
 	delegate_compositor,
-	wayland::compositor::CompositorHandler,
+	wayland::compositor::{self, CompositorHandler},
 };
 
 impl CompositorHandler for WaylandState {
@@ -17,6 +20,20 @@ impl CompositorHandler for WaylandState {
 	) {
 		on_commit_buffer_handler(surface);
 		import_surface_tree(&mut self.renderer, surface, &self.log).unwrap();
+
+		compositor::with_states(surface, |data| {
+			if let Some(surface_states) = data.data_map.get::<RendererSurfaceStateUserData>() {
+				if let Some(core_surface) = data.data_map.get::<CoreSurface>() {
+					core_surface.wl_tex.replace(
+						surface_states
+							.borrow()
+							.texture(&self.renderer)
+							.cloned()
+							.map(|renderer| SendWrapper::new(renderer)),
+					);
+				}
+			}
+		});
 	}
 }
 

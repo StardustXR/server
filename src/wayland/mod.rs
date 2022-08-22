@@ -1,26 +1,55 @@
 pub mod compositor;
+pub mod surface;
 pub mod xdg_decoration;
 mod xdg_shell;
-use anyhow::Result;
+use std::{ffi::c_void, sync::Arc};
+
+use anyhow::{ensure, Result};
+use parking_lot::Mutex;
 use slog::Logger;
 use smithay::{
-	backend::renderer::gles2::Gles2Renderer,
+	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
 	delegate_output, delegate_shm,
+	desktop::utils::send_frames_surface_tree,
 	reexports::wayland_server::{
 		backend::{ClientData, ClientId, DisconnectReason},
 		protocol::wl_output::Subpixel,
-		Display, DisplayHandle,
+		Display, DisplayHandle, ListeningSocket,
 	},
 	utils::Size,
 	wayland::{
 		buffer::BufferHandler,
-		compositor::CompositorState,
+		compositor::{with_states, CompositorState},
 		output::{Output, OutputManagerState, Scale::Integer},
 		seat::SeatState,
 		shell::xdg::{decoration::XdgDecorationState, XdgShellState},
 		shm::{ShmHandler, ShmState},
 	},
 };
+use stereokit as sk;
+use stereokit::StereoKit;
+use surface::CoreSurface;
+
+struct EGLRawHandles {
+	display: *const c_void,
+	config: *const c_void,
+	context: *const c_void,
+}
+fn get_sk_egl() -> Result<EGLRawHandles> {
+	ensure!(
+		unsafe { sk::sys::backend_graphics_get() }
+			== sk::sys::backend_graphics__backend_graphics_opengles_egl,
+		"StereoKit is not running using EGL!"
+	);
+
+	Ok(unsafe {
+		EGLRawHandles {
+			display: sk::sys::backend_opengl_egl_get_display() as *const c_void,
+			config: sk::sys::backend_opengl_egl_get_config() as *const c_void,
+			context: sk::sys::backend_opengl_egl_get_context() as *const c_void,
+		}
+	})
+}
 
 pub struct ClientState;
 impl ClientData for ClientState {
@@ -39,7 +68,9 @@ impl ClientData for ClientState {
 pub struct WaylandState {
 	pub log: slog::Logger,
 
+	pub display: Arc<Mutex<Display<WaylandState>>>,
 	pub display_handle: DisplayHandle,
+	pub socket: ListeningSocket,
 	pub renderer: Gles2Renderer,
 	pub compositor_state: CompositorState,
 	pub xdg_shell_state: XdgShellState,
@@ -52,11 +83,25 @@ pub struct WaylandState {
 }
 
 impl WaylandState {
-	pub fn new(
-		display: &Display<WaylandState>,
-		renderer: Gles2Renderer,
-		log: Logger,
-	) -> Result<Self> {
+	pub fn new(log: Logger) -> Result<Self> {
+		let egl_raw_handles = get_sk_egl()?;
+		let renderer = unsafe {
+			Gles2Renderer::new(
+				EGLContext::from_raw(
+					egl_raw_handles.display,
+					egl_raw_handles.config,
+					egl_raw_handles.context,
+					log.clone(),
+				)?,
+				log.clone(),
+			)?
+		};
+
+		let display: Display<WaylandState> = Display::new()?;
+		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
+		if let Some(socket_name) = socket.socket_name() {
+			println!("Wayland compositor {:?} active", socket_name);
+		}
 		let display_handle = display.handle();
 
 		let compositor_state = CompositorState::new::<Self, _>(&display_handle, log.clone());
@@ -79,9 +124,12 @@ impl WaylandState {
 		let seat_state = SeatState::new();
 		// let data_device_state = DataDeviceState::new(&dh, log.clone());
 
+		println!("Init Wayland compositor");
 		Ok(WaylandState {
 			log,
+			display: Arc::new(Mutex::new(display)),
 			display_handle,
+			socket,
 			renderer,
 			compositor_state,
 			xdg_shell_state,
@@ -92,6 +140,46 @@ impl WaylandState {
 			seat_state,
 			// data_device_state,
 		})
+	}
+
+	pub fn frame(&mut self, sk: &StereoKit) {
+		let display_clone = self.display.clone();
+		let mut display = display_clone.lock();
+		if let Ok(Some(client)) = self.socket.accept() {
+			let _ = display
+				.handle()
+				.insert_client(client, Arc::new(ClientState));
+		}
+		display.dispatch_clients(self).unwrap();
+		display.flush_clients().unwrap();
+
+		drop(display);
+		drop(display_clone);
+
+		let time_ms = (sk.time_getf() * 1000.) as u32;
+		self.xdg_shell_state.toplevel_surfaces(|surfs| {
+			for surf in surfs.iter() {
+				with_states(surf.wl_surface(), |data| {
+					let core_surface = data.data_map.get::<CoreSurface>().unwrap();
+					core_surface.update_tex(sk);
+				});
+				send_frames_surface_tree(surf.wl_surface(), time_ms);
+			}
+		});
+		self.xdg_shell_state.popup_surfaces(|surfs| {
+			for surf in surfs.iter() {
+				with_states(surf.wl_surface(), |data| {
+					let core_surface = data.data_map.get::<CoreSurface>().unwrap();
+					core_surface.update_tex(sk);
+				});
+				send_frames_surface_tree(surf.wl_surface(), time_ms);
+			}
+		});
+	}
+}
+impl Drop for WaylandState {
+	fn drop(&mut self) {
+		println!("Cleanly shut down the Wayland compositor");
 	}
 }
 impl BufferHandler for WaylandState {
