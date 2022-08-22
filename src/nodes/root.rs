@@ -56,7 +56,7 @@ impl Root {
 		*calling_client.base_resource_prefixes.lock() = flex_vec
 			.iter()
 			.filter_map(|prefix| prefix.get_str().ok())
-			.map(|prefix| PathBuf::from(prefix))
+			.map(PathBuf::from)
 			.filter(|prefix| prefix.is_absolute())
 			.collect();
 		Ok(())

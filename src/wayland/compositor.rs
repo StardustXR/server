@@ -29,7 +29,7 @@ impl CompositorHandler for WaylandState {
 							.borrow()
 							.texture(&self.renderer)
 							.cloned()
-							.map(|renderer| SendWrapper::new(renderer)),
+							.map(SendWrapper::new),
 					);
 				}
 			}

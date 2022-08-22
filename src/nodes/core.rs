@@ -160,8 +160,7 @@ impl Node {
 		}
 	}
 	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
-		let _ = self
-			.aliases
+		self.aliases
 			.get_valid_contents()
 			.iter()
 			.filter(|alias| alias.remote_signals.iter().any(|e| e == &method))

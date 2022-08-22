@@ -158,7 +158,7 @@ pub struct PulseReceiver {
 	pub mask: Mutex<Mask>,
 	field: Weak<Field>,
 }
-impl<'a> PulseReceiver {
+impl PulseReceiver {
 	pub fn add_to(node: &Arc<Node>, field: Arc<Field>) -> Result<()> {
 		ensure!(
 			node.spatial.get().is_some(),

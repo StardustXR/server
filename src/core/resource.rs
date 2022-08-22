@@ -3,11 +3,11 @@ use std::path::PathBuf;
 pub type ResourceID = Box<dyn ResourceIDTrait + Send + Sync>;
 
 pub trait ResourceIDTrait {
-	fn get_file(&self, prefixes: &Vec<PathBuf>) -> Option<PathBuf>;
+	fn get_file(&self, prefixes: &[PathBuf]) -> Option<PathBuf>;
 }
 
 impl ResourceIDTrait for PathBuf {
-	fn get_file(&self, _prefixes: &Vec<PathBuf>) -> Option<PathBuf> {
+	fn get_file(&self, _prefixes: &[PathBuf]) -> Option<PathBuf> {
 		if self.is_absolute() && self.as_path().exists() {
 			Some(self.clone())
 		} else {
@@ -22,7 +22,7 @@ pub struct NamespacedResourceID {
 }
 
 impl ResourceIDTrait for NamespacedResourceID {
-	fn get_file(&self, prefixes: &Vec<PathBuf>) -> Option<PathBuf> {
+	fn get_file(&self, prefixes: &[PathBuf]) -> Option<PathBuf> {
 		for prefix in prefixes {
 			let mut path = prefix.clone();
 			path.push(self.namespace.clone());

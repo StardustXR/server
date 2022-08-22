@@ -62,7 +62,7 @@ impl Model {
 			model_arc
 				.resource_id
 				.get_file(&node.get_client().base_resource_prefixes.lock().clone())
-				.ok_or(anyhow!("Resource not found"))?,
+				.ok_or_else(|| anyhow!("Resource not found"))?,
 		);
 		let _ = node.model.set(model_arc.clone());
 		Ok(model_arc)
@@ -75,7 +75,7 @@ impl Model {
 				self.pending_model_path
 					.get()
 					.and_then(|path| SKModel::from_file(sk, path.as_path(), None))
-					.map(|model| SendWrapper::new(model))
+					.map(SendWrapper::new)
 					.ok_or(Error)
 			})
 			.ok();
