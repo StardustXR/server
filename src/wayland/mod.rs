@@ -1,3 +1,4 @@
+pub mod panel_item;
 pub mod compositor;
 pub mod shaders;
 pub mod surface;

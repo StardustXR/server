@@ -7,7 +7,7 @@ use smithay::{
 	wayland::{compositor, shell::xdg::XdgShellHandler},
 };
 
-use super::{surface::CoreSurface, WaylandState};
+use super::{panel_item::PanelItem, surface::CoreSurface, WaylandState};
 
 impl XdgShellHandler for WaylandState {
 	fn xdg_shell_state(&mut self) -> &mut smithay::wayland::shell::xdg::XdgShellState {
@@ -29,6 +29,8 @@ impl XdgShellHandler for WaylandState {
 
 		compositor::with_states(surface.wl_surface(), |data| {
 			data.data_map.insert_if_missing(CoreSurface::new);
+			data.data_map
+				.insert_if_missing(|| PanelItem::create(surface.wl_surface().clone()));
 		});
 	}
 

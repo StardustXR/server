@@ -4,6 +4,7 @@ use super::spatial::{get_spatial_parent_flex, get_transform_pose_flex, Spatial};
 use crate::core::client::{Client, INTERNAL_CLIENT};
 use crate::core::nodelist::LifeLinkedNodeList;
 use crate::core::registry::Registry;
+use crate::wayland::panel_item::PanelItem;
 use anyhow::{anyhow, ensure, Result};
 use lazy_static::lazy_static;
 use nanoid::nanoid;
@@ -25,32 +26,6 @@ lazy_static! {
 	static ref ITEM_TYPE_INFO_ENVIRONMENT: TypeInfo = TypeInfo {
 		type_name: "environment",
 		aliased_local_signals: vec!["applySkyTex", "applySkyLight"],
-		aliased_local_methods: vec![],
-		aliased_remote_signals: vec![],
-		aliased_remote_methods: vec![],
-		ui: Default::default(),
-		items: Registry::new(),
-		acceptors: Registry::new(),
-	};
-	static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
-		type_name: "panel",
-		aliased_local_signals: vec![
-			"applySurfaceMaterial",
-			"setPointerActive",
-			"setPointerPosition",
-			"setPointerButtonPressed",
-			"scrollPointerAxis",
-			"touchDown",
-			"touchMove",
-			"touchUp",
-			"setKeyboardActive",
-			"setKeymap",
-			"setKeyState",
-			"setKeyModStates",
-			"setKeyRepeat",
-			"resize",
-			"close",
-		],
 		aliased_local_methods: vec![],
 		aliased_remote_signals: vec![],
 		aliased_remote_methods: vec![],
@@ -81,14 +56,14 @@ fn release(item: &Arc<Item>) {
 }
 
 pub struct TypeInfo {
-	type_name: &'static str,
-	aliased_local_signals: Vec<&'static str>,
-	aliased_local_methods: Vec<&'static str>,
-	aliased_remote_signals: Vec<&'static str>,
-	aliased_remote_methods: Vec<&'static str>,
-	ui: Mutex<Weak<ItemUI>>,
-	items: Registry<Item>,
-	acceptors: Registry<ItemAcceptor>,
+	pub type_name: &'static str,
+	pub aliased_local_signals: Vec<&'static str>,
+	pub aliased_local_methods: Vec<&'static str>,
+	pub aliased_remote_signals: Vec<&'static str>,
+	pub aliased_remote_methods: Vec<&'static str>,
+	pub ui: Mutex<Weak<ItemUI>>,
+	pub items: Registry<Item>,
+	pub acceptors: Registry<ItemAcceptor>,
 }
 
 fn capture_into_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
@@ -115,7 +90,7 @@ pub struct Item {
 	specialization: ItemType,
 }
 impl Item {
-	fn new(node: &Arc<Node>, type_info: &'static TypeInfo, specialization: ItemType) -> Self {
+	pub fn new(node: &Arc<Node>, type_info: &'static TypeInfo, specialization: ItemType) -> Self {
 		node.add_local_signal("captureInto", capture_into_flex);
 		let item = Item {
 			node: Arc::downgrade(node),
@@ -168,6 +143,7 @@ impl Drop for Item {
 
 pub enum ItemType {
 	Environment(EnvironmentItem),
+	Panel(PanelItem),
 }
 
 pub struct EnvironmentItem {
@@ -188,7 +164,7 @@ impl EnvironmentItem {
 	fn get_path_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<Vec<u8>> {
 		let path: Result<String> = match &node.item.get().unwrap().specialization {
 			ItemType::Environment(env) => Ok(env.path.clone()),
-			// _ => Err(anyhow!("")),
+			_ => Err(anyhow!("")),
 		};
 		Ok(flexbuffers::singleton(path?.as_str()))
 	}
