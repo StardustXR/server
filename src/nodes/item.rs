@@ -87,7 +87,7 @@ pub struct Item {
 	uid: String,
 	type_info: &'static TypeInfo,
 	captured_acceptor: Mutex<Weak<ItemAcceptor>>,
-	specialization: ItemType,
+	pub specialization: ItemType,
 }
 impl Item {
 	pub fn new(node: &Arc<Node>, type_info: &'static TypeInfo, specialization: ItemType) -> Self {

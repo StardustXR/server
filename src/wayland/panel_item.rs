@@ -1,16 +1,22 @@
 use crate::{
-	core::{client::INTERNAL_CLIENT, registry::Registry},
+	core::{
+		client::{Client, INTERNAL_CLIENT},
+		registry::Registry,
+	},
 	nodes::{
 		core::Node,
 		item::{Item, ItemType, TypeInfo},
 		spatial::Spatial,
 	},
 };
+use anyhow::{anyhow, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use nanoid::nanoid;
-use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+use smithay::{reexports::wayland_server::protocol::wl_surface::WlSurface, wayland::compositor};
 use std::sync::Arc;
+
+use super::surface::CoreSurface;
 
 lazy_static! {
 	static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
@@ -56,7 +62,35 @@ impl PanelItem {
 				.items
 				.add(Item::new(&node, &ITEM_TYPE_INFO_PANEL, specialization));
 		let _ = node.item.set(item);
-		// node.add_local_method("getPath", PanelItem::get_path_flex);
+		node.add_local_signal("applySurfaceMaterial", PanelItem::apply_surface_material);
 		node
+	}
+
+	fn apply_surface_material(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+		let material_idx = flex_vec.idx(0).get_u64()?;
+		let model_node = calling_client
+			.scenegraph
+			.get_node(flex_vec.idx(0).as_str())
+			.ok_or_else(|| anyhow!("Model node not found"))?;
+		let model = model_node
+			.model
+			.get()
+			.ok_or_else(|| anyhow!("Node is not a model"))?;
+
+		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
+			compositor::with_states(&panel_item.toplevel_surface, |states| {
+				if let Some(core_surface) = states.data_map.get::<CoreSurface>() {
+					if let Some(sk_mat) = core_surface.sk_mat.get() {
+						model
+							.pending_material_replacements
+							.lock()
+							.insert(material_idx as u32, sk_mat.clone());
+					}
+				}
+			});
+		}
+
+		Ok(())
 	}
 }

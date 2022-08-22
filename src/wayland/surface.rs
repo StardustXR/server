@@ -1,4 +1,4 @@
-use std::{cell::RefCell, fmt::Error};
+use std::{cell::RefCell, fmt::Error, sync::Arc};
 
 use glam::vec2;
 use once_cell::sync::OnceCell;
@@ -14,9 +14,9 @@ use stereokit::{
 use super::shaders::SIMULA_SHADER_BYTES;
 
 pub struct CoreSurface {
-	pub(crate) wl_tex: RefCell<Option<SendWrapper<Gles2Texture>>>,
+	pub wl_tex: RefCell<Option<SendWrapper<Gles2Texture>>>,
 	sk_tex: OnceCell<SKTexture>,
-	sk_mat: OnceCell<Material>,
+	pub sk_mat: OnceCell<Arc<SendWrapper<Material>>>,
 }
 
 impl CoreSurface {
@@ -39,10 +39,13 @@ impl CoreSurface {
 			.sk_mat
 			.get_or_try_init(|| {
 				let shader = Shader::from_mem(sk, SIMULA_SHADER_BYTES).unwrap();
-				Material::create(sk, &shader).ok_or(Error).map(|mat| {
-					mat.set_parameter("diffuse", self.sk_tex.get().unwrap());
-					mat
-				})
+				Material::create(sk, &shader)
+					.ok_or(Error)
+					.map(|mat| {
+						mat.set_parameter("diffuse", self.sk_tex.get().unwrap());
+						mat
+					})
+					.map(|mat| Arc::new(SendWrapper::new(mat)))
 			})
 			.unwrap();
 		if let Some(smithay_tex) = self.wl_tex.borrow().as_ref() {
