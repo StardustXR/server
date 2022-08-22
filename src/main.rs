@@ -121,6 +121,11 @@ fn main() -> Result<()> {
 		},
 	);
 
+	drop(wayland_state);
+	drop(socket);
+	drop(display);
+	println!("Cleanly shut down the Wayland compositor");
+
 	let _ = event_stop_tx.send(());
 	event_thread
 		.join()
