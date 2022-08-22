@@ -205,7 +205,8 @@ impl ItemUI {
 
 	fn handle_create_item(&self, item: &Item) {
 		let node = self.node.upgrade().unwrap();
-		let (alias_node, _) = item.make_alias(&node.get_client(), node.get_path());
+		let (alias_node, _) =
+			item.make_alias(&node.get_client(), &(node.get_path().to_string() + "/item"));
 		self.aliases.add(Arc::downgrade(&alias_node));
 		self.send_state("create", item.uid.as_str());
 	}
