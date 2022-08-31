@@ -7,8 +7,10 @@ use crate::core::registry::Registry;
 use crate::wayland::panel_item::{register_panel_item_ui_flex, PanelItem};
 use anyhow::{anyhow, ensure, Result};
 use lazy_static::lazy_static;
+use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use nanoid::nanoid;
 use parking_lot::Mutex;
+use std::ops::Deref;
 use std::sync::{Arc, Weak};
 
 lazy_static! {
@@ -141,9 +143,23 @@ impl Drop for Item {
 	}
 }
 
+pub trait ItemSpecialization {
+	fn serialize_start_data(&self, vec: &mut flexbuffers::VectorBuilder);
+}
+
 pub enum ItemType {
 	Environment(EnvironmentItem),
 	Panel(PanelItem),
+}
+impl Deref for ItemType {
+	type Target = dyn ItemSpecialization;
+
+	fn deref(&self) -> &Self::Target {
+		match self {
+			ItemType::Environment(item) => item,
+			ItemType::Panel(item) => item,
+		}
+	}
 }
 
 pub struct EnvironmentItem {
@@ -167,6 +183,11 @@ impl EnvironmentItem {
 			_ => Err(anyhow!("")),
 		};
 		Ok(flexbuffers::singleton(path?.as_str()))
+	}
+}
+impl ItemSpecialization for EnvironmentItem {
+	fn serialize_start_data(&self, vec: &mut flexbuffers::VectorBuilder) {
+		vec.push(self.path.as_str());
 	}
 }
 
@@ -208,7 +229,16 @@ impl ItemUI {
 		let (alias_node, _) =
 			item.make_alias(&node.get_client(), &(node.get_path().to_string() + "/item"));
 		self.aliases.add(Arc::downgrade(&alias_node));
-		self.send_state("create", item.uid.as_str());
+
+		let _ = node.send_remote_signal(
+			"create",
+			&flexbuffer_from_vector_arguments(|vec| {
+				vec.push(item.uid.as_str());
+				let mut start_data_vec = vec.start_vector();
+				item.specialization
+					.serialize_start_data(&mut start_data_vec);
+			}),
+		);
 	}
 	fn handle_destroy_item(&self, item: &Item) {
 		self.send_state("destroy", item.uid.as_str());

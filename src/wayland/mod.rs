@@ -1,5 +1,6 @@
 pub mod compositor;
 pub mod panel_item;
+pub mod seat;
 pub mod shaders;
 pub mod surface;
 pub mod xdg_decoration;
@@ -23,7 +24,6 @@ use smithay::{
 		buffer::BufferHandler,
 		compositor::{with_states, CompositorState},
 		output::{Output, OutputManagerState, Scale::Integer},
-		seat::SeatState,
 		shell::xdg::{decoration::XdgDecorationState, XdgShellState},
 		shm::{ShmHandler, ShmState},
 	},
@@ -31,6 +31,8 @@ use smithay::{
 use stereokit as sk;
 use stereokit::StereoKit;
 use surface::CoreSurface;
+
+use self::seat::SeatDelegate;
 
 struct EGLRawHandles {
 	display: *const c_void,
@@ -80,7 +82,7 @@ pub struct WaylandState {
 	pub shm_state: ShmState,
 	pub output_manager_state: OutputManagerState,
 	pub output: Output,
-	pub seat_state: SeatState<WaylandState>,
+	pub seat_state: SeatDelegate,
 	// pub data_device_state: DataDeviceState,
 }
 
@@ -123,7 +125,6 @@ impl WaylandState {
 		);
 		let _global = output.create_global::<Self>(&display_handle);
 		output.change_current_state(None, None, Some(Integer(2)), None);
-		let seat_state = SeatState::new();
 		// let data_device_state = DataDeviceState::new(&dh, log.clone());
 
 		println!("Init Wayland compositor");
@@ -139,7 +140,7 @@ impl WaylandState {
 			shm_state,
 			output_manager_state,
 			output,
-			seat_state,
+			seat_state: SeatDelegate,
 			// data_device_state,
 		})
 	}
@@ -162,17 +163,9 @@ impl WaylandState {
 		self.xdg_shell_state.toplevel_surfaces(|surfs| {
 			for surf in surfs.iter() {
 				with_states(surf.wl_surface(), |data| {
-					let core_surface = data.data_map.get::<CoreSurface>().unwrap();
-					core_surface.update_tex(sk);
-				});
-				send_frames_surface_tree(surf.wl_surface(), time_ms);
-			}
-		});
-		self.xdg_shell_state.popup_surfaces(|surfs| {
-			for surf in surfs.iter() {
-				with_states(surf.wl_surface(), |data| {
-					let core_surface = data.data_map.get::<CoreSurface>().unwrap();
-					core_surface.update_tex(sk);
+					if let Some(core_surface) = data.data_map.get::<CoreSurface>() {
+						core_surface.update_tex(sk);
+					}
 				});
 				send_frames_surface_tree(surf.wl_surface(), time_ms);
 			}
