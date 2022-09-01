@@ -32,7 +32,9 @@ use stereokit as sk;
 use stereokit::StereoKit;
 use surface::CoreSurface;
 
-use self::seat::SeatDelegate;
+use crate::nodes::core::Node;
+
+use self::{panel_item::PanelItem, seat::SeatDelegate};
 
 struct EGLRawHandles {
 	display: *const c_void,
@@ -165,6 +167,9 @@ impl WaylandState {
 				with_states(surf.wl_surface(), |data| {
 					if let Some(core_surface) = data.data_map.get::<CoreSurface>() {
 						core_surface.update_tex(sk);
+						if let Some(panel_item) = data.data_map.get::<Arc<Node>>() {
+							PanelItem::apply_surface_materials(panel_item, core_surface);
+						}
 					}
 				});
 				send_frames_surface_tree(surf.wl_surface(), time_ms);

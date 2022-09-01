@@ -6,6 +6,7 @@ use crate::{
 	nodes::{
 		core::Node,
 		item::{register_item_ui_flex, Item, ItemSpecialization, ItemType, TypeInfo},
+		model::Model,
 		spatial::Spatial,
 	},
 };
@@ -26,7 +27,6 @@ use smithay::{
 		DisplayHandle, Resource,
 	},
 	utils::{user_data::UserDataMap, Logical, Size},
-	wayland::compositor,
 };
 use std::{
 	convert::TryInto,
@@ -61,6 +61,7 @@ lazy_static! {
 
 pub struct PanelItem {
 	node: Weak<Node>,
+	pending_material_applications: Mutex<Vec<(Arc<Model>, u32)>>,
 	pub toplevel_surface: WlSurface,
 	seat_data: SeatData,
 	size: Mutex<Size<i32, Logical>>,
@@ -88,6 +89,7 @@ impl PanelItem {
 
 		let specialization = ItemType::Panel(PanelItem {
 			node: Arc::downgrade(&node),
+			pending_material_applications: Mutex::new(Vec::new()),
 			toplevel_surface,
 			seat_data,
 			size,
@@ -97,14 +99,23 @@ impl PanelItem {
 				.items
 				.add(Item::new(&node, &ITEM_TYPE_INFO_PANEL, specialization));
 		let _ = node.item.set(item);
-		node.add_local_signal("applySurfaceMaterial", PanelItem::apply_surface_material);
-		node.add_local_signal("pointerDeactivate", PanelItem::pointer_deactivate);
-		node.add_local_signal("pointerScroll", PanelItem::pointer_scroll);
-		node.add_local_signal("pointerButton", PanelItem::pointer_button);
-		node.add_local_signal("pointerMotion", PanelItem::pointer_motion);
-		node.add_local_signal("keyboardSetActive", PanelItem::keyboard_set_active);
-		node.add_local_signal("keyboardSetKeyState", PanelItem::keyboard_set_key_state);
-		node.add_local_signal("keyboardSetModifiers", PanelItem::keyboard_set_modifiers);
+		node.add_local_signal(
+			"applySurfaceMaterial",
+			PanelItem::apply_surface_material_flex,
+		);
+		node.add_local_signal("pointerDeactivate", PanelItem::pointer_deactivate_flex);
+		node.add_local_signal("pointerScroll", PanelItem::pointer_scroll_flex);
+		node.add_local_signal("pointerButton", PanelItem::pointer_button_flex);
+		node.add_local_signal("pointerMotion", PanelItem::pointer_motion_flex);
+		node.add_local_signal("keyboardSetActive", PanelItem::keyboard_set_active_flex);
+		node.add_local_signal(
+			"keyboardSetKeyState",
+			PanelItem::keyboard_set_key_state_flex,
+		);
+		node.add_local_signal(
+			"keyboardSetModifiers",
+			PanelItem::keyboard_set_modifiers_flex,
+		);
 		node
 	}
 
@@ -122,7 +133,11 @@ impl PanelItem {
 		}
 	}
 
-	fn apply_surface_material(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn apply_surface_material_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
 		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 		let material_idx = flex_vec.idx(1).get_u64()?;
 		let model_node = calling_client
@@ -135,26 +150,34 @@ impl PanelItem {
 			.ok_or_else(|| anyhow!("Node is not a model"))?;
 
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			compositor::with_states(&panel_item.toplevel_surface, |states| {
-				let sk_mat = states
-					.data_map
-					.get::<CoreSurface>()
-					.unwrap()
-					.sk_mat
-					.get()
-					.unwrap()
-					.clone();
-				model
-					.pending_material_replacements
-					.lock()
-					.insert(material_idx as u32, sk_mat);
-			});
+			panel_item
+				.pending_material_applications
+				.lock()
+				.push((model.clone(), material_idx as u32));
 		}
 
 		Ok(())
 	}
 
-	fn pointer_deactivate(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
+	pub fn apply_surface_materials(node: &Node, core_surface: &CoreSurface) {
+		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
+			let mut pending_material_applications = panel_item.pending_material_applications.lock();
+			for (model, material_idx) in &*pending_material_applications {
+				let sk_mat = core_surface.sk_mat.get().unwrap().clone();
+				model
+					.pending_material_replacements
+					.lock()
+					.insert(*material_idx, sk_mat);
+			}
+			pending_material_applications.clear();
+		}
+	}
+
+	fn pointer_deactivate_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		_data: &[u8],
+	) -> Result<()> {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if *panel_item.seat_data.pointer_active.lock() {
 				if let Some(pointer) = panel_item.seat_data.pointer() {
@@ -167,7 +190,7 @@ impl PanelItem {
 		Ok(())
 	}
 
-	fn pointer_motion(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn pointer_motion_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(pointer) = panel_item.seat_data.pointer() {
 				let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
@@ -187,7 +210,7 @@ impl PanelItem {
 		Ok(())
 	}
 
-	fn pointer_button(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn pointer_button_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(pointer) = panel_item.seat_data.pointer() {
 				if *panel_item.seat_data.pointer_active.lock() {
@@ -212,7 +235,7 @@ impl PanelItem {
 		Ok(())
 	}
 
-	fn pointer_scroll(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn pointer_scroll_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(pointer) = panel_item.seat_data.pointer() {
 				if *panel_item.seat_data.pointer_active.lock() {
@@ -240,7 +263,11 @@ impl PanelItem {
 		Ok(())
 	}
 
-	fn keyboard_set_active(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn keyboard_set_active_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(keyboard) = panel_item.seat_data.keyboard() {
 				let mut keyboard_active = panel_item.seat_data.keyboard_active.lock();
@@ -259,7 +286,7 @@ impl PanelItem {
 		Ok(())
 	}
 
-	fn keyboard_set_key_state(
+	fn keyboard_set_key_state_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
 		data: &[u8],
@@ -281,7 +308,7 @@ impl PanelItem {
 		Ok(())
 	}
 
-	fn keyboard_set_modifiers(
+	fn keyboard_set_modifiers_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
 		data: &[u8],
