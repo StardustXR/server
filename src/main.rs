@@ -48,6 +48,13 @@ fn main() -> Result<()> {
 		.expect("StereoKit failed to initialize");
 	println!("Init StereoKit");
 
+	if cli_args.flatscreen {
+		unsafe {
+			stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_left, false as i32);
+			stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_right, false as i32);
+		}
+	}
+
 	let (event_stop_tx, event_stop_rx) = oneshot::channel::<()>();
 	let event_thread = std::thread::Builder::new()
 		.name("event_loop".to_owned())
