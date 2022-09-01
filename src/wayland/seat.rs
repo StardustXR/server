@@ -127,7 +127,7 @@ impl Dispatch<WlPointer, SeatData, WaylandState> for SeatDelegate {
 				surface: _,
 				hotspot_x: _,
 				hotspot_y: _,
-			} => todo!(),
+			} => (),
 			wl_pointer::Request::Release => (),
 			_ => unreachable!(),
 		}
