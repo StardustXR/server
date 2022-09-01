@@ -137,6 +137,7 @@ impl Item {
 }
 impl Drop for Item {
 	fn drop(&mut self) {
+		self.type_info.items.remove(self);
 		if let Some(ui) = self.type_info.ui.lock().upgrade() {
 			ui.handle_destroy_item(self);
 		}
