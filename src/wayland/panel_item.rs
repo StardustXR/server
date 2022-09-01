@@ -98,10 +98,7 @@ impl PanelItem {
 			seat_data,
 			size,
 		});
-		let item =
-			ITEM_TYPE_INFO_PANEL
-				.items
-				.add(Item::new(&node, &ITEM_TYPE_INFO_PANEL, specialization));
+		let item = Item::new(&node, &ITEM_TYPE_INFO_PANEL, specialization);
 		let _ = node.item.set(item);
 		node.add_local_signal(
 			"applySurfaceMaterial",

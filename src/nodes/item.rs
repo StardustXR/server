@@ -92,7 +92,11 @@ pub struct Item {
 	pub specialization: ItemType,
 }
 impl Item {
-	pub fn new(node: &Arc<Node>, type_info: &'static TypeInfo, specialization: ItemType) -> Self {
+	pub fn new(
+		node: &Arc<Node>,
+		type_info: &'static TypeInfo,
+		specialization: ItemType,
+	) -> Arc<Self> {
 		node.add_local_signal("captureInto", capture_into_flex);
 		let item = Item {
 			node: Arc::downgrade(node),
@@ -101,6 +105,7 @@ impl Item {
 			captured_acceptor: Default::default(),
 			specialization,
 		};
+		let item = type_info.items.add(item);
 		if let Some(ui) = type_info.ui.lock().upgrade() {
 			ui.handle_create_item(&item);
 		}
@@ -169,11 +174,7 @@ pub struct EnvironmentItem {
 impl EnvironmentItem {
 	pub fn add_to(node: &Arc<Node>, path: String) {
 		let specialization = ItemType::Environment(EnvironmentItem { path });
-		let item = ITEM_TYPE_INFO_ENVIRONMENT.items.add(Item::new(
-			node,
-			&ITEM_TYPE_INFO_ENVIRONMENT,
-			specialization,
-		));
+		let item = Item::new(node, &ITEM_TYPE_INFO_ENVIRONMENT, specialization);
 		let _ = node.item.set(item);
 		node.add_local_method("getPath", EnvironmentItem::get_path_flex);
 	}
