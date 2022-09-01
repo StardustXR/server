@@ -72,8 +72,12 @@ impl PanelItem {
 		data: &UserDataMap,
 		toplevel_surface: WlSurface,
 	) -> Arc<Node> {
-		let node = Node::create(&INTERNAL_CLIENT, "/item/panel/item", &nanoid!(), true)
-			.add_to_scenegraph();
+		let node = Arc::new(Node::create(
+			&INTERNAL_CLIENT,
+			"/item/panel/item",
+			&nanoid!(),
+			true,
+		));
 		Spatial::add_to(&node, None, Mat4::IDENTITY).unwrap();
 
 		let seat_data = SeatData::new(toplevel_surface.client_id().unwrap());
