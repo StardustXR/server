@@ -9,8 +9,11 @@ use smithay::{
 		import_surface_tree, on_commit_buffer_handler, RendererSurfaceStateUserData,
 	},
 	delegate_compositor,
-	reexports::wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle},
-	wayland::compositor::{self, CompositorHandler, CompositorState},
+	reexports::wayland_server::protocol::wl_surface::WlSurface,
+	wayland::{
+		compositor::{self, CompositorHandler, CompositorState},
+		shell::xdg::XdgToplevelSurfaceData,
+	},
 };
 
 impl CompositorHandler for WaylandState {
@@ -18,7 +21,7 @@ impl CompositorHandler for WaylandState {
 		&mut self.compositor_state
 	}
 
-	fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
+	fn commit(&mut self, surface: &WlSurface) {
 		// Let Smithay handle all the buffer maintenance
 		on_commit_buffer_handler(surface);
 
@@ -32,13 +35,13 @@ impl CompositorHandler for WaylandState {
 				.map(|surface_states| surface_states.borrow().wl_buffer().is_some())
 				.unwrap_or(false);
 
-			if !mapped {
+			if !mapped || data.data_map.get::<XdgToplevelSurfaceData>().is_none() {
 				return;
 			}
 
 			data.data_map.insert_if_missing_threadsafe(CoreSurface::new);
 			data.data_map.insert_if_missing_threadsafe(|| {
-				PanelItem::create(dh, &data.data_map, surface.clone())
+				PanelItem::create(&self.display_handle, &data.data_map, surface.clone())
 			});
 
 			let surface_states = data.data_map.get::<RendererSurfaceStateUserData>().unwrap();
