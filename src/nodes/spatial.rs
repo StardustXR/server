@@ -6,6 +6,7 @@ use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use libstardustxr::push_to_vec;
 use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::Mutex;
+use std::ptr;
 use std::sync::{Arc, Weak};
 
 pub struct Spatial {
@@ -31,6 +32,11 @@ impl Spatial {
 		};
 		node.add_local_method("getTransform", Spatial::get_transform_flex);
 		node.add_local_signal("setTransform", Spatial::set_transform_flex);
+		node.add_local_signal("setSpatialParent", Spatial::set_spatial_parent_flex);
+		node.add_local_signal(
+			"setSpatialParentInPlace",
+			Spatial::set_spatial_parent_in_place_flex,
+		);
 		let spatial_arc = Arc::new(spatial);
 		let _ = node.spatial.set(spatial_arc.clone());
 		Ok(spatial_arc)
@@ -91,6 +97,52 @@ impl Spatial {
 		);
 	}
 
+	pub fn is_ancestor_of(&self, spatial: Arc<Spatial>) -> bool {
+		let mut current_ancestor = spatial;
+		loop {
+			if Arc::as_ptr(&current_ancestor) == ptr::addr_of!(*self) {
+				return true;
+			}
+
+			let current_ancestor_parent = current_ancestor.parent.lock().clone();
+			if let Some(parent) = current_ancestor_parent {
+				current_ancestor = parent;
+			} else {
+				return false;
+			}
+		}
+	}
+
+	pub fn set_spatial_parent(&self, parent: Option<&Arc<Spatial>>) -> Result<()> {
+		let is_ancestor = parent
+			.map(|parent| self.is_ancestor_of(parent.clone()))
+			.unwrap_or(false);
+		if is_ancestor {
+			return Err(anyhow!("Setting spatial parent would cause a loop"));
+		}
+
+		*self.parent.lock() = parent.cloned();
+
+		Ok(())
+	}
+
+	pub fn set_spatial_parent_in_place(&self, parent: Option<&Arc<Spatial>>) -> Result<()> {
+		let is_ancestor = parent
+			.map(|parent| self.is_ancestor_of(parent.clone()))
+			.unwrap_or(false);
+		if is_ancestor {
+			return Err(anyhow!("Setting spatial parent would cause a loop"));
+		}
+
+		self.set_local_transform(Spatial::space_to_space_matrix(
+			self.parent.lock().as_deref(),
+			parent.cloned().as_deref(),
+		));
+		*self.parent.lock() = parent.cloned();
+
+		Ok(())
+	}
+
 	pub fn get_transform_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
@@ -148,6 +200,46 @@ impl Spatial {
 			flex_to_quat!(flex_vec.idx(2)).map(|v| v.into()),
 			flex_to_vec3!(flex_vec.idx(3)).map(|v| v.into()),
 		);
+		Ok(())
+	}
+	pub fn set_spatial_parent_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
+		let parent_path = flexbuffers::Reader::get_root(data)?.get_str()?;
+		let parent = calling_client
+			.scenegraph
+			.get_node(parent_path)
+			.ok_or_else(|| anyhow!("Parent node not found"))?
+			.spatial
+			.get()
+			.ok_or_else(|| anyhow!("Parent node is not a Spatial!"))?
+			.clone();
+		node.spatial
+			.get()
+			.unwrap()
+			.set_spatial_parent(Some(&parent))?;
+		Ok(())
+	}
+	pub fn set_spatial_parent_in_place_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
+		let parent_path = flexbuffers::Reader::get_root(data)?.get_str()?;
+		let parent = calling_client
+			.scenegraph
+			.get_node(parent_path)
+			.ok_or_else(|| anyhow!("Parent node not found"))?
+			.spatial
+			.get()
+			.ok_or_else(|| anyhow!("Parent node is not a Spatial!"))?
+			.clone();
+		node.spatial
+			.get()
+			.unwrap()
+			.set_spatial_parent_in_place(Some(&parent))?;
 		Ok(())
 	}
 }
