@@ -19,7 +19,10 @@ impl CompositorHandler for WaylandState {
 	}
 
 	fn commit(&mut self, dh: &DisplayHandle, surface: &WlSurface) {
+		// Let Smithay handle all the buffer maintenance
 		on_commit_buffer_handler(surface);
+
+		// Create/update textures from all buffers
 		import_surface_tree(&mut self.renderer, surface, &self.log).unwrap();
 
 		compositor::with_states(surface, |data| {
@@ -27,7 +30,7 @@ impl CompositorHandler for WaylandState {
 				.data_map
 				.get::<RendererSurfaceStateUserData>()
 				.map(|surface_states| surface_states.borrow().wl_buffer().is_some())
-				.unwrap_or_default();
+				.unwrap_or(false);
 
 			if !mapped {
 				return;
@@ -46,15 +49,9 @@ impl CompositorHandler for WaylandState {
 				.cloned()
 				.map(SendWrapper::new);
 
-			if let ItemType::Panel(panel_item) = &data
-				.data_map
-				.get::<Arc<Node>>()
-				.unwrap()
-				.item
-				.get()
-				.unwrap()
-				.specialization
-			{
+			let panel_node = data.data_map.get::<Arc<Node>>().unwrap();
+			let item = panel_node.item.get().unwrap();
+			if let ItemType::Panel(panel_item) = &item.specialization {
 				panel_item.resize(&data.data_map);
 			}
 		});

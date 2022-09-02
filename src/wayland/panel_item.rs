@@ -19,6 +19,7 @@ use parking_lot::Mutex;
 use smithay::{
 	backend::renderer::utils::RendererSurfaceStateUserData,
 	reexports::wayland_server::{
+		backend::ObjectId,
 		protocol::{
 			wl_keyboard::KeyState,
 			wl_pointer::{Axis, ButtonState},
@@ -33,7 +34,7 @@ use std::{
 	sync::{Arc, Weak},
 };
 
-use super::{seat::SeatData, surface::CoreSurface, WaylandState};
+use super::{seat::SeatData, surface::CoreSurface, WaylandState, GLOBAL_DESTROY_QUEUE_IN};
 
 lazy_static! {
 	static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
@@ -62,7 +63,8 @@ lazy_static! {
 pub struct PanelItem {
 	node: Weak<Node>,
 	pending_material_applications: Mutex<Vec<(Arc<Model>, u32)>>,
-	pub toplevel_surface: WlSurface,
+	dh: DisplayHandle,
+	pub toplevel_surface_id: ObjectId,
 	seat_data: SeatData,
 	size: Mutex<Size<i32, Logical>>,
 }
@@ -80,8 +82,7 @@ impl PanelItem {
 		));
 		Spatial::add_to(&node, None, Mat4::IDENTITY).unwrap();
 
-		let seat_data = SeatData::new(toplevel_surface.client_id().unwrap());
-		dh.create_global::<WaylandState, _, _>(7, seat_data.clone());
+		let seat_data = SeatData::new(dh, toplevel_surface.client_id().unwrap());
 
 		let size = data
 			.get::<RendererSurfaceStateUserData>()
@@ -94,12 +95,12 @@ impl PanelItem {
 		let specialization = ItemType::Panel(PanelItem {
 			node: Arc::downgrade(&node),
 			pending_material_applications: Mutex::new(Vec::new()),
-			toplevel_surface,
+			dh: dh.clone(),
+			toplevel_surface_id: toplevel_surface.id(),
 			seat_data,
 			size,
 		});
-		let item = Item::new(&node, &ITEM_TYPE_INFO_PANEL, specialization);
-		let _ = node.item.set(item);
+		Item::add_to(&node, &ITEM_TYPE_INFO_PANEL, specialization);
 		node.add_local_signal(
 			"applySurfaceMaterial",
 			PanelItem::apply_surface_material_flex,
@@ -120,14 +121,19 @@ impl PanelItem {
 		node
 	}
 
+	fn toplevel_surface(&self) -> WlSurface {
+		WlSurface::from_id(&self.dh, self.toplevel_surface_id.clone()).unwrap()
+	}
+
 	pub fn resize(&self, data: &UserDataMap) {
 		if let Some(surface_states) = data.get::<RendererSurfaceStateUserData>() {
-			if let Some(size) = surface_states.borrow().buffer_size() {
+			if let Some(size) = surface_states.borrow().surface_size() {
+				*self.size.lock() = size;
 				let _ = self.node.upgrade().unwrap().send_remote_signal(
 					"resize",
 					&flexbuffer_from_vector_arguments(|vec| {
-						vec.push(size.w as u64);
-						vec.push(size.h as u64);
+						vec.push(size.w);
+						vec.push(size.h);
 					}),
 				);
 			}
@@ -140,7 +146,6 @@ impl PanelItem {
 		data: &[u8],
 	) -> Result<()> {
 		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-		let material_idx = flex_vec.idx(1).get_u64()?;
 		let model_node = calling_client
 			.scenegraph
 			.get_node(flex_vec.idx(0).as_str())
@@ -149,6 +154,7 @@ impl PanelItem {
 			.model
 			.get()
 			.ok_or_else(|| anyhow!("Node is not a model"))?;
+		let material_idx = flex_vec.idx(1).get_u64()?;
 
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			panel_item
@@ -182,7 +188,7 @@ impl PanelItem {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if *panel_item.seat_data.pointer_active.lock() {
 				if let Some(pointer) = panel_item.seat_data.pointer() {
-					pointer.leave(0, &panel_item.toplevel_surface);
+					pointer.leave(0, &panel_item.toplevel_surface());
 					*panel_item.seat_data.pointer_active.lock() = false;
 				}
 			}
@@ -201,7 +207,7 @@ impl PanelItem {
 				if *pointer_active {
 					pointer.motion(0, x, y);
 				} else {
-					pointer.enter(0, &panel_item.toplevel_surface, x, y);
+					pointer.enter(0, &panel_item.toplevel_surface(), x, y);
 					*pointer_active = true;
 				}
 				pointer.frame();
@@ -275,9 +281,9 @@ impl PanelItem {
 				let active = flexbuffers::Reader::get_root(data)?.get_bool()?;
 				if *keyboard_active != active {
 					if active {
-						keyboard.enter(0, &panel_item.toplevel_surface, vec![]);
+						keyboard.enter(0, &panel_item.toplevel_surface(), vec![]);
 					} else {
-						keyboard.leave(0, &panel_item.toplevel_surface);
+						keyboard.leave(0, &panel_item.toplevel_surface());
 					}
 					*keyboard_active = active;
 				}
@@ -339,6 +345,15 @@ impl ItemSpecialization for PanelItem {
 		let size = *self.size.lock();
 		size_vec.push(size.w as u32);
 		size_vec.push(size.h as u32);
+	}
+}
+impl Drop for PanelItem {
+	fn drop(&mut self) {
+		GLOBAL_DESTROY_QUEUE_IN
+			.get()
+			.unwrap()
+			.send(self.seat_data.global_id.get().cloned().unwrap())
+			.unwrap();
 	}
 }
 

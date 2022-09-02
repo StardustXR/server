@@ -3,7 +3,7 @@ use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::reexports::wayland_server::{
-	backend::ClientId,
+	backend::{ClientId, GlobalId},
 	delegate_dispatch, delegate_global_dispatch,
 	protocol::{
 		wl_keyboard::{self, WlKeyboard},
@@ -21,15 +21,23 @@ pub struct SeatDelegate;
 #[derive(Clone)]
 pub struct SeatData(Arc<SeatDataInner>);
 impl SeatData {
-	pub fn new(client: ClientId) -> Self {
-		SeatData(Arc::new(SeatDataInner {
+	pub fn new(dh: &DisplayHandle, client: ClientId) -> Self {
+		let seat_data = SeatData(Arc::new(SeatDataInner {
 			client,
+			global_id: OnceCell::new(),
 			pointer: OnceCell::new(),
 			pointer_active: Mutex::new(false),
 			keyboard: OnceCell::new(),
 			keyboard_active: Mutex::new(false),
 			touch: OnceCell::new(),
-		}))
+		}));
+
+		seat_data
+			.global_id
+			.set(dh.create_global::<WaylandState, _, _>(7, seat_data.clone()))
+			.unwrap();
+
+		seat_data
 	}
 }
 impl Deref for SeatData {
@@ -42,6 +50,7 @@ impl Deref for SeatData {
 
 pub struct SeatDataInner {
 	client: ClientId,
+	pub global_id: OnceCell<GlobalId>,
 	pointer: OnceCell<WlPointer>,
 	pub pointer_active: Mutex<bool>,
 	keyboard: OnceCell<WlKeyboard>,

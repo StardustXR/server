@@ -5,17 +5,20 @@ pub mod shaders;
 pub mod surface;
 pub mod xdg_decoration;
 pub mod xdg_shell;
-use std::{ffi::c_void, sync::Arc};
 
+use self::{panel_item::PanelItem, seat::SeatDelegate};
+use crate::nodes::core::Node;
 use anyhow::{ensure, Result};
+use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use send_wrapper::SendWrapper;
 use slog::Logger;
 use smithay::{
 	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
 	delegate_output, delegate_shm,
 	desktop::utils::send_frames_surface_tree,
 	reexports::wayland_server::{
-		backend::{ClientData, ClientId, DisconnectReason},
+		backend::{ClientData, ClientId, DisconnectReason, GlobalId},
 		protocol::wl_output::Subpixel,
 		Display, DisplayHandle, ListeningSocket,
 	},
@@ -28,13 +31,11 @@ use smithay::{
 		shm::{ShmHandler, ShmState},
 	},
 };
+use std::sync::mpsc::{channel, Receiver, Sender};
+use std::{ffi::c_void, sync::Arc};
 use stereokit as sk;
 use stereokit::StereoKit;
 use surface::CoreSurface;
-
-use crate::nodes::core::Node;
-
-use self::{panel_item::PanelItem, seat::SeatDelegate};
 
 struct EGLRawHandles {
 	display: *const c_void,
@@ -71,9 +72,14 @@ impl ClientData for ClientState {
 	}
 }
 
+lazy_static::lazy_static! {
+	static ref GLOBAL_DESTROY_QUEUE_IN: OnceCell<SendWrapper<Sender<GlobalId>>> = OnceCell::new();
+}
+
 pub struct WaylandState {
 	pub log: slog::Logger,
 
+	global_destroy_queue: Receiver<GlobalId>,
 	pub display: Arc<Mutex<Display<WaylandState>>>,
 	pub display_handle: DisplayHandle,
 	pub socket: ListeningSocket,
@@ -129,9 +135,16 @@ impl WaylandState {
 		output.change_current_state(None, None, Some(Integer(2)), None);
 		// let data_device_state = DataDeviceState::new(&dh, log.clone());
 
+		let (global_destroy_queue_in, global_destroy_queue) = channel();
+		GLOBAL_DESTROY_QUEUE_IN
+			.set(SendWrapper::new(global_destroy_queue_in))
+			.unwrap();
+
 		println!("Init Wayland compositor");
 		Ok(WaylandState {
 			log,
+
+			global_destroy_queue,
 			display: Arc::new(Mutex::new(display)),
 			display_handle,
 			socket,
@@ -160,6 +173,11 @@ impl WaylandState {
 
 		drop(display);
 		drop(display_clone);
+
+		while let Ok(global_to_destroy) = self.global_destroy_queue.try_recv() {
+			self.display_handle
+				.remove_global::<WaylandState>(global_to_destroy);
+		}
 
 		let time_ms = (sk.time_getf() * 1000.) as u32;
 		self.xdg_shell_state.toplevel_surfaces(|surfs| {
