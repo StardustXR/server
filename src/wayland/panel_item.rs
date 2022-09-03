@@ -34,7 +34,7 @@ use std::{
 	sync::{Arc, Weak},
 };
 
-use super::{seat::SeatData, surface::CoreSurface, WaylandState, GLOBAL_DESTROY_QUEUE_IN};
+use super::{seat::SeatData, surface::CoreSurface, GLOBAL_DESTROY_QUEUE_IN};
 
 lazy_static! {
 	static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {

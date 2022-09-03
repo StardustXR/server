@@ -169,10 +169,6 @@ impl WaylandState {
 				.insert_client(client, Arc::new(ClientState));
 		}
 		display.dispatch_clients(self).unwrap();
-		display.flush_clients().unwrap();
-
-		drop(display);
-		drop(display_clone);
 
 		while let Ok(global_to_destroy) = self.global_destroy_queue.try_recv() {
 			self.display_handle
@@ -193,6 +189,7 @@ impl WaylandState {
 				send_frames_surface_tree(surf.wl_surface(), time_ms);
 			}
 		});
+		display.flush_clients().unwrap();
 	}
 }
 impl Drop for WaylandState {
