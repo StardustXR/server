@@ -5,7 +5,7 @@ use slab::Slab;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::net::UnixListener;
-use tokio::sync::{Mutex, Notify, OnceCell};
+use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 
 pub static FRAME: AtomicU64 = AtomicU64::new(0);
@@ -13,7 +13,7 @@ pub static FRAME: AtomicU64 = AtomicU64::new(0);
 pub struct EventLoop {
 	pub socket_path: String,
 	stop_notifier: Arc<Notify>,
-	pub clients: Mutex<Slab<OnceCell<Arc<Client>>>>,
+	pub clients: Mutex<Slab<Arc<Client>>>,
 }
 
 impl EventLoop {
@@ -41,12 +41,9 @@ impl EventLoop {
 			loop {
 				let (socket, _) = socket.accept().await?;
 				let mut clients = event_loop.clients.lock().await;
-				let idx = clients.insert(OnceCell::new());
-				let _ = clients.get(idx).unwrap().set(Client::from_connection(
-					idx,
-					&event_loop,
-					socket,
-				));
+				let vacant_client = clients.vacant_entry();
+				let idx = vacant_client.key();
+				vacant_client.insert(Client::from_connection(idx, &event_loop, socket));
 			}
 		};
 
