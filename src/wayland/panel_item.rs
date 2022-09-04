@@ -1,3 +1,4 @@
+use super::{seat::SeatData, state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE};
 use crate::{
 	core::{
 		client::{Client, INTERNAL_CLIENT},
@@ -25,7 +26,7 @@ use smithay::{
 			wl_pointer::{Axis, ButtonState},
 			wl_surface::WlSurface,
 		},
-		DisplayHandle, Resource,
+		Display, DisplayHandle, Resource,
 	},
 	utils::{user_data::UserDataMap, Logical, Size},
 };
@@ -33,8 +34,6 @@ use std::{
 	convert::TryInto,
 	sync::{Arc, Weak},
 };
-
-use super::{seat::SeatData, surface::CoreSurface, GLOBAL_DESTROY_QUEUE_IN};
 
 lazy_static! {
 	static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
@@ -63,6 +62,7 @@ lazy_static! {
 pub struct PanelItem {
 	node: Weak<Node>,
 	pending_material_applications: Mutex<Vec<(Arc<Model>, u32)>>,
+	display: Weak<Mutex<Display<WaylandState>>>,
 	dh: DisplayHandle,
 	pub toplevel_surface_id: ObjectId,
 	seat_data: SeatData,
@@ -70,7 +70,8 @@ pub struct PanelItem {
 }
 impl PanelItem {
 	pub fn create(
-		dh: &DisplayHandle,
+		display: &Arc<Mutex<Display<WaylandState>>>,
+		dh: DisplayHandle,
 		data: &UserDataMap,
 		toplevel_surface: WlSurface,
 	) -> Arc<Node> {
@@ -82,7 +83,7 @@ impl PanelItem {
 		));
 		Spatial::add_to(&node, None, Mat4::IDENTITY).unwrap();
 
-		let seat_data = SeatData::new(dh, toplevel_surface.client_id().unwrap());
+		let seat_data = SeatData::new(&dh, toplevel_surface.client_id().unwrap());
 
 		let size = data
 			.get::<RendererSurfaceStateUserData>()
@@ -95,7 +96,8 @@ impl PanelItem {
 		let specialization = ItemType::Panel(PanelItem {
 			node: Arc::downgrade(&node),
 			pending_material_applications: Mutex::new(Vec::new()),
-			dh: dh.clone(),
+			display: Arc::downgrade(display),
+			dh,
 			toplevel_surface_id: toplevel_surface.id(),
 			seat_data,
 			size,
@@ -124,10 +126,18 @@ impl PanelItem {
 	fn toplevel_surface(&self) -> WlSurface {
 		WlSurface::from_id(&self.dh, self.toplevel_surface_id.clone()).unwrap()
 	}
+	fn flush_clients(&self) {
+		self.display
+			.upgrade()
+			.unwrap()
+			.lock()
+			.flush_clients()
+			.unwrap();
+	}
 
 	pub fn resize(&self, data: &UserDataMap) {
 		if let Some(surface_states) = data.get::<RendererSurfaceStateUserData>() {
-			if let Some(size) = surface_states.borrow().surface_size() {
+			if let Some(size) = surface_states.borrow().buffer_size() {
 				*self.size.lock() = size;
 				let _ = self.node.upgrade().unwrap().send_remote_signal(
 					"resize",
@@ -190,6 +200,8 @@ impl PanelItem {
 				if let Some(pointer) = panel_item.seat_data.pointer() {
 					pointer.leave(0, &panel_item.toplevel_surface());
 					*panel_item.seat_data.pointer_active.lock() = false;
+					pointer.frame();
+					panel_item.flush_clients();
 				}
 			}
 		}
@@ -211,6 +223,7 @@ impl PanelItem {
 					*pointer_active = true;
 				}
 				pointer.frame();
+				panel_item.flush_clients();
 			}
 		}
 
@@ -235,6 +248,7 @@ impl PanelItem {
 						},
 					);
 					pointer.frame();
+					panel_item.flush_clients();
 				}
 			}
 		}
@@ -263,6 +277,7 @@ impl PanelItem {
 						}
 					}
 					pointer.frame();
+					panel_item.flush_clients();
 				}
 			}
 		}
@@ -349,11 +364,8 @@ impl ItemSpecialization for PanelItem {
 }
 impl Drop for PanelItem {
 	fn drop(&mut self) {
-		GLOBAL_DESTROY_QUEUE_IN
-			.get()
-			.unwrap()
-			.send(self.seat_data.global_id.get().cloned().unwrap())
-			.unwrap();
+		let id = self.seat_data.global_id.get().cloned().unwrap();
+		tokio::spawn(async move { GLOBAL_DESTROY_QUEUE.get().unwrap().send(id).await });
 	}
 }
 

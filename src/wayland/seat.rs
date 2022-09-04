@@ -1,4 +1,3 @@
-use super::WaylandState;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -15,6 +14,8 @@ use smithay::reexports::wayland_server::{
 };
 use std::ops::Deref;
 use std::sync::Arc;
+
+use super::state::WaylandState;
 
 pub struct SeatDelegate;
 

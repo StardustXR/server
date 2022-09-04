@@ -1,4 +1,4 @@
-use super::WaylandState;
+use super::state::WaylandState;
 use smithay::{
 	delegate_xdg_shell,
 	reexports::{

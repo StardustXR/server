@@ -1,20 +1,11 @@
-use std::sync::Arc;
-
+use super::state::WaylandState;
 use crate::nodes::{core::Node, item::ItemType};
-
-use super::{panel_item::PanelItem, surface::CoreSurface, WaylandState};
-use send_wrapper::SendWrapper;
 use smithay::{
-	backend::renderer::utils::{
-		import_surface_tree, on_commit_buffer_handler, RendererSurfaceStateUserData,
-	},
 	delegate_compositor,
 	reexports::wayland_server::protocol::wl_surface::WlSurface,
-	wayland::{
-		compositor::{self, CompositorHandler, CompositorState},
-		shell::xdg::XdgToplevelSurfaceData,
-	},
+	wayland::compositor::{self, CompositorHandler, CompositorState},
 };
+use std::sync::Arc;
 
 impl CompositorHandler for WaylandState {
 	fn compositor_state(&mut self) -> &mut CompositorState {
@@ -22,40 +13,12 @@ impl CompositorHandler for WaylandState {
 	}
 
 	fn commit(&mut self, surface: &WlSurface) {
-		// Let Smithay handle all the buffer maintenance
-		on_commit_buffer_handler(surface);
-
-		// Create/update textures from all buffers
-		import_surface_tree(&mut self.renderer, surface, &self.log).unwrap();
-
 		compositor::with_states(surface, |data| {
-			let mapped = data
-				.data_map
-				.get::<RendererSurfaceStateUserData>()
-				.map(|surface_states| surface_states.borrow().wl_buffer().is_some())
-				.unwrap_or(false);
-
-			if !mapped || data.data_map.get::<XdgToplevelSurfaceData>().is_none() {
-				return;
-			}
-
-			data.data_map.insert_if_missing_threadsafe(CoreSurface::new);
-			data.data_map.insert_if_missing_threadsafe(|| {
-				PanelItem::create(&self.display_handle, &data.data_map, surface.clone())
-			});
-
-			let surface_states = data.data_map.get::<RendererSurfaceStateUserData>().unwrap();
-			let core_surface = data.data_map.get::<CoreSurface>().unwrap();
-			*core_surface.wl_tex.lock() = surface_states
-				.borrow()
-				.texture(&self.renderer)
-				.cloned()
-				.map(SendWrapper::new);
-
-			let panel_node = data.data_map.get::<Arc<Node>>().unwrap();
-			let item = panel_node.item.get().unwrap();
-			if let ItemType::Panel(panel_item) = &item.specialization {
-				panel_item.resize(&data.data_map);
+			if let Some(panel_node) = data.data_map.get::<Arc<Node>>() {
+				let item = panel_node.item.get().unwrap();
+				if let ItemType::Panel(panel_item) = &item.specialization {
+					panel_item.resize(&data.data_map);
+				}
 			}
 		});
 	}

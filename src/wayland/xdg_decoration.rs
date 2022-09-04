@@ -1,10 +1,9 @@
+use super::state::WaylandState;
 use smithay::{
 	delegate_xdg_decoration,
 	reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode,
 	wayland::shell::xdg::decoration::XdgDecorationHandler,
 };
-
-use super::WaylandState;
 
 impl XdgDecorationHandler for WaylandState {
 	fn new_decoration(&mut self, toplevel: smithay::wayland::shell::xdg::ToplevelSurface) {

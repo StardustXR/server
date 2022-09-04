@@ -2,20 +2,17 @@ mod core;
 mod nodes;
 mod wayland;
 
+use crate::core::destroy_queue;
 use crate::nodes::model::{MODELS_TO_DROP, MODEL_REGISTRY};
-use crate::wayland::WaylandState;
+use crate::wayland::Wayland;
 
 use self::core::eventloop::EventLoop;
 use anyhow::Result;
 use clap::Parser;
-use once_cell::sync::Lazy;
-use parking_lot::Mutex;
 use slog::Drain;
 use std::sync::Arc;
 use stereokit::{lifecycle::DisplayMode, Settings};
 use tokio::{runtime::Handle, sync::oneshot};
-
-static TOKIO_HANDLE: Lazy<Mutex<Option<Handle>>> = Lazy::new(Default::default);
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -56,15 +53,18 @@ fn main() -> Result<()> {
 	}
 
 	let (event_stop_tx, event_stop_rx) = oneshot::channel::<()>();
+	let (handle_sender, handle_receiver) = oneshot::channel::<Handle>();
 	let event_thread = std::thread::Builder::new()
 		.name("event_loop".to_owned())
-		.spawn(move || event_loop(event_stop_rx))?;
+		.spawn(move || event_loop(handle_sender, event_stop_rx))?;
+	let _tokio_handle = handle_receiver.blocking_recv()?.enter();
 
-	let mut wayland = WaylandState::new(log)?;
+	let mut wayland = Wayland::new(log)?;
 	println!("Stardust ready!");
 	stereokit.run(
 		|draw_ctx| {
 			wayland.frame(&stereokit);
+			destroy_queue::clear();
 
 			nodes::root::Root::logic_step(stereokit.time_elapsed());
 			for model in MODEL_REGISTRY.get_valid_contents() {
@@ -72,7 +72,7 @@ fn main() -> Result<()> {
 			}
 			MODELS_TO_DROP.lock().clear();
 
-			unsafe { wayland.renderer.egl_context().make_current().unwrap() };
+			wayland.make_context_current();
 		},
 		|| {
 			println!("Cleanly shut down StereoKit");
@@ -89,9 +89,14 @@ fn main() -> Result<()> {
 	Ok(())
 }
 
-#[tokio::main]
-async fn event_loop(stop_rx: oneshot::Receiver<()>) -> anyhow::Result<()> {
-	TOKIO_HANDLE.lock().replace(Handle::current());
+// #[tokio::main]
+#[tokio::main(flavor = "current_thread")]
+async fn event_loop(
+	handle_sender: oneshot::Sender<Handle>,
+	stop_rx: oneshot::Receiver<()>,
+) -> anyhow::Result<()> {
+	let _ = handle_sender.send(Handle::current());
+	// console_subscriber::init();
 
 	let (event_loop, event_loop_join_handle) =
 		EventLoop::new().expect("Couldn't create server socket");

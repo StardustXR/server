@@ -2,40 +2,44 @@ pub mod compositor;
 pub mod panel_item;
 pub mod seat;
 pub mod shaders;
+pub mod state;
 pub mod surface;
 pub mod xdg_decoration;
 pub mod xdg_shell;
 
-use self::{panel_item::PanelItem, seat::SeatDelegate};
-use crate::nodes::core::Node;
+use self::{panel_item::PanelItem, state::WaylandState};
+use crate::{nodes::core::Node, wayland::state::ClientState};
 use anyhow::{ensure, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use send_wrapper::SendWrapper;
 use slog::Logger;
 use smithay::{
-	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
-	delegate_output, delegate_shm,
+	backend::{
+		egl::EGLContext,
+		renderer::{
+			gles2::Gles2Renderer,
+			utils::{import_surface_tree, on_commit_buffer_handler, RendererSurfaceStateUserData},
+		},
+	},
 	desktop::utils::send_frames_surface_tree,
-	reexports::wayland_server::{
-		backend::{ClientData, ClientId, DisconnectReason, GlobalId},
-		protocol::wl_output::Subpixel,
-		Display, DisplayHandle, ListeningSocket,
-	},
-	utils::Size,
-	wayland::{
-		buffer::BufferHandler,
-		compositor::{with_states, CompositorState},
-		output::{Output, OutputManagerState, Scale::Integer},
-		shell::xdg::{decoration::XdgDecorationState, XdgShellState},
-		shm::{ShmHandler, ShmState},
-	},
+	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket},
+	wayland::{compositor::with_states, shell::xdg::XdgToplevelSurfaceData},
 };
-use std::sync::mpsc::{channel, Receiver, Sender};
-use std::{ffi::c_void, sync::Arc};
+use std::os::unix::prelude::AsRawFd;
+use std::{
+	ffi::c_void,
+	os::unix::{
+		net::UnixListener,
+		prelude::{FromRawFd, RawFd},
+	},
+	sync::Arc,
+};
 use stereokit as sk;
 use stereokit::StereoKit;
 use surface::CoreSurface;
+use tokio::{
+	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
+};
 
 struct EGLRawHandles {
 	display: *const c_void,
@@ -58,43 +62,17 @@ fn get_sk_egl() -> Result<EGLRawHandles> {
 	})
 }
 
-pub struct ClientState;
-impl ClientData for ClientState {
-	fn initialized(&self, client_id: ClientId) {
-		println!("Wayland client {:?} connected", client_id);
-	}
+static GLOBAL_DESTROY_QUEUE: OnceCell<mpsc::Sender<GlobalId>> = OnceCell::new();
 
-	fn disconnected(&self, client_id: ClientId, reason: DisconnectReason) {
-		println!(
-			"Wayland client {:?} disconnected because {:#?}",
-			client_id, reason
-		);
-	}
+pub struct Wayland {
+	log: slog::Logger,
+
+	display: Arc<Mutex<Display<WaylandState>>>,
+	join_handle: JoinHandle<Result<()>>,
+	renderer: Gles2Renderer,
+	state: Arc<Mutex<WaylandState>>,
 }
-
-lazy_static::lazy_static! {
-	static ref GLOBAL_DESTROY_QUEUE_IN: OnceCell<SendWrapper<Sender<GlobalId>>> = OnceCell::new();
-}
-
-pub struct WaylandState {
-	pub log: slog::Logger,
-
-	global_destroy_queue: Receiver<GlobalId>,
-	pub display: Arc<Mutex<Display<WaylandState>>>,
-	pub display_handle: DisplayHandle,
-	pub socket: ListeningSocket,
-	pub renderer: Gles2Renderer,
-	pub compositor_state: CompositorState,
-	pub xdg_shell_state: XdgShellState,
-	pub xdg_decoration_state: XdgDecorationState,
-	pub shm_state: ShmState,
-	pub output_manager_state: OutputManagerState,
-	pub output: Output,
-	pub seat_state: SeatDelegate,
-	// pub data_device_state: DataDeviceState,
-}
-
-impl WaylandState {
+impl Wayland {
 	pub fn new(log: Logger) -> Result<Self> {
 		let egl_raw_handles = get_sk_egl()?;
 		let renderer = unsafe {
@@ -110,104 +88,124 @@ impl WaylandState {
 		};
 
 		let display: Display<WaylandState> = Display::new()?;
+		let display_handle = display.handle();
+
+		let display = Arc::new(Mutex::new(display));
+		let state = Arc::new(Mutex::new(WaylandState::new(
+			log.clone(),
+			display_handle.clone(),
+		)));
+
+		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
+		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();
+
+		let join_handle =
+			Wayland::start_loop(display.clone(), state.clone(), global_destroy_queue)?;
+
+		Ok(Wayland {
+			log,
+			display,
+			join_handle,
+			renderer,
+			state,
+		})
+	}
+
+	fn start_loop(
+		display: Arc<Mutex<Display<WaylandState>>>,
+		state: Arc<Mutex<WaylandState>>,
+		mut global_destroy_queue: mpsc::Receiver<GlobalId>,
+	) -> Result<JoinHandle<Result<()>>> {
 		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
 		if let Some(socket_name) = socket.socket_name() {
 			println!("Wayland compositor {:?} active", socket_name);
 		}
-		let display_handle = display.handle();
 
-		let compositor_state = CompositorState::new::<Self, _>(&display_handle, log.clone());
-		let xdg_shell_state = XdgShellState::new::<Self, _>(&display_handle, log.clone());
-		let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&display_handle, log.clone());
-		let shm_state = ShmState::new::<Self, _>(&display_handle, vec![], log.clone());
-		let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
-		let output = Output::new(
-			"1x".to_owned(),
-			smithay::wayland::output::PhysicalProperties {
-				size: Size::default(),
-				subpixel: Subpixel::None,
-				make: "Virtual XR Display".to_owned(),
-				model: "Your Headset Name Here".to_owned(),
-			},
-			log.clone(),
-		);
-		let _global = output.create_global::<Self>(&display_handle);
-		output.change_current_state(None, None, Some(Integer(2)), None);
-		// let data_device_state = DataDeviceState::new(&dh, log.clone());
+		let listen_async =
+			AsyncUnixListener::from_std(unsafe { UnixListener::from_raw_fd(socket.as_raw_fd()) })?;
 
-		let (global_destroy_queue_in, global_destroy_queue) = channel();
-		GLOBAL_DESTROY_QUEUE_IN
-			.set(SendWrapper::new(global_destroy_queue_in))
-			.unwrap();
+		let dispatch_poll_fd: RawFd = display.lock().backend().poll_fd();
+		let dispatch_poll_listener = AsyncFd::new(dispatch_poll_fd)?;
 
-		println!("Init Wayland compositor");
-		Ok(WaylandState {
-			log,
+		let dh1 = display.lock().handle();
+		let mut dh2 = dh1.clone();
 
-			global_destroy_queue,
-			display: Arc::new(Mutex::new(display)),
-			display_handle,
-			socket,
-			renderer,
-			compositor_state,
-			xdg_shell_state,
-			xdg_decoration_state,
-			shm_state,
-			output_manager_state,
-			output,
-			seat_state: SeatDelegate,
-			// data_device_state,
-		})
+		Ok(tokio::task::spawn(async move {
+			let _socket = socket; // Keep the socket alive
+			loop {
+				tokio::select! {
+					e = global_destroy_queue.recv() => { // New global to destroy
+						dh1.remove_global::<WaylandState>(e.unwrap());
+					}
+					acc = listen_async.accept() => { // New client connected
+						let (stream, _) = acc?;
+						dh2.insert_client(stream.into_std()?, Arc::new(ClientState))?;
+					}
+					e = dispatch_poll_listener.readable() => { // Dispatch
+						let mut guard = e?;
+						let mut display = display.lock();
+						display.dispatch_clients(&mut *state.lock())?;
+						display.flush_clients()?;
+						guard.clear_ready();
+					}
+				}
+			}
+		}))
 	}
 
 	pub fn frame(&mut self, sk: &StereoKit) {
-		let display_clone = self.display.clone();
-		let mut display = display_clone.lock();
-		if let Ok(Some(client)) = self.socket.accept() {
-			let _ = display
-				.handle()
-				.insert_client(client, Arc::new(ClientState));
-		}
-		display.dispatch_clients(self).unwrap();
-
-		while let Ok(global_to_destroy) = self.global_destroy_queue.try_recv() {
-			self.display_handle
-				.remove_global::<WaylandState>(global_to_destroy);
-		}
-
+		let log = self.log.clone();
 		let time_ms = (sk.time_getf() * 1000.) as u32;
-		self.xdg_shell_state.toplevel_surfaces(|surfs| {
-			for surf in surfs.iter() {
-				with_states(surf.wl_surface(), |data| {
+		let toplevel_surfaces = self
+			.state
+			.lock()
+			.xdg_shell_state
+			.toplevel_surfaces(|surfs| surfs.to_vec());
+		for surf in toplevel_surfaces {
+			// Let Smithay handle all the buffer maintenance
+			on_commit_buffer_handler(surf.wl_surface());
+			// Import all surface buffers into textures
+			import_surface_tree(&mut self.renderer, surf.wl_surface(), &log).unwrap();
+
+			with_states(surf.wl_surface(), |data| {
+				let mapped = data
+					.data_map
+					.get::<RendererSurfaceStateUserData>()
+					.map(|surface_states| surface_states.borrow().wl_buffer().is_some())
+					.unwrap_or(false);
+
+				if mapped && data.data_map.get::<XdgToplevelSurfaceData>().is_some() {
+					data.data_map.insert_if_missing_threadsafe(CoreSurface::new);
+					data.data_map.insert_if_missing_threadsafe(|| {
+						PanelItem::create(
+							&self.display,
+							self.display.lock().handle(),
+							&data.data_map,
+							surf.wl_surface().clone(),
+						)
+					});
+
 					if let Some(core_surface) = data.data_map.get::<CoreSurface>() {
-						core_surface.update_tex(sk);
+						core_surface.update_tex(sk, data, &self.renderer);
 						if let Some(panel_item) = data.data_map.get::<Arc<Node>>() {
 							PanelItem::apply_surface_materials(panel_item, core_surface);
 						}
 					}
-				});
-				send_frames_surface_tree(surf.wl_surface(), time_ms);
-			}
-		});
-		display.flush_clients().unwrap();
+				}
+			});
+			send_frames_surface_tree(surf.wl_surface(), time_ms);
+		}
+		self.display.lock().flush_clients().unwrap();
+	}
+
+	pub fn make_context_current(&self) {
+		unsafe {
+			self.renderer.egl_context().make_current().unwrap();
+		}
 	}
 }
-impl Drop for WaylandState {
+impl Drop for Wayland {
 	fn drop(&mut self) {
-		println!("Cleanly shut down the Wayland compositor");
+		self.join_handle.abort();
 	}
 }
-impl BufferHandler for WaylandState {
-	fn buffer_destroyed(
-		&mut self,
-		_buffer: &smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer,
-	) {
-	}
-}
-impl ShmHandler for WaylandState {
-	fn shm_state(&self) -> &smithay::wayland::shm::ShmState {
-		&self.shm_state
-	}
-}
-delegate_shm!(WaylandState);
-delegate_output!(WaylandState);

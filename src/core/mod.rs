@@ -1,3 +1,4 @@
+pub mod destroy_queue;
 pub mod resource;
 pub mod client;
 pub mod eventloop;

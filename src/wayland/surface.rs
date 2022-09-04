@@ -1,16 +1,25 @@
-use std::{fmt::Error, sync::Arc};
+use std::{fmt::Error, mem, sync::Arc};
 
 use glam::vec2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
-use smithay::backend::renderer::{gles2::Gles2Texture, Texture};
+use smithay::{
+	backend::renderer::{
+		gles2::{Gles2Renderer, Gles2Texture},
+		utils::RendererSurfaceStateUserData,
+		Texture,
+	},
+	wayland::compositor::SurfaceData,
+};
 use stereokit::{
 	material::Material,
 	shader::Shader,
 	texture::{Texture as SKTexture, TextureAddress, TextureFormat, TextureSample, TextureType},
 	StereoKit,
 };
+
+use crate::core::destroy_queue;
 
 use super::shaders::SIMULA_SHADER_BYTES;
 
@@ -29,7 +38,7 @@ impl CoreSurface {
 		}
 	}
 
-	pub fn update_tex(&self, sk: &StereoKit) {
+	pub fn update_tex(&self, sk: &StereoKit, data: &SurfaceData, renderer: &Gles2Renderer) {
 		let sk_tex = self
 			.sk_tex
 			.get_or_try_init(|| {
@@ -51,6 +60,14 @@ impl CoreSurface {
 					.map(|mat| Arc::new(SendWrapper::new(mat)))
 			})
 			.unwrap();
+
+		if let Some(surface_states) = data.data_map.get::<RendererSurfaceStateUserData>() {
+			*self.wl_tex.lock() = surface_states
+				.borrow()
+				.texture(renderer)
+				.cloned()
+				.map(SendWrapper::new);
+		}
 		if let Some(smithay_tex) = self.wl_tex.lock().as_ref() {
 			unsafe {
 				sk_tex.set_native(
@@ -68,5 +85,12 @@ impl CoreSurface {
 				sk_tex.set_address_mode(TextureAddress::Clamp);
 			}
 		}
+	}
+}
+impl Drop for CoreSurface {
+	fn drop(&mut self) {
+		destroy_queue::add(mem::replace(self.wl_tex.get_mut(), None));
+		self.sk_tex.take().map(destroy_queue::add);
+		self.sk_mat.take().map(destroy_queue::add);
 	}
 }

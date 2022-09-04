@@ -6,7 +6,6 @@ use super::model::Model;
 use super::spatial::Spatial;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
-use crate::TOKIO_HANDLE;
 use anyhow::{anyhow, Result};
 use libstardustxr::scenegraph::ScenegraphError;
 use nanoid::nanoid;
@@ -175,7 +174,7 @@ impl Node {
 		let path = self.path.clone();
 		let method = method.to_string();
 		let data = data.to_vec();
-		TOKIO_HANDLE.lock().as_ref().unwrap().spawn(async move {
+		tokio::spawn(async move {
 			if let Some(messenger) = client.messenger.as_ref() {
 				let _ = messenger
 					.send_remote_signal(path.as_str(), method.as_str(), data.as_slice())
