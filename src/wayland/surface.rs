@@ -13,7 +13,7 @@ use smithay::{
 	wayland::compositor::SurfaceData,
 };
 use stereokit::{
-	material::Material,
+	material::{Material, Transparency},
 	shader::Shader,
 	texture::{Texture as SKTexture, TextureAddress, TextureFormat, TextureSample, TextureType},
 	StereoKit,
@@ -21,7 +21,7 @@ use stereokit::{
 
 use crate::core::destroy_queue;
 
-use super::shaders::SIMULA_SHADER_BYTES;
+use super::shaders::PANEL_SHADER_BYTES;
 
 pub struct CoreSurface {
 	pub wl_tex: Mutex<Option<SendWrapper<Gles2Texture>>>,
@@ -50,11 +50,12 @@ impl CoreSurface {
 		let sk_mat = self
 			.sk_mat
 			.get_or_try_init(|| {
-				let shader = Shader::from_mem(sk, SIMULA_SHADER_BYTES).unwrap();
+				let shader = Shader::from_mem(sk, PANEL_SHADER_BYTES).unwrap();
 				Material::create(sk, &shader)
 					.ok_or(Error)
 					.map(|mat| {
 						mat.set_parameter("diffuse", &**self.sk_tex.get().unwrap());
+						mat.set_transparency(Transparency::Blend);
 						mat
 					})
 					.map(|mat| Arc::new(SendWrapper::new(mat)))
