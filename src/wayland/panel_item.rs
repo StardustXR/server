@@ -11,7 +11,7 @@ use crate::{
 		spatial::Spatial,
 	},
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use libstardustxr::{flex::flexbuffer_from_vector_arguments, flex_to_vec2};
@@ -236,15 +236,17 @@ impl PanelItem {
 				if *panel_item.seat_data.pointer_active.lock() {
 					let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 					let button = flex_vec.index(0)?.get_u64()? as u32;
-					let active = flex_vec.index(1)?.get_bool()?;
+					let state = flex_vec.index(1)?.get_u64()? as u32;
 					pointer.button(
 						0,
 						0,
 						button,
-						if active {
-							ButtonState::Pressed
-						} else {
-							ButtonState::Released
+						match state {
+							0 => ButtonState::Released,
+							1 => ButtonState::Pressed,
+							_ => {
+								bail!("Button state is out of bounds")
+							}
 						},
 					);
 					pointer.frame();
