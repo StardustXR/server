@@ -12,7 +12,7 @@ use std::sync::{Arc, Weak};
 pub struct Spatial {
 	pub(super) node: Weak<Node>,
 	parent: Mutex<Option<Arc<Spatial>>>,
-	transform: Mutex<Mat4>,
+	pub(super) transform: Mutex<Mat4>,
 }
 
 impl Spatial {
@@ -135,7 +135,7 @@ impl Spatial {
 		}
 
 		self.set_local_transform(Spatial::space_to_space_matrix(
-			self.parent.lock().as_deref(),
+			Some(self),
 			parent.cloned().as_deref(),
 		));
 		*self.parent.lock() = parent.cloned();

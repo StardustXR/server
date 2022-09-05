@@ -109,9 +109,10 @@ impl Model {
 				material_parameters.clear();
 			}
 
+			let global_transform = self.space.global_transform().into();
 			sk_model.draw(
 				draw_ctx,
-				self.space.global_transform().into(),
+				global_transform,
 				Rgba::new(Rgb::new(1_f32, 1_f32, 1_f32), 1_f32),
 				RenderLayer::Layer0,
 			);
