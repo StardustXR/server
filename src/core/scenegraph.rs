@@ -22,14 +22,21 @@ impl Scenegraph {
 	}
 
 	pub fn add_node(&self, node: Node) -> Arc<Node> {
-		let path = node.get_path().to_string();
 		let node_arc = Arc::new(node);
-		self.nodes.insert(path, node_arc.clone());
+		self.add_node_raw(node_arc.clone());
 		node_arc
+	}
+	pub fn add_node_raw(&self, node: Arc<Node>) {
+		let path = node.get_path().to_string();
+		self.nodes.insert(path, node);
 	}
 
 	pub fn get_node(&self, path: &str) -> Option<Arc<Node>> {
-		Some(self.nodes.get(path)?.clone())
+		let mut node = self.nodes.get(path)?.clone();
+		if let Some(alias) = node.alias.get() {
+			node = alias.original.upgrade()?;
+		}
+		Some(node)
 	}
 
 	pub fn remove_node(&self, path: &str) -> Option<Arc<Node>> {
