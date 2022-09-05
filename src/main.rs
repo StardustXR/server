@@ -3,6 +3,7 @@ mod nodes;
 mod wayland;
 
 use crate::core::destroy_queue;
+use crate::nodes::hmd;
 use crate::nodes::model::{MODELS_TO_DROP, MODEL_REGISTRY};
 use crate::wayland::Wayland;
 
@@ -63,6 +64,7 @@ fn main() -> Result<()> {
 	println!("Stardust ready!");
 	stereokit.run(
 		|draw_ctx| {
+			hmd::frame(&stereokit);
 			wayland.frame(&stereokit);
 			destroy_queue::clear();
 

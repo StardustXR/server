@@ -1,3 +1,4 @@
+pub mod hmd;
 pub mod core;
 pub mod data;
 pub mod field;

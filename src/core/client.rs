@@ -2,6 +2,7 @@ use super::eventloop::EventLoop;
 use super::scenegraph::Scenegraph;
 use crate::nodes::data;
 use crate::nodes::field;
+use crate::nodes::hmd;
 use crate::nodes::input;
 use crate::nodes::item;
 use crate::nodes::model;
@@ -64,6 +65,7 @@ impl Client {
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
 		let _ = client.root.set(Root::create(&client));
+		hmd::make_alias(&client);
 		spatial::create_interface(&client);
 		field::create_interface(&client);
 		model::create_interface(&client);

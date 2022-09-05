@@ -30,7 +30,7 @@ pub struct Node {
 	local_methods: DashMap<String, Method, BuildHasherDefault<FxHasher>>,
 	destroyable: AtomicBool,
 
-	alias: OnceCell<Arc<Alias>>,
+	pub alias: OnceCell<Arc<Alias>>,
 	aliases: Registry<Alias>,
 
 	pub spatial: OnceCell<Arc<Spatial>>,
@@ -198,7 +198,7 @@ impl Node {
 #[allow(dead_code)]
 pub struct Alias {
 	node: Weak<Node>,
-	original: Weak<Node>,
+	pub original: Weak<Node>,
 
 	local_signals: Vec<&'static str>,
 	local_methods: Vec<&'static str>,
