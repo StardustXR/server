@@ -82,6 +82,8 @@ impl Spatial {
 		}
 		if let Some(rot) = rot {
 			reference_space_rot = rot
+		} else if reference_space_rot.is_nan() {
+			reference_space_rot = Quat::IDENTITY;
 		}
 		if let Some(scl) = scl {
 			reference_space_scl = scl
