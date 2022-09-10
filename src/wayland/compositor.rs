@@ -1,11 +1,9 @@
-use super::state::WaylandState;
-use crate::nodes::{core::Node, item::ItemType};
+use super::{state::WaylandState, surface::CoreSurface};
 use smithay::{
 	delegate_compositor,
 	reexports::wayland_server::protocol::wl_surface::WlSurface,
 	wayland::compositor::{self, CompositorHandler, CompositorState},
 };
-use std::sync::Arc;
 
 impl CompositorHandler for WaylandState {
 	fn compositor_state(&mut self) -> &mut CompositorState {
@@ -13,13 +11,10 @@ impl CompositorHandler for WaylandState {
 	}
 
 	fn commit(&mut self, surface: &WlSurface) {
-		compositor::with_states(surface, |data| {
-			if let Some(panel_node) = data.data_map.get::<Arc<Node>>() {
-				let item = panel_node.item.get().unwrap();
-				if let ItemType::Panel(panel_item) = &item.specialization {
-					panel_item.resize(&data.data_map);
-				}
-			}
+		compositor::with_states(&surface, |data| {
+			data.data_map.insert_if_missing_threadsafe(|| {
+				CoreSurface::new(&self.display, self.display_handle.clone(), &surface)
+			})
 		});
 	}
 }

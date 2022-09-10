@@ -1,4 +1,4 @@
-use super::{seat::SeatData, state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE};
+use super::{seat::SeatData, surface::CoreSurface};
 use crate::{
 	core::{
 		client::{Client, INTERNAL_CLIENT},
@@ -7,28 +7,26 @@ use crate::{
 	nodes::{
 		core::Node,
 		item::{register_item_ui_flex, Item, ItemSpecialization, ItemType, TypeInfo},
-		model::Model,
 		spatial::Spatial,
 	},
 };
 use anyhow::{anyhow, bail, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
-use libstardustxr::{flex::flexbuffer_from_vector_arguments, flex_to_vec2};
+use libstardustxr::{
+	flex::{flexbuffer_from_arguments, flexbuffer_from_vector_arguments},
+	flex_to_vec2,
+};
 use nanoid::nanoid;
-use parking_lot::Mutex;
 use smithay::{
-	backend::renderer::utils::RendererSurfaceStateUserData,
 	reexports::wayland_server::{
-		backend::ObjectId,
 		protocol::{
 			wl_keyboard::KeyState,
 			wl_pointer::{Axis, ButtonState},
-			wl_surface::WlSurface,
 		},
-		Display, DisplayHandle, Resource,
+		Resource,
 	},
-	utils::{user_data::UserDataMap, Logical, Size},
+	wayland::{compositor::SurfaceData, shell::xdg::XdgToplevelSurfaceData},
 };
 use std::{
 	convert::TryInto,
@@ -40,6 +38,7 @@ lazy_static! {
 		type_name: "panel",
 		aliased_local_signals: vec![
 			"applySurfaceMaterial",
+			"applyCursorMaterial",
 			"pointerDeactivate",
 			"pointerScroll",
 			"pointerButton",
@@ -51,7 +50,7 @@ lazy_static! {
 			"close",
 		],
 		aliased_local_methods: vec![],
-		aliased_remote_signals: vec![],
+		aliased_remote_signals: vec!["resize", "setCursor",],
 		aliased_remote_methods: vec![],
 		ui: Default::default(),
 		items: Registry::new(),
@@ -61,20 +60,11 @@ lazy_static! {
 
 pub struct PanelItem {
 	node: Weak<Node>,
-	pending_material_applications: Mutex<Vec<(Arc<Model>, u32)>>,
-	display: Weak<Mutex<Display<WaylandState>>>,
-	dh: DisplayHandle,
-	pub toplevel_surface_id: ObjectId,
+	core_surface: Weak<CoreSurface>,
 	seat_data: SeatData,
-	size: Mutex<Size<i32, Logical>>,
 }
 impl PanelItem {
-	pub fn create(
-		display: &Arc<Mutex<Display<WaylandState>>>,
-		dh: DisplayHandle,
-		data: &UserDataMap,
-		toplevel_surface: WlSurface,
-	) -> Arc<Node> {
+	pub fn create(core_surface: &Arc<CoreSurface>) -> Arc<Node> {
 		let node = Arc::new(Node::create(
 			&INTERNAL_CLIENT,
 			"/item/panel/item",
@@ -83,30 +73,26 @@ impl PanelItem {
 		));
 		Spatial::add_to(&node, None, Mat4::IDENTITY).unwrap();
 
-		let seat_data = SeatData::new(&dh, toplevel_surface.client_id().unwrap());
-
-		let size = data
-			.get::<RendererSurfaceStateUserData>()
-			.unwrap()
-			.borrow()
-			.surface_size()
-			.map(Mutex::new)
-			.unwrap();
+		let seat_data = SeatData::new(
+			&core_surface.dh,
+			core_surface.wl_surface().client_id().unwrap(),
+		);
 
 		let specialization = ItemType::Panel(PanelItem {
 			node: Arc::downgrade(&node),
-			pending_material_applications: Mutex::new(Vec::new()),
-			display: Arc::downgrade(display),
-			dh,
-			toplevel_surface_id: toplevel_surface.id(),
+			core_surface: Arc::downgrade(core_surface),
 			seat_data,
-			size,
 		});
-		Item::add_to(&node, &ITEM_TYPE_INFO_PANEL, specialization);
+		let item = Item::add_to(&node, &ITEM_TYPE_INFO_PANEL, specialization);
+		if let ItemType::Panel(panel) = &item.specialization {
+			let _ = panel.seat_data.panel_item.set(Arc::downgrade(&item));
+		}
+
 		node.add_local_signal(
 			"applySurfaceMaterial",
 			PanelItem::apply_surface_material_flex,
 		);
+		node.add_local_signal("applyCursorMaterial", PanelItem::apply_cursor_material_flex);
 		node.add_local_signal("pointerDeactivate", PanelItem::pointer_deactivate_flex);
 		node.add_local_signal("pointerScroll", PanelItem::pointer_scroll_flex);
 		node.add_local_signal("pointerButton", PanelItem::pointer_button_flex);
@@ -123,30 +109,10 @@ impl PanelItem {
 		node
 	}
 
-	fn toplevel_surface(&self) -> WlSurface {
-		WlSurface::from_id(&self.dh, self.toplevel_surface_id.clone()).unwrap()
-	}
-	fn flush_clients(&self) {
-		self.display
-			.upgrade()
-			.unwrap()
-			.lock()
-			.flush_clients()
-			.unwrap();
-	}
-
-	pub fn resize(&self, data: &UserDataMap) {
-		if let Some(surface_states) = data.get::<RendererSurfaceStateUserData>() {
-			if let Some(size) = surface_states.borrow().buffer_size() {
-				*self.size.lock() = size;
-				let _ = self.node.upgrade().unwrap().send_remote_signal(
-					"resize",
-					&flexbuffer_from_vector_arguments(|vec| {
-						vec.push(size.w);
-						vec.push(size.h);
-					}),
-				);
-			}
+	fn from_node(node: &Node) -> &PanelItem {
+		match &node.item.get().unwrap().specialization {
+			ItemType::Panel(panel_item) => panel_item,
+			_ => unreachable!(),
 		}
 	}
 
@@ -164,30 +130,125 @@ impl PanelItem {
 			.model
 			.get()
 			.ok_or_else(|| anyhow!("Node is not a model"))?;
-		let material_idx = flex_vec.idx(1).get_u64()?;
+		let material_idx = flex_vec.idx(1).get_u64()? as u32;
 
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			panel_item
-				.pending_material_applications
-				.lock()
-				.push((model.clone(), material_idx as u32));
+			if let Some(core_surface) = panel_item.core_surface.upgrade() {
+				core_surface.apply_material(model.clone(), material_idx);
+			}
 		}
 
 		Ok(())
 	}
 
-	pub fn apply_surface_materials(node: &Node, core_surface: &CoreSurface) {
+	fn apply_cursor_material_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
+		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+		let model_node = calling_client
+			.scenegraph
+			.get_node(flex_vec.idx(0).as_str())
+			.ok_or_else(|| anyhow!("Model node not found"))?;
+		let model = model_node
+			.model
+			.get()
+			.ok_or_else(|| anyhow!("Node is not a model"))?;
+		let material_idx = flex_vec.idx(1).get_u64()? as u32;
+
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			let mut pending_material_applications = panel_item.pending_material_applications.lock();
-			for (model, material_idx) in &*pending_material_applications {
-				let sk_mat = core_surface.sk_mat.get().unwrap().clone();
-				model
-					.pending_material_replacements
-					.lock()
-					.insert(*material_idx, sk_mat);
+			if let Some(cursor) = &*panel_item.seat_data.cursor.lock() {
+				if let Some(core_surface) = cursor.lock().core_surface.upgrade() {
+					core_surface.apply_material(model.clone(), material_idx);
+				}
 			}
-			pending_material_applications.clear();
 		}
+
+		Ok(())
+	}
+
+	pub fn on_mapped(core_surface: &Arc<CoreSurface>, surface_data: &SurfaceData) {
+		if surface_data
+			.data_map
+			.get::<XdgToplevelSurfaceData>()
+			.is_some()
+		{
+			surface_data
+				.data_map
+				.insert_if_missing_threadsafe(|| PanelItem::create(core_surface));
+		}
+	}
+
+	pub fn if_mapped(core_surface: &Arc<CoreSurface>, surface_data: &SurfaceData) {
+		if let Some(panel_node) = surface_data.data_map.get::<Arc<Node>>() {
+			let panel_item = PanelItem::from_node(panel_node);
+
+			core_surface.with_data(|core_surface_data| {
+				if core_surface_data.resized {
+					panel_item.resize(core_surface);
+					core_surface_data.resized = false;
+				}
+			});
+
+			panel_item.set_cursor();
+		}
+	}
+
+	pub fn resize(&self, core_surface: &CoreSurface) {
+		core_surface.with_data(|data| {
+			if data.resized {
+				let _ = self.node.upgrade().unwrap().send_remote_signal(
+					"resize",
+					&flexbuffer_from_vector_arguments(|vec| {
+						vec.push(data.size.x);
+						vec.push(data.size.y);
+					}),
+				);
+				data.resized = false;
+			}
+		});
+	}
+
+	pub fn set_cursor(&self) {
+		let mut cursor_changed = self.seat_data.cursor_changed.lock();
+		if !*cursor_changed {
+			return;
+		}
+		let mut data = flexbuffer_from_arguments(|flex| {
+			flex.build_singleton(());
+		});
+
+		if let Some(cursor) = &*self.seat_data.cursor.lock() {
+			let cursor = cursor.lock();
+			if let Some(core_surface) = cursor.core_surface.upgrade() {
+				if let Some(mapped_data) = &*core_surface.mapped_data.lock() {
+					data = flexbuffer_from_vector_arguments(|vec| {
+						let mut size_vec = vec.start_vector();
+						let size = mapped_data.size;
+						size_vec.push(size.x);
+						size_vec.push(size.y);
+						size_vec.end_vector();
+
+						let mut hotspot_vec = vec.start_vector();
+						hotspot_vec.push(cursor.hotspot.x);
+						hotspot_vec.push(cursor.hotspot.y);
+						hotspot_vec.end_vector();
+					});
+				} else {
+					return;
+				};
+			} else {
+				return;
+			}
+		}
+
+		let _ = self
+			.node
+			.upgrade()
+			.unwrap()
+			.send_remote_signal("setCursor", &data);
+		*cursor_changed = false;
 	}
 
 	fn pointer_deactivate_flex(
@@ -195,13 +256,14 @@ impl PanelItem {
 		_calling_client: Arc<Client>,
 		_data: &[u8],
 	) -> Result<()> {
-		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if *panel_item.seat_data.pointer_active.lock() {
+		let panel_item = PanelItem::from_node(node);
+		if *panel_item.seat_data.pointer_active.lock() {
+			if let Some(core_surface) = panel_item.core_surface.upgrade() {
 				if let Some(pointer) = panel_item.seat_data.pointer() {
-					pointer.leave(0, &panel_item.toplevel_surface());
+					pointer.leave(0, &core_surface.wl_surface());
 					*panel_item.seat_data.pointer_active.lock() = false;
 					pointer.frame();
-					panel_item.flush_clients();
+					core_surface.flush_clients();
 				}
 			}
 		}
@@ -212,18 +274,20 @@ impl PanelItem {
 	fn pointer_motion_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(pointer) = panel_item.seat_data.pointer() {
-				let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-				let x = flex_vec.index(0)?.get_f64()?;
-				let y = flex_vec.index(1)?.get_f64()?;
-				let mut pointer_active = panel_item.seat_data.pointer_active.lock();
-				if *pointer_active {
-					pointer.motion(0, x, y);
-				} else {
-					pointer.enter(0, &panel_item.toplevel_surface(), x, y);
-					*pointer_active = true;
+				if let Some(core_surface) = panel_item.core_surface.upgrade() {
+					let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+					let x = flex_vec.index(0)?.get_f64()?;
+					let y = flex_vec.index(1)?.get_f64()?;
+					let mut pointer_active = panel_item.seat_data.pointer_active.lock();
+					if *pointer_active {
+						pointer.motion(0, x, y);
+					} else {
+						pointer.enter(0, &core_surface.wl_surface(), x, y);
+						*pointer_active = true;
+					}
+					pointer.frame();
+					core_surface.flush_clients();
 				}
-				pointer.frame();
-				panel_item.flush_clients();
 			}
 		}
 
@@ -234,23 +298,25 @@ impl PanelItem {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(pointer) = panel_item.seat_data.pointer() {
 				if *panel_item.seat_data.pointer_active.lock() {
-					let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-					let button = flex_vec.index(0)?.get_u64()? as u32;
-					let state = flex_vec.index(1)?.get_u64()? as u32;
-					pointer.button(
-						0,
-						0,
-						button,
-						match state {
-							0 => ButtonState::Released,
-							1 => ButtonState::Pressed,
-							_ => {
-								bail!("Button state is out of bounds")
-							}
-						},
-					);
-					pointer.frame();
-					panel_item.flush_clients();
+					if let Some(core_surface) = panel_item.core_surface.upgrade() {
+						let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+						let button = flex_vec.index(0)?.get_u64()? as u32;
+						let state = flex_vec.index(1)?.get_u64()? as u32;
+						pointer.button(
+							0,
+							0,
+							button,
+							match state {
+								0 => ButtonState::Released,
+								1 => ButtonState::Pressed,
+								_ => {
+									bail!("Button state is out of bounds")
+								}
+							},
+						);
+						pointer.frame();
+						core_surface.flush_clients();
+					}
 				}
 			}
 		}
@@ -262,24 +328,31 @@ impl PanelItem {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(pointer) = panel_item.seat_data.pointer() {
 				if *panel_item.seat_data.pointer_active.lock() {
-					let flex = flexbuffers::Reader::get_root(data)?;
-					if flex.flexbuffer_type().is_null() {
-						pointer.axis_stop(0, Axis::HorizontalScroll);
-						pointer.axis_stop(0, Axis::VerticalScroll);
-					} else {
-						let flex_vec = flex.get_vector()?;
-						let axis_continuous_vec = flex_to_vec2!(flex_vec.idx(0))
-							.ok_or_else(|| anyhow!("No continuous axis vector!"))?;
-						pointer.axis(0, Axis::HorizontalScroll, axis_continuous_vec.x as f64);
-						pointer.axis(0, Axis::VerticalScroll, axis_continuous_vec.y as f64);
-						if let Some(axis_discrete_vec) = flex_to_vec2!(flex_vec.idx(0)) {
-							pointer
-								.axis_discrete(Axis::HorizontalScroll, axis_discrete_vec.x as i32);
-							pointer.axis_discrete(Axis::VerticalScroll, axis_discrete_vec.y as i32);
+					if let Some(core_surface) = panel_item.core_surface.upgrade() {
+						let flex = flexbuffers::Reader::get_root(data)?;
+						if flex.flexbuffer_type().is_null() {
+							pointer.axis_stop(0, Axis::HorizontalScroll);
+							pointer.axis_stop(0, Axis::VerticalScroll);
+						} else {
+							let flex_vec = flex.get_vector()?;
+							let axis_continuous_vec = flex_to_vec2!(flex_vec.idx(0))
+								.ok_or_else(|| anyhow!("No continuous axis vector!"))?;
+							pointer.axis(0, Axis::HorizontalScroll, axis_continuous_vec.x as f64);
+							pointer.axis(0, Axis::VerticalScroll, axis_continuous_vec.y as f64);
+							if let Some(axis_discrete_vec) = flex_to_vec2!(flex_vec.idx(0)) {
+								pointer.axis_discrete(
+									Axis::HorizontalScroll,
+									axis_discrete_vec.x as i32,
+								);
+								pointer.axis_discrete(
+									Axis::VerticalScroll,
+									axis_discrete_vec.y as i32,
+								);
+							}
 						}
+						pointer.frame();
+						core_surface.flush_clients();
 					}
-					pointer.frame();
-					panel_item.flush_clients();
 				}
 			}
 		}
@@ -294,15 +367,17 @@ impl PanelItem {
 	) -> Result<()> {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(keyboard) = panel_item.seat_data.keyboard() {
-				let mut keyboard_active = panel_item.seat_data.keyboard_active.lock();
-				let active = flexbuffers::Reader::get_root(data)?.get_bool()?;
-				if *keyboard_active != active {
-					if active {
-						keyboard.enter(0, &panel_item.toplevel_surface(), vec![]);
-					} else {
-						keyboard.leave(0, &panel_item.toplevel_surface());
+				if let Some(core_surface) = panel_item.core_surface.upgrade() {
+					let mut keyboard_active = panel_item.seat_data.keyboard_active.lock();
+					let active = flexbuffers::Reader::get_root(data)?.get_bool()?;
+					if *keyboard_active != active {
+						if active {
+							keyboard.enter(0, &core_surface.wl_surface(), vec![]);
+						} else {
+							keyboard.leave(0, &core_surface.wl_surface());
+						}
+						*keyboard_active = active;
 					}
-					*keyboard_active = active;
 				}
 			}
 		}
@@ -358,16 +433,40 @@ impl PanelItem {
 }
 impl ItemSpecialization for PanelItem {
 	fn serialize_start_data(&self, vec: &mut flexbuffers::VectorBuilder) {
-		let mut size_vec = vec.start_vector();
-		let size = *self.size.lock();
-		size_vec.push(size.w as u32);
-		size_vec.push(size.h as u32);
-	}
-}
-impl Drop for PanelItem {
-	fn drop(&mut self) {
-		let id = self.seat_data.global_id.get().cloned().unwrap();
-		tokio::spawn(async move { GLOBAL_DESTROY_QUEUE.get().unwrap().send(id).await });
+		// Panel size
+		{
+			let mut size_vec = vec.start_vector();
+			self.core_surface.upgrade().unwrap().with_data(|data| {
+				size_vec.push(data.size.x);
+				size_vec.push(data.size.y);
+			});
+		}
+
+		// Cursor size and hotspot
+		if let Some(cursor) = &*self.seat_data.cursor.lock() {
+			let cursor = cursor.lock();
+			if let Some(cursor_core_surface) = cursor.core_surface.upgrade() {
+				if let Some(mapped_data) = &*cursor_core_surface.mapped_data.lock() {
+					let mut cursor_vec = vec.start_vector();
+					{
+						let mut cursor_size_vec = cursor_vec.start_vector();
+						cursor_size_vec.push(mapped_data.size.x);
+						cursor_size_vec.push(mapped_data.size.y);
+					}
+					{
+						let mut cursor_hotspot_vec = cursor_vec.start_vector();
+						cursor_hotspot_vec.push(cursor.hotspot.x);
+						cursor_hotspot_vec.push(cursor.hotspot.y);
+					}
+				} else {
+					vec.push(());
+				}
+			} else {
+				vec.push(());
+			}
+		} else {
+			vec.push(());
+		}
 	}
 }
 

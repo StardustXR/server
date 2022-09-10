@@ -1,10 +1,13 @@
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 use slog::Logger;
 use smithay::{
 	delegate_output, delegate_shm,
 	reexports::wayland_server::{
 		backend::{ClientData, ClientId, DisconnectReason},
 		protocol::wl_output::Subpixel,
-		DisplayHandle,
+		Display, DisplayHandle,
 	},
 	utils::Size,
 	wayland::{
@@ -33,6 +36,7 @@ impl ClientData for ClientState {
 }
 
 pub struct WaylandState {
+	pub display: Arc<Mutex<Display<WaylandState>>>,
 	pub display_handle: DisplayHandle,
 
 	pub compositor_state: CompositorState,
@@ -46,7 +50,11 @@ pub struct WaylandState {
 }
 
 impl WaylandState {
-	pub fn new(log: Logger, display_handle: DisplayHandle) -> Self {
+	pub fn new(
+		log: Logger,
+		display: Arc<Mutex<Display<WaylandState>>>,
+		display_handle: DisplayHandle,
+	) -> Self {
 		let compositor_state = CompositorState::new::<Self, _>(&display_handle, log.clone());
 		let xdg_shell_state = XdgShellState::new::<Self, _>(&display_handle, log.clone());
 		let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&display_handle, log.clone());
@@ -69,6 +77,7 @@ impl WaylandState {
 		println!("Init Wayland compositor");
 
 		WaylandState {
+			display,
 			display_handle,
 
 			compositor_state,

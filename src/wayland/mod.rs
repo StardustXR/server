@@ -7,23 +7,15 @@ pub mod surface;
 pub mod xdg_decoration;
 pub mod xdg_shell;
 
-use self::{panel_item::PanelItem, state::WaylandState};
-use crate::{nodes::core::Node, wayland::state::ClientState};
+use self::{panel_item::PanelItem, state::WaylandState, surface::CORE_SURFACES};
+use crate::wayland::state::ClientState;
 use anyhow::{ensure, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use slog::Logger;
 use smithay::{
-	backend::{
-		egl::EGLContext,
-		renderer::{
-			gles2::Gles2Renderer,
-			utils::{import_surface_tree, on_commit_buffer_handler, RendererSurfaceStateUserData},
-		},
-	},
-	desktop::utils::send_frames_surface_tree,
+	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
 	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket},
-	wayland::{compositor::with_states, shell::xdg::XdgToplevelSurfaceData},
 };
 use std::os::unix::prelude::AsRawFd;
 use std::{
@@ -36,7 +28,6 @@ use std::{
 };
 use stereokit as sk;
 use stereokit::StereoKit;
-use surface::CoreSurface;
 use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
 };
@@ -70,7 +61,7 @@ pub struct Wayland {
 	display: Arc<Mutex<Display<WaylandState>>>,
 	join_handle: JoinHandle<Result<()>>,
 	renderer: Gles2Renderer,
-	state: Arc<Mutex<WaylandState>>,
+	// state: Arc<Mutex<WaylandState>>,
 }
 impl Wayland {
 	pub fn new(log: Logger) -> Result<Self> {
@@ -93,7 +84,8 @@ impl Wayland {
 		let display = Arc::new(Mutex::new(display));
 		let state = Arc::new(Mutex::new(WaylandState::new(
 			log.clone(),
-			display_handle.clone(),
+			display.clone(),
+			display_handle,
 		)));
 
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
@@ -107,7 +99,7 @@ impl Wayland {
 			display,
 			join_handle,
 			renderer,
-			state,
+			// state,
 		})
 	}
 
@@ -154,47 +146,23 @@ impl Wayland {
 	}
 
 	pub fn frame(&mut self, sk: &StereoKit) {
-		let log = self.log.clone();
 		let time_ms = (sk.time_getf() * 1000.) as u32;
-		let toplevel_surfaces = self
-			.state
-			.lock()
-			.xdg_shell_state
-			.toplevel_surfaces(|surfs| surfs.to_vec());
-		for surf in toplevel_surfaces {
-			// Let Smithay handle all the buffer maintenance
-			on_commit_buffer_handler(surf.wl_surface());
-			// Import all surface buffers into textures
-			import_surface_tree(&mut self.renderer, surf.wl_surface(), &log).unwrap();
 
-			with_states(surf.wl_surface(), |data| {
-				let mapped = data
-					.data_map
-					.get::<RendererSurfaceStateUserData>()
-					.map(|surface_states| surface_states.borrow().wl_buffer().is_some())
-					.unwrap_or(false);
-
-				if mapped && data.data_map.get::<XdgToplevelSurfaceData>().is_some() {
-					data.data_map.insert_if_missing_threadsafe(CoreSurface::new);
-					data.data_map.insert_if_missing_threadsafe(|| {
-						PanelItem::create(
-							&self.display,
-							self.display.lock().handle(),
-							&data.data_map,
-							surf.wl_surface().clone(),
-						)
-					});
-
-					if let Some(core_surface) = data.data_map.get::<CoreSurface>() {
-						core_surface.update_tex(sk, data, &self.renderer);
-						if let Some(panel_item) = data.data_map.get::<Arc<Node>>() {
-							PanelItem::apply_surface_materials(panel_item, core_surface);
-						}
-					}
-				}
-			});
-			send_frames_surface_tree(surf.wl_surface(), time_ms);
+		for core_surface in CORE_SURFACES.get_valid_contents() {
+			core_surface.process(
+				sk,
+				&mut self.renderer,
+				time_ms,
+				&self.log,
+				|data| {
+					PanelItem::on_mapped(&core_surface, data);
+				},
+				|data| {
+					PanelItem::if_mapped(&core_surface, data);
+				},
+			);
 		}
+
 		self.display.lock().flush_clients().unwrap();
 	}
 
