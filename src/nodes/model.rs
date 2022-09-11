@@ -16,10 +16,10 @@ use send_wrapper::SendWrapper;
 use std::fmt::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
-use stereokit::enums::RenderLayer;
 use stereokit::lifecycle::DrawContext;
 use stereokit::material::Material;
 use stereokit::model::Model as SKModel;
+use stereokit::render::RenderLayer;
 use stereokit::texture::Texture;
 use stereokit::StereoKit;
 
@@ -79,6 +79,8 @@ impl Model {
 					.get()
 					.and_then(|path| SKModel::from_file(sk, path.as_path(), None))
 					.map(SendWrapper::new)
+					.as_ref()
+					.cloned()
 					.ok_or(Error)
 			})
 			.ok();
