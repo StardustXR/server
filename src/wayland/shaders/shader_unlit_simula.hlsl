@@ -6,16 +6,19 @@
 //--diffuse     = white
 //--fcFactor    = 1.0
 //--ripple      = 4.0
-//--size        = 256, 256
 //--uv_offset   = 0.0, 0.0
 //--uv_scale    = 1.0, 1.0
+//--alpha_min   = 0.0
+//--alpha_max   = 1.0
 Texture2D    diffuse   : register(t0);
 SamplerState diffuse_s : register(s0);
-int2         size;
+float4       diffuse_i;
 float        fcFactor;
 float        ripple;
 float2       uv_scale;
 float2       uv_offset;
+float        alpha_min;
+float        alpha_max;
 
 struct vsIn {
 	float4 pos  : SV_Position;
@@ -38,6 +41,10 @@ psIn vs(vsIn input, uint id : SV_InstanceID) {
 
 	o.uv    = (input.uv) + uv_offset * uv_scale;
 	return o;
+}
+
+float map(float value, float min1, float max1, float min2, float max2) {
+  return min2 + (value - min1) * (max2 - min2) / (max1 - min1);
 }
 
 // float gaussian(float x, float t) {
@@ -66,10 +73,10 @@ float4 lowpassFilter(Texture2D tex, sampler2D texSampler, float2 uv, float alpha
 	//float width = sqrt(max(dot(dx_uv, dx_uv), dot(dy_uv, dy_uv)));
 	float2 width = abs(float2(dx_uv.x, dy_uv.y));
 	
-	float2 pixelWidth = floor(width * float2(size));
+	float2 pixelWidth = floor(width * diffuse_i.xy);
 	float2 aspectRatio = normalize(pixelWidth);
 	
-	float2 xyf = uv * float2(size);
+	float2 xyf = uv * diffuse_i.xy;
 	int2 xy = int2(xyf);
 	
 	pixelWidth = clamp(pixelWidth, float2(1.0), float2(2.0));
@@ -89,7 +96,7 @@ float4 lowpassFilter(Texture2D tex, sampler2D texSampler, float2 uv, float alpha
 			//float lanczosValue = gaussian(kx, fcx);
 			float lanczosValue = kaiser(sqrt(kx*kx + ky*ky), alpha);
 			
-			q += tex.Sample(texSampler, (float2(u, v)+float2(0.5))/float2(size)) * lanczosValue;
+			q += tex.Sample(texSampler, (float2(u, v)+float2(0.5))/diffuse_i.xy) * lanczosValue;
 			// q += tex.Load(int3(u, v, 0)) * lanczosValue;
 			qSum += lanczosValue;
 		}
@@ -106,6 +113,7 @@ float4 ps(psIn input) : SV_TARGET {
 	float4 col = lowpassFilter(diffuse, diffuse_s, input.uv, ripple);
 	// float4 col = diffuse.Sample(diffuse_s, input.uv);
 	col.rgb = pow(col.rgb, float3(gamma));
+	col.a = map(col.a, 0, 1, alpha_min, alpha_max);
 
 	return col; 
 }

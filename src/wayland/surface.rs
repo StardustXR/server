@@ -3,7 +3,6 @@ use crate::{
 	core::{destroy_queue, registry::Registry},
 	nodes::model::Model,
 };
-use glam::vec2;
 use mint::Vector2;
 use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
@@ -68,7 +67,6 @@ impl CoreSurfaceData {
 			.map(SendWrapper::new);
 		if let Some(smithay_tex) = self.wl_tex.as_ref() {
 			let sk_tex = self.sk_tex.as_ref().unwrap();
-			let sk_mat = self.sk_mat.as_ref().unwrap();
 			unsafe {
 				sk_tex.set_native(
 					smithay_tex.tex_id() as usize,
@@ -78,9 +76,6 @@ impl CoreSurfaceData {
 					smithay_tex.height(),
 					false,
 				);
-				let size: mint::Vector2<f32> =
-					vec2(smithay_tex.width() as f32, smithay_tex.height() as f32).into();
-				sk_mat.set_parameter("size", &size);
 				sk_tex.set_sample(TextureSample::Point);
 				sk_tex.set_address_mode(TextureAddress::Clamp);
 			}
