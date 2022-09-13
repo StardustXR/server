@@ -24,6 +24,7 @@ impl XdgShellHandler for WaylandState {
 			.enter(&self.display_handle, surface.wl_surface());
 		surface.with_pending_state(|state| {
 			state.states.set(State::Fullscreen);
+			state.states.set(State::Activated);
 			state.decoration_mode = Some(Mode::ServerSide);
 		});
 		surface.send_configure();
