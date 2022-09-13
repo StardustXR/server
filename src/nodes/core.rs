@@ -23,7 +23,6 @@ pub type Method = fn(&Node, Arc<Client>, &[u8]) -> Result<Vec<u8>>;
 
 pub struct Node {
 	pub(super) uid: String,
-	pub(crate) client: Weak<Client>,
 	path: String,
 	// trailing_slash_pos: usize,
 	local_signals: DashMap<String, Signal, BuildHasherDefault<FxHasher>>,
@@ -43,6 +42,8 @@ pub struct Node {
 	pub item_ui: OnceCell<Arc<ItemUI>>,
 	pub input_method: OnceCell<Arc<InputMethod>>,
 	pub input_handler: OnceCell<Arc<InputHandler>>,
+
+	pub(crate) client: Weak<Client>,
 }
 
 impl Node {
