@@ -16,6 +16,13 @@ pub struct Spatial {
 }
 
 impl Spatial {
+	pub fn new(node: Weak<Node>, parent: Option<Arc<Spatial>>, transform: Mat4) -> Arc<Self> {
+		Arc::new(Spatial {
+			node,
+			parent: Mutex::new(parent),
+			transform: Mutex::new(transform),
+		})
+	}
 	pub fn add_to(
 		node: &Arc<Node>,
 		parent: Option<Arc<Spatial>>,

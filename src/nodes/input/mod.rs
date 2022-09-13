@@ -1,3 +1,6 @@
+pub mod pointer;
+
+use self::pointer::Pointer;
 use super::core::Node;
 use super::field::Field;
 use super::spatial::{get_spatial_parent_flex, get_transform_pose_flex, Spatial};
@@ -7,6 +10,7 @@ use crate::core::registry::Registry;
 use anyhow::{anyhow, ensure, Result};
 use glam::Mat4;
 use libstardustxr::schemas::input::{InputData, InputDataArgs, InputDataRaw};
+use nanoid::nanoid;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
@@ -14,7 +18,7 @@ use std::sync::{Arc, Weak};
 static INPUT_METHOD_REGISTRY: Registry<InputMethod> = Registry::new();
 static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
 
-pub trait InputSpecializationTrait {
+pub trait InputSpecialization: Send + Sync {
 	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
 	fn serialize(
 		&self,
@@ -27,25 +31,36 @@ pub trait InputSpecializationTrait {
 	);
 	fn serialize_datamap(&self) -> Vec<u8>;
 }
-enum InputSpecialization {}
-impl Deref for InputSpecialization {
-	type Target = dyn InputSpecializationTrait;
+pub enum InputType {
+	Pointer(Pointer),
+}
+impl Deref for InputType {
+	type Target = dyn InputSpecialization;
 	fn deref(&self) -> &Self::Target {
-		todo!()
-		// match self {
-		// 	Field::Box(field) => field,
-		// }
+		match self {
+			InputType::Pointer(p) => p,
+		}
 	}
 }
 
 pub struct InputMethod {
-	uid: String,
+	pub uid: String,
 	pub spatial: Arc<Spatial>,
-	specialization: InputSpecialization,
+	pub specialization: InputType,
+	pub captures: Registry<InputHandler>,
 }
 impl InputMethod {
+	pub fn new(spatial: Arc<Spatial>, specialization: InputType) -> Arc<InputMethod> {
+		let method = InputMethod {
+			uid: nanoid!(),
+			spatial,
+			specialization,
+			captures: Registry::new(),
+		};
+		INPUT_METHOD_REGISTRY.add(method)
+	}
 	#[allow(dead_code)]
-	fn add_to(node: &Arc<Node>, specialization: InputSpecialization) -> Result<()> {
+	pub fn add_to(node: &Arc<Node>, specialization: InputType) -> Result<()> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
@@ -55,6 +70,7 @@ impl InputMethod {
 			uid: node.uid.clone(),
 			spatial: node.spatial.get().unwrap().clone(),
 			specialization,
+			captures: Registry::new(),
 		};
 		let method = INPUT_METHOD_REGISTRY.add(method);
 		let _ = node.input_method.set(method);
@@ -65,6 +81,9 @@ impl InputMethod {
 			.upgrade()
 			.map(|field| self.specialization.distance(&self.spatial, &field))
 	}
+	fn serialize_datamap(&self) -> Vec<u8> {
+		self.specialization.serialize_datamap()
+	}
 }
 impl Drop for InputMethod {
 	fn drop(&mut self) {
@@ -74,51 +93,44 @@ impl Drop for InputMethod {
 
 pub struct DistanceLink {
 	pub distance: f32,
-	pub method: Weak<InputMethod>,
-	pub handler: Weak<InputHandler>,
+	pub method: Arc<InputMethod>,
+	pub handler: Arc<InputHandler>,
 }
 impl DistanceLink {
-	fn from(method: &Arc<InputMethod>, handler: &Arc<InputHandler>) -> Option<Self> {
+	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Option<Self> {
 		Some(DistanceLink {
-			distance: method.distance(handler)?,
-			method: Arc::downgrade(method),
-			handler: Arc::downgrade(handler),
+			distance: method.distance(&handler)?,
+			method,
+			handler,
 		})
 	}
-	fn serialize(&self) -> Option<Vec<u8>> {
-		self.method.upgrade().and_then(|method| {
-			self.handler.upgrade().map(|handler| {
-				let mut fbb = flatbuffers::FlatBufferBuilder::with_capacity(1024);
-				let uid = Some(fbb.create_string(&method.uid));
-				let datamap = Some(fbb.create_vector(&self.serialize_datamap()));
 
-				let (input_type, input_data) = method.specialization.serialize(
-					&mut fbb,
-					self,
-					Spatial::space_to_space_matrix(Some(&method.spatial), Some(&handler.spatial)),
-				);
-
-				let root = InputData::create(
-					&mut fbb,
-					&InputDataArgs {
-						uid,
-						input_type,
-						input: Some(input_data),
-						distance: self.distance,
-						datamap,
-					},
-				);
-				fbb.finish(root, None);
-				Vec::from(fbb.finished_data())
-			})
-		})
+	fn send_input(&self, frame: u64, datamap: &[u8]) {
+		self.handler.send_input(frame, self, datamap);
 	}
-	fn serialize_datamap(&self) -> Vec<u8> {
-		if let Some(method) = self.method.upgrade() {
-			method.specialization.serialize_datamap()
-		} else {
-			Default::default()
-		}
+	fn serialize(&self, datamap: &[u8]) -> Vec<u8> {
+		let mut fbb = flatbuffers::FlatBufferBuilder::with_capacity(1024);
+		let uid = Some(fbb.create_string(&self.method.uid));
+		let datamap = Some(fbb.create_vector(datamap));
+
+		let (input_type, input_data) = self.method.specialization.serialize(
+			&mut fbb,
+			self,
+			Spatial::space_to_space_matrix(Some(&self.method.spatial), Some(&self.handler.spatial)),
+		);
+
+		let root = InputData::create(
+			&mut fbb,
+			&InputDataArgs {
+				uid,
+				input_type,
+				input: Some(input_data),
+				distance: self.distance,
+				datamap,
+			},
+		);
+		fbb.finish(root, None);
+		Vec::from(fbb.finished_data())
 	}
 }
 
@@ -144,43 +156,30 @@ impl InputHandler {
 		Ok(())
 	}
 
-	fn send_input(
-		&self,
-		old_frame: u64,
-		distance_link: DistanceLink,
-		distance_links: Vec<DistanceLink>,
-	) {
-		if old_frame < FRAME.load(Ordering::Relaxed) {
-			return;
-		}
+	fn send_input(&self, frame: u64, distance_link: &DistanceLink, datamap: &[u8]) {
+		let data = distance_link.serialize(datamap);
+		let node = self.node.upgrade().unwrap();
+		let method = Arc::downgrade(&distance_link.method);
+		let handler = Arc::downgrade(&distance_link.handler);
 
-		match distance_link.serialize() {
-			None => InputHandler::next_input(old_frame, distance_links),
-			Some(data) => {
-				let node = self.node.upgrade().unwrap();
+		tokio::spawn(async move {
+			let data = node.execute_remote_method("input", data).await;
+			if frame == FRAME.load(Ordering::Relaxed) {
+				if let Ok(data) = data {
+					let capture = flexbuffers::Reader::get_root(data.as_slice())
+						.and_then(|data| data.get_bool())
+						.unwrap_or(false);
 
-				tokio::spawn(async move {
-					let data = node.execute_remote_method("input", data).await;
-					if let Ok(data) = data {
-						let capture = flexbuffers::Reader::get_root(data.as_slice())
-							.and_then(|data| data.get_bool())
-							.unwrap_or(false);
-						if !distance_links.is_empty() && !capture {
-							InputHandler::next_input(old_frame, distance_links);
+					if let Some(method) = method.upgrade() {
+						if let Some(handler) = handler.upgrade() {
+							if capture {
+								method.captures.add_raw(&handler);
+							}
 						}
 					}
-				});
+				}
 			}
-		}
-	}
-
-	fn next_input(old_frame: u64, distance_links: Vec<DistanceLink>) {
-		let mut distance_links = distance_links;
-		if let Some(distance_link) = distance_links.pop() {
-			if let Some(handler) = distance_link.handler.upgrade() {
-				handler.send_input(old_frame, distance_link, distance_links);
-			}
-		}
+		});
 	}
 }
 impl Drop for InputHandler {
@@ -190,7 +189,7 @@ impl Drop for InputHandler {
 }
 
 pub fn create_interface(client: &Arc<Client>) {
-	let node = Node::create(client, "", "data", false);
+	let node = Node::create(client, "", "input", false);
 	node.add_local_signal("createInputHandler", create_input_handler_flex);
 	node.add_to_scenegraph();
 }
@@ -225,20 +224,28 @@ pub fn create_input_handler_flex(
 	Ok(())
 }
 
-#[allow(dead_code)]
 pub fn process_input() {
 	for method in INPUT_METHOD_REGISTRY.get_valid_contents() {
-		let mut distance_links: Vec<DistanceLink> = Default::default();
-		for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
-			if let Some(distance_link) = DistanceLink::from(&method, &handler) {
-				distance_links.push(distance_link);
-			}
-		}
-		if distance_links.is_empty() {
-			continue;
-		}
+		let mut distance_links: Vec<DistanceLink> = INPUT_HANDLER_REGISTRY
+			.get_valid_contents()
+			.into_iter()
+			.filter_map(|handler| DistanceLink::from(method.clone(), handler))
+			.collect();
 		distance_links
 			.sort_unstable_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap().reverse());
-		InputHandler::next_input(FRAME.load(Ordering::Relaxed), distance_links);
+
+		let datamap = method.serialize_datamap();
+		let frame = FRAME.load(Ordering::Relaxed);
+		let captures = method.captures.get_valid_contents();
+		for distance_link in distance_links {
+			distance_link.send_input(frame, &datamap);
+			if captures
+				.iter()
+				.any(|c| Arc::ptr_eq(c, &distance_link.handler))
+			{
+				break;
+			}
+		}
+		method.captures.clear();
 	}
 }

@@ -1,10 +1,12 @@
 mod core;
 mod nodes;
+mod objects;
 mod wayland;
 
 use crate::core::destroy_queue;
-use crate::nodes::hmd;
 use crate::nodes::model::{MODELS_TO_DROP, MODEL_REGISTRY};
+use crate::nodes::{hmd, input};
+use crate::objects::input::mouse_pointer::MousePointer;
 use crate::wayland::Wayland;
 
 use self::core::eventloop::EventLoop;
@@ -46,6 +48,8 @@ fn main() -> Result<()> {
 		.expect("StereoKit failed to initialize");
 	println!("Init StereoKit");
 
+	let mouse_pointer = cli_args.flatscreen.then(MousePointer::new);
+
 	if cli_args.flatscreen {
 		unsafe {
 			stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_left, false as i32);
@@ -73,6 +77,11 @@ fn main() -> Result<()> {
 				model.draw(&stereokit, draw_ctx);
 			}
 			MODELS_TO_DROP.lock().clear();
+
+			if let Some(mouse_pointer) = &mouse_pointer {
+				mouse_pointer.update(&stereokit);
+			}
+			input::process_input();
 
 			wayland.make_context_current();
 		},

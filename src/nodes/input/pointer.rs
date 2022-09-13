@@ -1,12 +1,13 @@
-use super::field::{ray_march, Field, Ray, RayMarchResult};
-use super::input::{DistanceLink, InputSpecializationTrait};
-use super::spatial::Spatial;
-use glam::{vec3, vec3a, Mat4};
-use libstardustxr::schemas::common;
+use glam::{vec3, Mat4};
 use libstardustxr::schemas::input::InputDataRaw;
 use libstardustxr::schemas::input_pointer;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+use crate::nodes::field::{ray_march, Field, Ray, RayMarchResult};
+use crate::nodes::spatial::Spatial;
+
+use super::{DistanceLink, InputSpecialization};
 
 #[derive(Default)]
 pub struct Pointer {
@@ -34,7 +35,7 @@ impl Pointer {
 	}
 }
 
-impl InputSpecializationTrait for Pointer {
+impl InputSpecialization for Pointer {
 	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		self.ray_march(space, field).distance
 	}
@@ -47,31 +48,24 @@ impl InputSpecializationTrait for Pointer {
 		InputDataRaw,
 		flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
 	) {
-		let origin = local_to_handler_matrix.transform_point3a(vec3a(0_f32, 0_f32, 0_f32));
-		let direction = local_to_handler_matrix.transform_vector3a(vec3a(0_f32, 0_f32, 1_f32));
+		let (_, orientation, origin) = local_to_handler_matrix.to_scale_rotation_translation();
+		let direction = local_to_handler_matrix.transform_vector3(vec3(0_f32, 0_f32, 1_f32));
 		let ray_march = self.ray_march(
-			&distance_link.method.upgrade().unwrap().spatial,
-			&distance_link
-				.handler
-				.upgrade()
-				.unwrap()
-				.field
-				.upgrade()
-				.unwrap(),
+			&distance_link.method.spatial,
+			&distance_link.handler.field.upgrade().unwrap(),
 		);
 		let deepest_point = (direction * ray_march.deepest_point_distance) + origin;
+
+		let origin: mint::Vector3<f32> = origin.into();
+		let orientation: mint::Quaternion<f32> = orientation.into();
+		let deepest_point: mint::Vector3<f32> = deepest_point.into();
 
 		let pointer = input_pointer::Pointer::create(
 			fbb,
 			&input_pointer::PointerArgs {
-				origin: Some(&common::Vec3::new(origin.x, origin.y, origin.z)),
-				direction: Some(&common::Vec3::new(direction.x, direction.y, direction.z)),
-				tilt: 0_f32,
-				deepest_point: Some(&common::Vec3::new(
-					deepest_point.x,
-					deepest_point.y,
-					deepest_point.z,
-				)),
+				origin: Some(&origin.into()),
+				orientation: Some(&orientation.into()),
+				deepest_point: Some(&deepest_point.into()),
 			},
 		);
 		(InputDataRaw::Pointer, pointer.as_union_value())
