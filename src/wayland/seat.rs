@@ -1,15 +1,17 @@
 use super::{state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE};
 use crate::nodes::item::Item;
+use anyhow::Result;
 use mint::Vector2;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::{
+	input::keyboard::{KeymapFile, ModifiersState},
 	reexports::wayland_server::{
 		backend::{ClientId, GlobalId},
 		delegate_dispatch, delegate_global_dispatch,
 		protocol::{
-			wl_keyboard::{self, WlKeyboard},
+			wl_keyboard::{self, KeyState, WlKeyboard},
 			wl_pointer::{self, WlPointer},
 			wl_seat::{self, Capability, WlSeat, EVT_NAME_SINCE},
 			wl_touch::{self, WlTouch},
@@ -20,11 +22,53 @@ use smithay::{
 };
 use std::sync::Arc;
 use std::{ops::Deref, sync::Weak};
+use xkbcommon::xkb::{self, Keymap};
 
 pub struct Cursor {
 	pub core_surface: Weak<CoreSurface>,
 	pub hotspot: Vector2<i32>,
 }
+
+pub struct KeyboardInfo {
+	pub keymap: KeymapFile,
+	pub state: xkb::State,
+	pub mods: ModifiersState,
+}
+impl KeyboardInfo {
+	pub fn new(keymap: &Keymap) -> Self {
+		KeyboardInfo {
+			state: xkb::State::new(keymap),
+			keymap: KeymapFile::new(keymap, None),
+			mods: ModifiersState::default(),
+		}
+	}
+	pub fn process(&mut self, key: u32, state: u32, keyboard: &WlKeyboard) -> Result<()> {
+		let wl_state = match state {
+			0 => KeyState::Released,
+			1 => KeyState::Pressed,
+			_ => anyhow::bail!("Invalid key state!"),
+		};
+		let xkb_state = match state {
+			0 => xkb::KeyDirection::Up,
+			1 => xkb::KeyDirection::Down,
+			_ => anyhow::bail!("Invalid key state!"),
+		};
+		let state_components = self.state.update_key(key, xkb_state);
+		if state_components != 0 {
+			self.mods.update_with(&self.state);
+			keyboard.modifiers(
+				0,
+				self.mods.serialized.depressed,
+				self.mods.serialized.latched,
+				self.mods.serialized.locked,
+				0,
+			);
+		}
+		keyboard.key(0, 0, key, wl_state);
+		Ok(())
+	}
+}
+unsafe impl Send for KeyboardInfo {}
 
 pub struct SeatDelegate;
 
@@ -41,7 +85,7 @@ impl SeatData {
 			pointer: OnceCell::new(),
 			pointer_active: Mutex::new(false),
 			keyboard: OnceCell::new(),
-			keyboard_active: Mutex::new(false),
+			keyboard_info: Mutex::new(None),
 			touch: OnceCell::new(),
 		}));
 
@@ -70,7 +114,7 @@ pub struct SeatDataInner {
 	pointer: OnceCell<WlPointer>,
 	pub pointer_active: Mutex<bool>,
 	keyboard: OnceCell<WlKeyboard>,
-	pub keyboard_active: Mutex<bool>,
+	pub keyboard_info: Mutex<Option<KeyboardInfo>>,
 	touch: OnceCell<WlTouch>,
 }
 impl SeatDataInner {
@@ -130,7 +174,9 @@ impl Dispatch<WlSeat, SeatData, WaylandState> for SeatDelegate {
 				let _ = data.0.pointer.set(data_init.init(id, data.clone()));
 			}
 			wl_seat::Request::GetKeyboard { id } => {
-				let _ = data.0.keyboard.set(data_init.init(id, data.clone()));
+				let keyboard = data_init.init(id, data.clone());
+				keyboard.repeat_info(0, 0);
+				let _ = data.0.keyboard.set(keyboard);
 			}
 			wl_seat::Request::GetTouch { id } => {
 				let _ = data.0.touch.set(data_init.init(id, data.clone()));

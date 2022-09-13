@@ -91,8 +91,7 @@ impl Wayland {
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
 		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();
 
-		let join_handle =
-			Wayland::start_loop(display.clone(), state.clone(), global_destroy_queue)?;
+		let join_handle = Wayland::start_loop(display.clone(), state, global_destroy_queue)?;
 
 		Ok(Wayland {
 			log,

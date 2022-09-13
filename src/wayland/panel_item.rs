@@ -1,4 +1,7 @@
-use super::{seat::SeatData, surface::CoreSurface};
+use super::{
+	seat::{KeyboardInfo, SeatData},
+	surface::CoreSurface,
+};
 use crate::{
 	core::{
 		client::{Client, INTERNAL_CLIENT},
@@ -20,18 +23,13 @@ use libstardustxr::{
 use nanoid::nanoid;
 use smithay::{
 	reexports::wayland_server::{
-		protocol::{
-			wl_keyboard::KeyState,
-			wl_pointer::{Axis, ButtonState},
-		},
+		protocol::wl_pointer::{Axis, ButtonState},
 		Resource,
 	},
 	wayland::{compositor::SurfaceData, shell::xdg::XdgToplevelSurfaceData},
 };
-use std::{
-	convert::TryInto,
-	sync::{Arc, Weak},
-};
+use std::sync::{Arc, Weak};
+use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};
 
 lazy_static! {
 	static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
@@ -97,15 +95,16 @@ impl PanelItem {
 		node.add_local_signal("pointerScroll", PanelItem::pointer_scroll_flex);
 		node.add_local_signal("pointerButton", PanelItem::pointer_button_flex);
 		node.add_local_signal("pointerMotion", PanelItem::pointer_motion_flex);
-		node.add_local_signal("keyboardSetActive", PanelItem::keyboard_set_active_flex);
 		node.add_local_signal(
-			"keyboardSetKeyState",
-			PanelItem::keyboard_set_key_state_flex,
+			"keyboardActivateString",
+			PanelItem::keyboard_activate_string_flex,
 		);
 		node.add_local_signal(
-			"keyboardSetModifiers",
-			PanelItem::keyboard_set_modifiers_flex,
+			"keyboardActivateNames",
+			PanelItem::keyboard_activate_names_flex,
 		);
+		node.add_local_signal("keyboardDeactivate", PanelItem::keyboard_deactivate_flex);
+		node.add_local_signal("keyboardKeyState", PanelItem::keyboard_key_state_flex);
 		node
 	}
 
@@ -360,23 +359,83 @@ impl PanelItem {
 		Ok(())
 	}
 
-	fn keyboard_set_active_flex(
+	fn keyboard_activate_string_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
+		let keymap_str = flexbuffers::Reader::get_root(data)?.get_str()?;
+		let context = xkb::Context::new(0);
+		let keymap = Keymap::new_from_string(
+			&context,
+			keymap_str.to_string(),
+			XKB_KEYMAP_FORMAT_TEXT_V1,
+			0,
+		)
+		.ok_or_else(|| anyhow!("Keymap is not valid"))?;
+
+		PanelItem::keyboard_activate_flex(node, &keymap)
+	}
+
+	fn keyboard_activate_names_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
+		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+		let rules = flex_vec.idx(0).as_str();
+		let model = flex_vec.idx(1).as_str();
+		let layout = flex_vec.idx(2).as_str();
+		let variant = flex_vec.idx(3).as_str();
+		let options = match flex_vec.index(4).ok() {
+			Some(options) => Some(options.get_str()?.to_string()),
+			None => None,
+		};
+		let context = xkb::Context::new(0);
+		let keymap = Keymap::new_from_names(
+			&context,
+			rules,
+			model,
+			layout,
+			variant,
+			options,
+			XKB_KEYMAP_FORMAT_TEXT_V1,
+		)
+		.ok_or_else(|| anyhow!("Keymap is not valid"))?;
+
+		PanelItem::keyboard_activate_flex(node, &keymap)
+	}
+
+	fn keyboard_activate_flex(node: &Node, keymap: &Keymap) -> Result<()> {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(keyboard) = panel_item.seat_data.keyboard() {
 				if let Some(core_surface) = panel_item.core_surface.upgrade() {
-					let mut keyboard_active = panel_item.seat_data.keyboard_active.lock();
-					let active = flexbuffers::Reader::get_root(data)?.get_bool()?;
-					if *keyboard_active != active {
-						if active {
-							keyboard.enter(0, &core_surface.wl_surface(), vec![]);
-						} else {
-							keyboard.leave(0, &core_surface.wl_surface());
-						}
-						*keyboard_active = active;
+					let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
+					if keyboard_info.is_none() {
+						keyboard.enter(0, &core_surface.wl_surface(), vec![]);
+						keyboard.repeat_info(0, 0);
+					}
+					keyboard_info.replace(KeyboardInfo::new(keymap));
+					keyboard_info.as_ref().unwrap().keymap.send(keyboard)?;
+				}
+			}
+		}
+
+		Ok(())
+	}
+
+	fn keyboard_deactivate_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		_data: &[u8],
+	) -> Result<()> {
+		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
+			if let Some(keyboard) = panel_item.seat_data.keyboard() {
+				if let Some(core_surface) = panel_item.core_surface.upgrade() {
+					let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
+					if keyboard_info.is_some() {
+						keyboard.leave(0, &core_surface.wl_surface());
+						*keyboard_info = None;
 					}
 				}
 			}
@@ -385,45 +444,19 @@ impl PanelItem {
 		Ok(())
 	}
 
-	fn keyboard_set_key_state_flex(
+	fn keyboard_key_state_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(keyboard) = panel_item.seat_data.keyboard() {
-				let active = *panel_item.seat_data.keyboard_active.lock();
-				if active {
+				let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
+				if let Some(keyboard_info) = &mut *keyboard_info {
 					let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 					let key = flex_vec.index(0)?.get_u64()? as u32;
-					let state: KeyState = (flex_vec.index(1)?.as_u64() as u32)
-						.try_into()
-						.map_err(|_| anyhow!("Invalid key state"))?;
-					keyboard.key(0, 0, key, state);
-				}
-			}
-		}
-
-		Ok(())
-	}
-
-	fn keyboard_set_modifiers_flex(
-		node: &Node,
-		_calling_client: Arc<Client>,
-		data: &[u8],
-	) -> Result<()> {
-		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if let Some(keyboard) = panel_item.seat_data.keyboard() {
-				let active = *panel_item.seat_data.keyboard_active.lock();
-				if active {
-					let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-					keyboard.modifiers(
-						0,
-						flex_vec.index(0)?.get_u64()? as u32,
-						flex_vec.index(1)?.get_u64()? as u32,
-						flex_vec.index(2)?.get_u64()? as u32,
-						flex_vec.index(3)?.get_u64()? as u32,
-					);
+					let state = flex_vec.index(1)?.get_u64()? as u32;
+					keyboard_info.process(key, state, &keyboard)?;
 				}
 			}
 		}

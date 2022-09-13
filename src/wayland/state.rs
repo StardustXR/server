@@ -4,16 +4,16 @@ use parking_lot::Mutex;
 use slog::Logger;
 use smithay::{
 	delegate_output, delegate_shm,
+	output::{Output, Scale, Subpixel},
 	reexports::wayland_server::{
 		backend::{ClientData, ClientId, DisconnectReason},
-		protocol::wl_output::Subpixel,
 		Display, DisplayHandle,
 	},
 	utils::Size,
 	wayland::{
 		buffer::BufferHandler,
 		compositor::CompositorState,
-		output::{Output, OutputManagerState, Scale},
+		output::OutputManagerState,
 		shell::xdg::{decoration::XdgDecorationState, XdgShellState},
 		shm::{ShmHandler, ShmState},
 	},
@@ -62,7 +62,7 @@ impl WaylandState {
 		let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
 		let output = Output::new(
 			"1x".to_owned(),
-			smithay::wayland::output::PhysicalProperties {
+			smithay::output::PhysicalProperties {
 				size: Size::default(),
 				subpixel: Subpixel::None,
 				make: "Virtual XR Display".to_owned(),

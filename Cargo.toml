@@ -26,6 +26,7 @@ send_wrapper = "0.6.0"
 prisma = "0.1.1"
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
+xkbcommon = { version = "0.5.0", default-features = false }
 
 [dependencies.libstardustxr]
 path = "../libstardustxr-rs"
@@ -37,4 +38,5 @@ default-features = false
 features = ["linux-egl"]
 
 [dependencies.smithay]
-git = "https://github.com/Smithay/smithay.git"
+# git = "https://github.com/Smithay/smithay.git"
+path = "../smithay"
