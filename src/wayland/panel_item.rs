@@ -456,7 +456,7 @@ impl PanelItem {
 					let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 					let key = flex_vec.index(0)?.get_u64()? as u32;
 					let state = flex_vec.index(1)?.get_u64()? as u32;
-					keyboard_info.process(key, state, &keyboard)?;
+					keyboard_info.process(key, state, keyboard)?;
 				}
 			}
 		}

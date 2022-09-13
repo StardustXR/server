@@ -11,9 +11,9 @@ impl CompositorHandler for WaylandState {
 	}
 
 	fn commit(&mut self, surface: &WlSurface) {
-		compositor::with_states(&surface, |data| {
+		compositor::with_states(surface, |data| {
 			data.data_map.insert_if_missing_threadsafe(|| {
-				CoreSurface::new(&self.display, self.display_handle.clone(), &surface)
+				CoreSurface::new(&self.display, self.display_handle.clone(), surface)
 			})
 		});
 	}

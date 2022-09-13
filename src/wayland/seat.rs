@@ -124,6 +124,7 @@ impl SeatDataInner {
 	pub fn keyboard(&self) -> Option<&WlKeyboard> {
 		self.keyboard.get()
 	}
+	#[allow(dead_code)]
 	pub fn touch(&self) -> Option<&WlTouch> {
 		self.touch.get()
 	}
