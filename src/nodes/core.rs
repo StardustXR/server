@@ -175,13 +175,10 @@ impl Node {
 		let path = self.path.clone();
 		let method = method.to_string();
 		let data = data.to_vec();
-		tokio::spawn(async move {
-			if let Some(messenger) = client.messenger.as_ref() {
-				let _ = messenger
-					.send_remote_signal(path.as_str(), method.as_str(), data.as_slice())
-					.await;
-			}
-		});
+
+		if let Some(messenger) = client.messenger.as_ref() {
+			let _ = messenger.send_remote_signal(path.as_str(), method.as_str(), data.as_slice());
+		}
 		Ok(())
 	}
 	pub async fn execute_remote_method(&self, method: &str, data: Vec<u8>) -> Result<Vec<u8>> {

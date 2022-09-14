@@ -58,7 +58,10 @@ impl Client {
 			stop_notifier: Default::default(),
 			join_handle: OnceCell::new(),
 
-			messenger: Some(Messenger::new(connection)),
+			messenger: Some(Messenger::new(
+				tokio::runtime::Handle::current(),
+				connection,
+			)),
 			scenegraph: Default::default(),
 			root: OnceCell::new(),
 			base_resource_prefixes: Default::default(),
@@ -81,10 +84,16 @@ impl Client {
 						client.dispatch().await?
 					}
 				};
+				let flush_loop = async {
+					loop {
+						client.flush().await?
+					}
+				};
 
 				let result = tokio::select! {
 					_ = client.stop_notifier.notified() => Ok(()),
 					e = dispatch_loop => e,
+					e = flush_loop => e,
 				};
 				client.disconnect().await;
 				result
@@ -96,6 +105,13 @@ impl Client {
 	pub async fn dispatch(&self) -> Result<(), std::io::Error> {
 		match &self.messenger {
 			Some(messenger) => messenger.dispatch(&self.scenegraph).await,
+			None => Err(std::io::Error::from(std::io::ErrorKind::Unsupported)),
+		}
+	}
+
+	pub async fn flush(&self) -> Result<(), std::io::Error> {
+		match &self.messenger {
+			Some(messenger) => messenger.flush().await,
 			None => Err(std::io::Error::from(std::io::ErrorKind::Unsupported)),
 		}
 	}
