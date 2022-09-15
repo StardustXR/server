@@ -3,7 +3,7 @@ pub mod data;
 pub mod field;
 pub mod hmd;
 pub mod input;
-pub mod item;
+pub mod items;
 pub mod model;
 pub mod root;
 pub mod spatial;
@@ -27,7 +27,7 @@ use self::alias::Alias;
 use self::data::{PulseReceiver, PulseSender};
 use self::field::Field;
 use self::input::{InputHandler, InputMethod};
-use self::item::{Item, ItemAcceptor, ItemUI};
+use self::items::{Item, ItemAcceptor, ItemUI};
 use self::model::Model;
 use self::spatial::Spatial;
 

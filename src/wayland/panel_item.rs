@@ -8,7 +8,7 @@ use crate::{
 		registry::Registry,
 	},
 	nodes::{
-		item::{register_item_ui_flex, Item, ItemSpecialization, ItemType, TypeInfo},
+		items::{register_item_ui_flex, Item, ItemSpecialization, ItemType, TypeInfo},
 		spatial::Spatial,
 		Node,
 	},

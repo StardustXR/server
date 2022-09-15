@@ -1,5 +1,5 @@
 use super::{state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE};
-use crate::nodes::item::Item;
+use crate::nodes::items::Item;
 use anyhow::Result;
 use mint::Vector2;
 use nanoid::nanoid;

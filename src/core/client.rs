@@ -4,7 +4,7 @@ use crate::nodes::data;
 use crate::nodes::field;
 use crate::nodes::hmd;
 use crate::nodes::input;
-use crate::nodes::item;
+use crate::nodes::items;
 use crate::nodes::model;
 use crate::nodes::root::Root;
 use crate::nodes::spatial;
@@ -73,7 +73,7 @@ impl Client {
 		field::create_interface(&client);
 		model::create_interface(&client);
 		data::create_interface(&client);
-		item::create_interface(&client);
+		items::create_interface(&client);
 		input::create_interface(&client);
 
 		let _ = client.join_handle.set(tokio::spawn({
