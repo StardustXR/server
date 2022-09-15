@@ -77,10 +77,8 @@ impl InputMethod {
 		let _ = node.input_method.set(method);
 		Ok(())
 	}
-	fn distance(&self, to: &InputHandler) -> Option<f32> {
-		to.field
-			.upgrade()
-			.map(|field| self.specialization.distance(&self.spatial, &field))
+	fn distance(&self, to: &Field) -> f32 {
+		self.specialization.distance(&self.spatial, &to)
 	}
 	fn serialize_datamap(&self) -> Vec<u8> {
 		self.specialization.serialize_datamap()
@@ -96,13 +94,16 @@ pub struct DistanceLink {
 	pub distance: f32,
 	pub method: Arc<InputMethod>,
 	pub handler: Arc<InputHandler>,
+	pub handler_field: Arc<Field>,
 }
 impl DistanceLink {
 	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Option<Self> {
+		let handler_field = handler.field.upgrade()?;
 		Some(DistanceLink {
-			distance: method.distance(&handler)?,
+			distance: method.distance(&handler_field),
 			method,
 			handler,
+			handler_field,
 		})
 	}
 
@@ -230,6 +231,7 @@ pub fn process_input() {
 		let mut distance_links: Vec<DistanceLink> = INPUT_HANDLER_REGISTRY
 			.get_valid_contents()
 			.into_iter()
+			.filter(|handler| handler.field.upgrade().is_some())
 			.filter_map(|handler| DistanceLink::from(method.clone(), handler))
 			.collect();
 		distance_links.sort_unstable_by(|a, b| {
