@@ -1,7 +1,7 @@
 use super::eventloop::EventLoop;
 use super::scenegraph::Scenegraph;
 use crate::nodes::data;
-use crate::nodes::field;
+use crate::nodes::fields;
 use crate::nodes::hmd;
 use crate::nodes::input;
 use crate::nodes::items;
@@ -70,7 +70,7 @@ impl Client {
 		let _ = client.root.set(Root::create(&client));
 		hmd::make_alias(&client);
 		spatial::create_interface(&client);
-		field::create_interface(&client);
+		fields::create_interface(&client);
 		model::create_interface(&client);
 		data::create_interface(&client);
 		items::create_interface(&client);

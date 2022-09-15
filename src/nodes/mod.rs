@@ -1,6 +1,6 @@
 pub mod alias;
 pub mod data;
-pub mod field;
+pub mod fields;
 pub mod hmd;
 pub mod input;
 pub mod items;
@@ -25,7 +25,8 @@ use crate::core::registry::Registry;
 
 use self::alias::Alias;
 use self::data::{PulseReceiver, PulseSender};
-use self::field::Field;
+
+use self::fields::Field;
 use self::input::{InputHandler, InputMethod};
 use self::items::{Item, ItemAcceptor, ItemUI};
 use self::model::Model;

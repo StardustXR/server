@@ -2,7 +2,7 @@ mod environment;
 
 use self::environment::EnvironmentItem;
 
-use super::field::Field;
+use super::fields::Field;
 use super::spatial::{get_spatial_parent_flex, get_transform_pose_flex, Spatial};
 use super::{Alias, Node};
 use crate::core::client::{Client, INTERNAL_CLIENT};

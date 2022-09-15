@@ -4,7 +4,7 @@ use libstardustxr::schemas::input_pointer;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use crate::nodes::field::{ray_march, Field, Ray, RayMarchResult};
+use crate::nodes::fields::{ray_march, Field, Ray, RayMarchResult};
 use crate::nodes::spatial::Spatial;
 
 use super::{DistanceLink, InputSpecialization};
