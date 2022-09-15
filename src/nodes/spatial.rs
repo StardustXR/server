@@ -1,4 +1,4 @@
-use super::core::Node;
+use super::Node;
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use glam::{Mat4, Quat, Vec3};

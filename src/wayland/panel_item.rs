@@ -8,9 +8,9 @@ use crate::{
 		registry::Registry,
 	},
 	nodes::{
-		core::Node,
 		item::{register_item_ui_flex, Item, ItemSpecialization, ItemType, TypeInfo},
 		spatial::Spatial,
+		Node,
 	},
 };
 use anyhow::{anyhow, bail, Result};

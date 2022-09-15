@@ -1,5 +1,5 @@
 use crate::core::client::Client;
-use crate::nodes::core::Node;
+use crate::nodes::Node;
 use anyhow::Result;
 use libstardustxr::scenegraph;
 use libstardustxr::scenegraph::ScenegraphError;

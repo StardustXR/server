@@ -1,5 +1,5 @@
-use super::core::Node;
 use super::spatial::{get_spatial_parent_flex, Spatial};
+use super::Node;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use crate::core::resource::{NamespacedResourceID, ResourceID};

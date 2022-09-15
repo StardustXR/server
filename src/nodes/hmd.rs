@@ -1,7 +1,4 @@
-use super::{
-	core::{Alias, Node},
-	spatial::Spatial,
-};
+use super::{alias::Alias, spatial::Spatial, Node};
 use crate::core::client::{Client, INTERNAL_CLIENT};
 use glam::{vec3, Mat4};
 use std::sync::Arc;

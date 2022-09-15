@@ -1,5 +1,5 @@
-use super::core::Node;
 use super::spatial::Spatial;
+use super::Node;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use anyhow::Result;

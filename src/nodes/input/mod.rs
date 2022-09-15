@@ -1,9 +1,9 @@
 pub mod pointer;
 
 use self::pointer::Pointer;
-use super::core::Node;
 use super::field::Field;
 use super::spatial::{get_spatial_parent_flex, get_transform_pose_flex, Spatial};
+use super::Node;
 use crate::core::client::Client;
 use crate::core::eventloop::FRAME;
 use crate::core::registry::Registry;

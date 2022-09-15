@@ -1,5 +1,5 @@
-use super::core::Node;
 use super::spatial::{get_spatial_parent_flex, Spatial};
+use super::Node;
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use glam::{swizzles::*, vec2, vec3, vec3a, Mat4, Vec3, Vec3A};
