@@ -232,8 +232,13 @@ pub fn process_input() {
 			.into_iter()
 			.filter_map(|handler| DistanceLink::from(method.clone(), handler))
 			.collect();
-		distance_links
-			.sort_unstable_by(|a, b| a.distance.partial_cmp(&b.distance).unwrap().reverse());
+		distance_links.sort_unstable_by(|a, b| {
+			a.distance
+				.abs()
+				.partial_cmp(&b.distance.abs())
+				.unwrap()
+				.reverse()
+		});
 
 		let datamap = method.serialize_datamap();
 		let frame = FRAME.load(Ordering::Relaxed);
