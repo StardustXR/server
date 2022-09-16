@@ -274,18 +274,20 @@ impl PanelItem {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(pointer) = panel_item.seat_data.pointer() {
 				if let Some(core_surface) = panel_item.core_surface.upgrade() {
-					let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-					let x = flex_vec.index(0)?.get_f64()?;
-					let y = flex_vec.index(1)?.get_f64()?;
-					let mut pointer_active = panel_item.seat_data.pointer_active.lock();
-					if *pointer_active {
-						pointer.motion(0, x, y);
-					} else {
-						pointer.enter(0, &core_surface.wl_surface(), x, y);
-						*pointer_active = true;
+					if let Some(size) = core_surface.with_data(|data| data.size) {
+						let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+						let x = flex_vec.index(0)?.get_f64()?.clamp(0.0, size.x as f64);
+						let y = flex_vec.index(1)?.get_f64()?.clamp(0.0, size.y as f64);
+						let mut pointer_active = panel_item.seat_data.pointer_active.lock();
+						if *pointer_active {
+							pointer.motion(0, x, y);
+						} else {
+							pointer.enter(0, &core_surface.wl_surface(), x, y);
+							*pointer_active = true;
+						}
+						pointer.frame();
+						core_surface.flush_clients();
 					}
-					pointer.frame();
-					core_surface.flush_clients();
 				}
 			}
 		}
