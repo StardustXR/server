@@ -49,11 +49,7 @@ impl BoxField {
 impl FieldTrait for BoxField {
 	fn local_distance(&self, p: Vec3A) -> f32 {
 		let size = self.size.lock();
-		let q = vec3(
-			p.x.abs() - (size.x * 0.5_f32),
-			p.y.abs() - (size.y * 0.5_f32),
-			p.z.abs() - (size.z * 0.5_f32),
-		);
+		let q = vec3(p.x.abs() - size.x, p.y.abs() - size.y, p.z.abs() - size.z);
 		let v = vec3a(q.x.max(0_f32), q.y.max(0_f32), q.z.max(0_f32));
 		v.length() + q.x.max(q.y.max(q.z)).min(0_f32)
 	}
