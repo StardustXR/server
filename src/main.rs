@@ -7,6 +7,7 @@ use crate::core::destroy_queue;
 use crate::nodes::model::{MODELS_TO_DROP, MODEL_REGISTRY};
 use crate::nodes::{hmd, input};
 use crate::objects::input::mouse_pointer::MousePointer;
+use crate::objects::input::sk_hand::SkHand;
 use crate::wayland::Wayland;
 
 use self::core::eventloop::EventLoop;
@@ -14,6 +15,7 @@ use anyhow::Result;
 use clap::Parser;
 use slog::Drain;
 use std::sync::Arc;
+use stereokit::input::Handed;
 use stereokit::{lifecycle::DisplayMode, Settings};
 use tokio::{runtime::Handle, sync::oneshot};
 
@@ -49,8 +51,10 @@ fn main() -> Result<()> {
 	println!("Init StereoKit");
 
 	let mouse_pointer = cli_args.flatscreen.then(MousePointer::new);
+	let mut hands =
+		(!cli_args.flatscreen).then(|| [SkHand::new(Handed::Left), SkHand::new(Handed::Right)]);
 
-	if cli_args.flatscreen {
+	if hands.is_none() {
 		unsafe {
 			stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_left, false as i32);
 			stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_right, false as i32);
@@ -80,6 +84,10 @@ fn main() -> Result<()> {
 
 			if let Some(mouse_pointer) = &mouse_pointer {
 				mouse_pointer.update(&stereokit);
+			}
+			if let Some(hands) = &mut hands {
+				hands[0].update(&stereokit);
+				hands[1].update(&stereokit);
 			}
 			input::process_input();
 

@@ -1,3 +1,4 @@
+pub mod hand;
 pub mod pointer;
 
 use self::pointer::Pointer;
@@ -11,7 +12,9 @@ use crate::core::registry::Registry;
 use anyhow::{anyhow, ensure, Result};
 use glam::Mat4;
 use libstardustxr::schemas::input::{InputData, InputDataArgs, InputDataRaw};
+use libstardustxr::schemas::input_hand::HandT;
 use nanoid::nanoid;
+use parking_lot::Mutex;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
@@ -34,28 +37,32 @@ pub trait InputSpecialization: Send + Sync {
 }
 pub enum InputType {
 	Pointer(Pointer),
+	Hand(Box<HandT>),
 }
 impl Deref for InputType {
 	type Target = dyn InputSpecialization;
 	fn deref(&self) -> &Self::Target {
 		match self {
 			InputType::Pointer(p) => p,
+			InputType::Hand(h) => h.as_ref(),
 		}
 	}
 }
 
 pub struct InputMethod {
 	pub uid: String,
+	pub enabled: Mutex<bool>,
 	pub spatial: Arc<Spatial>,
-	pub specialization: InputType,
+	pub specialization: Mutex<InputType>,
 	pub captures: Registry<InputHandler>,
 }
 impl InputMethod {
 	pub fn new(spatial: Arc<Spatial>, specialization: InputType) -> Arc<InputMethod> {
 		let method = InputMethod {
 			uid: nanoid!(),
+			enabled: Mutex::new(true),
 			spatial,
-			specialization,
+			specialization: Mutex::new(specialization),
 			captures: Registry::new(),
 		};
 		INPUT_METHOD_REGISTRY.add(method)
@@ -69,8 +76,9 @@ impl InputMethod {
 
 		let method = InputMethod {
 			uid: node.uid.clone(),
+			enabled: Mutex::new(true),
 			spatial: node.spatial.get().unwrap().clone(),
-			specialization,
+			specialization: Mutex::new(specialization),
 			captures: Registry::new(),
 		};
 		let method = INPUT_METHOD_REGISTRY.add(method);
@@ -78,10 +86,10 @@ impl InputMethod {
 		Ok(())
 	}
 	fn distance(&self, to: &Field) -> f32 {
-		self.specialization.distance(&self.spatial, &to)
+		self.specialization.lock().distance(&self.spatial, to)
 	}
 	fn serialize_datamap(&self) -> Vec<u8> {
-		self.specialization.serialize_datamap()
+		self.specialization.lock().serialize_datamap()
 	}
 }
 impl Drop for InputMethod {
@@ -115,7 +123,7 @@ impl DistanceLink {
 		let uid = Some(fbb.create_string(&self.method.uid));
 		let datamap = Some(fbb.create_vector(datamap));
 
-		let (input_type, input_data) = self.method.specialization.serialize(
+		let (input_type, input_data) = self.method.specialization.lock().serialize(
 			&mut fbb,
 			self,
 			Spatial::space_to_space_matrix(Some(&self.method.spatial), Some(&self.handler.spatial)),
@@ -227,7 +235,11 @@ pub fn create_input_handler_flex(
 }
 
 pub fn process_input() {
-	for method in INPUT_METHOD_REGISTRY.get_valid_contents() {
+	for method in INPUT_METHOD_REGISTRY
+		.get_valid_contents()
+		.iter()
+		.filter(|method| *method.enabled.lock())
+	{
 		let mut distance_links: Vec<DistanceLink> = INPUT_HANDLER_REGISTRY
 			.get_valid_contents()
 			.into_iter()

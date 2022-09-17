@@ -1,13 +1,11 @@
+use super::{DistanceLink, InputSpecialization};
+use crate::nodes::fields::{ray_march, Field, Ray, RayMarchResult};
+use crate::nodes::spatial::Spatial;
 use glam::{vec3, Mat4};
 use libstardustxr::schemas::input::InputDataRaw;
 use libstardustxr::schemas::input_pointer;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
-use crate::nodes::fields::{ray_march, Field, Ray, RayMarchResult};
-use crate::nodes::spatial::Spatial;
-
-use super::{DistanceLink, InputSpecialization};
 
 #[derive(Default)]
 pub struct Pointer {
