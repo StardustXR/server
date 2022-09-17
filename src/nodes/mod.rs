@@ -9,9 +9,9 @@ pub mod root;
 pub mod spatial;
 
 use anyhow::{anyhow, Result};
-use libstardustxr::scenegraph::ScenegraphError;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
+use stardust_xr::scenegraph::ScenegraphError;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::vec::Vec;

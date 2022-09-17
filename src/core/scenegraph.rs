@@ -1,9 +1,9 @@
 use crate::core::client::Client;
 use crate::nodes::Node;
 use anyhow::Result;
-use libstardustxr::scenegraph;
-use libstardustxr::scenegraph::ScenegraphError;
 use once_cell::sync::OnceCell;
+use stardust_xr::scenegraph;
+use stardust_xr::scenegraph::ScenegraphError;
 use std::sync::{Arc, Weak};
 
 use core::hash::BuildHasherDefault;

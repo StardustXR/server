@@ -3,8 +3,8 @@ use crate::core::client::Client;
 use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
 use anyhow::{anyhow, ensure, Result};
 use glam::{vec3, vec3a, Mat4, Vec3, Vec3A};
-use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::Mutex;
+use stardust_xr::{flex_to_quat, flex_to_vec3};
 use std::sync::Arc;
 
 pub struct BoxField {

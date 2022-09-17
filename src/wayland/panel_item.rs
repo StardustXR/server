@@ -16,10 +16,6 @@ use crate::{
 use anyhow::{anyhow, bail, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
-use libstardustxr::{
-	flex::{flexbuffer_from_arguments, flexbuffer_from_vector_arguments},
-	flex_to_vec2,
-};
 use nanoid::nanoid;
 use smithay::{
 	reexports::wayland_server::{
@@ -27,6 +23,10 @@ use smithay::{
 		Resource,
 	},
 	wayland::{compositor::SurfaceData, shell::xdg::XdgToplevelSurfaceData},
+};
+use stardust_xr::{
+	flex::{flexbuffer_from_arguments, flexbuffer_from_vector_arguments},
+	flex_to_vec2,
 };
 use std::sync::{Arc, Weak};
 use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};

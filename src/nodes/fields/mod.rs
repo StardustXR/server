@@ -11,8 +11,8 @@ use super::Node;
 use crate::core::client::Client;
 use anyhow::{anyhow, Result};
 use glam::{vec2, vec3a, Vec3, Vec3A};
-use libstardustxr::flex::FlexBuffable;
-use libstardustxr::flex_to_vec3;
+use stardust_xr::flex::FlexBuffable;
+use stardust_xr::flex_to_vec3;
 
 use std::ops::Deref;
 use std::sync::Arc;

@@ -6,9 +6,9 @@ use crate::core::nodelist::LifeLinkedNodeList;
 use crate::core::registry::Registry;
 use anyhow::{anyhow, ensure, Result};
 use glam::{vec3a, Mat4};
-use libstardustxr::flex::flexbuffer_from_vector_arguments;
-use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::Mutex;
+use stardust_xr::flex::flexbuffer_from_vector_arguments;
+use stardust_xr::{flex_to_quat, flex_to_vec3};
 use std::sync::{Arc, Weak};
 
 static PULSE_SENDER_REGISTRY: Registry<PulseSender> = Registry::new();

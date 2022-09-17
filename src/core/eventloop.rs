@@ -1,7 +1,7 @@
 use super::client::Client;
 use anyhow::Result;
-use libstardustxr::server;
 use slab::Slab;
+use stardust_xr::server;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::net::UnixListener;

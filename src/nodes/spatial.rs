@@ -2,10 +2,10 @@ use super::Node;
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use glam::{Mat4, Quat, Vec3};
-use libstardustxr::flex::flexbuffer_from_vector_arguments;
-use libstardustxr::push_to_vec;
-use libstardustxr::{flex_to_quat, flex_to_vec3};
 use parking_lot::Mutex;
+use stardust_xr::flex::flexbuffer_from_vector_arguments;
+use stardust_xr::push_to_vec;
+use stardust_xr::{flex_to_quat, flex_to_vec3};
 use std::ptr;
 use std::sync::{Arc, Weak};
 

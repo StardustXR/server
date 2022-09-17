@@ -3,8 +3,8 @@ use crate::core::client::Client;
 use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
 use anyhow::{anyhow, ensure, Result};
 use glam::{Mat4, Vec3A};
-use libstardustxr::flex_to_vec3;
 use portable_atomic::AtomicF32;
+use stardust_xr::flex_to_vec3;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 

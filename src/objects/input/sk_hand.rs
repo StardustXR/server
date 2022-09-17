@@ -3,7 +3,7 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use glam::Mat4;
-use libstardustxr::schemas::{common::JointT, input_hand::HandT};
+use stardust_xr_schemas::{common::JointT, input_hand::HandT};
 use std::sync::{Arc, Weak};
 use stereokit::{
 	input::{Handed, Joint as SkJoint},

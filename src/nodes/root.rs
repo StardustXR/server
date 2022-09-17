@@ -4,7 +4,7 @@ use crate::core::client::Client;
 use crate::core::registry::Registry;
 use anyhow::Result;
 use glam::Mat4;
-use libstardustxr::flex::flexbuffer_from_vector_arguments;
+use stardust_xr::flex::flexbuffer_from_vector_arguments;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;

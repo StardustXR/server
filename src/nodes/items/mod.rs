@@ -11,9 +11,9 @@ use crate::core::registry::Registry;
 use crate::wayland::panel_item::{register_panel_item_ui_flex, PanelItem};
 use anyhow::{anyhow, ensure, Result};
 use lazy_static::lazy_static;
-use libstardustxr::flex::flexbuffer_from_vector_arguments;
 use nanoid::nanoid;
 use parking_lot::Mutex;
+use stardust_xr::flex::flexbuffer_from_vector_arguments;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
 

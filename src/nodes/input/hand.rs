@@ -1,8 +1,8 @@
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::Spatial;
 use glam::{vec3a, Mat4};
-use libstardustxr::schemas::input_hand::HandT;
-use libstardustxr::schemas::{common::JointT, input::InputDataRaw};
+use stardust_xr_schemas::input_hand::HandT;
+use stardust_xr_schemas::{common::JointT, input::InputDataRaw};
 use std::sync::Arc;
 
 use super::{DistanceLink, InputSpecialization};
