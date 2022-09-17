@@ -39,3 +39,4 @@ stereokit = {default_features = false, features = ["linux-egl"], version = "0.2.
 [dependencies.smithay]
 git = "https://github.com/technobaboo/smithay.git"
 branch = "feature/public_input"
+version = "*"
