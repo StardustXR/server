@@ -7,6 +7,7 @@ use smithay::{
 	output::{Output, Scale, Subpixel},
 	reexports::wayland_server::{
 		backend::{ClientData, ClientId, DisconnectReason},
+		protocol::wl_data_device_manager::WlDataDeviceManager,
 		Display, DisplayHandle,
 	},
 	utils::Size,
@@ -46,7 +47,6 @@ pub struct WaylandState {
 	pub output_manager_state: OutputManagerState,
 	pub output: Output,
 	pub seat_state: SeatDelegate,
-	// pub data_device_state: DataDeviceState,
 }
 
 impl WaylandState {
@@ -72,7 +72,7 @@ impl WaylandState {
 		);
 		let _global = output.create_global::<Self>(&display_handle);
 		output.change_current_state(None, None, Some(Scale::Integer(2)), None);
-		// let data_device_state = DataDeviceState::new(&dh, log.clone());
+		display_handle.create_global::<Self, WlDataDeviceManager, _>(3, ());
 
 		println!("Init Wayland compositor");
 
@@ -87,7 +87,6 @@ impl WaylandState {
 			output_manager_state,
 			output,
 			seat_state: SeatDelegate,
-			// data_device_state,
 		}
 	}
 }

@@ -1,4 +1,5 @@
 pub mod compositor;
+mod data_device;
 pub mod panel_item;
 pub mod seat;
 pub mod shaders;
