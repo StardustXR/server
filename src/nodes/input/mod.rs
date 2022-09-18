@@ -1,6 +1,7 @@
 pub mod hand;
 pub mod pointer;
 
+use self::hand::Hand;
 use self::pointer::Pointer;
 
 use super::fields::Field;
@@ -14,7 +15,6 @@ use glam::Mat4;
 use nanoid::nanoid;
 use parking_lot::Mutex;
 use stardust_xr_schemas::input::{InputData, InputDataArgs, InputDataRaw};
-use stardust_xr_schemas::input_hand::HandT;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
@@ -37,7 +37,7 @@ pub trait InputSpecialization: Send + Sync {
 }
 pub enum InputType {
 	Pointer(Pointer),
-	Hand(Box<HandT>),
+	Hand(Box<Hand>),
 }
 impl Deref for InputType {
 	type Target = dyn InputSpecialization;
