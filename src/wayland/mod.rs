@@ -9,14 +9,14 @@ pub mod xdg_decoration;
 pub mod xdg_shell;
 
 use self::{panel_item::PanelItem, state::WaylandState, surface::CORE_SURFACES};
-use crate::wayland::state::ClientState;
+use crate::wayland::{seat::SeatData, state::ClientState};
 use anyhow::{ensure, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use slog::Logger;
 use smithay::{
 	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
-	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket},
+	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket, Resource},
 };
 use std::os::unix::prelude::AsRawFd;
 use std::{
@@ -62,7 +62,7 @@ pub struct Wayland {
 	display: Arc<Mutex<Display<WaylandState>>>,
 	join_handle: JoinHandle<Result<()>>,
 	renderer: Gles2Renderer,
-	// state: Arc<Mutex<WaylandState>>,
+	state: Arc<Mutex<WaylandState>>,
 }
 impl Wayland {
 	pub fn new(log: Logger) -> Result<Self> {
@@ -92,14 +92,15 @@ impl Wayland {
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
 		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();
 
-		let join_handle = Wayland::start_loop(display.clone(), state, global_destroy_queue)?;
+		let join_handle =
+			Wayland::start_loop(display.clone(), state.clone(), global_destroy_queue)?;
 
 		Ok(Wayland {
 			log,
 			display,
 			join_handle,
 			renderer,
-			// state,
+			state,
 		})
 	}
 
@@ -131,7 +132,9 @@ impl Wayland {
 					}
 					acc = listen_async.accept() => { // New client connected
 						let (stream, _) = acc?;
-						dh2.insert_client(stream.into_std()?, Arc::new(ClientState))?;
+						let client = dh2.insert_client(stream.into_std()?, Arc::new(ClientState))?;
+
+						state.lock().new_client(client.id(), &dh2);
 					}
 					e = dispatch_poll_listener.readable() => { // Dispatch
 						let mut guard = e?;
@@ -149,13 +152,15 @@ impl Wayland {
 		let time_ms = (sk.time_getf() * 1000.) as u32;
 
 		for core_surface in CORE_SURFACES.get_valid_contents() {
+			let client_id = core_surface.wl_surface().client_id().unwrap();
+			let seat_data = self.state.lock().seats.get(&client_id).unwrap().clone();
 			core_surface.process(
 				sk,
 				&mut self.renderer,
 				time_ms,
 				&self.log,
 				|data| {
-					PanelItem::on_mapped(&core_surface, data);
+					PanelItem::on_mapped(&core_surface, data, seat_data);
 				},
 				|data| {
 					PanelItem::if_mapped(&core_surface, data);

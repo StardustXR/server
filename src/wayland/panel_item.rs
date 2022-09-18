@@ -18,10 +18,7 @@ use glam::Mat4;
 use lazy_static::lazy_static;
 use nanoid::nanoid;
 use smithay::{
-	reexports::wayland_server::{
-		protocol::wl_pointer::{Axis, ButtonState},
-		Resource,
-	},
+	reexports::wayland_server::protocol::wl_pointer::{Axis, ButtonState},
 	wayland::{compositor::SurfaceData, shell::xdg::XdgToplevelSurfaceData},
 };
 use stardust_xr::{
@@ -62,7 +59,7 @@ pub struct PanelItem {
 	seat_data: SeatData,
 }
 impl PanelItem {
-	pub fn create(core_surface: &Arc<CoreSurface>) -> Arc<Node> {
+	pub fn create(core_surface: &Arc<CoreSurface>, seat_data: SeatData) -> Arc<Node> {
 		let node = Arc::new(Node::create(
 			&INTERNAL_CLIENT,
 			"/item/panel/item",
@@ -70,11 +67,6 @@ impl PanelItem {
 			true,
 		));
 		Spatial::add_to(&node, None, Mat4::IDENTITY).unwrap();
-
-		let seat_data = SeatData::new(
-			&core_surface.dh,
-			core_surface.wl_surface().client_id().unwrap(),
-		);
 
 		let specialization = ItemType::Panel(PanelItem {
 			node: Arc::downgrade(&node),
@@ -167,7 +159,11 @@ impl PanelItem {
 		Ok(())
 	}
 
-	pub fn on_mapped(core_surface: &Arc<CoreSurface>, surface_data: &SurfaceData) {
+	pub fn on_mapped(
+		core_surface: &Arc<CoreSurface>,
+		surface_data: &SurfaceData,
+		seat_data: SeatData,
+	) {
 		if surface_data
 			.data_map
 			.get::<XdgToplevelSurfaceData>()
@@ -175,7 +171,7 @@ impl PanelItem {
 		{
 			surface_data
 				.data_map
-				.insert_if_missing_threadsafe(|| PanelItem::create(core_surface));
+				.insert_if_missing_threadsafe(|| PanelItem::create(core_surface, seat_data));
 		}
 	}
 

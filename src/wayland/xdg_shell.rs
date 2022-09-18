@@ -32,8 +32,6 @@ impl XdgShellHandler for WaylandState {
 
 	fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {}
 
-	fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
-		todo!()
-	}
+	fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {}
 }
 delegate_xdg_shell!(WaylandState);

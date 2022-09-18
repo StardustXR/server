@@ -1,6 +1,6 @@
-use std::sync::Arc;
-
+use crate::wayland::seat::SeatData;
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use slog::Logger;
 use smithay::{
 	delegate_output, delegate_shm,
@@ -19,13 +19,12 @@ use smithay::{
 		shm::{ShmHandler, ShmState},
 	},
 };
-
-use super::seat::SeatDelegate;
+use std::sync::Arc;
 
 pub struct ClientState;
 impl ClientData for ClientState {
 	fn initialized(&self, client_id: ClientId) {
-		println!("Wayland client {:?} connected", client_id);
+		println!("Wayland client {:?} connected", client_id.clone());
 	}
 
 	fn disconnected(&self, client_id: ClientId, reason: DisconnectReason) {
@@ -46,7 +45,7 @@ pub struct WaylandState {
 	pub shm_state: ShmState,
 	pub output_manager_state: OutputManagerState,
 	pub output: Output,
-	pub seat_state: SeatDelegate,
+	pub seats: FxHashMap<ClientId, SeatData>,
 }
 
 impl WaylandState {
@@ -86,8 +85,13 @@ impl WaylandState {
 			shm_state,
 			output_manager_state,
 			output,
-			seat_state: SeatDelegate,
+			seats: FxHashMap::default(),
 		}
+	}
+
+	pub fn new_client(&mut self, client: ClientId, dh: &DisplayHandle) {
+		let seat_data = SeatData::new(dh, client.clone());
+		self.seats.insert(client, seat_data);
 	}
 }
 impl Drop for WaylandState {
