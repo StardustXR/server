@@ -1,15 +1,15 @@
 pub mod compositor;
 mod data_device;
+pub mod decoration;
 pub mod panel_item;
 pub mod seat;
 pub mod shaders;
 pub mod state;
 pub mod surface;
-pub mod xdg_decoration;
 pub mod xdg_shell;
 
 use self::{panel_item::PanelItem, state::WaylandState, surface::CORE_SURFACES};
-use crate::wayland::{seat::SeatData, state::ClientState};
+use crate::wayland::state::ClientState;
 use anyhow::{ensure, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;

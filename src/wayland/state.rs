@@ -5,17 +5,23 @@ use slog::Logger;
 use smithay::{
 	delegate_output, delegate_shm,
 	output::{Output, Scale, Subpixel},
-	reexports::wayland_server::{
-		backend::{ClientData, ClientId, DisconnectReason},
-		protocol::wl_data_device_manager::WlDataDeviceManager,
-		Display, DisplayHandle,
+	reexports::{
+		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode,
+		wayland_server::{
+			backend::{ClientData, ClientId, DisconnectReason},
+			protocol::wl_data_device_manager::WlDataDeviceManager,
+			Display, DisplayHandle,
+		},
 	},
 	utils::Size,
 	wayland::{
 		buffer::BufferHandler,
 		compositor::CompositorState,
 		output::OutputManagerState,
-		shell::xdg::{decoration::XdgDecorationState, XdgShellState},
+		shell::{
+			kde::decoration::KdeDecorationState,
+			xdg::{decoration::XdgDecorationState, XdgShellState},
+		},
 		shm::{ShmHandler, ShmState},
 	},
 };
@@ -42,6 +48,7 @@ pub struct WaylandState {
 	pub compositor_state: CompositorState,
 	pub xdg_shell_state: XdgShellState,
 	pub xdg_decoration_state: XdgDecorationState,
+	pub kde_decoration_state: KdeDecorationState,
 	pub shm_state: ShmState,
 	pub output_manager_state: OutputManagerState,
 	pub output: Output,
@@ -57,6 +64,8 @@ impl WaylandState {
 		let compositor_state = CompositorState::new::<Self, _>(&display_handle, log.clone());
 		let xdg_shell_state = XdgShellState::new::<Self, _>(&display_handle, log.clone());
 		let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&display_handle, log.clone());
+		let kde_decoration_state =
+			KdeDecorationState::new::<Self, _>(&display_handle, Mode::Server, log.clone());
 		let shm_state = ShmState::new::<Self, _>(&display_handle, vec![], log.clone());
 		let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
 		let output = Output::new(
@@ -82,6 +91,7 @@ impl WaylandState {
 			compositor_state,
 			xdg_shell_state,
 			xdg_decoration_state,
+			kde_decoration_state,
 			shm_state,
 			output_manager_state,
 			output,

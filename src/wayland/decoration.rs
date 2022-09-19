@@ -1,8 +1,10 @@
 use super::state::WaylandState;
 use smithay::{
-	delegate_xdg_decoration,
+	delegate_kde_decoration, delegate_xdg_decoration,
 	reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode,
-	wayland::shell::xdg::decoration::XdgDecorationHandler,
+	wayland::shell::{
+		self, kde::decoration::KdeDecorationHandler, xdg::decoration::XdgDecorationHandler,
+	},
 };
 
 impl XdgDecorationHandler for WaylandState {
@@ -23,3 +25,10 @@ impl XdgDecorationHandler for WaylandState {
 	fn unset_mode(&mut self, _toplevel: smithay::wayland::shell::xdg::ToplevelSurface) {}
 }
 delegate_xdg_decoration!(WaylandState);
+
+impl KdeDecorationHandler for WaylandState {
+	fn kde_decoration_state(&self) -> &shell::kde::decoration::KdeDecorationState {
+		&self.kde_decoration_state
+	}
+}
+delegate_kde_decoration!(WaylandState);
