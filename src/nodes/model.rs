@@ -77,10 +77,8 @@ impl Model {
 			.get_or_try_init(|| {
 				self.pending_model_path
 					.get()
-					.and_then(|path| SKModel::from_file(sk, path.as_path(), None))
+					.and_then(|path| SKModel::from_file(sk, path.as_path(), None).clone())
 					.map(SendWrapper::new)
-					.as_ref()
-					.cloned()
 					.ok_or(Error)
 			})
 			.ok();
