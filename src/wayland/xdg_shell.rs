@@ -1,4 +1,8 @@
-use super::state::WaylandState;
+use std::sync::Arc;
+
+use crate::nodes::Node;
+
+use super::{panel_item::PanelItem, state::WaylandState, surface::CoreSurface};
 use smithay::{
 	delegate_xdg_shell,
 	reexports::{
@@ -6,11 +10,15 @@ use smithay::{
 			decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode,
 			shell::server::xdg_toplevel::State,
 		},
-		wayland_server::protocol::wl_seat::WlSeat,
+		wayland_server::protocol::{wl_seat::WlSeat, wl_surface::WlSurface},
 	},
 	utils::Serial,
-	wayland::shell::xdg::{
-		PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
+	wayland::{
+		compositor,
+		shell::xdg::{
+			Configure, PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler,
+			XdgShellState,
+		},
 	},
 };
 
@@ -29,9 +37,33 @@ impl XdgShellHandler for WaylandState {
 		});
 		surface.send_configure();
 	}
+	fn ack_configure(&mut self, surface: WlSurface, configure: Configure) {
+		match configure {
+			Configure::Toplevel(config) => {
+				if let Some(size) = config.state.size {
+					compositor::with_states(&surface, |data| {
+						if let Some(panel_node) = data.data_map.get::<Arc<Node>>() {
+							if let Some(core_surface) = data.data_map.get::<Arc<CoreSurface>>() {
+								let panel_item = PanelItem::from_node(panel_node);
+								if core_surface
+									.with_data(|data| {
+										data.size.x = size.w as u32;
+										data.size.y = size.h as u32;
+									})
+									.is_some()
+								{
+									panel_item.resize();
+								}
+							}
+						}
+					})
+				}
+			}
+			Configure::Popup(_) => (),
+		}
+	}
 
 	fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {}
-
 	fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {}
 }
 delegate_xdg_shell!(WaylandState);

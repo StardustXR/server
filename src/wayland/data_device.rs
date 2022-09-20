@@ -64,9 +64,9 @@ impl Dispatch<WlDataSource, (), WaylandState> for WaylandState {
 		_data_init: &mut DataInit<'_, WaylandState>,
 	) {
 		match request {
-			Offer { mime_type: _ } => todo!(),
-			Destroy => todo!(),
-			SetActions { dnd_actions: _ } => todo!(),
+			Offer { mime_type: _ } => {}
+			Destroy => {}
+			SetActions { dnd_actions: _ } => {}
 			_ => unreachable!(),
 		}
 	}
@@ -88,12 +88,12 @@ impl Dispatch<WlDataDevice, (), WaylandState> for WaylandState {
 				origin: _,
 				icon: _,
 				serial: _,
-			} => todo!(),
+			} => {}
 			SetSelection {
 				source: _,
 				serial: _,
-			} => todo!(),
-			Release => todo!(),
+			} => {}
+			Release => {}
 			_ => unreachable!(),
 		}
 	}

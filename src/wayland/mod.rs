@@ -83,11 +83,7 @@ impl Wayland {
 		let display_handle = display.handle();
 
 		let display = Arc::new(Mutex::new(display));
-		let state = Arc::new(Mutex::new(WaylandState::new(
-			log.clone(),
-			display.clone(),
-			display_handle,
-		)));
+		let state = WaylandState::new(log.clone(), display.clone(), display_handle);
 
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
 		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();

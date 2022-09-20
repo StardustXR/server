@@ -19,6 +19,7 @@ use lazy_static::lazy_static;
 use nanoid::nanoid;
 use smithay::{
 	reexports::wayland_server::protocol::wl_pointer::{Axis, ButtonState},
+	utils::Size,
 	wayland::{compositor::SurfaceData, shell::xdg::XdgToplevelSurfaceData},
 };
 use stardust_xr::{
@@ -97,10 +98,11 @@ impl PanelItem {
 		);
 		node.add_local_signal("keyboardDeactivate", PanelItem::keyboard_deactivate_flex);
 		node.add_local_signal("keyboardKeyState", PanelItem::keyboard_key_state_flex);
+		node.add_local_signal("resize", PanelItem::resize_flex);
 		node
 	}
 
-	fn from_node(node: &Node) -> &PanelItem {
+	pub fn from_node(node: &Node) -> &PanelItem {
 		match &node.item.get().unwrap().specialization {
 			ItemType::Panel(panel_item) => panel_item,
 			_ => unreachable!(),
@@ -179,29 +181,23 @@ impl PanelItem {
 		if let Some(panel_node) = surface_data.data_map.get::<Arc<Node>>() {
 			let panel_item = PanelItem::from_node(panel_node);
 
-			core_surface.with_data(|core_surface_data| {
-				if core_surface_data.resized {
-					panel_item.resize(core_surface);
-					core_surface_data.resized = false;
-				}
-			});
+			// core_surface.with_data(|core_surface_data| {
+			// 	panel_item.resize();
+			// });
 
 			panel_item.set_cursor();
 		}
 	}
 
-	pub fn resize(&self, core_surface: &CoreSurface) {
-		core_surface.with_data(|data| {
-			if data.resized {
-				let _ = self.node.upgrade().unwrap().send_remote_signal(
-					"resize",
-					&flexbuffer_from_vector_arguments(|vec| {
-						vec.push(data.size.x);
-						vec.push(data.size.y);
-					}),
-				);
-				data.resized = false;
-			}
+	pub fn resize(&self) {
+		self.core_surface.upgrade().unwrap().with_data(|data| {
+			let _ = self.node.upgrade().unwrap().send_remote_signal(
+				"resize",
+				&flexbuffer_from_vector_arguments(|vec| {
+					vec.push(data.size.x);
+					vec.push(data.size.y);
+				}),
+			);
 		});
 	}
 
@@ -459,6 +455,41 @@ impl PanelItem {
 			}
 		}
 
+		Ok(())
+	}
+
+	fn resize_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
+			if let Some(core_surface) = panel_item.core_surface.upgrade() {
+				let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+				let w = flex_vec.index(0)?.get_u64()? as u32;
+				let h = flex_vec.index(1)?.get_u64()? as u32;
+
+				let toplevel_surface = core_surface
+					.wayland_state()
+					.lock()
+					.xdg_shell_state
+					.toplevel_surfaces(|surfaces| {
+						surfaces
+							.iter()
+							.find(|surf| surf.wl_surface().clone() == core_surface.wl_surface())
+							.map(|surf| surf.clone())
+					});
+
+				if let Some(toplevel_surface) = toplevel_surface {
+					let mut size_set = false;
+					toplevel_surface.with_pending_state(|state| {
+						state.size = Some(Size::default());
+						state.size.as_mut().unwrap().w = w as i32;
+						state.size.as_mut().unwrap().h = h as i32;
+						size_set = true;
+					});
+					if size_set {
+						toplevel_surface.send_configure();
+					}
+				}
+			}
+		}
 		Ok(())
 	}
 }

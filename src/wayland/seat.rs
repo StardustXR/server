@@ -213,7 +213,12 @@ impl Dispatch<WlPointer, SeatData, WaylandState> for SeatDelegate {
 				if let Some(surface) = surface.as_ref() {
 					compositor::with_states(surface, |data| {
 						data.data_map.insert_if_missing_threadsafe(|| {
-							CoreSurface::new(&state.display, dh.clone(), surface)
+							CoreSurface::new(
+								&state.weak_ref.upgrade().unwrap(),
+								&state.display,
+								dh.clone(),
+								surface,
+							)
 						});
 						if !data.data_map.insert_if_missing_threadsafe(|| {
 							Arc::new(Mutex::new(Cursor {

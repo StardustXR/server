@@ -25,7 +25,7 @@ use smithay::{
 		shm::{ShmHandler, ShmState},
 	},
 };
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 pub struct ClientState;
 impl ClientData for ClientState {
@@ -42,6 +42,7 @@ impl ClientData for ClientState {
 }
 
 pub struct WaylandState {
+	pub weak_ref: Weak<Mutex<WaylandState>>,
 	pub display: Arc<Mutex<Display<WaylandState>>>,
 	pub display_handle: DisplayHandle,
 
@@ -60,7 +61,7 @@ impl WaylandState {
 		log: Logger,
 		display: Arc<Mutex<Display<WaylandState>>>,
 		display_handle: DisplayHandle,
-	) -> Self {
+	) -> Arc<Mutex<Self>> {
 		let compositor_state = CompositorState::new::<Self, _>(&display_handle, log.clone());
 		let xdg_shell_state = XdgShellState::new::<Self, _>(&display_handle, log.clone());
 		let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&display_handle, log.clone());
@@ -84,19 +85,22 @@ impl WaylandState {
 
 		println!("Init Wayland compositor");
 
-		WaylandState {
-			display,
-			display_handle,
+		Arc::new_cyclic(|weak| {
+			Mutex::new(WaylandState {
+				weak_ref: weak.clone(),
+				display,
+				display_handle,
 
-			compositor_state,
-			xdg_shell_state,
-			xdg_decoration_state,
-			kde_decoration_state,
-			shm_state,
-			output_manager_state,
-			output,
-			seats: FxHashMap::default(),
-		}
+				compositor_state,
+				xdg_shell_state,
+				xdg_decoration_state,
+				kde_decoration_state,
+				shm_state,
+				output_manager_state,
+				output,
+				seats: FxHashMap::default(),
+			})
+		})
 	}
 
 	pub fn new_client(&mut self, client: ClientId, dh: &DisplayHandle) {

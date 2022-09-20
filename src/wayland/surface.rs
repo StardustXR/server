@@ -34,7 +34,6 @@ pub struct CoreSurfaceData {
 	sk_tex: Option<SendWrapper<SKTexture>>,
 	sk_mat: Option<Arc<SendWrapper<Material>>>,
 	pub size: Vector2<u32>,
-	pub resized: bool,
 }
 impl CoreSurfaceData {
 	fn new(sk: &StereoKit) -> Self {
@@ -53,7 +52,6 @@ impl CoreSurfaceData {
 			sk_tex: Some(sk_tex),
 			sk_mat: Some(sk_mat),
 			size: Vector2::from([0, 0]),
-			resized: false,
 		}
 	}
 	fn update_tex(&mut self, data: &RendererSurfaceStateUserData, renderer: &Gles2Renderer) {
@@ -92,6 +90,7 @@ impl Drop for CoreSurfaceData {
 
 pub struct CoreSurface {
 	display: Weak<Mutex<Display<WaylandState>>>,
+	pub state: Weak<Mutex<WaylandState>>,
 	pub dh: DisplayHandle,
 	pub surface_id: ObjectId,
 	pub mapped_data: Mutex<Option<CoreSurfaceData>>,
@@ -100,12 +99,14 @@ pub struct CoreSurface {
 
 impl CoreSurface {
 	pub fn new(
+		state: &Arc<Mutex<WaylandState>>,
 		display: &Arc<Mutex<Display<WaylandState>>>,
 		dh: DisplayHandle,
 		surface: &WlSurface,
 	) -> Arc<Self> {
 		CORE_SURFACES.add(CoreSurface {
 			display: Arc::downgrade(display),
+			state: Arc::downgrade(state),
 			dh,
 			surface_id: surface.id(),
 			mapped_data: Mutex::new(None),
@@ -179,6 +180,10 @@ impl CoreSurface {
 			}
 			pending_material_applications.clear();
 		});
+	}
+
+	pub fn wayland_state(&self) -> Arc<Mutex<WaylandState>> {
+		self.state.upgrade().unwrap()
 	}
 
 	pub fn wl_surface(&self) -> WlSurface {
