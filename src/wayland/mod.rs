@@ -6,6 +6,7 @@ pub mod seat;
 pub mod shaders;
 pub mod state;
 pub mod surface;
+pub mod xdg_activation;
 pub mod xdg_shell;
 
 use self::{panel_item::PanelItem, state::WaylandState, surface::CORE_SURFACES};
