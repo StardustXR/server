@@ -1,26 +1,22 @@
-use super::eventloop::EventLoop;
-use super::scenegraph::Scenegraph;
-use crate::nodes::data;
-use crate::nodes::fields;
-use crate::nodes::hmd;
-use crate::nodes::input;
-use crate::nodes::items;
-use crate::nodes::model;
-use crate::nodes::root::Root;
-use crate::nodes::spatial;
+use super::{eventloop::EventLoop, scenegraph::Scenegraph};
+use crate::{
+	core::registry::Registry,
+	nodes::{data, fields, hmd, input, items, model, root::Root, spatial, startup},
+};
 use anyhow::Result;
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use stardust_xr::messenger::Messenger;
-use std::path::PathBuf;
-use std::sync::{Arc, Weak};
-use tokio::net::UnixStream;
-use tokio::sync::Notify;
-use tokio::task::JoinHandle;
+use std::{
+	path::PathBuf,
+	sync::{Arc, Weak},
+};
+use tokio::{net::UnixStream, sync::Notify, task::JoinHandle};
 
 lazy_static! {
-	pub static ref INTERNAL_CLIENT: Arc<Client> = Arc::new(Client {
+	pub static ref CLIENTS: Registry<Client> = Registry::new();
+	pub static ref INTERNAL_CLIENT: Arc<Client> = CLIENTS.add(Client {
 		event_loop: Weak::new(),
 		index: 0,
 
@@ -52,7 +48,7 @@ impl Client {
 		connection: UnixStream,
 	) -> Arc<Self> {
 		println!("New client connected");
-		let client = Arc::new(Client {
+		let client = CLIENTS.add(Client {
 			event_loop: Arc::downgrade(event_loop),
 			index,
 			stop_notifier: Default::default(),
@@ -75,6 +71,7 @@ impl Client {
 		data::create_interface(&client);
 		items::create_interface(&client);
 		input::create_interface(&client);
+		startup::create_interface(&client);
 
 		let _ = client.join_handle.set(tokio::spawn({
 			let client = client.clone();
@@ -126,6 +123,7 @@ impl Client {
 impl Drop for Client {
 	fn drop(&mut self) {
 		self.stop_notifier.notify_one();
+		CLIENTS.remove(self);
 		println!("Client disconnected");
 	}
 }

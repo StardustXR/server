@@ -7,10 +7,12 @@ pub mod items;
 pub mod model;
 pub mod root;
 pub mod spatial;
+pub mod startup;
 
 use anyhow::{anyhow, Result};
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
 use stardust_xr::scenegraph::ScenegraphError;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
@@ -31,6 +33,7 @@ use self::input::{InputHandler, InputMethod};
 use self::items::{Item, ItemAcceptor, ItemUI};
 use self::model::Model;
 use self::spatial::Spatial;
+use self::startup::StartupSettings;
 
 pub type Signal = fn(&Node, Arc<Client>, &[u8]) -> Result<()>;
 pub type Method = fn(&Node, Arc<Client>, &[u8]) -> Result<Vec<u8>>;
@@ -56,6 +59,7 @@ pub struct Node {
 	pub item_ui: OnceCell<Arc<ItemUI>>,
 	pub input_method: OnceCell<Arc<InputMethod>>,
 	pub input_handler: OnceCell<Arc<InputHandler>>,
+	pub startup_settings: OnceCell<Mutex<StartupSettings>>,
 
 	pub(crate) client: Weak<Client>,
 }
@@ -100,6 +104,7 @@ impl Node {
 			item_ui: OnceCell::new(),
 			input_method: OnceCell::new(),
 			input_handler: OnceCell::new(),
+			startup_settings: OnceCell::new(),
 		};
 		node.add_local_signal("destroy", Node::destroy_flex);
 		node

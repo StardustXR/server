@@ -1,8 +1,9 @@
 use super::spatial::Spatial;
+use super::startup::DESKTOP_STARTUP_IDS;
 use super::Node;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use glam::Mat4;
 use stardust_xr::flex::flexbuffer_from_vector_arguments;
 use std::path::PathBuf;
@@ -18,6 +19,7 @@ pub struct Root {
 impl Root {
 	pub fn create(client: &Arc<Client>) -> Arc<Self> {
 		let node = Node::create(client, "", "", false);
+		node.add_local_signal("applyDesktopStartupID", Root::apply_desktop_startup_id);
 		node.add_local_signal("subscribeLogicStep", Root::subscribe_logic_step);
 		node.add_local_signal("setBasePrefixes", Root::set_base_prefixes);
 		let node = node.add_to_scenegraph();
@@ -27,6 +29,23 @@ impl Root {
 			node,
 			logic_step: AtomicBool::from(false),
 		})
+	}
+
+	fn apply_desktop_startup_id(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
+		let startup_settings = DESKTOP_STARTUP_IDS
+			.lock()
+			.remove(flexbuffers::Reader::get_root(data)?.get_str()?)
+			.ok_or_else(|| anyhow!("Desktop startup ID not found in the list!"))?;
+		node.spatial
+			.get()
+			.unwrap()
+			.set_local_transform(startup_settings.transform);
+
+		Ok(())
 	}
 
 	fn subscribe_logic_step(_node: &Node, calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
