@@ -177,7 +177,7 @@ impl PanelItem {
 		}
 	}
 
-	pub fn if_mapped(core_surface: &Arc<CoreSurface>, surface_data: &SurfaceData) {
+	pub fn if_mapped(_core_surface: &Arc<CoreSurface>, surface_data: &SurfaceData) {
 		if let Some(panel_node) = surface_data.data_map.get::<Arc<Node>>() {
 			let panel_item = PanelItem::from_node(panel_node);
 
@@ -473,7 +473,7 @@ impl PanelItem {
 						surfaces
 							.iter()
 							.find(|surf| surf.wl_surface().clone() == core_surface.wl_surface())
-							.map(|surf| surf.clone())
+							.cloned()
 					});
 
 				if let Some(toplevel_surface) = toplevel_surface {

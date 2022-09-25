@@ -31,7 +31,7 @@ use std::sync::{Arc, Weak};
 pub struct ClientState;
 impl ClientData for ClientState {
 	fn initialized(&self, client_id: ClientId) {
-		println!("Wayland client {:?} connected", client_id.clone());
+		println!("Wayland client {:?} connected", client_id);
 	}
 
 	fn disconnected(&self, client_id: ClientId, reason: DisconnectReason) {

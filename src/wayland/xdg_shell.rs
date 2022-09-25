@@ -45,13 +45,13 @@ impl XdgShellHandler for WaylandState {
 						if let Some(panel_node) = data.data_map.get::<Arc<Node>>() {
 							if let Some(core_surface) = data.data_map.get::<Arc<CoreSurface>>() {
 								let panel_item = PanelItem::from_node(panel_node);
-								if core_surface
+								let has_data = core_surface
 									.with_data(|data| {
 										data.size.x = size.w as u32;
 										data.size.y = size.h as u32;
 									})
-									.is_some()
-								{
+									.is_some();
+								if has_data {
 									panel_item.resize();
 								}
 							}

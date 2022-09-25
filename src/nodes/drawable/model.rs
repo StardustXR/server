@@ -112,7 +112,9 @@ impl Drawable for Model {
 			.get_or_try_init(|| {
 				self.pending_model_path
 					.get()
-					.and_then(|path| SKModel::from_file(sk, path.as_path(), None).clone())
+					.and_then(|path| SKModel::from_file(sk, path.as_path(), None))
+					.as_ref()
+					.cloned()
 					.map(SendWrapper::new)
 					.ok_or(Error)
 			})
