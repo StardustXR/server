@@ -14,9 +14,12 @@ use crate::wayland::Wayland;
 use self::core::eventloop::EventLoop;
 use anyhow::Result;
 use clap::Parser;
+use directories::ProjectDirs;
 use slog::Drain;
 use std::sync::Arc;
 use stereokit::input::Handed;
+use stereokit::render::SphericalHarmonics;
+use stereokit::texture::Texture;
 use stereokit::{lifecycle::DisplayMode, Settings};
 use tokio::{runtime::Handle, sync::oneshot};
 
@@ -37,7 +40,9 @@ fn main() -> Result<()> {
 	let log = ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), slog::o!());
 	slog_stdlog::init()?;
 
-	let stereokit = Settings::default()
+	let project_dirs = ProjectDirs::from("", "", "stardust").unwrap();
+
+	let mut stereokit = Settings::default()
 		.app_name("Stardust XR")
 		.overlay_app(cli_args.overlay)
 		.overlay_priority(u32::MAX)
@@ -50,6 +55,33 @@ fn main() -> Result<()> {
 		.init()
 		.expect("StereoKit failed to initialize");
 	println!("Init StereoKit");
+
+	{
+		let skytex_path = project_dirs.config_dir().join("skytex.hdr");
+		if let Some((tex, light)) = skytex_path
+			.exists()
+			.then(|| {
+				Texture::from_cubemap_equirectangular(
+					&stereokit,
+					skytex_path.to_str().unwrap(),
+					true,
+					100,
+				)
+			})
+			.flatten()
+		{
+			stereokit.set_skytex(&tex);
+			stereokit.set_skylight(&light);
+		} else if let Some(tex) = Texture::cubemap_from_spherical_harmonics(
+			&stereokit,
+			&SphericalHarmonics::default(),
+			16,
+			0.0,
+			0.0,
+		) {
+			stereokit.set_skytex(&tex);
+		}
+	}
 
 	let mouse_pointer = cli_args.flatscreen.then(MousePointer::new);
 	let mut hands =

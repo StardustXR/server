@@ -32,11 +32,12 @@ prisma = "0.1.1"
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
 xkbcommon = { version = "0.5.0", default-features = false }
-stardust-xr = "0.1.0"
+stardust-xr = "0.2.0"
 stardust-xr-schemas = "0.1.0"
 stereokit = {default-features = false, features = ["linux-egl"], version = "0.2.0"}
 wayland-backend = "=0.1.0-beta.9"
 wayland-scanner = "=0.30.0-beta.9"
+directories = "4.0.1"
 
 [dependencies.smithay]
 git = "https://github.com/technobaboo/smithay.git"
