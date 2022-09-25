@@ -4,7 +4,8 @@ mod objects;
 mod wayland;
 
 use crate::core::destroy_queue;
-use crate::nodes::model::{MODELS_TO_DROP, MODEL_REGISTRY};
+use crate::nodes::drawable::model::MODELS_TO_DROP;
+use crate::nodes::drawable::DRAWABLE_REGISTRY;
 use crate::nodes::{hmd, input};
 use crate::objects::input::mouse_pointer::MousePointer;
 use crate::objects::input::sk_hand::SkHand;
@@ -77,8 +78,8 @@ fn main() -> Result<()> {
 			destroy_queue::clear();
 
 			nodes::root::Root::logic_step(stereokit.time_elapsed());
-			for model in MODEL_REGISTRY.get_valid_contents() {
-				model.draw(&stereokit, draw_ctx);
+			for drawable in DRAWABLE_REGISTRY.get_valid_contents() {
+				drawable.draw(&stereokit, draw_ctx);
 			}
 			MODELS_TO_DROP.lock().clear();
 

@@ -1,7 +1,7 @@
 use super::{eventloop::EventLoop, scenegraph::Scenegraph};
 use crate::{
 	core::registry::Registry,
-	nodes::{data, fields, hmd, input, items, model, root::Root, spatial, startup},
+	nodes::{data, drawable, fields, hmd, input, items, root::Root, spatial, startup},
 };
 use anyhow::Result;
 use lazy_static::lazy_static;
@@ -67,7 +67,7 @@ impl Client {
 		hmd::make_alias(&client);
 		spatial::create_interface(&client);
 		fields::create_interface(&client);
-		model::create_interface(&client);
+		drawable::create_interface(&client);
 		data::create_interface(&client);
 		items::create_interface(&client);
 		input::create_interface(&client);

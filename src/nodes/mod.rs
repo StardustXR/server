@@ -1,10 +1,10 @@
 pub mod alias;
 pub mod data;
+pub mod drawable;
 pub mod fields;
 pub mod hmd;
 pub mod input;
 pub mod items;
-pub mod model;
 pub mod root;
 pub mod spatial;
 pub mod startup;
@@ -28,10 +28,10 @@ use crate::core::registry::Registry;
 use self::alias::Alias;
 use self::data::{PulseReceiver, PulseSender};
 
+use self::drawable::model::Model;
 use self::fields::Field;
 use self::input::{InputHandler, InputMethod};
 use self::items::{Item, ItemAcceptor, ItemUI};
-use self::model::Model;
 use self::spatial::Spatial;
 use self::startup::StartupSettings;
 

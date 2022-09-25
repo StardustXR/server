@@ -7,13 +7,16 @@ use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 
-pub struct Registry<T>(Lazy<Mutex<FxHashMap<usize, Weak<T>>>>);
+pub struct Registry<T: Send + Sync + ?Sized>(Lazy<Mutex<FxHashMap<usize, Weak<T>>>>);
 
-impl<T: Send + Sync> Registry<T> {
+impl<T: Send + Sync + ?Sized> Registry<T> {
 	pub const fn new() -> Self {
 		Registry(Lazy::new(|| Mutex::new(FxHashMap::default())))
 	}
-	pub fn add(&self, t: T) -> Arc<T> {
+	pub fn add(&self, t: T) -> Arc<T>
+	where
+		T: Sized,
+	{
 		let t_arc = Arc::new(t);
 		self.add_raw(&t_arc);
 		t_arc
@@ -21,7 +24,7 @@ impl<T: Send + Sync> Registry<T> {
 	pub fn add_raw(&self, t: &Arc<T>) {
 		self.0
 			.lock()
-			.insert(Arc::as_ptr(t) as usize, Arc::downgrade(t));
+			.insert(Arc::as_ptr(t) as *const () as usize, Arc::downgrade(t));
 	}
 	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
 		self.0
@@ -31,7 +34,9 @@ impl<T: Send + Sync> Registry<T> {
 			.collect()
 	}
 	pub fn remove(&self, t: &T) {
-		self.0.lock().remove(&(ptr::addr_of!(*t) as usize));
+		self.0
+			.lock()
+			.remove(&(ptr::addr_of!(*t) as *const () as usize));
 	}
 	pub fn clear(&self) {
 		self.0.lock().clear();

@@ -1,7 +1,7 @@
 use super::{shaders::PANEL_SHADER_BYTES, state::WaylandState};
 use crate::{
 	core::{destroy_queue, registry::Registry},
-	nodes::model::Model,
+	nodes::drawable::model::Model,
 };
 use mint::Vector2;
 use parking_lot::Mutex;

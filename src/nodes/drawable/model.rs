@@ -1,8 +1,9 @@
-use super::spatial::{get_spatial_parent_flex, Spatial};
-use super::Node;
+use super::{Drawable, Node};
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use crate::core::resource::{NamespacedResourceID, ResourceID};
+use crate::nodes::drawable::DRAWABLE_REGISTRY;
+use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
 use anyhow::{anyhow, bail, ensure, Result};
 use flexbuffers::FlexBufferType;
 use glam::Mat4;
@@ -61,6 +62,7 @@ impl Model {
 		};
 		node.add_local_signal("setMaterialParameter", Model::set_material_parameter);
 		let model_arc = MODEL_REGISTRY.add(model);
+		DRAWABLE_REGISTRY.add_raw(&(model_arc.clone() as Arc<dyn Drawable>));
 		let _ = model_arc.pending_model_path.set(
 			model_arc
 				.resource_id
@@ -71,7 +73,40 @@ impl Model {
 		Ok(model_arc)
 	}
 
-	pub fn draw(&self, sk: &StereoKit, draw_ctx: &DrawContext) {
+	fn set_material_parameter(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
+		let model = node.model.get().unwrap();
+		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+		let material_idx = flex_vec
+			.idx(0)
+			.get_u64()
+			.map_err(|_| anyhow!("Material ID is not a number!"))? as u32;
+		let parameter_name = flex_vec
+			.idx(1)
+			.get_str()
+			.map_err(|_| anyhow!("Parameter name is not a string!"))?;
+
+		let flex_parameter_value = flex_vec.idx(2);
+		let parameter_value = match flex_parameter_value.flexbuffer_type() {
+			FlexBufferType::String => {
+				MaterialParameter::Texture(PathBuf::from(flex_parameter_value.as_str()))
+			}
+			_ => bail!("Invalid parameter value type"),
+		};
+
+		model
+			.pending_material_parameters
+			.lock()
+			.insert((material_idx, parameter_name.to_string()), parameter_value);
+
+		Ok(())
+	}
+}
+impl Drawable for Model {
+	fn draw(&self, sk: &StereoKit, draw_ctx: &DrawContext) {
 		let sk_model = self
 			.sk_model
 			.get_or_try_init(|| {
@@ -118,38 +153,6 @@ impl Model {
 			);
 		}
 	}
-
-	fn set_material_parameter(
-		node: &Node,
-		_calling_client: Arc<Client>,
-		data: &[u8],
-	) -> Result<()> {
-		let model = node.model.get().unwrap();
-		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-		let material_idx = flex_vec
-			.idx(0)
-			.get_u64()
-			.map_err(|_| anyhow!("Material ID is not a number!"))? as u32;
-		let parameter_name = flex_vec
-			.idx(1)
-			.get_str()
-			.map_err(|_| anyhow!("Parameter name is not a string!"))?;
-
-		let flex_parameter_value = flex_vec.idx(2);
-		let parameter_value = match flex_parameter_value.flexbuffer_type() {
-			FlexBufferType::String => {
-				MaterialParameter::Texture(PathBuf::from(flex_parameter_value.as_str()))
-			}
-			_ => bail!("Invalid parameter value type"),
-		};
-
-		model
-			.pending_material_parameters
-			.lock()
-			.insert((material_idx, parameter_name.to_string()), parameter_value);
-
-		Ok(())
-	}
 }
 impl Drop for Model {
 	fn drop(&mut self) {
@@ -157,14 +160,8 @@ impl Drop for Model {
 			MODELS_TO_DROP.lock().push(model);
 		}
 		MODEL_REGISTRY.remove(self);
+		DRAWABLE_REGISTRY.remove(self);
 	}
-}
-
-pub fn create_interface(client: &Arc<Client>) {
-	let node = Node::create(client, "", "drawable", false);
-	node.add_local_signal("createModelFromFile", create_from_file);
-	node.add_local_signal("createModelFromResource", create_from_resource);
-	node.add_to_scenegraph();
 }
 
 pub fn create_from_file(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
