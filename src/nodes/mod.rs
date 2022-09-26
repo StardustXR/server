@@ -29,6 +29,7 @@ use self::alias::Alias;
 use self::data::{PulseReceiver, PulseSender};
 
 use self::drawable::model::Model;
+use self::drawable::text::Text;
 use self::fields::Field;
 use self::input::{InputHandler, InputMethod};
 use self::items::{Item, ItemAcceptor, ItemUI};
@@ -58,6 +59,7 @@ pub struct Node {
 
 	// Drawable
 	pub model: OnceCell<Arc<Model>>,
+	pub text: OnceCell<Arc<Text>>,
 
 	// Input
 	pub input_method: OnceCell<Arc<InputMethod>>,
@@ -106,14 +108,15 @@ impl Node {
 
 			spatial: OnceCell::new(),
 			field: OnceCell::new(),
-			model: OnceCell::new(),
 			pulse_sender: OnceCell::new(),
 			pulse_receiver: OnceCell::new(),
+			model: OnceCell::new(),
+			text: OnceCell::new(),
+			input_method: OnceCell::new(),
+			input_handler: OnceCell::new(),
 			item: OnceCell::new(),
 			item_acceptor: OnceCell::new(),
 			item_ui: OnceCell::new(),
-			input_method: OnceCell::new(),
-			input_handler: OnceCell::new(),
 			startup_settings: OnceCell::new(),
 		};
 		node.add_local_signal("destroy", Node::destroy_flex);
@@ -206,7 +209,7 @@ impl Node {
 		let data = data.to_vec();
 
 		if let Some(messenger) = client.messenger.as_ref() {
-			let _ = messenger.send_remote_signal(path.as_str(), method.as_str(), data.as_slice());
+			messenger.send_remote_signal(path.as_str(), method.as_str(), data.as_slice());
 		}
 		Ok(())
 	}

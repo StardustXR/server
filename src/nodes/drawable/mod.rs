@@ -1,4 +1,5 @@
 pub mod model;
+pub mod text;
 
 use super::Node;
 use crate::core::client::Client;
@@ -9,13 +10,15 @@ use stereokit::{lifecycle::DrawContext, texture::Texture, StereoKit};
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "drawable", false);
-	node.add_local_signal("createModel", model::create);
+	node.add_local_signal("createModel", model::create_flex);
+	node.add_local_signal("createText", text::create_flex);
 	node.add_local_signal("setSkyFile", set_sky_file_flex);
 	node.add_to_scenegraph();
 }
 
 pub fn draw(sk: &mut StereoKit, draw_ctx: &DrawContext) {
 	model::draw_all(sk, draw_ctx);
+	text::draw_all(sk, draw_ctx);
 
 	let new_skytex = QUEUED_SKYTEX.lock().take();
 	let mut new_skylight = QUEUED_SKYLIGHT.lock().take();

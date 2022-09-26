@@ -163,7 +163,7 @@ pub fn draw_all(sk: &StereoKit, draw_ctx: &DrawContext) {
 	}
 }
 
-pub fn create(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let node = Node::create(
 		&calling_client,

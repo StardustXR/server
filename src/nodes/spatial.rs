@@ -277,15 +277,15 @@ pub fn parse_transform<B: flexbuffers::Buffer>(
 	let translation = translation
 		.then(|| parse_vec3(transform_vec.idx(0)))
 		.flatten()
-		.unwrap_or(Vector3::from([0.0; 3]));
+		.unwrap_or_else(|| Vector3::from([0.0; 3]));
 	let rotation = rotation
 		.then(|| parse_quat(transform_vec.idx(1)))
 		.flatten()
-		.unwrap_or(Quat::IDENTITY.into());
+		.unwrap_or_else(|| Quat::IDENTITY.into());
 	let scale = scale
 		.then(|| parse_vec3(transform_vec.idx(2)))
 		.flatten()
-		.unwrap_or(Vector3::from([1.0; 3]));
+		.unwrap_or_else(|| Vector3::from([1.0; 3]));
 
 	Ok(Mat4::from_scale_rotation_translation(
 		scale.into(),
