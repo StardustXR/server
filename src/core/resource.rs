@@ -1,37 +1,43 @@
+use anyhow::bail;
 use std::path::PathBuf;
 
-pub type ResourceID = Box<dyn ResourceIDTrait + Send + Sync>;
-
-pub trait ResourceIDTrait: Send + Sync {
-	fn get_file(&self, prefixes: &[PathBuf]) -> Option<PathBuf>;
+pub enum ResourceID {
+	File(PathBuf),
+	Namespaced { namespace: String, path: PathBuf },
 }
+impl ResourceID {
+	pub fn get_file(&self, prefixes: &[PathBuf]) -> Option<PathBuf> {
+		match self {
+			ResourceID::File(file) => (file.is_absolute() && file.exists()).then_some(file.clone()),
+			ResourceID::Namespaced { namespace, path } => {
+				for prefix in prefixes {
+					let mut test_path = prefix.clone();
+					test_path.push(namespace.clone());
+					test_path.push(path.clone());
 
-impl ResourceIDTrait for PathBuf {
-	fn get_file(&self, _prefixes: &[PathBuf]) -> Option<PathBuf> {
-		if self.is_absolute() && self.as_path().exists() {
-			Some(self.clone())
-		} else {
-			None
-		}
-	}
-}
-
-pub struct NamespacedResourceID {
-	pub namespace: String,
-	pub path: PathBuf,
-}
-
-impl ResourceIDTrait for NamespacedResourceID {
-	fn get_file(&self, prefixes: &[PathBuf]) -> Option<PathBuf> {
-		for prefix in prefixes {
-			let mut path = prefix.clone();
-			path.push(self.namespace.clone());
-			path.push(self.path.clone());
-
-			if path.as_path().exists() {
-				return Some(path);
+					if test_path.as_path().exists() {
+						return Some(test_path);
+					}
+				}
+				None
 			}
 		}
-		None
 	}
+}
+
+pub fn parse_resource_id(reader: flexbuffers::Reader<&[u8]>) -> anyhow::Result<ResourceID> {
+	let string = reader.get_str()?;
+
+	Ok(if string.starts_with('/') {
+		let path = PathBuf::from(string);
+		path.metadata()?;
+		ResourceID::File(path)
+	} else if let Some((namespace, path)) = string.split_once(':') {
+		ResourceID::Namespaced {
+			namespace: namespace.to_string(),
+			path: PathBuf::from(path),
+		}
+	} else {
+		bail!("Invalid format for string");
+	})
 }

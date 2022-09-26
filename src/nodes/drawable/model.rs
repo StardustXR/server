@@ -1,12 +1,12 @@
 use super::Node;
 use crate::core::client::Client;
+use crate::core::destroy_queue;
 use crate::core::registry::Registry;
-use crate::core::resource::{NamespacedResourceID, ResourceID};
+use crate::core::resource::{parse_resource_id, ResourceID};
 use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
 use anyhow::{anyhow, bail, ensure, Result};
 use flexbuffers::FlexBufferType;
 use glam::Mat4;
-use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use prisma::{Rgb, Rgba};
@@ -24,9 +24,6 @@ use stereokit::texture::Texture;
 use stereokit::StereoKit;
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
-lazy_static! {
-	static ref MODELS_TO_DROP: Mutex<Vec<SendWrapper<SKModel>>> = Default::default();
-}
 
 pub enum MaterialParameter {
 	Texture(PathBuf),
@@ -156,7 +153,7 @@ impl Model {
 impl Drop for Model {
 	fn drop(&mut self) {
 		if let Some(model) = self.sk_model.take() {
-			MODELS_TO_DROP.lock().push(model);
+			destroy_queue::add(model);
 		}
 		MODEL_REGISTRY.remove(self);
 	}
@@ -168,7 +165,7 @@ pub fn draw_all(sk: &StereoKit, draw_ctx: &DrawContext) {
 	}
 }
 
-pub fn create_from_file(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn create(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
 	let node = Node::create(
 		&calling_client,
@@ -177,7 +174,7 @@ pub fn create_from_file(_node: &Node, calling_client: Arc<Client>, data: &[u8]) 
 		true,
 	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let path = PathBuf::from(flex_vec.idx(2).get_str()?);
+	let resource_id = parse_resource_id(flex_vec.idx(2))?;
 	let transform = Mat4::from_scale_rotation_translation(
 		flex_to_vec3!(flex_vec.idx(5))
 			.ok_or_else(|| anyhow!("Scale not found"))?
@@ -191,35 +188,6 @@ pub fn create_from_file(_node: &Node, calling_client: Arc<Client>, data: &[u8]) 
 	);
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
-	Model::add_to(&node, Box::new(path))?;
-	Ok(())
-}
-pub fn create_from_resource(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create(
-		&calling_client,
-		"/drawable/model",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let resource_id = NamespacedResourceID {
-		namespace: flex_vec.idx(2).get_str()?.to_string(),
-		path: PathBuf::from(flex_vec.idx(3).get_str()?),
-	};
-	let transform = Mat4::from_scale_rotation_translation(
-		flex_to_vec3!(flex_vec.idx(6))
-			.ok_or_else(|| anyhow!("Scale not found"))?
-			.into(),
-		flex_to_quat!(flex_vec.idx(5))
-			.ok_or_else(|| anyhow!("Rotation not found"))?
-			.into(),
-		flex_to_vec3!(flex_vec.idx(4))
-			.ok_or_else(|| anyhow!("Position not found"))?
-			.into(),
-	);
-	let node = node.add_to_scenegraph();
-	Spatial::add_to(&node, Some(parent), transform)?;
-	Model::add_to(&node, Box::new(resource_id))?;
+	Model::add_to(&node, resource_id)?;
 	Ok(())
 }
