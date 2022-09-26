@@ -24,7 +24,7 @@ use smithay::{
 };
 use stardust_xr::{
 	flex::{flexbuffer_from_arguments, flexbuffer_from_vector_arguments},
-	flex_to_vec2,
+	values::parse_vec2,
 };
 use std::sync::{Arc, Weak};
 use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};
@@ -328,11 +328,11 @@ impl PanelItem {
 							pointer.axis_stop(0, Axis::VerticalScroll);
 						} else {
 							let flex_vec = flex.get_vector()?;
-							let axis_continuous_vec = flex_to_vec2!(flex_vec.idx(0))
+							let axis_continuous_vec = parse_vec2(flex_vec.idx(0))
 								.ok_or_else(|| anyhow!("No continuous axis vector!"))?;
 							pointer.axis(0, Axis::HorizontalScroll, axis_continuous_vec.x as f64);
 							pointer.axis(0, Axis::VerticalScroll, axis_continuous_vec.y as f64);
-							if let Some(axis_discrete_vec) = flex_to_vec2!(flex_vec.idx(0)) {
+							if let Some(axis_discrete_vec) = parse_vec2(flex_vec.idx(0)) {
 								pointer.axis_discrete(
 									Axis::HorizontalScroll,
 									axis_discrete_vec.x as i32,

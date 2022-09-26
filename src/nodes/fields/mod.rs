@@ -12,7 +12,7 @@ use crate::core::client::Client;
 use anyhow::{anyhow, Result};
 use glam::{vec2, vec3a, Vec3, Vec3A};
 use stardust_xr::flex::FlexBuffable;
-use stardust_xr::flex_to_vec3;
+use stardust_xr::values::parse_vec3;
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -78,7 +78,7 @@ fn field_distance_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) ->
 		.get()
 		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
 		.clone();
-	let point = flex_to_vec3!(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
+	let point = parse_vec3(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
 
 	let distance = node
 		.field
@@ -97,7 +97,7 @@ fn field_normal_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> R
 		.get()
 		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
 		.clone();
-	let point = flex_to_vec3!(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
+	let point = parse_vec3(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
 
 	let normal = node.field.get().as_ref().unwrap().normal(
 		reference_space.as_ref(),
@@ -120,7 +120,7 @@ fn field_closest_point_flex(
 		.get()
 		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
 		.clone();
-	let point = flex_to_vec3!(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
+	let point = parse_vec3(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
 
 	let closest_point =
 		node.field

@@ -1,14 +1,13 @@
 use super::fields::Field;
-use super::spatial::{get_spatial_parent_flex, parse_pose, Spatial};
+use super::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
 use super::{Alias, Node};
 use crate::core::client::Client;
 use crate::core::nodelist::LifeLinkedNodeList;
 use crate::core::registry::Registry;
 use anyhow::{anyhow, ensure, Result};
-use glam::{vec3a, Mat4};
+use glam::vec3a;
 use parking_lot::Mutex;
 use stardust_xr::flex::flexbuffer_from_vector_arguments;
-use stardust_xr::{flex_to_quat, flex_to_vec3};
 use std::sync::{Arc, Weak};
 
 static PULSE_SENDER_REGISTRY: Registry<PulseSender> = Registry::new();
@@ -249,14 +248,7 @@ pub fn create_pulse_sender_flex(
 		true,
 	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = Mat4::from_rotation_translation(
-		flex_to_quat!(flex_vec.idx(3))
-			.ok_or_else(|| anyhow!("Rotation not found"))?
-			.into(),
-		flex_to_vec3!(flex_vec.idx(2))
-			.ok_or_else(|| anyhow!("Position not found"))?
-			.into(),
-	);
+	let transform = parse_transform(flex_vec.index(2)?, true, true, false)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	PulseSender::add_to(&node)?;
@@ -287,7 +279,7 @@ pub fn create_pulse_receiver_flex(
 		true,
 	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = parse_pose(flex_vec.idx(2), flex_vec.idx(3))?;
+	let transform = parse_transform(flex_vec.index(2)?, true, true, false)?;
 	let field = calling_client
 		.scenegraph
 		.get_node(flex_vec.idx(4).as_str())

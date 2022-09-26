@@ -1,10 +1,11 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
-use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
-use anyhow::{anyhow, ensure, Result};
-use glam::{swizzles::*, vec2, Mat4, Vec3A};
+use crate::nodes::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
+use anyhow::{ensure, Result};
+use glam::{swizzles::*, vec2, Vec3A};
 use portable_atomic::AtomicF32;
-use stardust_xr::{flex_to_quat, flex_to_vec3};
+use stardust_xr::values::parse_f32;
+
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -72,20 +73,18 @@ pub fn create_cylinder_field_flex(
 	data: &[u8],
 ) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create(&calling_client, "/field", flex_vec.idx(0).get_str()?, true);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = Mat4::from_rotation_translation(
-		flex_to_quat!(flex_vec.idx(3))
-			.ok_or_else(|| anyhow!("Rotation not found"))?
-			.into(),
-		flex_to_vec3!(flex_vec.idx(2))
-			.ok_or_else(|| anyhow!("Position not found"))?
-			.into(),
+	let node = Node::create(
+		&calling_client,
+		"/field",
+		flex_vec.index(0)?.get_str()?,
+		true,
 	);
-	let length = flex_vec.idx(0).as_f32();
-	let radius = flex_vec.idx(1).as_f32();
+	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
+	let transform = parse_transform(flex_vec.index(2)?, true, true, false)?;
+	let length = parse_f32(flex_vec.index(3)?).ok_or_else(|| anyhow::anyhow!("Invalid length"))?;
+	let radius = parse_f32(flex_vec.index(4)?).ok_or_else(|| anyhow::anyhow!("Invalid radius"))?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
-	CylinderField::add_to(&node, length, radius)?;
+	CylinderField::add_to(&node, dbg!(length), dbg!(radius))?;
 	Ok(())
 }

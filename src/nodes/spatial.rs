@@ -2,10 +2,11 @@ use super::Node;
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
 use glam::{Mat4, Quat, Vec3};
+use mint::Vector3;
 use parking_lot::Mutex;
 use stardust_xr::flex::flexbuffer_from_vector_arguments;
 use stardust_xr::push_to_vec;
-use stardust_xr::{flex_to_quat, flex_to_vec3};
+use stardust_xr::values::{parse_quat, parse_vec3};
 use std::ptr;
 use std::sync::{Arc, Weak};
 
@@ -205,9 +206,9 @@ impl Spatial {
 		};
 		node.spatial.get().unwrap().set_local_transform_components(
 			reference_space_transform.as_deref(),
-			flex_to_vec3!(flex_vec.idx(1)).map(|v| v.into()),
-			flex_to_quat!(flex_vec.idx(2)).map(|v| v.into()),
-			flex_to_vec3!(flex_vec.idx(3)).map(|v| v.into()),
+			parse_vec3(flex_vec.idx(1)).map(|v| v.into()),
+			parse_quat(flex_vec.idx(2)).map(|v| v.into()),
+			parse_vec3(flex_vec.idx(3)).map(|v| v.into()),
 		);
 		Ok(())
 	}
@@ -266,34 +267,30 @@ pub fn get_spatial_parent_flex(
 		.ok_or_else(|| anyhow!("Spatial parent node is not a spatial"))?
 		.clone())
 }
-pub fn parse_pose<B: flexbuffers::Buffer>(
-	translation: flexbuffers::Reader<B>,
-	rotation: flexbuffers::Reader<B>,
-) -> Result<Mat4> {
-	Ok(Mat4::from_rotation_translation(
-		flex_to_quat!(rotation)
-			.ok_or_else(|| anyhow!("Rotation not found"))?
-			.into(),
-		flex_to_vec3!(translation)
-			.ok_or_else(|| anyhow!("Position not found"))?
-			.into(),
-	))
-}
 pub fn parse_transform<B: flexbuffers::Buffer>(
-	translation: flexbuffers::Reader<B>,
-	rotation: flexbuffers::Reader<B>,
-	scale: flexbuffers::Reader<B>,
+	reader: flexbuffers::Reader<B>,
+	translation: bool,
+	rotation: bool,
+	scale: bool,
 ) -> Result<Mat4> {
+	let transform_vec = reader.get_vector()?;
+	let translation = translation
+		.then(|| parse_vec3(transform_vec.idx(0)))
+		.flatten()
+		.unwrap_or(Vector3::from([0.0; 3]));
+	let rotation = rotation
+		.then(|| parse_quat(transform_vec.idx(1)))
+		.flatten()
+		.unwrap_or(Quat::IDENTITY.into());
+	let scale = scale
+		.then(|| parse_vec3(transform_vec.idx(2)))
+		.flatten()
+		.unwrap_or(Vector3::from([1.0; 3]));
+
 	Ok(Mat4::from_scale_rotation_translation(
-		flex_to_vec3!(scale)
-			.ok_or_else(|| anyhow!("Scale not found"))?
-			.into(),
-		flex_to_quat!(rotation)
-			.ok_or_else(|| anyhow!("Rotation not found"))?
-			.into(),
-		flex_to_vec3!(translation)
-			.ok_or_else(|| anyhow!("Position not found"))?
-			.into(),
+		scale.into(),
+		rotation.into(),
+		translation.into(),
 	))
 }
 
@@ -312,7 +309,7 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8
 		true,
 	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.index(1)?.get_str()?)?;
-	let transform = parse_transform(flex_vec.index(2)?, flex_vec.index(3)?, flex_vec.index(4)?)?;
+	let transform = parse_transform(flex_vec.index(2)?, true, true, true)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	Ok(())

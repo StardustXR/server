@@ -1,10 +1,10 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
-use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
+use crate::nodes::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
 use anyhow::{anyhow, ensure, Result};
-use glam::{vec3, vec3a, Mat4, Vec3, Vec3A};
+use glam::{vec3, vec3a, Vec3, Vec3A};
 use parking_lot::Mutex;
-use stardust_xr::{flex_to_quat, flex_to_vec3};
+use stardust_xr::values::parse_vec3;
 use std::sync::Arc;
 
 pub struct BoxField {
@@ -38,7 +38,7 @@ impl BoxField {
 
 	pub fn set_size_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let root = flexbuffers::Reader::get_root(data)?;
-		let size = flex_to_vec3!(root).ok_or_else(|| anyhow!("Size is invalid"))?;
+		let size = parse_vec3(root).ok_or_else(|| anyhow!("Size is invalid"))?;
 		if let Field::Box(box_field) = node.field.get().unwrap().as_ref() {
 			box_field.set_size(size.into());
 		}
@@ -64,17 +64,15 @@ impl FieldTrait for BoxField {
 
 pub fn create_box_field_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create(&calling_client, "/field", flex_vec.idx(0).get_str()?, true);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = Mat4::from_rotation_translation(
-		flex_to_quat!(flex_vec.idx(3))
-			.ok_or_else(|| anyhow!("Rotation not found"))?
-			.into(),
-		flex_to_vec3!(flex_vec.idx(2))
-			.ok_or_else(|| anyhow!("Position not found"))?
-			.into(),
+	let node = Node::create(
+		&calling_client,
+		"/field",
+		flex_vec.index(0)?.get_str()?,
+		true,
 	);
-	let size = flex_to_vec3!(flex_vec.idx(4)).ok_or_else(|| anyhow!("Size invalid"))?;
+	let parent = get_spatial_parent_flex(&calling_client, flex_vec.index(1)?.get_str()?)?;
+	let transform = parse_transform(flex_vec.index(2)?, true, true, false)?;
+	let size = parse_vec3(flex_vec.idx(4)).ok_or_else(|| anyhow!("Size invalid"))?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	BoxField::add_to(&node, size.into())?;

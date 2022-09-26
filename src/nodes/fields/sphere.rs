@@ -4,7 +4,7 @@ use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
 use anyhow::{anyhow, ensure, Result};
 use glam::{Mat4, Vec3A};
 use portable_atomic::AtomicF32;
-use stardust_xr::flex_to_vec3;
+use stardust_xr::values::parse_vec3;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -70,7 +70,7 @@ pub fn create_sphere_field_flex(
 	let node = Node::create(&calling_client, "/field", flex_vec.idx(0).get_str()?, true);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let transform = Mat4::from_translation(
-		flex_to_vec3!(flex_vec.idx(2))
+		parse_vec3(flex_vec.idx(2))
 			.ok_or_else(|| anyhow!("Position not found"))?
 			.into(),
 	);

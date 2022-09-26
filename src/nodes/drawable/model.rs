@@ -172,8 +172,8 @@ pub fn create(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<
 		true,
 	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let resource_id = parse_resource_id(flex_vec.idx(2))?;
-	let transform = parse_transform(flex_vec.index(3)?, flex_vec.index(4)?, flex_vec.index(5)?)?;
+	let transform = parse_transform(flex_vec.index(2)?, true, true, true)?;
+	let resource_id = parse_resource_id(flex_vec.idx(3))?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	Model::add_to(&node, resource_id)?;
