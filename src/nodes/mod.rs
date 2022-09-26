@@ -51,14 +51,24 @@ pub struct Node {
 
 	pub spatial: OnceCell<Arc<Spatial>>,
 	pub field: OnceCell<Arc<Field>>,
-	pub model: OnceCell<Arc<Model>>,
+
+	// Data
 	pub pulse_sender: OnceCell<Arc<PulseSender>>,
 	pub pulse_receiver: OnceCell<Arc<PulseReceiver>>,
+
+	// Drawable
+	pub model: OnceCell<Arc<Model>>,
+
+	// Input
+	pub input_method: OnceCell<Arc<InputMethod>>,
+	pub input_handler: OnceCell<Arc<InputHandler>>,
+
+	// Item
 	pub item: OnceCell<Arc<Item>>,
 	pub item_acceptor: OnceCell<Arc<ItemAcceptor>>,
 	pub item_ui: OnceCell<Arc<ItemUI>>,
-	pub input_method: OnceCell<Arc<InputMethod>>,
-	pub input_handler: OnceCell<Arc<InputHandler>>,
+
+	// Startup
 	pub startup_settings: OnceCell<Mutex<StartupSettings>>,
 
 	pub(crate) client: Weak<Client>,
