@@ -3,16 +3,14 @@ use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
 use crate::core::resource::{parse_resource_id, ResourceID};
-use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
+use crate::nodes::spatial::{get_spatial_parent_flex, get_transform_flex, Spatial};
 use anyhow::{anyhow, bail, ensure, Result};
 use flexbuffers::FlexBufferType;
-use glam::Mat4;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use prisma::{Rgb, Rgba};
 use rustc_hash::FxHashMap;
 use send_wrapper::SendWrapper;
-use stardust_xr::{flex_to_quat, flex_to_vec3};
 use std::fmt::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -175,17 +173,7 @@ pub fn create(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<
 	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let resource_id = parse_resource_id(flex_vec.idx(2))?;
-	let transform = Mat4::from_scale_rotation_translation(
-		flex_to_vec3!(flex_vec.idx(5))
-			.ok_or_else(|| anyhow!("Scale not found"))?
-			.into(),
-		flex_to_quat!(flex_vec.idx(4))
-			.ok_or_else(|| anyhow!("Rotation not found"))?
-			.into(),
-		flex_to_vec3!(flex_vec.idx(3))
-			.ok_or_else(|| anyhow!("Position not found"))?
-			.into(),
-	);
+	let transform = get_transform_flex(flex_vec.index(3)?, flex_vec.index(4)?, flex_vec.index(5)?)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	Model::add_to(&node, resource_id)?;
