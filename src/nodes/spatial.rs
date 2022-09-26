@@ -266,7 +266,7 @@ pub fn get_spatial_parent_flex(
 		.ok_or_else(|| anyhow!("Spatial parent node is not a spatial"))?
 		.clone())
 }
-pub fn get_transform_pose_flex<B: flexbuffers::Buffer>(
+pub fn parse_pose<B: flexbuffers::Buffer>(
 	translation: flexbuffers::Reader<B>,
 	rotation: flexbuffers::Reader<B>,
 ) -> Result<Mat4> {
@@ -279,7 +279,7 @@ pub fn get_transform_pose_flex<B: flexbuffers::Buffer>(
 			.into(),
 	))
 }
-pub fn get_transform_flex<B: flexbuffers::Buffer>(
+pub fn parse_transform<B: flexbuffers::Buffer>(
 	translation: flexbuffers::Reader<B>,
 	rotation: flexbuffers::Reader<B>,
 	scale: flexbuffers::Reader<B>,
@@ -312,7 +312,7 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8
 		true,
 	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.index(1)?.get_str()?)?;
-	let transform = get_transform_flex(flex_vec.index(2)?, flex_vec.index(3)?, flex_vec.index(4)?)?;
+	let transform = parse_transform(flex_vec.index(2)?, flex_vec.index(3)?, flex_vec.index(4)?)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	Ok(())

@@ -5,7 +5,7 @@ use self::hand::Hand;
 use self::pointer::Pointer;
 
 use super::fields::Field;
-use super::spatial::{get_spatial_parent_flex, get_transform_pose_flex, Spatial};
+use super::spatial::{get_spatial_parent_flex, parse_pose, Spatial};
 use super::Node;
 use crate::core::client::Client;
 use crate::core::eventloop::FRAME;
@@ -218,7 +218,7 @@ pub fn create_input_handler_flex(
 		true,
 	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = get_transform_pose_flex(flex_vec.idx(2), flex_vec.idx(3))?;
+	let transform = parse_pose(flex_vec.idx(2), flex_vec.idx(3))?;
 	let field = calling_client
 		.scenegraph
 		.get_node(flex_vec.idx(4).as_str())

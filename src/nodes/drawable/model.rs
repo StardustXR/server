@@ -3,7 +3,7 @@ use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
 use crate::core::resource::{parse_resource_id, ResourceID};
-use crate::nodes::spatial::{get_spatial_parent_flex, get_transform_flex, Spatial};
+use crate::nodes::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
 use anyhow::{anyhow, bail, ensure, Result};
 use flexbuffers::FlexBufferType;
 use once_cell::sync::OnceCell;
@@ -173,7 +173,7 @@ pub fn create(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<
 	);
 	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
 	let resource_id = parse_resource_id(flex_vec.idx(2))?;
-	let transform = get_transform_flex(flex_vec.index(3)?, flex_vec.index(4)?, flex_vec.index(5)?)?;
+	let transform = parse_transform(flex_vec.index(3)?, flex_vec.index(4)?, flex_vec.index(5)?)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	Model::add_to(&node, resource_id)?;

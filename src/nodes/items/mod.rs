@@ -3,7 +3,7 @@ mod environment;
 use self::environment::EnvironmentItem;
 
 use super::fields::Field;
-use super::spatial::{get_spatial_parent_flex, get_transform_pose_flex, Spatial};
+use super::spatial::{get_spatial_parent_flex, parse_pose, Spatial};
 use super::{Alias, Node};
 use crate::core::client::{Client, INTERNAL_CLIENT};
 use crate::core::nodelist::LifeLinkedNodeList;
@@ -352,7 +352,7 @@ pub fn create_environment_item_flex(
 		true,
 	);
 	let space = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = get_transform_pose_flex(flex_vec.idx(2), flex_vec.idx(3))?;
+	let transform = parse_pose(flex_vec.idx(2), flex_vec.idx(3))?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, None, transform * space.global_transform())?;
 	EnvironmentItem::add_to(&node, flex_vec.idx(4).get_str()?.to_string());
@@ -372,7 +372,7 @@ pub fn create_item_acceptor_flex(
 	let flex_vec = root.get_vector()?;
 	let parent_name = format!("/item/{}/acceptor/", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
 	let space = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = get_transform_pose_flex(flex_vec.idx(2), flex_vec.idx(3))?;
+	let transform = parse_pose(flex_vec.idx(2), flex_vec.idx(3))?;
 	let field = calling_client
 		.scenegraph
 		.get_node(flex_vec.idx(4).get_str()?)
