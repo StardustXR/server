@@ -4,9 +4,7 @@ mod objects;
 mod wayland;
 
 use crate::core::destroy_queue;
-use crate::nodes::drawable::model::MODELS_TO_DROP;
-use crate::nodes::drawable::DRAWABLE_REGISTRY;
-use crate::nodes::{hmd, input};
+use crate::nodes::{drawable, hmd, input};
 use crate::objects::input::mouse_pointer::MousePointer;
 use crate::objects::input::sk_hand::SkHand;
 use crate::wayland::Wayland;
@@ -36,11 +34,10 @@ struct CliArgs {
 }
 
 fn main() -> Result<()> {
+	let project_dirs = ProjectDirs::from("", "", "stardust").unwrap();
 	let cli_args = Arc::new(CliArgs::parse());
 	let log = ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), slog::o!());
 	slog_stdlog::init()?;
-
-	let project_dirs = ProjectDirs::from("", "", "stardust").unwrap();
 
 	let mut stereokit = Settings::default()
 		.app_name("Stardust XR")
@@ -56,18 +53,12 @@ fn main() -> Result<()> {
 		.expect("StereoKit failed to initialize");
 	println!("Init StereoKit");
 
+	// Skytex/light stuff
 	{
 		let skytex_path = project_dirs.config_dir().join("skytex.hdr");
 		if let Some((tex, light)) = skytex_path
 			.exists()
-			.then(|| {
-				Texture::from_cubemap_equirectangular(
-					&stereokit,
-					skytex_path.to_str().unwrap(),
-					true,
-					100,
-				)
-			})
+			.then(|| Texture::from_cubemap_equirectangular(&stereokit, &skytex_path, true, 100))
 			.flatten()
 		{
 			stereokit.set_skytex(&tex);
@@ -104,29 +95,26 @@ fn main() -> Result<()> {
 	let mut wayland = Wayland::new(log)?;
 	println!("Stardust ready!");
 	stereokit.run(
-		|draw_ctx| {
-			hmd::frame(&stereokit);
-			wayland.frame(&stereokit);
+		|sk, draw_ctx| {
+			hmd::frame(sk);
+			wayland.frame(sk);
 			destroy_queue::clear();
 
-			nodes::root::Root::logic_step(stereokit.time_elapsed());
-			for drawable in DRAWABLE_REGISTRY.get_valid_contents() {
-				drawable.draw(&stereokit, draw_ctx);
-			}
-			MODELS_TO_DROP.lock().clear();
+			nodes::root::Root::logic_step(sk.time_elapsed());
+			drawable::draw(sk, draw_ctx);
 
 			if let Some(mouse_pointer) = &mouse_pointer {
-				mouse_pointer.update(&stereokit);
+				mouse_pointer.update(sk);
 			}
 			if let Some(hands) = &mut hands {
-				hands[0].update(&stereokit);
-				hands[1].update(&stereokit);
+				hands[0].update(sk);
+				hands[1].update(sk);
 			}
 			input::process_input();
 
 			wayland.make_context_current();
 		},
-		|| {
+		|_| {
 			println!("Cleanly shut down StereoKit");
 		},
 	);

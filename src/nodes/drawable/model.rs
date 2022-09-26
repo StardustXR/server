@@ -1,8 +1,7 @@
-use super::{Drawable, Node};
+use super::Node;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use crate::core::resource::{NamespacedResourceID, ResourceID};
-use crate::nodes::drawable::DRAWABLE_REGISTRY;
 use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
 use anyhow::{anyhow, bail, ensure, Result};
 use flexbuffers::FlexBufferType;
@@ -24,9 +23,9 @@ use stereokit::render::RenderLayer;
 use stereokit::texture::Texture;
 use stereokit::StereoKit;
 
-pub static MODEL_REGISTRY: Registry<Model> = Registry::new();
+static MODEL_REGISTRY: Registry<Model> = Registry::new();
 lazy_static! {
-	pub static ref MODELS_TO_DROP: Mutex<Vec<SendWrapper<SKModel>>> = Default::default();
+	static ref MODELS_TO_DROP: Mutex<Vec<SendWrapper<SKModel>>> = Default::default();
 }
 
 pub enum MaterialParameter {
@@ -62,7 +61,6 @@ impl Model {
 		};
 		node.add_local_signal("setMaterialParameter", Model::set_material_parameter);
 		let model_arc = MODEL_REGISTRY.add(model);
-		DRAWABLE_REGISTRY.add_raw(&(model_arc.clone() as Arc<dyn Drawable>));
 		let _ = model_arc.pending_model_path.set(
 			model_arc
 				.resource_id
@@ -104,8 +102,7 @@ impl Model {
 
 		Ok(())
 	}
-}
-impl Drawable for Model {
+
 	fn draw(&self, sk: &StereoKit, draw_ctx: &DrawContext) {
 		let sk_model = self
 			.sk_model
@@ -162,7 +159,12 @@ impl Drop for Model {
 			MODELS_TO_DROP.lock().push(model);
 		}
 		MODEL_REGISTRY.remove(self);
-		DRAWABLE_REGISTRY.remove(self);
+	}
+}
+
+pub fn draw_all(sk: &StereoKit, draw_ctx: &DrawContext) {
+	for model in MODEL_REGISTRY.get_valid_contents() {
+		model.draw(sk, draw_ctx);
 	}
 }
 

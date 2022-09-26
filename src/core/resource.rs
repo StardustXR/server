@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 pub type ResourceID = Box<dyn ResourceIDTrait + Send + Sync>;
 
-pub trait ResourceIDTrait {
+pub trait ResourceIDTrait: Send + Sync {
 	fn get_file(&self, prefixes: &[PathBuf]) -> Option<PathBuf>;
 }
 
