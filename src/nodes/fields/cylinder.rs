@@ -26,8 +26,8 @@ impl CylinderField {
 		);
 		let cylinder_field = CylinderField {
 			space: node.spatial.get().unwrap().clone(),
-			length: AtomicF32::new(length),
-			radius: AtomicF32::new(radius),
+			length: AtomicF32::new(length.abs()),
+			radius: AtomicF32::new(radius.abs()),
 		};
 		cylinder_field.add_field_methods(node);
 		node.add_local_signal("setSize", CylinderField::set_size_flex);
@@ -36,14 +36,16 @@ impl CylinderField {
 	}
 
 	pub fn set_size(&self, length: f32, radius: f32) {
-		self.length.store(length, Ordering::Relaxed);
-		self.radius.store(radius, Ordering::Relaxed);
+		self.length.store(length.abs(), Ordering::Relaxed);
+		self.radius.store(radius.abs(), Ordering::Relaxed);
 	}
 
 	pub fn set_size_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-		let length = flex_vec.idx(0).as_f32();
-		let radius = flex_vec.idx(1).as_f32();
+		let length =
+			parse_f32(flex_vec.index(0)?).ok_or_else(|| anyhow::anyhow!("Invalid length"))?;
+		let radius =
+			parse_f32(flex_vec.index(1)?).ok_or_else(|| anyhow::anyhow!("Invalid radius"))?;
 		if let Field::Cylinder(cylinder_field) = node.field.get().unwrap().as_ref() {
 			cylinder_field.set_size(length, radius);
 		}
@@ -53,15 +55,11 @@ impl CylinderField {
 
 impl FieldTrait for CylinderField {
 	fn local_distance(&self, p: Vec3A) -> f32 {
-		let radius = self.length.load(Ordering::Relaxed);
-		let d = vec2(p.xy().length().abs() - radius, p.z.abs() - (radius * 0.5));
+		let radius = self.radius.load(Ordering::Relaxed);
+		let length = self.length.load(Ordering::Relaxed);
+		let d = vec2(p.xy().length().abs() - radius, p.z.abs() - (length * 0.5));
 
-		d.x.max(d.y).min(0_f32)
-			+ (if d.x >= 0_f32 && d.y >= 0_f32 {
-				d.length()
-			} else {
-				0_f32
-			})
+		d.x.max(d.y).min(0.0) + d.max(vec2(0.0, 0.0)).length()
 	}
 	fn spatial_ref(&self) -> &Spatial {
 		self.space.as_ref()
