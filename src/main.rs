@@ -25,12 +25,12 @@ use tokio::{runtime::Handle, sync::oneshot};
 #[clap(author, version, about, long_about = None)]
 struct CliArgs {
 	/// Force flatscreen mode and use the mouse pointer as a 3D pointer
-	#[clap(short, action)]
+	#[clap(short, long, action)]
 	flatscreen: bool,
 
-	/// Run Stardust XR as an overlay
-	#[clap(short, action)]
-	overlay: bool,
+	/// Run Stardust XR as an overlay with given priority
+	#[clap(id = "PRIORITY", short = 'o', long = "overlay", action)]
+	overlay_priority: Option<u32>,
 }
 
 fn main() -> Result<()> {
@@ -41,8 +41,8 @@ fn main() -> Result<()> {
 
 	let mut stereokit = Settings::default()
 		.app_name("Stardust XR")
-		.overlay_app(cli_args.overlay)
-		.overlay_priority(u32::MAX)
+		.overlay_app(cli_args.overlay_priority.is_some())
+		.overlay_priority(cli_args.overlay_priority.unwrap_or(u32::MAX))
 		.disable_desktop_input_window(true)
 		.display_preference(if cli_args.flatscreen {
 			DisplayMode::Flatscreen
