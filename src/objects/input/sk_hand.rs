@@ -41,8 +41,10 @@ impl SkHand {
 	pub fn update(&mut self, sk: &StereoKit) {
 		if let InputType::Hand(hand) = &mut *self.hand.specialization.lock() {
 			let sk_hand = *sk.input_hand(self.handed);
-			*self.hand.enabled.lock() = sk_hand.tracked_state.is_active();
-			if sk_hand.tracked_state.is_active() {
+			let controller = sk.input_controller(self.handed);
+			*self.hand.enabled.lock() =
+				controller.tracked.is_inactive() && sk_hand.tracked_state.is_active();
+			if *self.hand.enabled.lock() {
 				hand.base.thumb.tip = convert_joint(sk_hand.fingers[0][4]);
 				hand.base.thumb.distal = convert_joint(sk_hand.fingers[0][3]);
 				hand.base.thumb.proximal = convert_joint(sk_hand.fingers[0][2]);
