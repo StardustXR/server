@@ -1,8 +1,10 @@
 pub mod hand;
 pub mod pointer;
+pub mod tip;
 
 use self::hand::Hand;
 use self::pointer::Pointer;
+use self::tip::Tip;
 
 use super::fields::Field;
 use super::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
@@ -38,6 +40,7 @@ pub trait InputSpecialization: Send + Sync {
 pub enum InputType {
 	Pointer(Pointer),
 	Hand(Box<Hand>),
+	Tip(Tip),
 }
 impl Deref for InputType {
 	type Target = dyn InputSpecialization;
@@ -45,6 +48,7 @@ impl Deref for InputType {
 		match self {
 			InputType::Pointer(p) => p,
 			InputType::Hand(h) => h.as_ref(),
+			InputType::Tip(t) => t,
 		}
 	}
 }
