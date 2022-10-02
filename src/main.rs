@@ -6,6 +6,7 @@ mod wayland;
 use crate::core::destroy_queue;
 use crate::nodes::{drawable, hmd, input};
 use crate::objects::input::mouse_pointer::MousePointer;
+use crate::objects::input::sk_controller::SkController;
 use crate::objects::input::sk_hand::SkHand;
 use crate::wayland::Wayland;
 
@@ -77,6 +78,12 @@ fn main() -> Result<()> {
 	let mouse_pointer = cli_args.flatscreen.then(MousePointer::new);
 	let mut hands =
 		(!cli_args.flatscreen).then(|| [SkHand::new(Handed::Left), SkHand::new(Handed::Right)]);
+	let mut controllers = (!cli_args.flatscreen).then(|| {
+		[
+			SkController::new(Handed::Left),
+			SkController::new(Handed::Right),
+		]
+	});
 
 	if hands.is_none() {
 		unsafe {
@@ -109,6 +116,10 @@ fn main() -> Result<()> {
 			if let Some(hands) = &mut hands {
 				hands[0].update(sk);
 				hands[1].update(sk);
+			}
+			if let Some(controllers) = &mut controllers {
+				controllers[0].update(sk);
+				controllers[1].update(sk);
 			}
 			input::process_input();
 
