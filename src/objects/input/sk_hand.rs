@@ -75,8 +75,18 @@ impl SkHand {
 
 				hand.base.elbow = None;
 
-				hand.pinch_strength = sk_hand.pinch_activation;
-				hand.grab_strength = sk_hand.grip_activation;
+				//hand.pinch_strength = sk_hand.pinch_activation;
+				//hand.grab_strength = sk_hand.grip_activation;
+				hand.pinch_strength = if sk_hand.pinch_state.is_active() {
+					1.0
+				} else {
+					0.0
+				};
+				hand.grab_strength = if sk_hand.grip_state.is_active() {
+					1.0
+				} else {
+					0.0
+				};
 			}
 		}
 	}
