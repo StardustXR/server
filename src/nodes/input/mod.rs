@@ -261,14 +261,17 @@ pub fn process_input() {
 		let datamap = method.serialize_datamap();
 		let frame = FRAME.load(Ordering::Relaxed);
 		let captures = method.captures.get_valid_contents();
+		let mut last_distance = 0.0;
 		for distance_link in distance_links {
 			distance_link.send_input(frame, &datamap);
-			if captures
-				.iter()
-				.any(|c| Arc::ptr_eq(c, &distance_link.handler))
+			if last_distance != distance_link.distance
+				&& captures
+					.iter()
+					.any(|c| Arc::ptr_eq(c, &distance_link.handler))
 			{
 				break;
 			}
+			last_distance = distance_link.distance;
 		}
 		method.captures.clear();
 	}
