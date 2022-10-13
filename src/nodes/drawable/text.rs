@@ -5,7 +5,7 @@ use crate::{
 		Node,
 	},
 };
-use anyhow::{ensure, Result};
+use anyhow::{anyhow, ensure, Result};
 use glam::{vec3, Mat4, Vec2};
 use mint::Vector2;
 use once_cell::sync::OnceCell;
@@ -63,11 +63,13 @@ impl Text {
 			"Internal: Node already has text attached!"
 		);
 
+		let client = node
+			.get_client()
+			.ok_or_else(|| anyhow!("Client not found"))?;
 		let text = TEXT_REGISTRY.add(Text {
 			space: node.spatial.get().unwrap().clone(),
-			font_path: font_resource_id.and_then(|res| {
-				res.get_file(&node.get_client().base_resource_prefixes.lock().clone())
-			}),
+			font_path: font_resource_id
+				.and_then(|res| res.get_file(&client.base_resource_prefixes.lock().clone())),
 			style: OnceCell::new(),
 
 			data: Mutex::new(TextData {

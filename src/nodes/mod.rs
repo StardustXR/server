@@ -77,8 +77,8 @@ pub struct Node {
 }
 
 impl Node {
-	pub fn get_client(&self) -> Arc<Client> {
-		self.client.upgrade().unwrap()
+	pub fn get_client(&self) -> Option<Arc<Client>> {
+		self.client.upgrade()
 	}
 	// pub fn get_name(&self) -> &str {
 	// 	&self.path[self.trailing_slash_pos + 1..]
@@ -123,10 +123,12 @@ impl Node {
 		node
 	}
 	pub fn add_to_scenegraph(self) -> Arc<Node> {
-		self.get_client().scenegraph.add_node(self)
+		self.get_client().unwrap().scenegraph.add_node(self)
 	}
 	pub fn destroy(&self) {
-		let _ = self.get_client().scenegraph.remove_node(self.get_path());
+		let _ = self
+			.get_client()
+			.map(|c| c.scenegraph.remove_node(self.get_path()));
 	}
 
 	pub fn destroy_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
@@ -203,24 +205,28 @@ impl Node {
 					.unwrap()
 					.send_remote_signal(method, data);
 			});
-		let client = self.get_client();
 		let path = self.path.clone();
 		let method = method.to_string();
 		let data = data.to_vec();
-
-		if let Some(messenger) = client.messenger.as_ref() {
-			messenger.send_remote_signal(path.as_str(), method.as_str(), data.as_slice());
+		if let Some(client) = self.get_client() {
+			if let Some(messenger) = client.messenger.as_ref() {
+				messenger.send_remote_signal(path.as_str(), method.as_str(), data.as_slice());
+			}
 		}
 		Ok(())
 	}
 	pub async fn execute_remote_method(&self, method: &str, data: Vec<u8>) -> Result<Vec<u8>> {
-		match self.get_client().messenger.as_ref() {
-			None => Err(anyhow!("Messenger does not exist for this node's client")),
-			Some(messenger) => {
-				messenger
-					.execute_remote_method(self.path.as_str(), method, &data)
-					.await
+		if let Some(client) = self.get_client() {
+			match client.messenger.as_ref() {
+				None => Err(anyhow!("Messenger does not exist for this node's client")),
+				Some(messenger) => {
+					messenger
+						.execute_remote_method(self.path.as_str(), method, &data)
+						.await
+				}
 			}
+		} else {
+			Err(anyhow!("Client does not exist somehow?"))
 		}
 	}
 }

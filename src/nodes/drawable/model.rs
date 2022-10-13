@@ -62,7 +62,14 @@ impl Model {
 		let _ = model_arc.pending_model_path.set(
 			model_arc
 				.resource_id
-				.get_file(&node.get_client().base_resource_prefixes.lock().clone())
+				.get_file(
+					&node
+						.get_client()
+						.ok_or_else(|| anyhow!("Client not found"))?
+						.base_resource_prefixes
+						.lock()
+						.clone(),
+				)
 				.ok_or_else(|| anyhow!("Resource not found"))?,
 		);
 		let _ = node.model.set(model_arc.clone());

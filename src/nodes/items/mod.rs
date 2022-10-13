@@ -211,14 +211,16 @@ impl ItemUI {
 
 	fn handle_create_item(&self, item: &Item) {
 		let node = self.node.upgrade().unwrap();
-		let (alias_node, _) =
-			item.make_alias(&node.get_client(), &(node.get_path().to_string() + "/item"));
-		self.aliases.add(Arc::downgrade(&alias_node));
+		if let Some(client) = node.get_client() {
+			let (alias_node, _) =
+				item.make_alias(&client, &(node.get_path().to_string() + "/item"));
+			self.aliases.add(Arc::downgrade(&alias_node));
 
-		let _ = node.send_remote_signal(
-			"create",
-			&item.specialization.serialize_start_data(&item.uid),
-		);
+			let _ = node.send_remote_signal(
+				"create",
+				&item.specialization.serialize_start_data(&item.uid),
+			);
+		}
 	}
 	fn handle_destroy_item(&self, item: &Item) {
 		self.send_state("destroy", item.uid.as_str());
@@ -231,13 +233,15 @@ impl ItemUI {
 	}
 	fn handle_create_acceptor(&self, acceptor: &ItemAcceptor) {
 		let node = self.node.upgrade().unwrap();
-		let aliases = acceptor.make_aliases(
-			&node.get_client(),
-			&format!("/item/{}/acceptor", self.type_info.type_name),
-		);
-		aliases
-			.iter()
-			.for_each(|alias| self.aliases.add(Arc::downgrade(alias)));
+		if let Some(client) = node.get_client() {
+			let aliases = acceptor.make_aliases(
+				&client,
+				&format!("/item/{}/acceptor", self.type_info.type_name),
+			);
+			aliases
+				.iter()
+				.for_each(|alias| self.aliases.add(Arc::downgrade(alias)));
+		}
 	}
 	fn handle_destroy_acceptor(&self, _acceptor: &ItemAcceptor) {}
 }
