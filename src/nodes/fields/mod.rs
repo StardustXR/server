@@ -11,8 +11,9 @@ use super::Node;
 use crate::core::client::Client;
 use anyhow::{anyhow, Result};
 use glam::{vec2, vec3a, Vec3, Vec3A};
-use stardust_xr::flex::FlexBuffable;
-use stardust_xr::values::parse_vec3;
+use mint::Vector3;
+use serde::Deserialize;
+use stardust_xr::schemas::flex::{deserialize, serialize};
 
 use std::ops::Deref;
 use std::sync::Arc;
@@ -69,65 +70,79 @@ pub trait FieldTrait {
 }
 
 fn field_distance_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<Vec<u8>> {
-	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+	#[derive(Deserialize)]
+	struct FieldInfoArgs<'a> {
+		reference_space_path: &'a str,
+		point: Vector3<f32>,
+	}
+	let args: FieldInfoArgs = deserialize(data)?;
 	let reference_space = calling_client
 		.scenegraph
-		.get_node(flex_vec.idx(0).as_str())
+		.get_node(args.reference_space_path)
 		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
 		.spatial
 		.get()
 		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
 		.clone();
-	let point = parse_vec3(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
 
 	let distance = node
 		.field
 		.get()
 		.unwrap()
-		.distance(reference_space.as_ref(), point.into());
-	Ok(FlexBuffable::from(distance).build_singleton())
+		.distance(reference_space.as_ref(), args.point.into());
+	Ok(serialize(distance)?)
 }
 fn field_normal_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<Vec<u8>> {
-	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+	#[derive(Deserialize)]
+	struct FieldInfoArgs<'a> {
+		reference_space_path: &'a str,
+		point: Vector3<f32>,
+		radius: Option<f32>,
+	}
+	let args: FieldInfoArgs = deserialize(data)?;
 	let reference_space = calling_client
 		.scenegraph
-		.get_node(flex_vec.idx(0).as_str())
+		.get_node(args.reference_space_path)
 		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
 		.spatial
 		.get()
 		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
 		.clone();
-	let point = parse_vec3(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
 
 	let normal = node.field.get().as_ref().unwrap().normal(
 		reference_space.as_ref(),
-		point.into(),
-		0.001_f32,
+		args.point.into(),
+		args.radius.unwrap_or(0.001),
 	);
-	Ok(FlexBuffable::from(mint::Vector3::from(normal)).build_singleton())
+	Ok(serialize(mint::Vector3::from(normal))?)
 }
 fn field_closest_point_flex(
 	node: &Node,
 	calling_client: Arc<Client>,
 	data: &[u8],
 ) -> Result<Vec<u8>> {
-	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+	#[derive(Deserialize)]
+	struct FieldInfoArgs<'a> {
+		reference_space_path: &'a str,
+		point: Vector3<f32>,
+		radius: Option<f32>,
+	}
+	let args: FieldInfoArgs = deserialize(data)?;
 	let reference_space = calling_client
 		.scenegraph
-		.get_node(flex_vec.idx(0).as_str())
+		.get_node(args.reference_space_path)
 		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
 		.spatial
 		.get()
 		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
 		.clone();
-	let point = parse_vec3(flex_vec.idx(1)).ok_or_else(|| anyhow!("Point is invalid"))?;
 
-	let closest_point =
-		node.field
-			.get()
-			.unwrap()
-			.closest_point(reference_space.as_ref(), point.into(), 0.001_f32);
-	Ok(FlexBuffable::from(mint::Vector3::from(closest_point)).build_singleton())
+	let closest_point = node.field.get().as_ref().unwrap().closest_point(
+		reference_space.as_ref(),
+		args.point.into(),
+		args.radius.unwrap_or(0.001),
+	);
+	Ok(serialize(mint::Vector3::from(closest_point))?)
 }
 
 pub enum Field {

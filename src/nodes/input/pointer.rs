@@ -2,8 +2,7 @@ use super::{DistanceLink, InputSpecialization};
 use crate::nodes::fields::{ray_march, Field, Ray, RayMarchResult};
 use crate::nodes::spatial::Spatial;
 use glam::{vec3, Mat4};
-use stardust_xr_schemas::input::InputDataRaw;
-use stardust_xr_schemas::input_pointer;
+use stardust_xr::schemas::{input::InputDataRaw, input_pointer};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 

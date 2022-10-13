@@ -1,12 +1,13 @@
 use super::Node;
 use crate::core::client::Client;
 use anyhow::{anyhow, ensure, Result};
-use glam::{Mat4, Quat, Vec3};
+use glam::{Mat4, Quat};
 use mint::Vector3;
 use parking_lot::Mutex;
-use stardust_xr::flex::flexbuffer_from_vector_arguments;
-use stardust_xr::push_to_vec;
-use stardust_xr::values::{parse_quat, parse_vec3};
+
+use serde::Deserialize;
+use stardust_xr::schemas::flex::{deserialize, serialize};
+use stardust_xr::values::Transform;
 use std::ptr;
 use std::sync::{Arc, Weak};
 
@@ -71,9 +72,7 @@ impl Spatial {
 	pub fn set_local_transform_components(
 		&self,
 		reference_space: Option<&Spatial>,
-		pos: Option<Vec3>,
-		rot: Option<Quat>,
-		scl: Option<Vec3>,
+		transform: Transform,
 	) {
 		let reference_to_parent_transform = reference_space
 			.map(|reference_space| {
@@ -85,16 +84,16 @@ impl Spatial {
 		let (mut reference_space_scl, mut reference_space_rot, mut reference_space_pos) =
 			local_transform_in_reference_space.to_scale_rotation_translation();
 
-		if let Some(pos) = pos {
-			reference_space_pos = pos
+		if let Some(pos) = transform.position {
+			reference_space_pos = pos.into()
 		}
-		if let Some(rot) = rot {
-			reference_space_rot = rot
+		if let Some(rot) = transform.rotation {
+			reference_space_rot = rot.into()
 		} else if reference_space_rot.is_nan() {
 			reference_space_rot = Quat::IDENTITY;
 		}
-		if let Some(scl) = scl {
-			reference_space_scl = scl
+		if let Some(scl) = transform.scale {
+			reference_space_scl = scl.into()
 		}
 
 		local_transform_in_reference_space = Mat4::from_scale_rotation_translation(
@@ -158,14 +157,13 @@ impl Spatial {
 		calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<Vec<u8>> {
-		let root = flexbuffers::Reader::get_root(data)?;
 		let this_spatial = node
 			.spatial
 			.get()
 			.ok_or_else(|| anyhow!("Node doesn't have a spatial?"))?;
 		let relative_spatial = calling_client
 			.scenegraph
-			.get_node(root.as_str())
+			.get_node(deserialize(data)?)
 			.ok_or_else(|| anyhow!("Space not found"))?
 			.spatial
 			.get()
@@ -178,37 +176,37 @@ impl Spatial {
 		)
 		.to_scale_rotation_translation();
 
-		Ok(flexbuffer_from_vector_arguments(|vec| {
-			push_to_vec!(
-				vec,
-				mint::Vector3::from(position),
-				mint::Quaternion::from(rotation),
-				mint::Vector3::from(scale)
-			);
-		}))
+		serialize((
+			mint::Vector3::from(position),
+			mint::Quaternion::from(rotation),
+			mint::Vector3::from(scale),
+		))
+		.map_err(|e| e.into())
 	}
 	pub fn set_transform_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-		let reference_space_path = flex_vec.idx(0).as_str();
-		let reference_space_transform = if reference_space_path.is_empty() {
-			None
-		} else {
-			Some(
-				calling_client
+		#[derive(Deserialize)]
+		struct TransformArgs<'a> {
+			reference_space_path: Option<&'a str>,
+			transform: Transform,
+		}
+		let transform_args: TransformArgs = deserialize(data)?;
+		let reference_space_transform = transform_args
+			.reference_space_path
+			.map(|path| -> Result<Arc<Spatial>> {
+				Ok(calling_client
 					.scenegraph
-					.get_node(reference_space_path)
+					.get_node(path)
 					.ok_or_else(|| anyhow!("Other spatial node not found"))?
 					.spatial
 					.get()
 					.ok_or_else(|| anyhow!("Node is not a Spatial!"))?
-					.clone(),
-			)
-		};
+					.clone())
+			})
+			.transpose()?;
+
 		node.spatial.get().unwrap().set_local_transform_components(
 			reference_space_transform.as_deref(),
-			parse_vec3(flex_vec.idx(1)).map(|v| v.into()),
-			parse_quat(flex_vec.idx(2)).map(|v| v.into()),
-			parse_vec3(flex_vec.idx(3)).map(|v| v.into()),
+			transform_args.transform,
 		);
 		Ok(())
 	}
@@ -217,10 +215,9 @@ impl Spatial {
 		calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		let parent_path = flexbuffers::Reader::get_root(data)?.get_str()?;
 		let parent = calling_client
 			.scenegraph
-			.get_node(parent_path)
+			.get_node(deserialize(data)?)
 			.ok_or_else(|| anyhow!("Parent node not found"))?
 			.spatial
 			.get()
@@ -254,6 +251,32 @@ impl Spatial {
 	}
 }
 
+pub fn parse_transform(
+	transform: Transform,
+	translation: bool,
+	rotation: bool,
+	scale: bool,
+) -> Result<Mat4> {
+	let translation = translation
+		.then_some(transform.position)
+		.flatten()
+		.unwrap_or_else(|| Vector3::from([0.0; 3]));
+	let rotation = rotation
+		.then_some(transform.rotation)
+		.flatten()
+		.unwrap_or_else(|| Quat::IDENTITY.into());
+	let scale = scale
+		.then_some(transform.scale)
+		.flatten()
+		.unwrap_or_else(|| Vector3::from([1.0; 3]));
+
+	Ok(Mat4::from_scale_rotation_translation(
+		scale.into(),
+		rotation.into(),
+		translation.into(),
+	))
+}
+
 pub fn get_spatial_parent_flex(
 	calling_client: &Arc<Client>,
 	node_path: &str,
@@ -267,32 +290,6 @@ pub fn get_spatial_parent_flex(
 		.ok_or_else(|| anyhow!("Spatial parent node is not a spatial"))?
 		.clone())
 }
-pub fn parse_transform<B: flexbuffers::Buffer>(
-	reader: flexbuffers::Reader<B>,
-	translation: bool,
-	rotation: bool,
-	scale: bool,
-) -> Result<Mat4> {
-	let transform_vec = reader.get_vector()?;
-	let translation = translation
-		.then(|| parse_vec3(transform_vec.idx(0)))
-		.flatten()
-		.unwrap_or_else(|| Vector3::from([0.0; 3]));
-	let rotation = rotation
-		.then(|| parse_quat(transform_vec.idx(1)))
-		.flatten()
-		.unwrap_or_else(|| Quat::IDENTITY.into());
-	let scale = scale
-		.then(|| parse_vec3(transform_vec.idx(2)))
-		.flatten()
-		.unwrap_or_else(|| Vector3::from([1.0; 3]));
-
-	Ok(Mat4::from_scale_rotation_translation(
-		scale.into(),
-		rotation.into(),
-		translation.into(),
-	))
-}
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "spatial", false);
@@ -301,15 +298,16 @@ pub fn create_interface(client: &Arc<Client>) {
 }
 
 pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create(
-		&calling_client,
-		"/spatial/spatial",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.index(1)?.get_str()?)?;
-	let transform = parse_transform(flex_vec.index(2)?, true, true, true)?;
+	#[derive(Deserialize)]
+	struct CreateSpatialInfo<'a> {
+		name: &'a str,
+		parent_path: &'a str,
+		transform: Transform,
+	}
+	let info: CreateSpatialInfo = deserialize(data)?;
+	let node = Node::create(&calling_client, "/spatial/spatial", info.name, true);
+	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let transform = parse_transform(info.transform, true, true, true)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	Ok(())

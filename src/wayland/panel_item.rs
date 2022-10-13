@@ -16,16 +16,15 @@ use crate::{
 use anyhow::{anyhow, bail, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
+use mint::Vector2;
 use nanoid::nanoid;
+use serde::Deserialize;
 use smithay::{
 	reexports::wayland_server::protocol::wl_pointer::{Axis, ButtonState},
 	utils::Size,
 	wayland::{compositor::SurfaceData, shell::xdg::XdgToplevelSurfaceData},
 };
-use stardust_xr::{
-	flex::{flexbuffer_from_arguments, flexbuffer_from_vector_arguments},
-	values::parse_vec2,
-};
+use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::{Arc, Weak};
 use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};
 
@@ -191,13 +190,11 @@ impl PanelItem {
 
 	pub fn resize(&self) {
 		self.core_surface.upgrade().unwrap().with_data(|data| {
-			let _ = self.node.upgrade().unwrap().send_remote_signal(
-				"resize",
-				&flexbuffer_from_vector_arguments(|vec| {
-					vec.push(data.size.x);
-					vec.push(data.size.y);
-				}),
-			);
+			let _ = self
+				.node
+				.upgrade()
+				.unwrap()
+				.send_remote_signal("resize", &serialize(data.size).unwrap());
 		});
 	}
 
@@ -206,26 +203,13 @@ impl PanelItem {
 		if !*cursor_changed {
 			return;
 		}
-		let mut data = flexbuffer_from_arguments(|flex| {
-			flex.build_singleton(());
-		});
+		let mut data = serialize(()).unwrap();
 
 		if let Some(cursor) = &*self.seat_data.cursor.lock() {
 			let cursor = cursor.lock();
 			if let Some(core_surface) = cursor.core_surface.upgrade() {
 				if let Some(mapped_data) = &*core_surface.mapped_data.lock() {
-					data = flexbuffer_from_vector_arguments(|vec| {
-						let mut size_vec = vec.start_vector();
-						let size = mapped_data.size;
-						size_vec.push(size.x);
-						size_vec.push(size.y);
-						size_vec.end_vector();
-
-						let mut hotspot_vec = vec.start_vector();
-						hotspot_vec.push(cursor.hotspot.x);
-						hotspot_vec.push(cursor.hotspot.y);
-						hotspot_vec.end_vector();
-					});
+					data = serialize((mapped_data.size, cursor.hotspot)).unwrap();
 				} else {
 					return;
 				};
@@ -318,6 +302,12 @@ impl PanelItem {
 	}
 
 	fn pointer_scroll_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		#[derive(Deserialize)]
+		struct PointerScrollArgs {
+			axis_continuous: Vector2<f32>,
+			axis_discrete: Option<Vector2<f32>>,
+		}
+		let args: PointerScrollArgs = deserialize(data)?;
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(pointer) = panel_item.seat_data.pointer() {
 				if *panel_item.seat_data.pointer_active.lock() {
@@ -327,12 +317,9 @@ impl PanelItem {
 							pointer.axis_stop(0, Axis::HorizontalScroll);
 							pointer.axis_stop(0, Axis::VerticalScroll);
 						} else {
-							let flex_vec = flex.get_vector()?;
-							let axis_continuous_vec = parse_vec2(flex_vec.idx(0))
-								.ok_or_else(|| anyhow!("No continuous axis vector!"))?;
-							pointer.axis(0, Axis::HorizontalScroll, axis_continuous_vec.x as f64);
-							pointer.axis(0, Axis::VerticalScroll, axis_continuous_vec.y as f64);
-							if let Some(axis_discrete_vec) = parse_vec2(flex_vec.idx(0)) {
+							pointer.axis(0, Axis::HorizontalScroll, args.axis_continuous.x as f64);
+							pointer.axis(0, Axis::VerticalScroll, args.axis_continuous.y as f64);
+							if let Some(axis_discrete_vec) = args.axis_discrete {
 								pointer.axis_discrete(
 									Axis::HorizontalScroll,
 									axis_discrete_vec.x as i32,
@@ -494,41 +481,22 @@ impl PanelItem {
 	}
 }
 impl ItemSpecialization for PanelItem {
-	fn serialize_start_data(&self, vec: &mut flexbuffers::VectorBuilder) {
+	fn serialize_start_data(&self, id: &str) -> Vec<u8> {
 		// Panel size
-		{
-			let mut size_vec = vec.start_vector();
-			self.core_surface.upgrade().unwrap().with_data(|data| {
-				size_vec.push(data.size.x);
-				size_vec.push(data.size.y);
-			});
-		}
+		let panel_size = self
+			.core_surface
+			.upgrade()
+			.unwrap()
+			.with_data(|data| data.size);
 
-		// Cursor size and hotspot
-		if let Some(cursor) = &*self.seat_data.cursor.lock() {
-			let cursor = cursor.lock();
-			if let Some(cursor_core_surface) = cursor.core_surface.upgrade() {
-				if let Some(mapped_data) = &*cursor_core_surface.mapped_data.lock() {
-					let mut cursor_vec = vec.start_vector();
-					{
-						let mut cursor_size_vec = cursor_vec.start_vector();
-						cursor_size_vec.push(mapped_data.size.x);
-						cursor_size_vec.push(mapped_data.size.y);
-					}
-					{
-						let mut cursor_hotspot_vec = cursor_vec.start_vector();
-						cursor_hotspot_vec.push(cursor.hotspot.x);
-						cursor_hotspot_vec.push(cursor.hotspot.y);
-					}
-				} else {
-					vec.push(());
-				}
-			} else {
-				vec.push(());
-			}
-		} else {
-			vec.push(());
-		}
+		let cursor_lock = (*self.seat_data.cursor.lock()).clone();
+		let cursor_size = cursor_lock
+			.clone()
+			.and_then(|cursor| cursor.lock().core_surface.upgrade())
+			.and_then(|surf| surf.with_data(|data| data.size));
+		let cursor_hotspot = cursor_lock.map(|cursor| cursor.lock().hotspot);
+
+		serialize((id, (panel_size, cursor_size, cursor_hotspot))).unwrap()
 	}
 }
 

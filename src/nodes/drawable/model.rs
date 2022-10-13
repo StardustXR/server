@@ -2,7 +2,7 @@ use super::Node;
 use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
-use crate::core::resource::{parse_resource_id, ResourceID};
+use crate::core::resource::ResourceID;
 use crate::nodes::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
 use anyhow::{anyhow, bail, ensure, Result};
 use flexbuffers::FlexBufferType;
@@ -11,6 +11,9 @@ use parking_lot::Mutex;
 use prisma::{Rgb, Rgba};
 use rustc_hash::FxHashMap;
 use send_wrapper::SendWrapper;
+use serde::Deserialize;
+use stardust_xr::schemas::flex::deserialize;
+use stardust_xr::values::Transform;
 use std::fmt::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -164,18 +167,19 @@ pub fn draw_all(sk: &StereoKit, draw_ctx: &DrawContext) {
 }
 
 pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create(
-		&calling_client,
-		"/drawable/model",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = parse_transform(flex_vec.index(2)?, true, true, true)?;
-	let resource_id = parse_resource_id(flex_vec.idx(3))?;
+	#[derive(Deserialize)]
+	struct CreateModelInfo<'a> {
+		name: &'a str,
+		parent_path: &'a str,
+		transform: Transform,
+		resource: ResourceID,
+	}
+	let info: CreateModelInfo = deserialize(data)?;
+	let node = Node::create(&calling_client, "/drawable/model", info.name, true);
+	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let transform = parse_transform(info.transform, true, true, true)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
-	Model::add_to(&node, resource_id)?;
+	Model::add_to(&node, info.resource)?;
 	Ok(())
 }

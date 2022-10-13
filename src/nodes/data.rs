@@ -7,7 +7,10 @@ use crate::core::registry::Registry;
 use anyhow::{anyhow, ensure, Result};
 use glam::vec3a;
 use parking_lot::Mutex;
-use stardust_xr::flex::flexbuffer_from_vector_arguments;
+use serde::Deserialize;
+use stardust_xr::schemas::flex::{deserialize, serialize};
+use stardust_xr::values::Transform;
+
 use std::sync::{Arc, Weak};
 
 static PULSE_SENDER_REGISTRY: Registry<PulseSender> = Registry::new();
@@ -120,10 +123,10 @@ impl PulseSender {
 			})
 			.collect();
 		distance_sorted_receivers.sort_by(|(d1, _), (d2, _)| d1.partial_cmp(d2).unwrap());
-
-		Ok(flexbuffer_from_vector_arguments(move |fbb| {
-			sender.aliases.clear();
-			for (_, receiver) in distance_sorted_receivers.iter() {
+		sender.aliases.clear();
+		let uids: Vec<String> = distance_sorted_receivers
+			.into_iter()
+			.map(|(_, receiver)| {
 				let receiver_alias = Node::create(
 					&calling_client,
 					node.get_path(),
@@ -140,9 +143,12 @@ impl PulseSender {
 					vec![],
 				);
 				sender.aliases.add(Arc::downgrade(&receiver_alias));
-				fbb.push(receiver.uid.as_str());
-			}
-		}))
+
+				receiver.uid.clone()
+			})
+			.collect();
+
+		serialize(uids).map_err(|e| e.into())
 	}
 }
 impl Drop for PulseSender {
@@ -239,16 +245,16 @@ pub fn create_pulse_sender_flex(
 	calling_client: Arc<Client>,
 	data: &[u8],
 ) -> Result<()> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
-	let node = Node::create(
-		&calling_client,
-		"/data/sender",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = parse_transform(flex_vec.index(2)?, true, true, false)?;
+	#[derive(Deserialize)]
+	struct CreatePulseSenderInfo<'a> {
+		name: &'a str,
+		parent_path: &'a str,
+		transform: Transform,
+	}
+	let info: CreatePulseSenderInfo = deserialize(data)?;
+	let node = Node::create(&calling_client, "/data/sender", info.name, true);
+	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let transform = parse_transform(info.transform, true, true, false)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	PulseSender::add_to(&node)?;
@@ -270,19 +276,20 @@ pub fn create_pulse_receiver_flex(
 	calling_client: Arc<Client>,
 	data: &[u8],
 ) -> Result<()> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
-	let node = Node::create(
-		&calling_client,
-		"/data/receiver",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = parse_transform(flex_vec.index(2)?, true, true, false)?;
+	#[derive(Deserialize)]
+	struct CreatePulseReceiverInfo<'a> {
+		name: &'a str,
+		parent_path: &'a str,
+		transform: Transform,
+		field_path: &'a str,
+	}
+	let info: CreatePulseReceiverInfo = deserialize(data)?;
+	let node = Node::create(&calling_client, "/data/sender", info.name, true);
+	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let transform = parse_transform(info.transform, true, true, false)?;
 	let field = calling_client
 		.scenegraph
-		.get_node(flex_vec.idx(4).as_str())
+		.get_node(info.field_path)
 		.ok_or_else(|| anyhow!("Field not found"))?
 		.field
 		.get()

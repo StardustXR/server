@@ -3,8 +3,7 @@ use crate::nodes::fields::Field;
 use crate::nodes::spatial::Spatial;
 use glam::{vec3a, Mat4};
 use portable_atomic::AtomicF32;
-use stardust_xr_schemas::input::InputDataRaw;
-use stardust_xr_schemas::input_tip;
+use stardust_xr::schemas::{input::InputDataRaw, input_tip};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 

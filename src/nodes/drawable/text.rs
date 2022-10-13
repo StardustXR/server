@@ -1,23 +1,20 @@
 use crate::{
-	core::{
-		client::Client,
-		destroy_queue,
-		registry::Registry,
-		resource::{parse_resource_id, ResourceID},
-	},
+	core::{client::Client, destroy_queue, registry::Registry, resource::ResourceID},
 	nodes::{
 		spatial::{get_spatial_parent_flex, parse_transform, Spatial},
 		Node,
 	},
 };
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{ensure, Result};
 use glam::{vec3, Mat4, Vec2};
+use mint::Vector2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use prisma::{FromTuple, Rgb, Rgba};
+use prisma::{Flatten, Rgb, Rgba};
 use send_wrapper::SendWrapper;
-use stardust_xr::values::{parse_f32, parse_vec2};
-use std::{convert::TryFrom, path::PathBuf, sync::Arc};
+use serde::Deserialize;
+use stardust_xr::{schemas::flex::deserialize, values::Transform};
+use std::{path::PathBuf, sync::Arc};
 use stereokit::{
 	font::Font,
 	lifecycle::DrawContext,
@@ -52,7 +49,7 @@ impl Text {
 		text: String,
 		character_height: f32,
 		text_align: TextAlign,
-		bounds: Option<Vec2>,
+		bounds: Option<Vector2<f32>>,
 		fit: TextFit,
 		bounds_align: TextAlign,
 		color: Rgba<f32>,
@@ -77,7 +74,7 @@ impl Text {
 				text,
 				character_height,
 				text_align,
-				bounds,
+				bounds: bounds.map(|b| b.into()),
 				fit,
 				bounds_align,
 				color,
@@ -175,45 +172,37 @@ pub fn draw_all(sk: &StereoKit, draw_ctx: &DrawContext) {
 }
 
 pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create(
-		&calling_client,
-		"/drawable/text",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.index(1)?.get_str()?)?;
-	let transform = parse_transform(flex_vec.index(2)?, true, true, true)?;
-	let text = flex_vec.index(3)?.get_str()?.to_string();
-	let font_resource_id = parse_resource_id(flex_vec.index(4)?).ok();
-	let character_height = flex_vec.index(5)?.get_f64()? as f32;
-	let text_align = TextAlign::from_bits(flex_vec.index(6)?.get_u64()? as u32)
-		.ok_or_else(|| anyhow!("Text align bitflag out of range"))?;
-	let bounds = parse_vec2(flex_vec.index(7)?).map(|bounds| bounds.into());
-	let fit = TextFit::try_from(flex_vec.index(8)?.get_u64()? as u32)?;
-	let bounds_align = TextAlign::from_bits(flex_vec.index(9)?.get_u64()? as u32)
-		.ok_or_else(|| anyhow!("Bounds align bitflag out of range"))?;
-	let color_vec = flex_vec.index(10)?.get_vector()?;
-	let color = Rgba::from_tuple((
-		(
-			parse_f32(color_vec.index(0)?).ok_or_else(|| anyhow!("Value in color invalid"))?,
-			parse_f32(color_vec.index(0)?).ok_or_else(|| anyhow!("Value in color invalid"))?,
-			parse_f32(color_vec.index(0)?).ok_or_else(|| anyhow!("Value in color invalid"))?,
-		),
-		parse_f32(color_vec.index(0)?).ok_or_else(|| anyhow!("Value in color invalid"))?,
-	));
+	#[derive(Deserialize)]
+	struct CreateTextInfo<'a> {
+		name: &'a str,
+		parent_path: &'a str,
+		transform: Transform,
+		text: String,
+		font_resource: Option<ResourceID>,
+		character_height: f32,
+		text_align: TextAlign,
+		bounds: Option<Vector2<f32>>,
+		fit: TextFit,
+		bounds_align: TextAlign,
+		color: [f32; 4],
+	}
+	let info: CreateTextInfo = deserialize(data)?;
+	let node = Node::create(&calling_client, "/drawable/text", info.name, true);
+	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let transform = parse_transform(info.transform, true, true, true)?;
+	let color = Rgba::from_slice(&info.color);
 
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	Text::add_to(
 		&node,
-		font_resource_id,
-		text,
-		character_height,
-		text_align,
-		bounds,
-		fit,
-		bounds_align,
+		info.font_resource,
+		info.text,
+		info.character_height,
+		info.text_align,
+		info.bounds,
+		info.fit,
+		info.bounds_align,
 		color,
 	)?;
 	Ok(())

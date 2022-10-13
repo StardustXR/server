@@ -17,6 +17,7 @@ use directories::ProjectDirs;
 use slog::Drain;
 use std::sync::Arc;
 use stereokit::input::Handed;
+use stereokit::lifecycle::DepthMode;
 use stereokit::render::SphericalHarmonics;
 use stereokit::texture::Texture;
 use stereokit::{lifecycle::DisplayMode, Settings};
@@ -50,6 +51,7 @@ fn main() -> Result<()> {
 		} else {
 			DisplayMode::MixedReality
 		})
+		.depth_mode(DepthMode::D32)
 		.init()
 		.expect("StereoKit failed to initialize");
 	println!("Init StereoKit");

@@ -1,10 +1,13 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
 use crate::nodes::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{ensure, Result};
 use glam::{vec3, vec3a, Vec3, Vec3A};
+use mint::Vector3;
 use parking_lot::Mutex;
-use stardust_xr::values::parse_vec3;
+use serde::Deserialize;
+use stardust_xr::schemas::flex::deserialize;
+use stardust_xr::values::Transform;
 use std::sync::Arc;
 
 pub struct BoxField {
@@ -13,7 +16,7 @@ pub struct BoxField {
 }
 
 impl BoxField {
-	pub fn add_to(node: &Arc<Node>, size: Vec3) -> Result<()> {
+	pub fn add_to(node: &Arc<Node>, size: Vector3<f32>) -> Result<()> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
@@ -24,7 +27,7 @@ impl BoxField {
 		);
 		let box_field = BoxField {
 			space: node.spatial.get().unwrap().clone(),
-			size: Mutex::new(size),
+			size: Mutex::new(size.into()),
 		};
 		box_field.add_field_methods(node);
 		node.add_local_signal("setSize", BoxField::set_size_flex);
@@ -32,15 +35,13 @@ impl BoxField {
 		Ok(())
 	}
 
-	pub fn set_size(&self, size: Vec3) {
-		*self.size.lock() = size;
+	pub fn set_size(&self, size: Vector3<f32>) {
+		*self.size.lock() = size.into();
 	}
 
 	pub fn set_size_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let root = flexbuffers::Reader::get_root(data)?;
-		let size = parse_vec3(root).ok_or_else(|| anyhow!("Size is invalid"))?;
 		if let Field::Box(box_field) = node.field.get().unwrap().as_ref() {
-			box_field.set_size(size.into());
+			box_field.set_size(deserialize(data)?);
 		}
 		Ok(())
 	}
@@ -63,18 +64,19 @@ impl FieldTrait for BoxField {
 }
 
 pub fn create_box_field_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create(
-		&calling_client,
-		"/field",
-		flex_vec.index(0)?.get_str()?,
-		true,
-	);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.index(1)?.get_str()?)?;
-	let transform = parse_transform(flex_vec.index(2)?, true, true, false)?;
-	let size = parse_vec3(flex_vec.index(3)?).ok_or_else(|| anyhow!("Size invalid"))?;
+	#[derive(Deserialize)]
+	struct CreateFieldInfo<'a> {
+		name: &'a str,
+		parent_path: &'a str,
+		transform: Transform,
+		size: Vector3<f32>,
+	}
+	let info: CreateFieldInfo = deserialize(data)?;
+	let node = Node::create(&calling_client, "/field", info.name, true);
+	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let transform = parse_transform(info.transform, true, true, false)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
-	BoxField::add_to(&node, size.into())?;
+	BoxField::add_to(&node, info.size)?;
 	Ok(())
 }

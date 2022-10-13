@@ -13,7 +13,10 @@ use anyhow::{anyhow, ensure, Result};
 use lazy_static::lazy_static;
 use nanoid::nanoid;
 use parking_lot::Mutex;
-use stardust_xr::flex::flexbuffer_from_vector_arguments;
+use serde::Deserialize;
+use stardust_xr::schemas::flex::deserialize;
+use stardust_xr::values::Transform;
+
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
 
@@ -155,7 +158,7 @@ impl Drop for Item {
 }
 
 pub trait ItemSpecialization {
-	fn serialize_start_data(&self, vec: &mut flexbuffers::VectorBuilder);
+	fn serialize_start_data(&self, id: &str) -> Vec<u8>;
 }
 
 pub enum ItemType {
@@ -214,12 +217,7 @@ impl ItemUI {
 
 		let _ = node.send_remote_signal(
 			"create",
-			&flexbuffer_from_vector_arguments(|vec| {
-				vec.push(item.uid.as_str());
-				let mut start_data_vec = vec.start_vector();
-				item.specialization
-					.serialize_start_data(&mut start_data_vec);
-			}),
+			&item.specialization.serialize_start_data(&item.uid),
 		);
 	}
 	fn handle_destroy_item(&self, item: &Item) {
@@ -324,86 +322,55 @@ impl Drop for ItemAcceptor {
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "item", false);
-	node.add_local_signal("createEnvironmentItem", create_environment_item_flex);
+	node.add_local_signal(
+		"createEnvironmentItem",
+		environment::create_environment_item_flex,
+	);
 	node.add_local_signal(
 		"registerEnvironmentItemUI",
-		register_environment_item_ui_flex,
+		environment::register_environment_item_ui_flex,
 	);
 	node.add_local_signal("registerPanelItemUI", register_panel_item_ui_flex);
 	node.add_local_signal(
 		"createEnvironmentItemAcceptor",
-		create_environment_item_acceptor_flex,
+		environment::create_environment_item_acceptor_flex,
 	);
 	node.add_to_scenegraph();
 }
 
-pub fn create_environment_item_flex(
-	_node: &Node,
-	calling_client: Arc<Client>,
-	data: &[u8],
-) -> Result<()> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
-	let parent_name = format!("/item/{}/item/", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
-	let node = Node::create(
-		&INTERNAL_CLIENT,
-		&parent_name,
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
-	let space = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = parse_transform(flex_vec.idx(2), true, true, false)?;
-	let node = node.add_to_scenegraph();
-	Spatial::add_to(&node, None, transform * space.global_transform())?;
-	EnvironmentItem::add_to(&node, flex_vec.idx(3).get_str()?.to_string());
-	node.item
-		.get()
-		.unwrap()
-		.make_alias(&calling_client, &parent_name);
-	Ok(())
-}
-
-pub fn create_item_acceptor_flex(
+pub(self) fn create_item_acceptor_flex(
 	calling_client: Arc<Client>,
 	data: &[u8],
 	type_info: &'static TypeInfo,
 ) -> Result<()> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
+	#[derive(Deserialize)]
+	struct CreateItemAcceptorInfo<'a> {
+		name: &'a str,
+		parent_path: &'a str,
+		transform: Transform,
+		field_path: &'a str,
+	}
+	let info: CreateItemAcceptorInfo = deserialize(data)?;
 	let parent_name = format!("/item/{}/acceptor/", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
-	let space = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = parse_transform(flex_vec.idx(2), true, true, false)?;
+	let space = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let transform = parse_transform(info.transform, true, true, false)?;
 	let field = calling_client
 		.scenegraph
-		.get_node(flex_vec.idx(3).get_str()?)
+		.get_node(info.field_path)
 		.ok_or_else(|| anyhow!("Field node not found"))?;
 	let field = field
 		.field
 		.get()
 		.ok_or_else(|| anyhow!("Field node is not a field"))?;
 
-	let node = Node::create(
-		&INTERNAL_CLIENT,
-		&parent_name,
-		flex_vec.idx(0).get_str()?,
-		true,
-	)
-	.add_to_scenegraph();
-	Spatial::add_to(&node, None, transform * space.global_transform())?;
+	let node = Node::create(&INTERNAL_CLIENT, &parent_name, info.name, true).add_to_scenegraph();
+	Spatial::add_to(&node, Some(space), transform)?;
 	ItemAcceptor::add_to(&node, type_info, Arc::downgrade(field));
 	node.item
 		.get()
 		.unwrap()
 		.make_alias(&calling_client, &parent_name);
 	Ok(())
-}
-
-pub fn create_environment_item_acceptor_flex(
-	_node: &Node,
-	calling_client: Arc<Client>,
-	data: &[u8],
-) -> Result<()> {
-	create_item_acceptor_flex(calling_client, data, &ITEM_TYPE_INFO_ENVIRONMENT)
 }
 
 pub fn register_item_ui_flex(
@@ -413,12 +380,4 @@ pub fn register_item_ui_flex(
 	let ui = Node::create(&calling_client, "/item", type_info.type_name, true).add_to_scenegraph();
 	ItemUI::add_to(&ui, type_info)?;
 	Ok(())
-}
-
-pub fn register_environment_item_ui_flex(
-	_node: &Node,
-	calling_client: Arc<Client>,
-	_data: &[u8],
-) -> Result<()> {
-	register_item_ui_flex(calling_client, &ITEM_TYPE_INFO_ENVIRONMENT)
 }

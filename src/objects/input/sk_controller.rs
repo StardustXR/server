@@ -4,6 +4,7 @@ use crate::nodes::{
 };
 use glam::Mat4;
 use portable_atomic::Ordering;
+use stardust_xr::values::Transform;
 use std::sync::{Arc, Weak};
 use stereokit::{input::Handed, StereoKit};
 
@@ -28,9 +29,11 @@ impl SkController {
 			if controller.tracked.is_active() {
 				self.tip.spatial.set_local_transform_components(
 					None,
-					Some(controller.pose.position.into()),
-					Some(controller.pose.orientation.into()),
-					None,
+					Transform {
+						position: Some(controller.pose.position.into()),
+						rotation: Some(controller.pose.orientation.into()),
+						scale: None,
+					},
 				);
 			}
 

@@ -16,7 +16,10 @@ use anyhow::{anyhow, ensure, Result};
 use glam::Mat4;
 use nanoid::nanoid;
 use parking_lot::Mutex;
-use stardust_xr_schemas::input::{InputData, InputDataArgs, InputDataRaw};
+use serde::Deserialize;
+use stardust_xr::schemas::flex::deserialize;
+use stardust_xr::schemas::input::{InputData, InputDataArgs, InputDataRaw};
+use stardust_xr::values::Transform;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
@@ -213,19 +216,20 @@ pub fn create_input_handler_flex(
 	calling_client: Arc<Client>,
 	data: &[u8],
 ) -> Result<()> {
-	let root = flexbuffers::Reader::get_root(data)?;
-	let flex_vec = root.get_vector()?;
-	let node = Node::create(
-		&calling_client,
-		"/input/handler",
-		flex_vec.idx(0).get_str()?,
-		true,
-	);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = parse_transform(flex_vec.idx(2), true, true, false)?;
+	#[derive(Deserialize)]
+	struct CreateInputHandlerInfo<'a> {
+		name: &'a str,
+		parent_path: &'a str,
+		transform: Transform,
+		field_path: &'a str,
+	}
+	let info: CreateInputHandlerInfo = deserialize(data)?;
+	let node = Node::create(&calling_client, "/input/handler", info.name, true);
+	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let transform = parse_transform(info.transform, true, true, false)?;
 	let field = calling_client
 		.scenegraph
-		.get_node(flex_vec.idx(3).as_str())
+		.get_node(info.field_path)
 		.ok_or_else(|| anyhow!("Field not found"))?
 		.field
 		.get()

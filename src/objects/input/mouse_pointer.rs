@@ -3,6 +3,7 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use glam::{vec3, Mat4};
+use stardust_xr::values::Transform;
 use std::sync::{Arc, Weak};
 use stereokit::{input::Ray, StereoKit};
 
@@ -22,12 +23,13 @@ impl MousePointer {
 		if let Some(ray) = Ray::from_mouse(sk.input_mouse()) {
 			self.pointer.spatial.set_local_transform_components(
 				None,
-				Some(ray.pos.into()),
-				Some(glam::Quat::from_rotation_arc(
-					vec3(0.0, 0.0, 1.0),
-					ray.dir.into(),
-				)),
-				None,
+				Transform {
+					position: Some(ray.pos.into()),
+					rotation: Some(
+						glam::Quat::from_rotation_arc(vec3(0.0, 0.0, 1.0), ray.dir.into()).into(),
+					),
+					scale: None,
+				},
 			);
 		}
 	}

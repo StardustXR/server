@@ -1,10 +1,12 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
 use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{ensure, Result};
 use glam::{Mat4, Vec3A};
+use mint::Vector3;
 use portable_atomic::AtomicF32;
-use stardust_xr::values::parse_vec3;
+use serde::Deserialize;
+use stardust_xr::schemas::flex::deserialize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -66,16 +68,19 @@ pub fn create_sphere_field_flex(
 	calling_client: Arc<Client>,
 	data: &[u8],
 ) -> Result<()> {
-	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let node = Node::create(&calling_client, "/field", flex_vec.idx(0).get_str()?, true);
-	let parent = get_spatial_parent_flex(&calling_client, flex_vec.idx(1).get_str()?)?;
-	let transform = Mat4::from_translation(
-		parse_vec3(flex_vec.idx(2))
-			.ok_or_else(|| anyhow!("Position not found"))?
-			.into(),
-	);
+	#[derive(Deserialize)]
+	struct CreateFieldInfo<'a> {
+		name: &'a str,
+		parent_path: &'a str,
+		origin: Option<Vector3<f32>>,
+		radius: f32,
+	}
+	let info: CreateFieldInfo = deserialize(data)?;
+	let node = Node::create(&calling_client, "/field", info.name, true);
+	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let transform = Mat4::from_translation(info.origin.unwrap_or(Vector3::from([0.0; 3])).into());
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
-	SphereField::add_to(&node, flex_vec.idx(3).as_f32())?;
+	SphereField::add_to(&node, info.radius)?;
 	Ok(())
 }
