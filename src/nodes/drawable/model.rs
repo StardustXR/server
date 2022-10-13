@@ -4,8 +4,7 @@ use crate::core::destroy_queue;
 use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
 use crate::nodes::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
-use anyhow::{anyhow, bail, ensure, Result};
-use flexbuffers::FlexBufferType;
+use anyhow::{anyhow, ensure, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use prisma::{Rgb, Rgba};
@@ -26,6 +25,8 @@ use stereokit::StereoKit;
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
 
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
 pub enum MaterialParameter {
 	Texture(PathBuf),
 }
@@ -81,29 +82,20 @@ impl Model {
 		_calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		let model = node.model.get().unwrap();
-		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-		let material_idx = flex_vec
-			.idx(0)
-			.get_u64()
-			.map_err(|_| anyhow!("Material ID is not a number!"))? as u32;
-		let parameter_name = flex_vec
-			.idx(1)
-			.get_str()
-			.map_err(|_| anyhow!("Parameter name is not a string!"))?;
+		#[derive(Deserialize)]
+		struct MaterialParameterInfo {
+			idx: u32,
+			name: String,
+			value: MaterialParameter,
+		}
+		let info: MaterialParameterInfo = deserialize(data)?;
 
-		let flex_parameter_value = flex_vec.idx(2);
-		let parameter_value = match flex_parameter_value.flexbuffer_type() {
-			FlexBufferType::String => {
-				MaterialParameter::Texture(PathBuf::from(flex_parameter_value.as_str()))
-			}
-			_ => bail!("Invalid parameter value type"),
-		};
-
-		model
+		node.model
+			.get()
+			.unwrap()
 			.pending_material_parameters
 			.lock()
-			.insert((material_idx, parameter_name.to_string()), parameter_value);
+			.insert((info.idx, info.name), info.value);
 
 		Ok(())
 	}

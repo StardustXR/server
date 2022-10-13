@@ -113,20 +113,24 @@ impl PanelItem {
 		calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+		#[derive(Deserialize)]
+		struct SurfaceMaterialInfo<'a> {
+			model_path: &'a str,
+			idx: u32,
+		}
+		let info: SurfaceMaterialInfo = deserialize(data)?;
 		let model_node = calling_client
 			.scenegraph
-			.get_node(flex_vec.idx(0).as_str())
+			.get_node(info.model_path)
 			.ok_or_else(|| anyhow!("Model node not found"))?;
 		let model = model_node
 			.model
 			.get()
 			.ok_or_else(|| anyhow!("Node is not a model"))?;
-		let material_idx = flex_vec.idx(1).get_u64()? as u32;
 
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(core_surface) = panel_item.core_surface.upgrade() {
-				core_surface.apply_material(model.clone(), material_idx);
+				core_surface.apply_material(model.clone(), info.idx);
 			}
 		}
 
@@ -138,21 +142,25 @@ impl PanelItem {
 		calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
+		#[derive(Deserialize)]
+		struct SurfaceMaterialInfo<'a> {
+			model_path: &'a str,
+			idx: u32,
+		}
+		let info: SurfaceMaterialInfo = deserialize(data)?;
 		let model_node = calling_client
 			.scenegraph
-			.get_node(flex_vec.idx(0).as_str())
+			.get_node(info.model_path)
 			.ok_or_else(|| anyhow!("Model node not found"))?;
 		let model = model_node
 			.model
 			.get()
 			.ok_or_else(|| anyhow!("Node is not a model"))?;
-		let material_idx = flex_vec.idx(1).get_u64()? as u32;
 
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(cursor) = &*panel_item.seat_data.cursor.lock() {
 				if let Some(core_surface) = cursor.lock().core_surface.upgrade() {
-					core_surface.apply_material(model.clone(), material_idx);
+					core_surface.apply_material(model.clone(), info.idx);
 				}
 			}
 		}
@@ -251,14 +259,14 @@ impl PanelItem {
 			if let Some(pointer) = panel_item.seat_data.pointer() {
 				if let Some(core_surface) = panel_item.core_surface.upgrade() {
 					if let Some(size) = core_surface.with_data(|data| data.size) {
-						let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-						let x = flex_vec.index(0)?.get_f64()?.clamp(0.0, size.x as f64);
-						let y = flex_vec.index(1)?.get_f64()?.clamp(0.0, size.y as f64);
+						let mut position: Vector2<f64> = deserialize(data)?;
+						position.x = position.x.clamp(0.0, size.x as f64);
+						position.y = position.y.clamp(0.0, size.y as f64);
 						let mut pointer_active = panel_item.seat_data.pointer_active.lock();
 						if *pointer_active {
-							pointer.motion(0, x, y);
+							pointer.motion(0, position.x, position.y);
 						} else {
-							pointer.enter(0, &core_surface.wl_surface(), x, y);
+							pointer.enter(0, &core_surface.wl_surface(), position.x, position.y);
 							*pointer_active = true;
 						}
 						pointer.frame();
@@ -276,9 +284,7 @@ impl PanelItem {
 			if let Some(pointer) = panel_item.seat_data.pointer() {
 				if *panel_item.seat_data.pointer_active.lock() {
 					if let Some(core_surface) = panel_item.core_surface.upgrade() {
-						let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-						let button = flex_vec.index(0)?.get_u64()? as u32;
-						let state = flex_vec.index(1)?.get_u64()? as u32;
+						let (button, state): (u32, u32) = deserialize(data)?;
 						pointer.button(
 							0,
 							0,
@@ -345,15 +351,10 @@ impl PanelItem {
 		_calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		let keymap_str = flexbuffers::Reader::get_root(data)?.get_str()?;
 		let context = xkb::Context::new(0);
-		let keymap = Keymap::new_from_string(
-			&context,
-			keymap_str.to_string(),
-			XKB_KEYMAP_FORMAT_TEXT_V1,
-			0,
-		)
-		.ok_or_else(|| anyhow!("Keymap is not valid"))?;
+		let keymap =
+			Keymap::new_from_string(&context, deserialize(data)?, XKB_KEYMAP_FORMAT_TEXT_V1, 0)
+				.ok_or_else(|| anyhow!("Keymap is not valid"))?;
 
 		PanelItem::keyboard_activate_flex(node, &keymap)
 	}
@@ -363,23 +364,23 @@ impl PanelItem {
 		_calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-		let rules = flex_vec.idx(0).as_str();
-		let model = flex_vec.idx(1).as_str();
-		let layout = flex_vec.idx(2).as_str();
-		let variant = flex_vec.idx(3).as_str();
-		let options = match flex_vec.index(4).ok() {
-			Some(options) => Some(options.get_str()?.to_string()),
-			None => None,
-		};
+		#[derive(Deserialize)]
+		struct Names<'a> {
+			rules: &'a str,
+			model: &'a str,
+			layout: &'a str,
+			variant: &'a str,
+			options: Option<String>,
+		}
+		let names: Names = deserialize(data)?;
 		let context = xkb::Context::new(0);
 		let keymap = Keymap::new_from_names(
 			&context,
-			rules,
-			model,
-			layout,
-			variant,
-			options,
+			names.rules,
+			names.model,
+			names.layout,
+			names.variant,
+			names.options,
 			XKB_KEYMAP_FORMAT_TEXT_V1,
 		)
 		.ok_or_else(|| anyhow!("Keymap is not valid"))?;
@@ -434,9 +435,7 @@ impl PanelItem {
 			if let Some(keyboard) = panel_item.seat_data.keyboard() {
 				let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
 				if let Some(keyboard_info) = &mut *keyboard_info {
-					let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-					let key = flex_vec.index(0)?.get_u64()? as u32;
-					let state = flex_vec.index(1)?.get_u64()? as u32;
+					let (key, state): (u32, u32) = deserialize(data)?;
 					keyboard_info.process(key, state, keyboard)?;
 				}
 			}
@@ -448,9 +447,7 @@ impl PanelItem {
 	fn resize_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(core_surface) = panel_item.core_surface.upgrade() {
-				let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-				let w = flex_vec.index(0)?.get_u64()? as u32;
-				let h = flex_vec.index(1)?.get_u64()? as u32;
+				let size: Vector2<u32> = deserialize(data)?;
 
 				let toplevel_surface = core_surface
 					.wayland_state()
@@ -467,8 +464,8 @@ impl PanelItem {
 					let mut size_set = false;
 					toplevel_surface.with_pending_state(|state| {
 						state.size = Some(Size::default());
-						state.size.as_mut().unwrap().w = w as i32;
-						state.size.as_mut().unwrap().h = h as i32;
+						state.size.as_mut().unwrap().w = size.x as i32;
+						state.size.as_mut().unwrap().h = size.y as i32;
 						size_set = true;
 					});
 					if size_set {

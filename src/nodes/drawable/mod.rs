@@ -5,7 +5,9 @@ use super::Node;
 use crate::core::client::Client;
 use anyhow::Result;
 use parking_lot::Mutex;
-use std::{path::PathBuf, str::FromStr, sync::Arc};
+use serde::Deserialize;
+use stardust_xr::schemas::flex::deserialize;
+use std::{path::PathBuf, sync::Arc};
 use stereokit::{lifecycle::DrawContext, texture::Texture, StereoKit};
 
 pub fn create_interface(client: &Arc<Client>) {
@@ -48,14 +50,19 @@ static QUEUED_SKYLIGHT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static QUEUED_SKYTEX: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 fn set_sky_file_flex(_node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-	let flex_vec = flexbuffers::Reader::get_root(data)?.get_vector()?;
-	let path = PathBuf::from_str(flex_vec.index(0)?.get_str()?)?;
-	path.metadata()?;
-	if flex_vec.idx(1).as_bool() {
-		QUEUED_SKYTEX.lock().replace(path.clone());
+	#[derive(Deserialize)]
+	struct SkyFileInfo {
+		path: PathBuf,
+		skytex: Option<bool>,
+		skylight: Option<bool>,
 	}
-	if flex_vec.idx(2).as_bool() {
-		QUEUED_SKYLIGHT.lock().replace(path);
+	let info: SkyFileInfo = deserialize(data)?;
+	info.path.metadata()?;
+	if info.skytex.unwrap_or_default() {
+		QUEUED_SKYTEX.lock().replace(info.path.clone());
+	}
+	if info.skylight.unwrap_or_default() {
+		QUEUED_SKYLIGHT.lock().replace(info.path);
 	}
 
 	Ok(())
