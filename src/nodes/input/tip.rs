@@ -1,17 +1,20 @@
 use super::{DistanceLink, InputSpecialization};
+use crate::core::client::Client;
 use crate::nodes::fields::Field;
-use crate::nodes::spatial::Spatial;
+use crate::nodes::input::{InputMethod, InputType};
+use crate::nodes::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
+use crate::nodes::Node;
+use anyhow::Result;
 use glam::{vec3a, Mat4};
-use portable_atomic::AtomicF32;
+use serde::Deserialize;
 use stardust_xr::schemas::flat::{Datamap, InputDataType, Tip as FlatTip};
-use std::sync::atomic::Ordering;
+use stardust_xr::schemas::flex::deserialize;
+use stardust_xr::values::Transform;
 use std::sync::Arc;
 
 #[derive(Default)]
 pub struct Tip {
-	pub radius: AtomicF32,
-	pub grab: AtomicF32,
-	pub select: AtomicF32,
+	pub radius: f32,
 }
 
 impl InputSpecialization for Tip {
@@ -27,15 +30,8 @@ impl InputSpecialization for Tip {
 		InputDataType::Tip(FlatTip {
 			origin: origin.into(),
 			orientation: orientation.into(),
-			radius: self.radius.load(Ordering::Relaxed),
+			radius: self.radius,
 		})
 	}
-	fn serialize_datamap(&self) -> Datamap {
-		let mut fbb = flexbuffers::Builder::default();
-		let mut map = fbb.start_map();
-		map.push("grab", self.grab.load(Ordering::Relaxed));
-		map.push("select", self.select.load(Ordering::Relaxed));
-		map.end_map();
-		Datamap::new(fbb.view().to_vec()).unwrap()
 	}
 }

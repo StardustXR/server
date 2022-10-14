@@ -1,7 +1,7 @@
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::Spatial;
 use glam::{vec3a, Mat4};
-use stardust_xr::schemas::flat::{Datamap, Hand as FlatHand, InputDataType, Joint};
+use stardust_xr::schemas::flat::{Hand as FlatHand, InputDataType, Joint};
 use std::sync::Arc;
 
 use super::{DistanceLink, InputSpecialization};
@@ -9,8 +9,6 @@ use super::{DistanceLink, InputSpecialization};
 #[derive(Debug, Default)]
 pub struct Hand {
 	pub base: FlatHand,
-	pub pinch_strength: f32,
-	pub grab_strength: f32,
 }
 impl InputSpecialization for Hand {
 	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
@@ -71,14 +69,5 @@ impl InputSpecialization for Hand {
 		}
 
 		InputDataType::Hand(Box::new(hand))
-	}
-	fn serialize_datamap(&self) -> Datamap {
-		let mut fbb = flexbuffers::Builder::default();
-		let mut map = fbb.start_map();
-		map.push("right", self.base.right);
-		map.push("pinchStrength", self.pinch_strength);
-		map.push("grabStrength", self.grab_strength);
-		map.end_map();
-		Datamap::new(fbb.view().to_vec()).unwrap()
 	}
 }

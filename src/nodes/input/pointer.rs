@@ -2,15 +2,11 @@ use super::{DistanceLink, InputSpecialization};
 use crate::nodes::fields::{ray_march, Field, Ray, RayMarchResult};
 use crate::nodes::spatial::Spatial;
 use glam::{vec3, Mat4};
-use stardust_xr::schemas::flat::{Datamap, InputDataType, Pointer as FlatPointer};
-use std::sync::atomic::{AtomicBool, Ordering};
+use stardust_xr::schemas::flat::{InputDataType, Pointer as FlatPointer};
 use std::sync::Arc;
 
 #[derive(Default)]
-pub struct Pointer {
-	grab: AtomicBool,
-	select: AtomicBool,
-}
+pub struct Pointer {}
 // impl Default for Pointer {
 // 	fn default() -> Self {
 // 		Pointer {
@@ -54,13 +50,5 @@ impl InputSpecialization for Pointer {
 			orientation: orientation.into(),
 			deepest_point: deepest_point.into(),
 		})
-	}
-	fn serialize_datamap(&self) -> Datamap {
-		let mut fbb = flexbuffers::Builder::default();
-		let mut map = fbb.start_map();
-		map.push("grab", self.grab.load(Ordering::Relaxed));
-		map.push("select", self.select.load(Ordering::Relaxed));
-		map.end_map();
-		Datamap::new(fbb.view().to_vec()).unwrap()
 	}
 }

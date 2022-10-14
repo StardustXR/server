@@ -109,10 +109,6 @@ fn main() -> Result<()> {
 			wayland.frame(sk);
 			destroy_queue::clear();
 
-			input::process_input();
-			nodes::root::Root::logic_step(sk.time_elapsed());
-			drawable::draw(sk, draw_ctx);
-
 			if let Some(mouse_pointer) = &mouse_pointer {
 				mouse_pointer.update(sk);
 			}
@@ -124,6 +120,9 @@ fn main() -> Result<()> {
 				controllers[0].update(sk);
 				controllers[1].update(sk);
 			}
+			input::process_input();
+			nodes::root::Root::logic_step(sk.time_elapsed());
+			drawable::draw(sk, draw_ctx);
 
 			wayland.make_context_current();
 		},

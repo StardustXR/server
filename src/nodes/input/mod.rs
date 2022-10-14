@@ -34,7 +34,6 @@ pub trait InputSpecialization: Send + Sync {
 		distance_link: &DistanceLink,
 		local_to_handler_matrix: Mat4,
 	) -> InputDataType;
-	fn serialize_datamap(&self) -> Datamap;
 }
 pub enum InputType {
 	Pointer(Pointer),
@@ -58,6 +57,7 @@ pub struct InputMethod {
 	pub spatial: Arc<Spatial>,
 	pub specialization: Mutex<InputType>,
 	pub captures: Registry<InputHandler>,
+	pub datamap: Mutex<Option<Datamap>>,
 }
 impl InputMethod {
 	pub fn new(spatial: Arc<Spatial>, specialization: InputType) -> Arc<InputMethod> {
@@ -67,11 +67,16 @@ impl InputMethod {
 			spatial,
 			specialization: Mutex::new(specialization),
 			captures: Registry::new(),
+			datamap: Mutex::new(None),
 		};
 		INPUT_METHOD_REGISTRY.add(method)
 	}
 	#[allow(dead_code)]
-	pub fn add_to(node: &Arc<Node>, specialization: InputType) -> Result<()> {
+	pub fn add_to(
+		node: &Arc<Node>,
+		specialization: InputType,
+		datamap: Option<Datamap>,
+	) -> Result<()> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
@@ -83,6 +88,7 @@ impl InputMethod {
 			spatial: node.spatial.get().unwrap().clone(),
 			specialization: Mutex::new(specialization),
 			captures: Registry::new(),
+			datamap: Mutex::new(datamap),
 		};
 		let method = INPUT_METHOD_REGISTRY.add(method);
 		let _ = node.input_method.set(method);
@@ -90,9 +96,6 @@ impl InputMethod {
 	}
 	fn distance(&self, to: &Field) -> f32 {
 		self.specialization.lock().distance(&self.spatial, to)
-	}
-	fn serialize_datamap(&self) -> Datamap {
-		self.specialization.lock().serialize_datamap()
 	}
 }
 impl Drop for InputMethod {
@@ -231,8 +234,9 @@ pub fn create_input_handler_flex(
 pub fn process_input() {
 	for method in INPUT_METHOD_REGISTRY
 		.get_valid_contents()
-		.iter()
+		.into_iter()
 		.filter(|method| *method.enabled.lock())
+		.filter(|method| method.datamap.lock().is_some())
 	{
 		let mut distance_links: Vec<DistanceLink> = INPUT_HANDLER_REGISTRY
 			.get_valid_contents()
@@ -248,12 +252,11 @@ pub fn process_input() {
 				.reverse()
 		});
 
-		let datamap = method.serialize_datamap();
 		let mut last_distance = 0.0;
 		let frame = FRAME.load(Ordering::Relaxed);
 		let captures = method.captures.get_valid_contents();
 		for distance_link in distance_links {
-			distance_link.send_input(frame, datamap.clone());
+			distance_link.send_input(frame, method.datamap.lock().clone().unwrap());
 			if last_distance != distance_link.distance
 				&& captures
 					.iter()

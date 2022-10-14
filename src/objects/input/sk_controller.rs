@@ -3,10 +3,12 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use glam::Mat4;
-use portable_atomic::Ordering;
-use stardust_xr::values::Transform;
+use stardust_xr::{schemas::flat::Datamap, values::Transform};
 use std::sync::{Arc, Weak};
-use stereokit::{input::Handed, StereoKit};
+use stereokit::{
+	input::{ButtonState, Handed},
+	StereoKit,
+};
 
 pub struct SkController {
 	tip: Arc<InputMethod>,
@@ -23,22 +25,23 @@ impl SkController {
 		}
 	}
 	pub fn update(&mut self, sk: &StereoKit) {
-		if let InputType::Tip(tip) = &mut *self.tip.specialization.lock() {
-			let controller = sk.input_controller(self.handed);
-			*self.tip.enabled.lock() = controller.tracked.is_active();
-			if controller.tracked.is_active() {
-				self.tip.spatial.set_local_transform_components(
-					None,
-					Transform {
-						position: Some(controller.pose.position),
-						rotation: Some(controller.pose.orientation),
-						scale: None,
-					},
-				);
-			}
-
-			tip.select.store(controller.trigger, Ordering::Relaxed);
-			tip.grab.store(controller.grip, Ordering::Relaxed);
+		let controller = sk.input_controller(self.handed);
+		*self.tip.enabled.lock() = controller.tracked.contains(ButtonState::Active);
+		if *self.tip.enabled.lock() {
+			self.tip.spatial.set_local_transform_components(
+				None,
+				Transform {
+					position: Some(controller.pose.position),
+					rotation: Some(controller.pose.orientation),
+					scale: None,
+				},
+			);
 		}
+		let mut fbb = flexbuffers::Builder::default();
+		let mut map = fbb.start_map();
+		map.push("select", controller.trigger);
+		map.push("grab", controller.grip);
+		map.end_map();
+		*self.tip.datamap.lock() = Datamap::new(fbb.take_buffer()).ok();
 	}
 }

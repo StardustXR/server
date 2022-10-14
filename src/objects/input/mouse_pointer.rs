@@ -3,9 +3,12 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use glam::{vec3, Mat4};
-use stardust_xr::values::Transform;
+use stardust_xr::{schemas::flat::Datamap, values::Transform};
 use std::sync::{Arc, Weak};
-use stereokit::{input::Ray, StereoKit};
+use stereokit::{
+	input::{ButtonState, Key, Ray},
+	StereoKit,
+};
 
 pub struct MousePointer {
 	pointer: Arc<InputMethod>,
@@ -32,5 +35,25 @@ impl MousePointer {
 				},
 			);
 		}
+		let mut fbb = flexbuffers::Builder::default();
+		let mut map = fbb.start_map();
+		map.push(
+			"select",
+			if sk.input_key(Key::MouseLeft).contains(ButtonState::Active) {
+				1.0f32
+			} else {
+				0.0f32
+			},
+		);
+		map.push(
+			"grab",
+			if sk.input_key(Key::MouseRight).contains(ButtonState::Active) {
+				1.0f32
+			} else {
+				0.0f32
+			},
+		);
+		map.end_map();
+		*self.pointer.datamap.lock() = Datamap::new(fbb.take_buffer()).ok();
 	}
 }

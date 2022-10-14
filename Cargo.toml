@@ -42,7 +42,7 @@ serde = { version = "1.0.145", features = ["derive"] }
 path = "../stereokit-rs"
 default-features = false
 features = ["linux-egl"]
-version = "0.4.1"
+version = "0.5.0"
 
 [dependencies.smithay]
 git = "https://github.com/technobaboo/smithay.git"

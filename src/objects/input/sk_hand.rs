@@ -3,10 +3,10 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use glam::Mat4;
-use stardust_xr::schemas::flat::{Hand as FlatHand, Joint};
+use stardust_xr::schemas::flat::{Datamap, Hand as FlatHand, Joint};
 use std::sync::{Arc, Weak};
 use stereokit::{
-	input::{Handed, Joint as SkJoint},
+	input::{ButtonState, Handed, Joint as SkJoint},
 	StereoKit,
 };
 
@@ -32,19 +32,17 @@ impl SkHand {
 						right: handed == Handed::Right,
 						..Default::default()
 					},
-					pinch_strength: 0.0,
-					grab_strength: 0.0,
 				})),
 			),
 			handed,
 		}
 	}
 	pub fn update(&mut self, sk: &StereoKit) {
+		let sk_hand = sk.input_hand(self.handed);
 		if let InputType::Hand(hand) = &mut *self.hand.specialization.lock() {
-			let sk_hand = *sk.input_hand(self.handed);
 			let controller = sk.input_controller(self.handed);
-			*self.hand.enabled.lock() =
-				controller.tracked.is_inactive() && sk_hand.tracked_state.is_active();
+			*self.hand.enabled.lock() = controller.tracked.contains(ButtonState::Inactive)
+				&& sk_hand.tracked_state.contains(ButtonState::Active);
 			if *self.hand.enabled.lock() {
 				hand.base.thumb.tip = convert_joint(sk_hand.fingers[0][4]);
 				hand.base.thumb.distal = convert_joint(sk_hand.fingers[0][3]);
@@ -75,20 +73,13 @@ impl SkHand {
 					(sk_hand.fingers[0][0].radius + sk_hand.fingers[4][0].radius) * 0.5;
 
 				hand.base.elbow = None;
-
-				//hand.pinch_strength = sk_hand.pinch_activation;
-				//hand.grab_strength = sk_hand.grip_activation;
-				hand.pinch_strength = if sk_hand.pinch_state.is_active() {
-					1.0
-				} else {
-					0.0
-				};
-				hand.grab_strength = if sk_hand.grip_state.is_active() {
-					1.0
-				} else {
-					0.0
-				};
 			}
 		}
+		let mut fbb = flexbuffers::Builder::default();
+		let mut map = fbb.start_map();
+		map.push("grabStrength", sk_hand.grip_activation);
+		map.push("pinchStrength", sk_hand.pinch_activation);
+		map.end_map();
+		*self.hand.datamap.lock() = Datamap::new(fbb.take_buffer()).ok();
 	}
 }
