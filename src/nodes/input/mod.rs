@@ -17,8 +17,8 @@ use glam::Mat4;
 use nanoid::nanoid;
 use parking_lot::Mutex;
 use serde::Deserialize;
-use stardust_xr::schemas::flex::deserialize;
-use stardust_xr::schemas::input::{InputData, InputDataArgs, InputDataRaw};
+use stardust_xr::schemas::flat::{Datamap, InputDataType};
+use stardust_xr::schemas::{flat::InputData, flex::deserialize};
 use stardust_xr::values::Transform;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
@@ -31,14 +31,10 @@ pub trait InputSpecialization: Send + Sync {
 	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
 	fn serialize(
 		&self,
-		fbb: &mut flatbuffers::FlatBufferBuilder,
 		distance_link: &DistanceLink,
 		local_to_handler_matrix: Mat4,
-	) -> (
-		InputDataRaw,
-		flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
-	);
-	fn serialize_datamap(&self) -> Vec<u8>;
+	) -> InputDataType;
+	fn serialize_datamap(&self) -> Datamap;
 }
 pub enum InputType {
 	Pointer(Pointer),
@@ -95,7 +91,7 @@ impl InputMethod {
 	fn distance(&self, to: &Field) -> f32 {
 		self.specialization.lock().distance(&self.spatial, to)
 	}
-	fn serialize_datamap(&self) -> Vec<u8> {
+	fn serialize_datamap(&self) -> Datamap {
 		self.specialization.lock().serialize_datamap()
 	}
 }
@@ -122,32 +118,22 @@ impl DistanceLink {
 		})
 	}
 
-	fn send_input(&self, frame: u64, datamap: &[u8]) {
+	fn send_input(&self, frame: u64, datamap: Datamap) {
 		self.handler.send_input(frame, self, datamap);
 	}
-	fn serialize(&self, datamap: &[u8]) -> Vec<u8> {
-		let mut fbb = flatbuffers::FlatBufferBuilder::with_capacity(1024);
-		let uid = Some(fbb.create_string(&self.method.uid));
-		let datamap = Some(fbb.create_vector(datamap));
-
-		let (input_type, input_data) = self.method.specialization.lock().serialize(
-			&mut fbb,
+	fn serialize(&self, datamap: Datamap) -> Vec<u8> {
+		let input = self.method.specialization.lock().serialize(
 			self,
 			Spatial::space_to_space_matrix(Some(&self.method.spatial), Some(&self.handler.spatial)),
 		);
 
-		let root = InputData::create(
-			&mut fbb,
-			&InputDataArgs {
-				uid,
-				input_type,
-				input: Some(input_data),
-				distance: self.distance,
-				datamap,
-			},
-		);
-		fbb.finish(root, None);
-		Vec::from(fbb.finished_data())
+		let root = InputData {
+			uid: self.method.uid.clone(),
+			input,
+			distance: self.distance,
+			datamap,
+		};
+		root.serialize()
 	}
 }
 
@@ -173,7 +159,7 @@ impl InputHandler {
 		Ok(())
 	}
 
-	fn send_input(&self, frame: u64, distance_link: &DistanceLink, datamap: &[u8]) {
+	fn send_input(&self, frame: u64, distance_link: &DistanceLink, datamap: Datamap) {
 		let data = distance_link.serialize(datamap);
 		let node = self.node.upgrade().unwrap();
 		let method = Arc::downgrade(&distance_link.method);
@@ -263,11 +249,11 @@ pub fn process_input() {
 		});
 
 		let datamap = method.serialize_datamap();
+		let mut last_distance = 0.0;
 		let frame = FRAME.load(Ordering::Relaxed);
 		let captures = method.captures.get_valid_contents();
-		let mut last_distance = 0.0;
 		for distance_link in distance_links {
-			distance_link.send_input(frame, &datamap);
+			distance_link.send_input(frame, datamap.clone());
 			if last_distance != distance_link.distance
 				&& captures
 					.iter()

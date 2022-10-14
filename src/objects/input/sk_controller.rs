@@ -30,8 +30,8 @@ impl SkController {
 				self.tip.spatial.set_local_transform_components(
 					None,
 					Transform {
-						position: Some(controller.pose.position.into()),
-						rotation: Some(controller.pose.orientation.into()),
+						position: Some(controller.pose.position),
+						rotation: Some(controller.pose.orientation),
 						scale: None,
 					},
 				);

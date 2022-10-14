@@ -2,7 +2,7 @@ use super::{DistanceLink, InputSpecialization};
 use crate::nodes::fields::{ray_march, Field, Ray, RayMarchResult};
 use crate::nodes::spatial::Spatial;
 use glam::{vec3, Mat4};
-use stardust_xr::schemas::{input::InputDataRaw, input_pointer};
+use stardust_xr::schemas::flat::{Datamap, InputDataType, Pointer as FlatPointer};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -38,13 +38,9 @@ impl InputSpecialization for Pointer {
 	}
 	fn serialize(
 		&self,
-		fbb: &mut flatbuffers::FlatBufferBuilder,
 		distance_link: &DistanceLink,
 		local_to_handler_matrix: Mat4,
-	) -> (
-		InputDataRaw,
-		flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>,
-	) {
+	) -> InputDataType {
 		let (_, orientation, origin) = local_to_handler_matrix.to_scale_rotation_translation();
 		let direction = local_to_handler_matrix.transform_vector3(vec3(0_f32, 0_f32, 1_f32));
 		let ray_march = self.ray_march(
@@ -53,26 +49,18 @@ impl InputSpecialization for Pointer {
 		);
 		let deepest_point = (direction * ray_march.deepest_point_distance) + origin;
 
-		let origin: mint::Vector3<f32> = origin.into();
-		let orientation: mint::Quaternion<f32> = orientation.into();
-		let deepest_point: mint::Vector3<f32> = deepest_point.into();
-
-		let pointer = input_pointer::Pointer::create(
-			fbb,
-			&input_pointer::PointerArgs {
-				origin: Some(&origin.into()),
-				orientation: Some(&orientation.into()),
-				deepest_point: Some(&deepest_point.into()),
-			},
-		);
-		(InputDataRaw::Pointer, pointer.as_union_value())
+		InputDataType::Pointer(FlatPointer {
+			origin: origin.into(),
+			orientation: orientation.into(),
+			deepest_point: deepest_point.into(),
+		})
 	}
-	fn serialize_datamap(&self) -> Vec<u8> {
+	fn serialize_datamap(&self) -> Datamap {
 		let mut fbb = flexbuffers::Builder::default();
 		let mut map = fbb.start_map();
 		map.push("grab", self.grab.load(Ordering::Relaxed));
 		map.push("select", self.select.load(Ordering::Relaxed));
 		map.end_map();
-		fbb.view().to_vec()
+		Datamap::new(fbb.view().to_vec()).unwrap()
 	}
 }

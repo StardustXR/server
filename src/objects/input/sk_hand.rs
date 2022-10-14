@@ -3,17 +3,17 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use glam::Mat4;
-use stardust_xr::schemas::{common::JointT, input_hand::HandT};
+use stardust_xr::schemas::flat::{Hand as FlatHand, Joint};
 use std::sync::{Arc, Weak};
 use stereokit::{
 	input::{Handed, Joint as SkJoint},
 	StereoKit,
 };
 
-fn convert_joint(joint: SkJoint) -> JointT {
-	JointT {
-		position: joint.position.into(),
-		rotation: joint.orientation.into(),
+fn convert_joint(joint: SkJoint) -> Joint {
+	Joint {
+		position: joint.position,
+		rotation: joint.orientation,
 		radius: joint.radius,
 	}
 }
@@ -24,13 +24,14 @@ pub struct SkHand {
 }
 impl SkHand {
 	pub fn new(handed: Handed) -> Self {
-		let mut sk_hand = HandT::default();
-		sk_hand.right = handed == Handed::Right;
 		SkHand {
 			hand: InputMethod::new(
 				Spatial::new(Weak::new(), None, Mat4::IDENTITY),
 				InputType::Hand(Box::new(Hand {
-					base: sk_hand,
+					base: FlatHand {
+						right: handed == Handed::Right,
+						..Default::default()
+					},
 					pinch_strength: 0.0,
 					grab_strength: 0.0,
 				})),
@@ -63,13 +64,13 @@ impl SkHand {
 					finger.metacarpal = convert_joint(sk_finger[0]);
 				}
 
-				hand.base.palm.position = sk_hand.palm.position.into();
-				hand.base.palm.rotation = sk_hand.palm.orientation.into();
+				hand.base.palm.position = sk_hand.palm.position;
+				hand.base.palm.rotation = sk_hand.palm.orientation;
 				hand.base.palm.radius =
 					(sk_hand.fingers[2][0].radius + sk_hand.fingers[2][1].radius) * 0.5;
 
-				hand.base.wrist.position = sk_hand.wrist.position.into();
-				hand.base.wrist.rotation = sk_hand.wrist.orientation.into();
+				hand.base.wrist.position = sk_hand.wrist.position;
+				hand.base.wrist.rotation = sk_hand.wrist.orientation;
 				hand.base.wrist.radius =
 					(sk_hand.fingers[0][0].radius + sk_hand.fingers[4][0].radius) * 0.5;
 

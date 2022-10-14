@@ -24,7 +24,7 @@ impl MousePointer {
 			self.pointer.spatial.set_local_transform_components(
 				None,
 				Transform {
-					position: Some(ray.pos.into()),
+					position: Some(ray.pos),
 					rotation: Some(
 						glam::Quat::from_rotation_arc(vec3(0.0, 0.0, 1.0), ray.dir.into()).into(),
 					),

@@ -78,7 +78,11 @@ pub fn create_sphere_field_flex(
 	let info: CreateFieldInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/field", info.name, true);
 	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
-	let transform = Mat4::from_translation(info.origin.unwrap_or(Vector3::from([0.0; 3])).into());
+	let transform = Mat4::from_translation(
+		info.origin
+			.unwrap_or_else(|| Vector3::from([0.0; 3]))
+			.into(),
+	);
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	SphereField::add_to(&node, info.radius)?;
