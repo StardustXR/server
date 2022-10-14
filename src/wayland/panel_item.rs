@@ -493,7 +493,7 @@ impl ItemSpecialization for PanelItem {
 			.and_then(|surf| surf.with_data(|data| data.size));
 		let cursor_hotspot = cursor_lock.map(|cursor| cursor.lock().hotspot);
 
-		serialize((id, (panel_size, cursor_size, cursor_hotspot))).unwrap()
+		serialize((id, (panel_size, cursor_size.zip(cursor_hotspot)))).unwrap()
 	}
 }
 
