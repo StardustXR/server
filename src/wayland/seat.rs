@@ -43,17 +43,17 @@ impl KeyboardInfo {
 		}
 	}
 	pub fn process(&mut self, key: u32, state: u32, keyboard: &WlKeyboard) -> Result<()> {
-		let wl_state = match state {
+		let wl_key_state = match state {
 			0 => KeyState::Released,
 			1 => KeyState::Pressed,
 			_ => anyhow::bail!("Invalid key state!"),
 		};
-		let xkb_state = match state {
+		let xkb_key_state = match state {
 			0 => xkb::KeyDirection::Up,
 			1 => xkb::KeyDirection::Down,
 			_ => anyhow::bail!("Invalid key state!"),
 		};
-		let state_components = self.state.update_key(key, xkb_state);
+		let state_components = self.state.update_key(key + 8, xkb_key_state);
 		if state_components != 0 {
 			self.mods.update_with(&self.state);
 			keyboard.modifiers(
@@ -64,7 +64,7 @@ impl KeyboardInfo {
 				0,
 			);
 		}
-		keyboard.key(0, 0, key, wl_state);
+		keyboard.key(0, 0, key, wl_key_state);
 		Ok(())
 	}
 }
