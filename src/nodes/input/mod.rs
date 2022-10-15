@@ -82,6 +82,8 @@ impl InputMethod {
 			"Internal: Node does not have a spatial attached!"
 		);
 
+		node.add_local_signal("setDatamap", InputMethod::set_datamap);
+
 		let method = InputMethod {
 			uid: node.uid.clone(),
 			enabled: Mutex::new(true),
@@ -94,6 +96,17 @@ impl InputMethod {
 		let _ = node.input_method.set(method);
 		Ok(())
 	}
+
+	fn set_datamap(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		node.input_method
+			.get()
+			.unwrap()
+			.datamap
+			.lock()
+			.replace(Datamap::new(data.to_vec())?);
+		Ok(())
+	}
+
 	fn distance(&self, to: &Field) -> f32 {
 		self.specialization.lock().distance(&self.spatial, to)
 	}
@@ -197,6 +210,7 @@ impl Drop for InputHandler {
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "input", false);
 	node.add_local_signal("createInputHandler", create_input_handler_flex);
+	node.add_local_signal("createInputMethodTip", tip::create_tip_flex);
 	node.add_to_scenegraph();
 }
 
