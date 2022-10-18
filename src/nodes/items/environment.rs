@@ -2,7 +2,7 @@ use super::{Item, ItemSpecialization, ItemType, ITEM_TYPE_INFO_ENVIRONMENT};
 use crate::{
 	core::client::{Client, INTERNAL_CLIENT},
 	nodes::{
-		spatial::{get_spatial_parent_flex, parse_transform, Spatial},
+		spatial::{find_spatial_parent, parse_transform, Spatial},
 		Node,
 	},
 };
@@ -56,7 +56,7 @@ pub(super) fn create_environment_item_flex(
 	let info: CreateEnvironmentItemInfo = deserialize(data)?;
 	let parent_name = format!("/item/{}/item/", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
 	let node = Node::create(&INTERNAL_CLIENT, &parent_name, info.name, true);
-	let space = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let space = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, None, transform * space.global_transform())?;

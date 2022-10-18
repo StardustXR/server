@@ -3,7 +3,7 @@ use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
-use crate::nodes::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
+use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
 use anyhow::{anyhow, ensure, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -175,7 +175,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 	}
 	let info: CreateModelInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/drawable/model", info.name, true);
-	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;

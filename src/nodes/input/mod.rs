@@ -7,12 +7,13 @@ use self::pointer::Pointer;
 use self::tip::Tip;
 
 use super::fields::Field;
-use super::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
+use super::spatial::{find_spatial_parent, parse_transform, Spatial};
 use super::Node;
 use crate::core::client::Client;
 use crate::core::eventloop::FRAME;
 use crate::core::registry::Registry;
-use anyhow::{anyhow, ensure, Result};
+use crate::nodes::fields::find_field;
+use anyhow::{ensure, Result};
 use glam::Mat4;
 use nanoid::nanoid;
 use parking_lot::Mutex;
@@ -227,19 +228,11 @@ pub fn create_input_handler_flex(
 		field_path: &'a str,
 	}
 	let info: CreateInputHandlerInfo = deserialize(data)?;
-	let node = Node::create(&calling_client, "/input/handler", info.name, true);
-	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
-	let field = calling_client
-		.scenegraph
-		.get_node(info.field_path)
-		.ok_or_else(|| anyhow!("Field not found"))?
-		.field
-		.get()
-		.ok_or_else(|| anyhow!("Field node is not a field"))?
-		.clone();
+	let field = find_field(&calling_client, info.field_path)?;
 
-	let node = node.add_to_scenegraph();
+	let node = Node::create(&calling_client, "/input/handler", info.name, true).add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
 	InputHandler::add_to(&node, &field)?;
 	Ok(())

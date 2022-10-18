@@ -1,6 +1,6 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
-use crate::nodes::spatial::{get_spatial_parent_flex, Spatial};
+use crate::nodes::spatial::{find_spatial_parent, Spatial};
 use anyhow::{ensure, Result};
 use glam::{Mat4, Vec3A};
 use mint::Vector3;
@@ -77,7 +77,7 @@ pub fn create_sphere_field_flex(
 	}
 	let info: CreateFieldInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/field", info.name, true);
-	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = Mat4::from_translation(
 		info.origin
 			.unwrap_or_else(|| Vector3::from([0.0; 3]))

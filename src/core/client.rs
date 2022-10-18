@@ -1,9 +1,9 @@
 use super::{eventloop::EventLoop, scenegraph::Scenegraph};
 use crate::{
 	core::registry::Registry,
-	nodes::{data, drawable, fields, hmd, input, items, root::Root, spatial, startup},
+	nodes::{data, drawable, fields, hmd, input, items, root::Root, spatial, startup, Node},
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -97,6 +97,13 @@ impl Client {
 			}
 		}));
 		client
+	}
+
+	#[inline]
+	pub fn get_node(&self, name: &'static str, path: &str) -> Result<Arc<Node>> {
+		self.scenegraph
+			.get_node(path)
+			.ok_or_else(|| anyhow!("{} not found", name))
 	}
 
 	pub async fn dispatch(&self) -> Result<(), std::io::Error> {

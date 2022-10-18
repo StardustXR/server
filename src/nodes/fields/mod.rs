@@ -9,7 +9,8 @@ use self::sphere::{create_sphere_field_flex, SphereField};
 use super::spatial::Spatial;
 use super::Node;
 use crate::core::client::Client;
-use anyhow::{anyhow, Result};
+use crate::nodes::spatial::find_reference_space;
+use anyhow::Result;
 use glam::{vec2, vec3a, Vec3, Vec3A};
 use mint::Vector3;
 use serde::Deserialize;
@@ -76,14 +77,7 @@ fn field_distance_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) ->
 		point: Vector3<f32>,
 	}
 	let args: FieldInfoArgs = deserialize(data)?;
-	let reference_space = calling_client
-		.scenegraph
-		.get_node(args.reference_space_path)
-		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
-		.spatial
-		.get()
-		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
-		.clone();
+	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
 	let distance = node
 		.field
@@ -100,14 +94,7 @@ fn field_normal_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> R
 		radius: Option<f32>,
 	}
 	let args: FieldInfoArgs = deserialize(data)?;
-	let reference_space = calling_client
-		.scenegraph
-		.get_node(args.reference_space_path)
-		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
-		.spatial
-		.get()
-		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
-		.clone();
+	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
 	let normal = node.field.get().as_ref().unwrap().normal(
 		reference_space.as_ref(),
@@ -128,14 +115,7 @@ fn field_closest_point_flex(
 		radius: Option<f32>,
 	}
 	let args: FieldInfoArgs = deserialize(data)?;
-	let reference_space = calling_client
-		.scenegraph
-		.get_node(args.reference_space_path)
-		.ok_or_else(|| anyhow!("Reference space node does not exist"))?
-		.spatial
-		.get()
-		.ok_or_else(|| anyhow!("Reference space node does not have a spatial"))?
-		.clone();
+	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
 	let closest_point = node.field.get().as_ref().unwrap().closest_point(
 		reference_space.as_ref(),
@@ -223,4 +203,10 @@ pub fn ray_march(ray: Ray, field: &Field) -> RayMarchResult {
 	}
 
 	result
+}
+
+pub fn find_field(client: &Client, path: &str) -> Result<Arc<Field>> {
+	Ok(client
+		.get_node("Field", path)?
+		.get_aspect("Field", "info", |n| &n.field)?)
 }

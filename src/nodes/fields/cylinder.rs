@@ -1,6 +1,6 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
-use crate::nodes::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
+use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
 use anyhow::{ensure, Result};
 use glam::{swizzles::*, vec2, Vec3A};
 use portable_atomic::AtomicF32;
@@ -80,7 +80,7 @@ pub fn create_cylinder_field_flex(
 	}
 	let info: CreateFieldInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/field", info.name, true);
-	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;

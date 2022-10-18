@@ -145,6 +145,21 @@ impl Node {
 		self.local_methods.insert(name.to_string(), method);
 	}
 
+	pub fn get_aspect<F, T>(
+		&self,
+		node_name: &'static str,
+		aspect_type: &'static str,
+		aspect_fn: F,
+	) -> Result<Arc<T>>
+	where
+		F: FnOnce(&Node) -> &OnceCell<Arc<T>>,
+	{
+		aspect_fn(self)
+			.get()
+			.ok_or_else(|| anyhow!("{} is not a {} node", node_name, aspect_type))
+			.cloned()
+	}
+
 	pub fn send_local_signal(
 		&self,
 		calling_client: Arc<Client>,

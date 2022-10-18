@@ -1,13 +1,13 @@
 mod environment;
 
 use self::environment::EnvironmentItem;
-
 use super::fields::Field;
-use super::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
+use super::spatial::{find_spatial_parent, parse_transform, Spatial};
 use super::{Alias, Node};
 use crate::core::client::{Client, INTERNAL_CLIENT};
 use crate::core::nodelist::LifeLinkedNodeList;
 use crate::core::registry::Registry;
+use crate::nodes::fields::find_field;
 use crate::wayland::panel_item::{register_panel_item_ui_flex, PanelItem};
 use anyhow::{anyhow, ensure, Result};
 use lazy_static::lazy_static;
@@ -356,20 +356,13 @@ pub(self) fn create_item_acceptor_flex(
 	}
 	let info: CreateItemAcceptorInfo = deserialize(data)?;
 	let parent_name = format!("/item/{}/acceptor/", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
-	let space = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let space = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
-	let field = calling_client
-		.scenegraph
-		.get_node(info.field_path)
-		.ok_or_else(|| anyhow!("Field node not found"))?;
-	let field = field
-		.field
-		.get()
-		.ok_or_else(|| anyhow!("Field node is not a field"))?;
+	let field = find_field(&calling_client, info.field_path)?;
 
 	let node = Node::create(&INTERNAL_CLIENT, &parent_name, info.name, true).add_to_scenegraph();
 	Spatial::add_to(&node, Some(space), transform)?;
-	ItemAcceptor::add_to(&node, type_info, Arc::downgrade(field));
+	ItemAcceptor::add_to(&node, type_info, Arc::downgrade(&field));
 	node.item
 		.get()
 		.unwrap()

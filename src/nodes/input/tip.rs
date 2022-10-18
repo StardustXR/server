@@ -2,7 +2,7 @@ use super::{DistanceLink, InputSpecialization};
 use crate::core::client::Client;
 use crate::nodes::fields::Field;
 use crate::nodes::input::{InputMethod, InputType};
-use crate::nodes::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
+use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
 use crate::nodes::Node;
 use anyhow::Result;
 use glam::{vec3a, Mat4};
@@ -53,7 +53,7 @@ pub fn create_tip_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -
 	}
 	let info: CreateTipInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/input/method/tip", info.name, true);
-	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
 
 	let node = node.add_to_scenegraph();

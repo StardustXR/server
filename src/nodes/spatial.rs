@@ -161,14 +161,7 @@ impl Spatial {
 			.spatial
 			.get()
 			.ok_or_else(|| anyhow!("Node doesn't have a spatial?"))?;
-		let relative_spatial = calling_client
-			.scenegraph
-			.get_node(deserialize(data)?)
-			.ok_or_else(|| anyhow!("Space not found"))?
-			.spatial
-			.get()
-			.ok_or_else(|| anyhow!("Reference space node is not a spatial"))?
-			.clone();
+		let relative_spatial = find_reference_space(&calling_client, deserialize(data)?)?;
 
 		let (scale, rotation, position) = Spatial::space_to_space_matrix(
 			Some(this_spatial.as_ref()),
@@ -192,16 +185,7 @@ impl Spatial {
 		let transform_args: TransformArgs = deserialize(data)?;
 		let reference_space_transform = transform_args
 			.reference_space_path
-			.map(|path| -> Result<Arc<Spatial>> {
-				Ok(calling_client
-					.scenegraph
-					.get_node(path)
-					.ok_or_else(|| anyhow!("Other spatial node not found"))?
-					.spatial
-					.get()
-					.ok_or_else(|| anyhow!("Node is not a Spatial!"))?
-					.clone())
-			})
+			.map(|path| find_reference_space(&calling_client, path))
 			.transpose()?;
 
 		node.spatial.get().unwrap().set_local_transform_components(
@@ -215,34 +199,18 @@ impl Spatial {
 		calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		let parent = calling_client
-			.scenegraph
-			.get_node(deserialize(data)?)
-			.ok_or_else(|| anyhow!("Parent node not found"))?
-			.spatial
-			.get()
-			.ok_or_else(|| anyhow!("Parent node is not a Spatial!"))?
-			.clone();
+		let parent = find_spatial_parent(&calling_client, deserialize(data)?)?;
 		node.spatial
 			.get()
 			.unwrap()
-			.set_spatial_parent(Some(&parent))?;
-		Ok(())
+			.set_spatial_parent(Some(&parent))
 	}
 	pub fn set_spatial_parent_in_place_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		let parent_path = flexbuffers::Reader::get_root(data)?.get_str()?;
-		let parent = calling_client
-			.scenegraph
-			.get_node(parent_path)
-			.ok_or_else(|| anyhow!("Parent node not found"))?
-			.spatial
-			.get()
-			.ok_or_else(|| anyhow!("Parent node is not a Spatial!"))?
-			.clone();
+		let parent = find_spatial_parent(&calling_client, deserialize(data)?)?;
 		node.spatial
 			.get()
 			.unwrap()
@@ -277,18 +245,27 @@ pub fn parse_transform(
 	))
 }
 
-pub fn get_spatial_parent_flex(
+pub fn find_spatial(
+	calling_client: &Arc<Client>,
+	node_name: &'static str,
+	node_path: &str,
+) -> anyhow::Result<Arc<Spatial>> {
+	Ok(calling_client
+		.get_node(node_name, node_path)?
+		.get_aspect(node_name, "spatial", |n| &n.spatial)?
+		.clone())
+}
+pub fn find_spatial_parent(
 	calling_client: &Arc<Client>,
 	node_path: &str,
-) -> Result<Arc<Spatial>> {
-	Ok(calling_client
-		.scenegraph
-		.get_node(node_path)
-		.ok_or_else(|| anyhow!("Spatial parent node not found"))?
-		.spatial
-		.get()
-		.ok_or_else(|| anyhow!("Spatial parent node is not a spatial"))?
-		.clone())
+) -> anyhow::Result<Arc<Spatial>> {
+	find_spatial(calling_client, "Spatial parent", node_path)
+}
+pub fn find_reference_space(
+	calling_client: &Arc<Client>,
+	node_path: &str,
+) -> anyhow::Result<Arc<Spatial>> {
+	find_spatial(calling_client, "Reference space", node_path)
 }
 
 pub fn create_interface(client: &Arc<Client>) {
@@ -306,7 +283,7 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8
 	}
 	let info: CreateSpatialInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/spatial/spatial", info.name, true);
-	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let parent = find_spatial(&calling_client, "Spatial parent", info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;

@@ -1,16 +1,17 @@
 use super::fields::Field;
-use super::spatial::{get_spatial_parent_flex, parse_transform, Spatial};
+use super::spatial::{parse_transform, Spatial};
 use super::{Alias, Node};
 use crate::core::client::Client;
 use crate::core::nodelist::LifeLinkedNodeList;
 use crate::core::registry::Registry;
+use crate::nodes::fields::find_field;
+use crate::nodes::spatial::find_spatial_parent;
 use anyhow::{anyhow, ensure, Result};
 use glam::vec3a;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use stardust_xr::values::Transform;
-
 use std::sync::{Arc, Weak};
 
 static PULSE_SENDER_REGISTRY: Registry<PulseSender> = Registry::new();
@@ -253,7 +254,7 @@ pub fn create_pulse_sender_flex(
 	}
 	let info: CreatePulseSenderInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/data/sender", info.name, true);
-	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;
@@ -285,16 +286,9 @@ pub fn create_pulse_receiver_flex(
 	}
 	let info: CreatePulseReceiverInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/data/sender", info.name, true);
-	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
-	let field = calling_client
-		.scenegraph
-		.get_node(info.field_path)
-		.ok_or_else(|| anyhow!("Field not found"))?
-		.field
-		.get()
-		.ok_or_else(|| anyhow!("Field node is not a field"))?
-		.clone();
+	let field = find_field(&calling_client, info.field_path)?;
 
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;

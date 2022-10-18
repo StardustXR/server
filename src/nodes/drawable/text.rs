@@ -1,7 +1,7 @@
 use crate::{
 	core::{client::Client, destroy_queue, registry::Registry, resource::ResourceID},
 	nodes::{
-		spatial::{get_spatial_parent_flex, parse_transform, Spatial},
+		spatial::{find_spatial_parent, parse_transform, Spatial},
 		Node,
 	},
 };
@@ -190,7 +190,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 	}
 	let info: CreateTextInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/drawable/text", info.name, true);
-	let parent = get_spatial_parent_flex(&calling_client, info.parent_path)?;
+	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true)?;
 	let color = Rgba::from_slice(&info.color);
 
