@@ -1,3 +1,4 @@
+use super::alias::AliasInfo;
 use super::fields::Field;
 use super::spatial::{parse_transform, Spatial};
 use super::{Alias, Node};
@@ -128,20 +129,15 @@ impl PulseSender {
 		let uids: Vec<String> = distance_sorted_receivers
 			.into_iter()
 			.map(|(_, receiver)| {
-				let receiver_alias = Node::create(
+				let receiver_alias = Alias::new(
 					&calling_client,
 					node.get_path(),
 					receiver.uid.as_str(),
-					false,
-				)
-				.add_to_scenegraph();
-				Alias::add_to(
-					&receiver_alias,
 					receiver.node.upgrade().as_ref().unwrap(),
-					vec![],
-					vec!["sendData"],
-					vec![],
-					vec![],
+					AliasInfo {
+						local_methods: vec!["sendData"],
+						..Default::default()
+					},
 				);
 				sender.aliases.add(Arc::downgrade(&receiver_alias));
 

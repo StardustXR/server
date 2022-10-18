@@ -283,7 +283,7 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8
 	}
 	let info: CreateSpatialInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/spatial/spatial", info.name, true);
-	let parent = find_spatial(&calling_client, "Spatial parent", info.parent_path)?;
+	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform)?;

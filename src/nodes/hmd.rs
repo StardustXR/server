@@ -1,5 +1,8 @@
 use super::{alias::Alias, spatial::Spatial, Node};
-use crate::core::client::{Client, INTERNAL_CLIENT};
+use crate::{
+	core::client::{Client, INTERNAL_CLIENT},
+	nodes::alias::AliasInfo,
+};
 use glam::{vec3, Mat4};
 use std::sync::Arc;
 use stereokit::StereoKit;
@@ -26,7 +29,14 @@ pub fn frame(sk: &StereoKit) {
 }
 
 pub fn make_alias(client: &Arc<Client>) -> Arc<Node> {
-	let node = Node::create(client, "", "hmd", false).add_to_scenegraph();
-	Alias::add_to(&node, &HMD, vec!["getTransform"], vec![], vec![], vec![]);
-	node
+	Alias::new(
+		client,
+		"",
+		"hmd",
+		&HMD,
+		AliasInfo {
+			local_signals: vec!["getTransform"],
+			..Default::default()
+		},
+	)
 }

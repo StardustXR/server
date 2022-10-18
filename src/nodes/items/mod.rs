@@ -7,6 +7,7 @@ use super::{Alias, Node};
 use crate::core::client::{Client, INTERNAL_CLIENT};
 use crate::core::nodelist::LifeLinkedNodeList;
 use crate::core::registry::Registry;
+use crate::nodes::alias::AliasInfo;
 use crate::nodes::fields::find_field;
 use crate::wayland::panel_item::{register_panel_item_ui_flex, PanelItem};
 use anyhow::{anyhow, ensure, Result};
@@ -120,31 +121,30 @@ impl Item {
 		item
 	}
 	fn make_alias(&self, client: &Arc<Client>, parent: &str) -> (Arc<Node>, Arc<Alias>) {
-		let node = Node::create(client, parent, &self.uid, true).add_to_scenegraph();
-		let alias = Alias::add_to(
-			&node,
+		let node = Alias::new(
+			client,
+			parent,
+			&self.uid,
 			&self.node.upgrade().unwrap(),
-			[
-				&self.type_info.aliased_local_signals,
-				ITEM_ALIAS_LOCAL_SIGNALS.as_slice(),
-			]
-			.concat(),
-			[
-				&self.type_info.aliased_local_methods,
-				ITEM_ALIAS_LOCAL_METHODS.as_slice(),
-			]
-			.concat(),
-			[
-				&self.type_info.aliased_remote_signals,
-				ITEM_ALIAS_REMOTE_SIGNALS.as_slice(),
-			]
-			.concat(),
-			[
-				&self.type_info.aliased_remote_methods,
-				ITEM_ALIAS_REMOTE_METHODS.as_slice(),
-			]
-			.concat(),
+			AliasInfo {
+				local_signals: [
+					&self.type_info.aliased_local_signals,
+					ITEM_ALIAS_LOCAL_SIGNALS.as_slice(),
+				]
+				.concat(),
+				local_methods: [
+					&self.type_info.aliased_local_methods,
+					ITEM_ALIAS_LOCAL_METHODS.as_slice(),
+				]
+				.concat(),
+				remote_signals: [
+					&self.type_info.aliased_remote_signals,
+					ITEM_ALIAS_REMOTE_SIGNALS.as_slice(),
+				]
+				.concat(),
+			},
 		);
+		let alias = node.alias.get().unwrap().clone();
 		(node, alias)
 	}
 }
@@ -273,27 +273,25 @@ impl ItemAcceptor {
 	fn make_aliases(&self, client: &Arc<Client>, parent: &str) -> Vec<Arc<Node>> {
 		let mut aliases = Vec::new();
 		let acceptor_node = &self.node.upgrade().unwrap();
-		let acceptor_alias =
-			Node::create(client, parent, acceptor_node.uid.as_str(), true).add_to_scenegraph();
-		Alias::add_to(
-			&acceptor_alias,
+		let acceptor_alias = Alias::new(
+			client,
+			parent,
+			acceptor_node.uid.as_str(),
 			acceptor_node,
-			vec!["release"],
-			vec![],
-			vec![],
-			vec![],
+			AliasInfo {
+				local_signals: vec!["release"],
+				..Default::default()
+			},
 		);
 		if let Some(field) = self.field.lock().upgrade() {
-			let acceptor_field_alias =
-				Node::create(client, acceptor_alias.get_path(), "field", true).add_to_scenegraph();
-			Alias::add_to(
-				&acceptor_field_alias,
+			let acceptor_field_alias = Alias::new(
+				client,
+				acceptor_alias.get_path(),
+				"field",
 				&field.spatial_ref().node.upgrade().unwrap(),
-				vec![],
-				vec![],
-				vec![],
-				vec![],
+				AliasInfo::default(),
 			);
+
 			aliases.push(acceptor_field_alias);
 		}
 		aliases.push(acceptor_alias);

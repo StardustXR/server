@@ -1,35 +1,38 @@
+use crate::core::client::Client;
+
 use super::Node;
 use std::sync::{Arc, Weak};
+
+#[derive(Debug, Default, Clone)]
+pub struct AliasInfo {
+	pub(super) local_signals: Vec<&'static str>,
+	pub(super) local_methods: Vec<&'static str>,
+	pub(super) remote_signals: Vec<&'static str>,
+}
 
 #[allow(dead_code)]
 pub struct Alias {
 	pub(super) node: Weak<Node>,
 	pub original: Weak<Node>,
 
-	pub(super) local_signals: Vec<&'static str>,
-	pub(super) local_methods: Vec<&'static str>,
-	pub(super) remote_signals: Vec<&'static str>,
-	pub(super) remote_methods: Vec<&'static str>,
+	pub info: AliasInfo,
 }
 impl Alias {
-	pub fn add_to(
-		node: &Arc<Node>,
+	pub fn new(
+		client: &Arc<Client>,
+		parent: &str,
+		name: &str,
 		original: &Arc<Node>,
-		local_signals: Vec<&'static str>,
-		local_methods: Vec<&'static str>,
-		remote_signals: Vec<&'static str>,
-		remote_methods: Vec<&'static str>,
-	) -> Arc<Alias> {
+		info: AliasInfo,
+	) -> Arc<Node> {
+		let node = Node::create(client, parent, name, true).add_to_scenegraph();
 		let alias = Alias {
-			node: Arc::downgrade(node),
+			node: Arc::downgrade(&node),
 			original: Arc::downgrade(original),
-			local_signals,
-			local_methods,
-			remote_signals,
-			remote_methods,
+			info,
 		};
 		let alias = original.aliases.add(alias);
-		let _ = node.alias.set(alias.clone());
-		alias
+		let _ = node.alias.set(alias);
+		node
 	}
 }

@@ -167,7 +167,7 @@ impl Node {
 		data: &[u8],
 	) -> Result<(), ScenegraphError> {
 		if let Some(alias) = self.alias.get() {
-			if !alias.local_signals.iter().any(|e| e == &method) {
+			if !alias.info.local_signals.iter().any(|e| e == &method) {
 				return Err(ScenegraphError::SignalNotFound);
 			}
 			alias
@@ -191,7 +191,7 @@ impl Node {
 		data: &[u8],
 	) -> Result<Vec<u8>, ScenegraphError> {
 		if let Some(alias) = self.alias.get() {
-			if !alias.local_methods.iter().any(|e| e == &method) {
+			if !alias.info.local_methods.iter().any(|e| e == &method) {
 				return Err(ScenegraphError::MethodNotFound);
 			}
 			alias
@@ -212,7 +212,7 @@ impl Node {
 		self.aliases
 			.get_valid_contents()
 			.iter()
-			.filter(|alias| alias.remote_signals.iter().any(|e| e == &method))
+			.filter(|alias| alias.info.remote_signals.iter().any(|e| e == &method))
 			.for_each(|alias| {
 				let _ = alias
 					.node
