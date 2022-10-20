@@ -23,7 +23,7 @@ impl Root {
 		node.add_local_signal("subscribeLogicStep", Root::subscribe_logic_step);
 		node.add_local_signal("setBasePrefixes", Root::set_base_prefixes);
 		let node = node.add_to_scenegraph();
-		let _ = Spatial::add_to(&node, None, Mat4::IDENTITY);
+		let _ = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 
 		ROOT_REGISTRY.add(Root {
 			node,

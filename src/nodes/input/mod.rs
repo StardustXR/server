@@ -233,7 +233,7 @@ pub fn create_input_handler_flex(
 	let field = find_field(&calling_client, info.field_path)?;
 
 	let node = Node::create(&calling_client, "/input/handler", info.name, true).add_to_scenegraph();
-	Spatial::add_to(&node, Some(parent), transform)?;
+	Spatial::add_to(&node, Some(parent), transform, false)?;
 	InputHandler::add_to(&node, &field)?;
 	Ok(())
 }

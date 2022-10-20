@@ -13,7 +13,7 @@ lazy_static::lazy_static! {
 
 fn create() -> Arc<Node> {
 	let node = Arc::new(Node::create(&INTERNAL_CLIENT, "", "hmd", false));
-	Spatial::add_to(&node, None, Mat4::IDENTITY).unwrap();
+	Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
 
 	node
 }

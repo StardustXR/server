@@ -359,7 +359,7 @@ pub(self) fn create_item_acceptor_flex(
 	let field = find_field(&calling_client, info.field_path)?;
 
 	let node = Node::create(&INTERNAL_CLIENT, &parent_name, info.name, true).add_to_scenegraph();
-	Spatial::add_to(&node, Some(space), transform)?;
+	Spatial::add_to(&node, Some(space), transform, false)?;
 	ItemAcceptor::add_to(&node, type_info, Arc::downgrade(&field));
 	node.item
 		.get()

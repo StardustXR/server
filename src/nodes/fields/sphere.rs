@@ -84,7 +84,7 @@ pub fn create_sphere_field_flex(
 			.into(),
 	);
 	let node = node.add_to_scenegraph();
-	Spatial::add_to(&node, Some(parent), transform)?;
+	Spatial::add_to(&node, Some(parent), transform, false)?;
 	SphereField::add_to(&node, info.radius)?;
 	Ok(())
 }
