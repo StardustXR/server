@@ -1,43 +1,59 @@
+pub mod zone;
+
+use self::zone::{create_zone_flex, Zone};
 use super::Node;
 use crate::core::client::Client;
+use crate::core::registry::Registry;
 use anyhow::{anyhow, ensure, Result};
-use glam::{Mat4, Quat};
+use glam::{vec3a, Mat4, Quat};
 use mint::Vector3;
+use nanoid::nanoid;
 use parking_lot::Mutex;
-
 use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use stardust_xr::values::Transform;
 use std::ptr;
 use std::sync::{Arc, Weak};
 
+static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
+
 pub struct Spatial {
+	pub(self) uid: String,
 	pub(super) node: Weak<Node>,
 	parent: Mutex<Option<Arc<Spatial>>>,
+	pub(self) old_parent: Mutex<Option<Arc<Spatial>>>,
 	pub(super) transform: Mutex<Mat4>,
+	pub(self) zone: Mutex<Weak<Zone>>,
 }
 
 impl Spatial {
 	pub fn new(node: Weak<Node>, parent: Option<Arc<Spatial>>, transform: Mat4) -> Arc<Self> {
 		Arc::new(Spatial {
+			uid: nanoid!(),
 			node,
 			parent: Mutex::new(parent),
+			old_parent: Mutex::new(None),
 			transform: Mutex::new(transform),
+			zone: Mutex::new(Weak::new()),
 		})
 	}
 	pub fn add_to(
 		node: &Arc<Node>,
 		parent: Option<Arc<Spatial>>,
 		transform: Mat4,
+		zoneable: bool,
 	) -> Result<Arc<Spatial>> {
 		ensure!(
 			node.spatial.get().is_none(),
 			"Internal: Node already has a Spatial aspect!"
 		);
 		let spatial = Spatial {
+			uid: nanoid!(),
 			node: Arc::downgrade(node),
 			parent: Mutex::new(parent),
+			old_parent: Mutex::new(None),
 			transform: Mutex::new(transform),
+			zone: Mutex::new(Weak::new()),
 		};
 		node.add_local_method("getTransform", Spatial::get_transform_flex);
 		node.add_local_signal("setTransform", Spatial::set_transform_flex);
@@ -46,7 +62,11 @@ impl Spatial {
 			"setSpatialParentInPlace",
 			Spatial::set_spatial_parent_in_place_flex,
 		);
+		node.add_local_signal("setZoneable", Spatial::set_zoneable);
 		let spatial_arc = Arc::new(spatial);
+		if zoneable {
+			ZONEABLE_REGISTRY.add_raw(&spatial_arc);
+		}
 		let _ = node.spatial.set(spatial_arc.clone());
 		Ok(spatial_arc)
 	}
@@ -217,6 +237,32 @@ impl Spatial {
 			.set_spatial_parent_in_place(Some(&parent))?;
 		Ok(())
 	}
+	pub fn set_zoneable(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		let zoneable: bool = deserialize(data)?;
+		let spatial = node.spatial.get().unwrap();
+		if zoneable {
+			ZONEABLE_REGISTRY.add_raw(spatial);
+		} else {
+			ZONEABLE_REGISTRY.remove(spatial);
+			zone::release(spatial);
+		}
+		Ok(())
+	}
+
+	pub(self) fn zone_distance(&self) -> f32 {
+		self.zone
+			.lock()
+			.upgrade()
+			.and_then(|zone| zone.field.upgrade())
+			.map(|field| field.distance(self, vec3a(0.0, 0.0, 0.0)))
+			.unwrap_or(f32::MAX)
+	}
+}
+impl Drop for Spatial {
+	fn drop(&mut self) {
+		ZONEABLE_REGISTRY.remove(self);
+		zone::release(self);
+	}
 }
 
 pub fn parse_transform(
@@ -271,6 +317,7 @@ pub fn find_reference_space(
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "spatial", false);
 	node.add_local_signal("createSpatial", create_spatial_flex);
+	node.add_local_signal("createZone", create_zone_flex);
 	node.add_to_scenegraph();
 }
 
@@ -280,12 +327,13 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8
 		name: &'a str,
 		parent_path: &'a str,
 		transform: Transform,
+		zoneable: bool,
 	}
 	let info: CreateSpatialInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/spatial/spatial", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true)?;
 	let node = node.add_to_scenegraph();
-	Spatial::add_to(&node, Some(parent), transform)?;
+	Spatial::add_to(&node, Some(parent), transform, info.zoneable)?;
 	Ok(())
 }

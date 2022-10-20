@@ -66,7 +66,7 @@ impl PanelItem {
 			&nanoid!(),
 			true,
 		));
-		Spatial::add_to(&node, None, Mat4::IDENTITY).unwrap();
+		Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
 
 		let specialization = ItemType::Panel(PanelItem {
 			node: Arc::downgrade(&node),

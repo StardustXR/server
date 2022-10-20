@@ -33,6 +33,7 @@ use self::drawable::text::Text;
 use self::fields::Field;
 use self::input::{InputHandler, InputMethod};
 use self::items::{Item, ItemAcceptor, ItemUI};
+use self::spatial::zone::Zone;
 use self::spatial::Spatial;
 use self::startup::StartupSettings;
 
@@ -52,6 +53,7 @@ pub struct Node {
 
 	pub spatial: OnceCell<Arc<Spatial>>,
 	pub field: OnceCell<Arc<Field>>,
+	pub zone: OnceCell<Arc<Zone>>,
 
 	// Data
 	pub pulse_sender: OnceCell<Arc<PulseSender>>,
@@ -108,6 +110,7 @@ impl Node {
 
 			spatial: OnceCell::new(),
 			field: OnceCell::new(),
+			zone: OnceCell::new(),
 			pulse_sender: OnceCell::new(),
 			pulse_receiver: OnceCell::new(),
 			model: OnceCell::new(),

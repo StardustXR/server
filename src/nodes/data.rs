@@ -253,7 +253,7 @@ pub fn create_pulse_sender_flex(
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
 	let node = node.add_to_scenegraph();
-	Spatial::add_to(&node, Some(parent), transform)?;
+	Spatial::add_to(&node, Some(parent), transform, false)?;
 	PulseSender::add_to(&node)?;
 	Ok(())
 }
@@ -287,7 +287,7 @@ pub fn create_pulse_receiver_flex(
 	let field = find_field(&calling_client, info.field_path)?;
 
 	let node = node.add_to_scenegraph();
-	Spatial::add_to(&node, Some(parent), transform)?;
+	Spatial::add_to(&node, Some(parent), transform, false)?;
 	PulseReceiver::add_to(&node, field)?;
 	Ok(())
 }
