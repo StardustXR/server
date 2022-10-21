@@ -111,7 +111,7 @@ impl Zone {
 						self_zone_distance < 0.0 && spatial_zone_distance > self_zone_distance
 					})
 					.map(|zoneable| {
-						let alias = Alias::new(
+						let alias = Alias::create(
 							&zone_client,
 							zone_node.get_path(),
 							&zoneable.uid,

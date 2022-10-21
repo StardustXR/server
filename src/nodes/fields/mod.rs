@@ -206,7 +206,7 @@ pub fn ray_march(ray: Ray, field: &Field) -> RayMarchResult {
 }
 
 pub fn find_field(client: &Client, path: &str) -> Result<Arc<Field>> {
-	Ok(client
+	client
 		.get_node("Field", path)?
-		.get_aspect("Field", "info", |n| &n.field)?)
+		.get_aspect("Field", "info", |n| &n.field)
 }

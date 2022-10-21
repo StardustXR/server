@@ -29,7 +29,7 @@ pub fn frame(sk: &StereoKit) {
 }
 
 pub fn make_alias(client: &Arc<Client>) -> Arc<Node> {
-	Alias::new(
+	Alias::create(
 		client,
 		"",
 		"hmd",
