@@ -5,7 +5,7 @@ use super::fields::Field;
 use super::spatial::{find_spatial_parent, parse_transform, Spatial};
 use super::{Alias, Node};
 use crate::core::client::{Client, INTERNAL_CLIENT};
-use crate::core::nodelist::LifeLinkedNodeList;
+use crate::core::node_collections::LifeLinkedNodeList;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
 use crate::nodes::fields::find_field;
@@ -121,7 +121,7 @@ impl Item {
 		item
 	}
 	fn make_alias(&self, client: &Arc<Client>, parent: &str) -> (Arc<Node>, Arc<Alias>) {
-		let node = Alias::new(
+		let node = Alias::create(
 			client,
 			parent,
 			&self.uid,
@@ -273,7 +273,7 @@ impl ItemAcceptor {
 	fn make_aliases(&self, client: &Arc<Client>, parent: &str) -> Vec<Arc<Node>> {
 		let mut aliases = Vec::new();
 		let acceptor_node = &self.node.upgrade().unwrap();
-		let acceptor_alias = Alias::new(
+		let acceptor_alias = Alias::create(
 			client,
 			parent,
 			acceptor_node.uid.as_str(),
@@ -284,7 +284,7 @@ impl ItemAcceptor {
 			},
 		);
 		if let Some(field) = self.field.lock().upgrade() {
-			let acceptor_field_alias = Alias::new(
+			let acceptor_field_alias = Alias::create(
 				client,
 				acceptor_alias.get_path(),
 				"field",

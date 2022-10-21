@@ -18,7 +18,7 @@ pub struct Alias {
 	pub info: AliasInfo,
 }
 impl Alias {
-	pub fn new(
+	pub fn create(
 		client: &Arc<Client>,
 		parent: &str,
 		name: &str,

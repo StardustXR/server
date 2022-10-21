@@ -18,7 +18,7 @@ use std::sync::{Arc, Weak};
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
 pub struct Spatial {
-	pub(self) uid: String,
+	uid: String,
 	pub(super) node: Weak<Node>,
 	parent: Mutex<Option<Arc<Spatial>>>,
 	pub(self) old_parent: Mutex<Option<Arc<Spatial>>>,
@@ -296,10 +296,9 @@ pub fn find_spatial(
 	node_name: &'static str,
 	node_path: &str,
 ) -> anyhow::Result<Arc<Spatial>> {
-	Ok(calling_client
+	calling_client
 		.get_node(node_name, node_path)?
-		.get_aspect(node_name, "spatial", |n| &n.spatial)?
-		.clone())
+		.get_aspect(node_name, "spatial", |n| &n.spatial)
 }
 pub fn find_spatial_parent(
 	calling_client: &Arc<Client>,
