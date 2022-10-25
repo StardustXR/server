@@ -4,16 +4,16 @@ use rustc_hash::FxHashMap;
 use slog::Logger;
 use smithay::{
 	delegate_output, delegate_shm,
-	output::{Output, Scale, Subpixel},
+	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
-		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode,
+		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as DecorationMode,
 		wayland_server::{
 			backend::{ClientData, ClientId, DisconnectReason},
 			protocol::wl_data_device_manager::WlDataDeviceManager,
 			Display, DisplayHandle,
 		},
 	},
-	utils::Size,
+	utils::{Size, Transform},
 	wayland::{
 		buffer::BufferHandler,
 		compositor::CompositorState,
@@ -68,8 +68,11 @@ impl WaylandState {
 		let xdg_activation_state = XdgActivationState::new::<Self, _>(&display_handle, log.clone());
 		let xdg_shell_state = XdgShellState::new::<Self, _>(&display_handle, log.clone());
 		let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&display_handle, log.clone());
-		let kde_decoration_state =
-			KdeDecorationState::new::<Self, _>(&display_handle, Mode::Server, log.clone());
+		let kde_decoration_state = KdeDecorationState::new::<Self, _>(
+			&display_handle,
+			DecorationMode::Server,
+			log.clone(),
+		);
 		let shm_state = ShmState::new::<Self, _>(&display_handle, vec![], log.clone());
 		let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
 		let output = Output::new(
@@ -83,7 +86,15 @@ impl WaylandState {
 			log.clone(),
 		);
 		let _global = output.create_global::<Self>(&display_handle);
-		output.change_current_state(None, None, Some(Scale::Integer(2)), None);
+		output.change_current_state(
+			Some(Mode {
+				size: (4096, 4096).into(),
+				refresh: 60000,
+			}),
+			Some(Transform::Normal),
+			Some(Scale::Integer(2)),
+			None,
+		);
 		display_handle.create_global::<Self, WlDataDeviceManager, _>(3, ());
 
 		println!("Init Wayland compositor");
