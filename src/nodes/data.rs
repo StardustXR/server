@@ -203,7 +203,7 @@ impl PulseSender {
 			mask_matches(receiver_mask, &data_mask),
 			"Message does not contain the same keys as the receiver's mask"
 		);
-		node.send_remote_signal(
+		receiver_node.send_remote_signal(
 			"data",
 			&serialize(SendDataInfo {
 				uid: &node.pulse_sender.get().unwrap().uid,
