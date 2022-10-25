@@ -33,8 +33,6 @@ slog = "2.7.0"
 slog-stdlog = "4.1.1"
 xkbcommon = { version = "0.5.0", default-features = false }
 stardust-xr = "0.5.2"
-wayland-backend = "=0.1.0-beta.9"
-wayland-scanner = "=0.30.0-beta.9"
 directories = "4.0.1"
 serde = { version = "1.0.145", features = ["derive"] }
 
