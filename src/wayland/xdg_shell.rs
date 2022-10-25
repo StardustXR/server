@@ -28,8 +28,7 @@ impl XdgShellHandler for WaylandState {
 	}
 
 	fn new_toplevel(&mut self, surface: ToplevelSurface) {
-		self.output
-			.enter(&self.display_handle, surface.wl_surface());
+		self.output.enter(surface.wl_surface());
 		surface.with_pending_state(|state| {
 			state.states.set(State::Maximized);
 			state.states.set(State::Activated);

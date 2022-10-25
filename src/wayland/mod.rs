@@ -22,10 +22,7 @@ use smithay::{
 use std::os::unix::prelude::AsRawFd;
 use std::{
 	ffi::c_void,
-	os::unix::{
-		net::UnixListener,
-		prelude::{FromRawFd, RawFd},
-	},
+	os::unix::{net::UnixListener, prelude::FromRawFd},
 	sync::Arc,
 };
 use stereokit as sk;
@@ -114,7 +111,7 @@ impl Wayland {
 		let listen_async =
 			AsyncUnixListener::from_std(unsafe { UnixListener::from_raw_fd(socket.as_raw_fd()) })?;
 
-		let dispatch_poll_fd: RawFd = display.lock().backend().poll_fd();
+		let dispatch_poll_fd = display.lock().backend().poll_fd().try_clone_to_owned()?;
 		let dispatch_poll_listener = AsyncFd::new(dispatch_poll_fd)?;
 
 		let dh1 = display.lock().handle();
