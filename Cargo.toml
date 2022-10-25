@@ -1,7 +1,7 @@
 [package]
 edition = "2018"
 name = "stardust-xr-server"
-version = "0.10.1"
+version = "0.10.2"
 authors = ["Nova King <technobaboo@proton.me>"]
 description = "Stardust XR reference display server"
 license = "GPLv2"
@@ -13,9 +13,9 @@ anyhow = "1.0.57"
 clap = { version = "4.0.8", features = ["derive"] }
 ctrlc = "3.2.2"
 dashmap = "5.3.4"
-flatbuffers = "2.1.2"
+flatbuffers = "22.9.29"
 flexbuffers = "2.0.0"
-glam = {version = "0.21.3", features = ["mint"]}
+glam = {version = "0.22.0", features = ["mint"]}
 lazy_static = "1.4.0"
 mint = "0.5.9"
 nanoid = "0.4.0"
@@ -44,8 +44,7 @@ features = ["linux-egl"]
 version = "0.5.0"
 
 [dependencies.smithay]
-git = "https://github.com/technobaboo/smithay.git"
-branch = "feature/public_input"
+git = "https://github.com/Smithay/smithay.git"
 default-features = false
 features = ["desktop", "renderer_gl", "wayland_frontend"]
 version = "*"
