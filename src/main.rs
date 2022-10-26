@@ -33,6 +33,10 @@ struct CliArgs {
 	/// Run Stardust XR as an overlay with given priority
 	#[clap(id = "PRIORITY", short = 'o', long = "overlay", action)]
 	overlay_priority: Option<u32>,
+
+	/// Don't create a tip input for controller because SOME RUNTIMES will lie
+	#[clap(long, action)]
+	disable_controller: bool,
 }
 
 fn main() -> Result<()> {
@@ -80,7 +84,7 @@ fn main() -> Result<()> {
 	let mouse_pointer = cli_args.flatscreen.then(MousePointer::new);
 	let mut hands =
 		(!cli_args.flatscreen).then(|| [SkHand::new(Handed::Left), SkHand::new(Handed::Right)]);
-	let mut controllers = (!cli_args.flatscreen).then(|| {
+	let mut controllers = (!cli_args.flatscreen && !cli_args.disable_controller).then(|| {
 		[
 			SkController::new(Handed::Left),
 			SkController::new(Handed::Right),
