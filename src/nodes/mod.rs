@@ -153,14 +153,13 @@ impl Node {
 		node_name: &'static str,
 		aspect_type: &'static str,
 		aspect_fn: F,
-	) -> Result<Arc<T>>
+	) -> Result<&T>
 	where
-		F: FnOnce(&Node) -> &OnceCell<Arc<T>>,
+		F: FnOnce(&Node) -> &OnceCell<T>,
 	{
 		aspect_fn(self)
 			.get()
 			.ok_or_else(|| anyhow!("{} is not a {} node", node_name, aspect_type))
-			.cloned()
 	}
 
 	pub fn send_local_signal(
