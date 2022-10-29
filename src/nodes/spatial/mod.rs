@@ -299,6 +299,7 @@ pub fn find_spatial(
 	calling_client
 		.get_node(node_name, node_path)?
 		.get_aspect(node_name, "spatial", |n| &n.spatial)
+		.cloned()
 }
 pub fn find_spatial_parent(
 	calling_client: &Arc<Client>,
