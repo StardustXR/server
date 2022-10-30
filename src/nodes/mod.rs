@@ -226,19 +226,19 @@ impl Node {
 		let method = method.to_string();
 		let data = data.to_vec();
 		if let Some(client) = self.get_client() {
-			if let Some(messenger) = client.messenger.as_ref() {
-				messenger.send_remote_signal(path.as_str(), method.as_str(), data.as_slice());
+			if let Some(message_sender_handle) = client.message_sender_handle.as_ref() {
+				message_sender_handle.signal(path.as_str(), method.as_str(), data.as_slice())?;
 			}
 		}
 		Ok(())
 	}
 	pub async fn execute_remote_method(&self, method: &str, data: Vec<u8>) -> Result<Vec<u8>> {
 		if let Some(client) = self.get_client() {
-			match client.messenger.as_ref() {
+			match client.message_sender_handle.as_ref() {
 				None => Err(anyhow!("Messenger does not exist for this node's client")),
-				Some(messenger) => {
-					messenger
-						.execute_remote_method(self.path.as_str(), method, &data)
+				Some(message_sender_handle) => {
+					message_sender_handle
+						.method(self.path.as_str(), method, &data)?
 						.await
 				}
 			}
