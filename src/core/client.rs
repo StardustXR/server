@@ -7,7 +7,7 @@ use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use stardust_xr::messenger::Messenger;
+use stardust_xr::messenger::{self, MessageSenderHandle};
 use std::{
 	path::PathBuf,
 	sync::{Arc, Weak},
@@ -23,7 +23,7 @@ lazy_static! {
 		stop_notifier: Default::default(),
 		join_handle: OnceCell::new(),
 
-		messenger: None,
+		message_sender_handle: None,
 		scenegraph: Default::default(),
 		root: OnceCell::new(),
 		base_resource_prefixes: Default::default(),
@@ -36,8 +36,8 @@ pub struct Client {
 	stop_notifier: Arc<Notify>,
 	join_handle: OnceCell<JoinHandle<Result<()>>>,
 
-	pub messenger: Option<Messenger>,
-	pub scenegraph: Scenegraph,
+	pub message_sender_handle: Option<MessageSenderHandle>,
+	pub scenegraph: Arc<Scenegraph>,
 	pub root: OnceCell<Arc<Root>>,
 	pub base_resource_prefixes: Mutex<Vec<PathBuf>>,
 }
@@ -48,17 +48,18 @@ impl Client {
 		connection: UnixStream,
 	) -> Arc<Self> {
 		println!("New client connected");
+
+		let (mut messenger_tx, mut messenger_rx) = messenger::create(connection);
+		let scenegraph = Arc::new(Scenegraph::default());
+
 		let client = CLIENTS.add(Client {
 			event_loop: Arc::downgrade(event_loop),
 			index,
 			stop_notifier: Default::default(),
 			join_handle: OnceCell::new(),
 
-			messenger: Some(Messenger::new(
-				tokio::runtime::Handle::current(),
-				connection,
-			)),
-			scenegraph: Default::default(),
+			message_sender_handle: Some(messenger_tx.handle()),
+			scenegraph: scenegraph.clone(),
 			root: OnceCell::new(),
 			base_resource_prefixes: Default::default(),
 		});
@@ -76,14 +77,14 @@ impl Client {
 		let _ = client.join_handle.set(tokio::spawn({
 			let client = client.clone();
 			async move {
-				let dispatch_loop = async {
+				let dispatch_loop = async move {
 					loop {
-						client.dispatch().await?
+						messenger_rx.dispatch(&*scenegraph).await?
 					}
 				};
 				let flush_loop = async {
 					loop {
-						client.flush().await?
+						messenger_tx.flush().await?
 					}
 				};
 
@@ -104,20 +105,6 @@ impl Client {
 		self.scenegraph
 			.get_node(path)
 			.ok_or_else(|| anyhow!("{} not found", name))
-	}
-
-	pub async fn dispatch(&self) -> Result<(), std::io::Error> {
-		match &self.messenger {
-			Some(messenger) => messenger.dispatch(&self.scenegraph).await,
-			None => Err(std::io::Error::from(std::io::ErrorKind::Unsupported)),
-		}
-	}
-
-	pub async fn flush(&self) -> Result<(), std::io::Error> {
-		match &self.messenger {
-			Some(messenger) => messenger.flush().await,
-			None => Err(std::io::Error::from(std::io::ErrorKind::Unsupported)),
-		}
 	}
 
 	pub async fn disconnect(&self) {
