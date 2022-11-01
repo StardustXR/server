@@ -30,7 +30,7 @@ impl Pointer {
 
 impl InputSpecialization for Pointer {
 	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
-		self.ray_march(space, field).distance
+		self.ray_march(space, field).min_distance
 	}
 	fn serialize(
 		&self,
