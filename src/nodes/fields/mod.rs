@@ -13,7 +13,7 @@ use crate::nodes::spatial::find_reference_space;
 use anyhow::Result;
 use glam::{vec2, vec3a, Vec3, Vec3A};
 use mint::Vector3;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use stardust_xr::schemas::flex::{deserialize, serialize};
 
 use std::ops::Deref;
@@ -65,6 +65,7 @@ pub trait FieldTrait {
 		node.add_local_method("distance", field_distance_flex);
 		node.add_local_method("normal", field_normal_flex);
 		node.add_local_method("closest_point", field_closest_point_flex);
+		node.add_local_method("ray_march", field_ray_march_flex);
 	}
 
 	fn spatial_ref(&self) -> &Spatial;
@@ -124,6 +125,26 @@ fn field_closest_point_flex(
 	);
 	Ok(serialize(mint::Vector3::from(closest_point))?)
 }
+fn field_ray_march_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<Vec<u8>> {
+	#[derive(Deserialize)]
+	struct FieldInfoArgs<'a> {
+		reference_space_path: &'a str,
+		ray_origin: Vector3<f32>,
+		ray_direction: Vector3<f32>,
+	}
+	let args: FieldInfoArgs = deserialize(data)?;
+	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
+
+	let ray_march_result = ray_march(
+		Ray {
+			origin: args.ray_origin.into(),
+			direction: args.ray_direction.into(),
+			space: reference_space,
+		},
+		node.field.get().unwrap(),
+	);
+	Ok(serialize(ray_march_result)?)
+}
 
 pub enum Field {
 	Box(BoxField),
@@ -156,9 +177,9 @@ pub struct Ray {
 	pub space: Arc<Spatial>,
 }
 
+#[derive(Debug, Serialize)]
 pub struct RayMarchResult {
-	pub ray: Ray,
-	pub distance: f32,
+	pub min_distance: f32,
 	pub deepest_point_distance: f32,
 	pub ray_length: f32,
 	pub ray_steps: u32,
@@ -175,17 +196,16 @@ const MAX_RAY_LENGTH: f32 = 1000_f32;
 
 pub fn ray_march(ray: Ray, field: &Field) -> RayMarchResult {
 	let mut result = RayMarchResult {
-		ray,
-		distance: f32::MAX,
+		min_distance: f32::MAX,
 		deepest_point_distance: 0_f32,
 		ray_length: 0_f32,
 		ray_steps: 0,
 	};
 
 	let ray_to_field_matrix =
-		Spatial::space_to_space_matrix(Some(&result.ray.space), Some(field.spatial_ref()));
-	let mut ray_point = ray_to_field_matrix.transform_point3a(result.ray.origin.into());
-	let ray_direction = ray_to_field_matrix.transform_vector3a(result.ray.direction.into());
+		Spatial::space_to_space_matrix(Some(&ray.space), Some(field.spatial_ref()));
+	let mut ray_point = ray_to_field_matrix.transform_point3a(ray.origin.into());
+	let ray_direction = ray_to_field_matrix.transform_vector3a(ray.direction.into());
 
 	while result.ray_steps < MAX_RAY_STEPS && result.ray_length < MAX_RAY_LENGTH {
 		let distance = field.local_distance(ray_point);
@@ -194,10 +214,10 @@ pub fn ray_march(ray: Ray, field: &Field) -> RayMarchResult {
 		result.ray_length += march_distance;
 		ray_point += ray_direction * march_distance;
 
-		if result.distance > distance {
+		if result.min_distance > distance {
 			result.deepest_point_distance = result.ray_length;
 		}
-		result.distance = distance.min(result.distance);
+		result.min_distance = distance.min(result.min_distance);
 
 		result.ray_steps += 1;
 	}
