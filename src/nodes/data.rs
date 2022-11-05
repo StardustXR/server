@@ -17,9 +17,9 @@ use stardust_xr::values::Transform;
 use std::sync::{Arc, Weak};
 
 static PULSE_SENDER_REGISTRY: Registry<PulseSender> = Registry::new();
-static PULSE_RECEIVER_REGISTRY: Registry<PulseReceiver> = Registry::new();
+pub static PULSE_RECEIVER_REGISTRY: Registry<PulseReceiver> = Registry::new();
 
-fn mask_matches(mask_map_lesser: &Mask, mask_map_greater: &Mask) -> bool {
+pub fn mask_matches(mask_map_lesser: &Mask, mask_map_greater: &Mask) -> bool {
 	(|| -> Result<_> {
 		for key in mask_map_lesser.get_mask()?.iter_keys() {
 			let lesser_key_type = mask_map_lesser.get_mask()?.index(key)?.flexbuffer_type();
@@ -33,54 +33,30 @@ fn mask_matches(mask_map_lesser: &Mask, mask_map_greater: &Mask) -> bool {
 	.is_ok()
 }
 
-type MaskMapGetFn = fn(&[u8]) -> Result<flexbuffers::MapReader<&[u8]>>;
-pub struct Mask {
-	binary: Vec<u8>,
-	get_fn: MaskMapGetFn,
-}
+pub struct Mask(pub Vec<u8>);
 impl Mask {
 	pub fn get_mask(&self) -> Result<flexbuffers::MapReader<&[u8]>> {
-		(self.get_fn)(self.binary.as_slice())
+		flexbuffers::Reader::get_root(self.0.as_slice())
+			.map_err(|_| anyhow!("Mask is not a valid flexbuffer"))?
+			.get_map()
+			.map_err(|_| anyhow!("Mask is not a valid map"))
 	}
-	// pub fn set_mask(&mut self, binary: Vec<u8>, get_fn: MaskMapGetFn) {
-	// 	self.binary = binary;
-	// 	self.get_fn = get_fn;
-	// }
 }
-// impl Default for Mask {
-// 	fn default() -> Self {
-// 		Mask {
-// 			binary: Default::default(),
-// 			get_fn: mask_get_err,
-// 		}
-// 	}
-// }
-// fn mask_get_err(_binary: &[u8]) -> Result<flexbuffers::MapReader<&[u8]>> {
-// 	Err(anyhow!("You need to call setMask to set the mask!"))
-// }
-fn mask_get_map_at_root(binary: &[u8]) -> Result<flexbuffers::MapReader<&[u8]>> {
-	flexbuffers::Reader::get_root(binary)
-		.map_err(|_| anyhow!("Mask is not a valid flexbuffer"))?
-		.get_map()
-		.map_err(|_| anyhow!("Mask is not a valid map"))
+
+#[derive(Serialize, Deserialize)]
+struct SendDataInfo<'a> {
+	uid: &'a str,
+	data: Vec<u8>,
 }
-// pub fn mask_get_map_send_data(binary: &[u8]) -> Result<flexbuffers::MapReader<&[u8]>> {
-// 	flexbuffers::Reader::get_root(binary)
-// 		.map_err(|_| anyhow!("Mask is not a valid flexbuffer"))?
-// 		.get_vector()?
-// 		.index(1)?
-// 		.get_map()
-// 		.map_err(|_| anyhow!("Mask is not a valid map"))
-// }
 
 pub struct PulseSender {
 	uid: String,
 	node: Weak<Node>,
-	mask: Mask,
+	pub mask: Mask,
 	aliases: LifeLinkedNodeMap<String>,
 }
 impl PulseSender {
-	fn add_to(node: &Arc<Node>, mask: Mask) -> Result<()> {
+	pub fn add_to(node: &Arc<Node>, mask: Mask) -> Result<Arc<PulseSender>> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
@@ -99,7 +75,7 @@ impl PulseSender {
 		for receiver in PULSE_RECEIVER_REGISTRY.get_valid_contents() {
 			sender.handle_new_receiver(&receiver);
 		}
-		Ok(())
+		Ok(sender.clone())
 	}
 	fn handle_new_receiver(&self, receiver: &PulseReceiver) {
 		if !mask_matches(&self.mask, &receiver.mask) {
@@ -181,35 +157,24 @@ impl PulseSender {
 	}
 
 	fn send_data_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		#[derive(Serialize, Deserialize)]
-		struct SendDataInfo<'a> {
-			uid: &'a str,
-			data: Vec<u8>,
-		}
 		let info: SendDataInfo = deserialize(data)?;
 		let capture_path = node.path.clone() + "/" + info.uid;
 		let receiver_node = calling_client.get_node("Pulse receiver", &capture_path)?;
+		let receiver =
+			receiver_node.get_aspect("Pulse Receiver", "pulse receiver", |n| &n.pulse_receiver)?;
 		let receiver_mask = &receiver_node
 			.get_aspect("Pulse receiver", "pulse receiver", |node| {
 				&node.pulse_receiver
 			})?
 			.mask;
-		let data_mask = Mask {
-			binary: info.data,
-			get_fn: mask_get_map_at_root,
-		};
+
+		let data_mask = Mask(info.data);
 		data_mask.get_mask()?;
 		ensure!(
 			mask_matches(receiver_mask, &data_mask),
 			"Message does not contain the same keys as the receiver's mask"
 		);
-		receiver_node.send_remote_signal(
-			"data",
-			&serialize(SendDataInfo {
-				uid: &node.pulse_sender.get().unwrap().uid,
-				data: data_mask.binary,
-			})?,
-		)
+		receiver.send_data(&node.pulse_sender.get().unwrap().uid, data_mask.0)
 	}
 }
 impl Drop for PulseSender {
@@ -220,9 +185,9 @@ impl Drop for PulseSender {
 
 pub struct PulseReceiver {
 	uid: String,
-	node: Weak<Node>,
-	field: Arc<Field>,
-	mask: Mask,
+	pub node: Weak<Node>,
+	pub field: Arc<Field>,
+	pub mask: Mask,
 }
 impl PulseReceiver {
 	pub fn add_to(node: &Arc<Node>, field: Arc<Field>, mask: Mask) -> Result<()> {
@@ -245,6 +210,13 @@ impl PulseReceiver {
 		let _ = node.pulse_receiver.set(receiver);
 		Ok(())
 	}
+
+	pub fn send_data(&self, uid: &str, data: Vec<u8>) -> Result<()> {
+		if let Some(node) = self.node.upgrade() {
+			node.send_remote_signal("data", &serialize(SendDataInfo { uid, data })?)?;
+		}
+		Ok(())
+	}
 }
 
 impl Drop for PulseReceiver {
@@ -263,14 +235,6 @@ pub fn create_interface(client: &Arc<Client>) {
 	node.add_to_scenegraph();
 }
 
-// pub fn mask_get_map_pulse_sender(binary: &[u8]) -> Result<flexbuffers::MapReader<&[u8]>> {
-// 	flexbuffers::Reader::get_root(binary)
-// 		.map_err(|_| anyhow!("Mask is not a valid flexbuffer"))?
-// 		.get_vector()?
-// 		.index(3)?
-// 		.get_map()
-// 		.map_err(|_| anyhow!("Mask is not a valid map"))
-// }
 pub fn create_pulse_sender_flex(
 	_node: &Node,
 	calling_client: Arc<Client>,
@@ -288,10 +252,7 @@ pub fn create_pulse_sender_flex(
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
 
-	let mask = Mask {
-		binary: info.mask,
-		get_fn: mask_get_map_at_root,
-	};
+	let mask = Mask(info.mask);
 	mask.get_mask()?;
 
 	let node = node.add_to_scenegraph();
@@ -300,14 +261,6 @@ pub fn create_pulse_sender_flex(
 	Ok(())
 }
 
-// pub fn mask_get_map_pulse_receiver(binary: &[u8]) -> Result<flexbuffers::MapReader<&[u8]>> {
-// 	flexbuffers::Reader::get_root(binary)
-// 		.map_err(|_| anyhow!("Mask is not a valid flexbuffer"))?
-// 		.get_vector()?
-// 		.index(4)?
-// 		.get_map()
-// 		.map_err(|_| anyhow!("Mask is not a valid map"))
-// }
 pub fn create_pulse_receiver_flex(
 	_node: &Node,
 	calling_client: Arc<Client>,
@@ -326,10 +279,7 @@ pub fn create_pulse_receiver_flex(
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
 	let field = find_field(&calling_client, info.field_path)?;
-	let mask = Mask {
-		binary: info.mask,
-		get_fn: mask_get_map_at_root,
-	};
+	let mask = Mask(info.mask);
 	mask.get_mask()?;
 
 	let node = node.add_to_scenegraph();
