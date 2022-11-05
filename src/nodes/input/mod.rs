@@ -77,7 +77,7 @@ impl InputMethod {
 		node: &Arc<Node>,
 		specialization: InputType,
 		datamap: Option<Datamap>,
-	) -> Result<()> {
+	) -> Result<Arc<InputMethod>> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
@@ -94,8 +94,8 @@ impl InputMethod {
 			datamap: Mutex::new(datamap),
 		};
 		let method = INPUT_METHOD_REGISTRY.add(method);
-		let _ = node.input_method.set(method);
-		Ok(())
+		let _ = node.input_method.set(method.clone());
+		Ok(method)
 	}
 
 	fn set_datamap(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {

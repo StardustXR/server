@@ -1,5 +1,5 @@
 use super::{DistanceLink, InputSpecialization};
-use crate::nodes::fields::{ray_march, Field, Ray, RayMarchResult};
+use crate::nodes::fields::{Field, Ray, RayMarchResult};
 use crate::nodes::spatial::Spatial;
 use glam::{vec3, Mat4};
 use stardust_xr::schemas::flat::{InputDataType, Pointer as FlatPointer};
@@ -17,14 +17,11 @@ pub struct Pointer {}
 // }
 impl Pointer {
 	fn ray_march(&self, space: &Arc<Spatial>, field: &Field) -> RayMarchResult {
-		ray_march(
-			Ray {
-				origin: vec3(0_f32, 0_f32, 0_f32),
-				direction: vec3(0_f32, 0_f32, 1_f32),
-				space: space.clone(),
-			},
-			field,
-		)
+		field.ray_march(Ray {
+			origin: vec3(0_f32, 0_f32, 0_f32),
+			direction: vec3(0_f32, 0_f32, 1_f32),
+			space: space.clone(),
+		})
 	}
 }
 
