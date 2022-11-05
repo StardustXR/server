@@ -46,7 +46,6 @@ lazy_static! {
 		],
 		aliased_local_methods: vec![],
 		aliased_remote_signals: vec!["resize", "setCursor",],
-		aliased_remote_methods: vec![],
 		ui: Default::default(),
 		items: Registry::new(),
 		acceptors: Registry::new(),
