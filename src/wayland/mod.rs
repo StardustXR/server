@@ -19,12 +19,12 @@ use smithay::{
 	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
 	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket, Resource},
 };
-use std::os::unix::prelude::AsRawFd;
 use std::{
 	ffi::c_void,
 	os::unix::{net::UnixListener, prelude::FromRawFd},
 	sync::Arc,
 };
+use std::{os::unix::prelude::AsRawFd, time::Duration};
 use stereokit as sk;
 use stereokit::StereoKit;
 use tokio::{
@@ -143,15 +143,18 @@ impl Wayland {
 	}
 
 	pub fn frame(&mut self, sk: &StereoKit) {
-		let time_ms = (sk.time_getf() * 1000.) as u32;
+		let time_ms = (sk.time_getf() * 1000.) as u64;
 
 		for core_surface in CORE_SURFACES.get_valid_contents() {
-			let client_id = core_surface.wl_surface().client_id().unwrap();
-			let seat_data = self.state.lock().seats.get(&client_id).unwrap().clone();
+			let client_id = core_surface.wl_surface().client().unwrap().id();
+			let state = self.state.lock();
+			let seat_data = state.seats.get(&client_id).unwrap().clone();
+			let output = state.output.clone();
 			core_surface.process(
 				sk,
 				&mut self.renderer,
-				time_ms,
+				output,
+				Duration::from_millis(time_ms),
 				&self.log,
 				|data| {
 					PanelItem::on_mapped(&core_surface, data, seat_data);
