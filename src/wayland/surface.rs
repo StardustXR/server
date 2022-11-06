@@ -14,12 +14,16 @@ use smithay::{
 		Texture,
 	},
 	desktop::utils::send_frames_surface_tree,
+	output::Output,
 	reexports::wayland_server::{
 		backend::ObjectId, protocol::wl_surface::WlSurface, Display, DisplayHandle, Resource,
 	},
 	wayland::compositor::{self, SurfaceData},
 };
-use std::sync::{Arc, Weak};
+use std::{
+	sync::{Arc, Weak},
+	time::Duration,
+};
 use stereokit::{
 	material::{Material, Transparency},
 	shader::Shader,
@@ -118,7 +122,8 @@ impl CoreSurface {
 		&self,
 		sk: &StereoKit,
 		renderer: &mut Gles2Renderer,
-		time_ms: u32,
+		output: Output,
+		time: Duration,
 		log: &Logger,
 		on_mapped: F,
 		if_mapped: M,
@@ -160,7 +165,9 @@ impl CoreSurface {
 			if_mapped(data);
 		});
 
-		send_frames_surface_tree(&self.wl_surface(), time_ms);
+		send_frames_surface_tree(&self.wl_surface(), &output, time, None, |_, _| {
+			Some(output.clone())
+		});
 	}
 
 	pub fn apply_material(&self, model: Arc<Model>, material_idx: u32) {
