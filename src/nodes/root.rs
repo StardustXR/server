@@ -19,9 +19,9 @@ pub struct Root {
 impl Root {
 	pub fn create(client: &Arc<Client>) -> Arc<Self> {
 		let node = Node::create(client, "", "", false);
-		node.add_local_signal("applyDesktopStartupID", Root::apply_desktop_startup_id);
-		node.add_local_signal("subscribeLogicStep", Root::subscribe_logic_step);
-		node.add_local_signal("setBasePrefixes", Root::set_base_prefixes);
+		node.add_local_signal("apply_desktop_startup_id", Root::apply_desktop_startup_id);
+		node.add_local_signal("subscribe_logic_step", Root::subscribe_logic_step);
+		node.add_local_signal("set_base_prefixes", Root::set_base_prefixes);
 		let node = node.add_to_scenegraph();
 		let _ = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 
@@ -62,7 +62,7 @@ impl Root {
 		if let Ok(data) = serialize((delta, 0.0)) {
 			for root in ROOT_REGISTRY.get_valid_contents() {
 				if root.logic_step.load(Ordering::Relaxed) {
-					let _ = root.node.send_remote_signal("logicStep", &data);
+					let _ = root.node.send_remote_signal("logic_step", &data);
 				}
 			}
 		}

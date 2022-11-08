@@ -53,7 +53,7 @@ impl StartupSettings {
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "startup", false);
-	node.add_local_signal("createStartupSettings", create_startup_settings_flex);
+	node.add_local_signal("create_startup_settings", create_startup_settings_flex);
 	node.add_to_scenegraph();
 }
 
@@ -66,9 +66,9 @@ pub fn create_startup_settings_flex(
 	let node = Node::create(&calling_client, "/startup/settings", name, true).add_to_scenegraph();
 	StartupSettings::add_to(&node);
 
-	node.add_local_signal("setRoot", StartupSettings::set_root_flex);
+	node.add_local_signal("set_root", StartupSettings::set_root_flex);
 	node.add_local_method(
-		"generateDesktopStartupID",
+		"generate_desktop_startup_id",
 		StartupSettings::generate_desktop_startup_id_flex,
 	);
 

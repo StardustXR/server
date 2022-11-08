@@ -65,6 +65,6 @@ pub fn create_tip_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -
 		}),
 		info.datamap.and_then(|datamap| Datamap::new(datamap).ok()),
 	)?;
-	node.add_local_signal("setRadius", Tip::set_radius);
+	node.add_local_signal("set_radius", Tip::set_radius);
 	Ok(())
 }

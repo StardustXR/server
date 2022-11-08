@@ -215,9 +215,9 @@ impl Deref for Field {
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "field", false);
-	node.add_local_signal("createBoxField", create_box_field_flex);
-	node.add_local_signal("createCylinderField", create_cylinder_field_flex);
-	node.add_local_signal("createSphereField", create_sphere_field_flex);
+	node.add_local_signal("create_box_field", create_box_field_flex);
+	node.add_local_signal("create_cylinder_field", create_cylinder_field_flex);
+	node.add_local_signal("create_sphere_field", create_sphere_field_flex);
 	node.add_to_scenegraph();
 }
 

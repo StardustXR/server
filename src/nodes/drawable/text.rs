@@ -82,8 +82,8 @@ impl Text {
 				color,
 			}),
 		});
-		node.add_local_signal("setCharacterHeight", Text::set_character_height_flex);
-		node.add_local_signal("setText", Text::set_text_flex);
+		node.add_local_signal("set_character_height", Text::set_character_height_flex);
+		node.add_local_signal("set_text", Text::set_text_flex);
 		let _ = node.text.set(text.clone());
 
 		Ok(text)

@@ -70,7 +70,7 @@ impl PulseSender {
 		};
 		let sender = PULSE_SENDER_REGISTRY.add(sender);
 		let _ = node.pulse_sender.set(sender);
-		node.add_local_signal("sendData", PulseSender::send_data_flex);
+		node.add_local_signal("send_data", PulseSender::send_data_flex);
 		let sender = node.pulse_sender.get().unwrap();
 		for receiver in PULSE_RECEIVER_REGISTRY.get_valid_contents() {
 			sender.handle_new_receiver(&receiver);
@@ -145,12 +145,12 @@ impl PulseSender {
 			rotation: rotation.into(),
 		};
 
-		let _ = tx_node.send_remote_signal("newReceiver", &serialize(info).unwrap());
+		let _ = tx_node.send_remote_signal("new_receiver", &serialize(info).unwrap());
 	}
 
 	fn handle_drop_receiver(&self, uid: String) {
 		if let Some(tx_node) = self.node.upgrade() {
-			let _ = tx_node.send_remote_signal("dropReceiver", &serialize(&uid).unwrap());
+			let _ = tx_node.send_remote_signal("drop_receiver", &serialize(&uid).unwrap());
 		}
 		self.aliases.remove(&uid);
 		self.aliases.remove(&(uid + "-field"));
@@ -230,8 +230,8 @@ impl Drop for PulseReceiver {
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "data", false);
-	node.add_local_signal("createPulseSender", create_pulse_sender_flex);
-	node.add_local_signal("createPulseReceiver", create_pulse_receiver_flex);
+	node.add_local_signal("create_pulse_sender", create_pulse_sender_flex);
+	node.add_local_signal("create_pulse_receiver", create_pulse_receiver_flex);
 	node.add_to_scenegraph();
 }
 

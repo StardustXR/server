@@ -30,7 +30,7 @@ impl SphereField {
 			radius: AtomicF32::new(radius),
 		};
 		sphere_field.add_field_methods(node);
-		node.add_local_signal("setRadius", SphereField::set_radius_flex);
+		node.add_local_signal("set_radius", SphereField::set_radius_flex);
 		let _ = node.field.set(Arc::new(Field::Sphere(sphere_field)));
 		Ok(())
 	}

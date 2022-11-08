@@ -103,7 +103,7 @@ impl Item {
 		type_info: &'static TypeInfo,
 		specialization: ItemType,
 	) -> Arc<Self> {
-		node.add_local_signal("captureInto", capture_into_flex);
+		node.add_local_signal("capture_into", capture_into_flex);
 		let item = Item {
 			node: Arc::downgrade(node),
 			uid: nanoid!(),
@@ -323,16 +323,16 @@ impl Drop for ItemAcceptor {
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "item", false);
 	node.add_local_signal(
-		"createEnvironmentItem",
+		"create_environment_item_",
 		environment::create_environment_item_flex,
 	);
 	node.add_local_signal(
-		"registerEnvironmentItemUI",
+		"register_environment_item_ui",
 		environment::register_environment_item_ui_flex,
 	);
-	node.add_local_signal("registerPanelItemUI", register_panel_item_ui_flex);
+	node.add_local_signal("register_panel_item_ui", register_panel_item_ui_flex);
 	node.add_local_signal(
-		"createEnvironmentItemAcceptor",
+		"create_environment_item_acceptor",
 		environment::create_environment_item_acceptor_flex,
 	);
 	node.add_to_scenegraph();

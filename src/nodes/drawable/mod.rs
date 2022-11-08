@@ -12,9 +12,9 @@ use stereokit::{lifecycle::DrawContext, texture::Texture, StereoKit};
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "drawable", false);
-	node.add_local_signal("createModel", model::create_flex);
-	node.add_local_signal("createText", text::create_flex);
-	node.add_local_signal("setSkyFile", set_sky_file_flex);
+	node.add_local_signal("create_model", model::create_flex);
+	node.add_local_signal("create_text", text::create_flex);
+	node.add_local_signal("set_sky_file", set_sky_file_flex);
 	node.add_to_scenegraph();
 }
 
