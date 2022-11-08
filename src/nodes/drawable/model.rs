@@ -58,7 +58,7 @@ impl Model {
 			pending_material_replacements: Mutex::new(FxHashMap::default()),
 			sk_model: OnceCell::new(),
 		};
-		node.add_local_signal("setMaterialParameter", Model::set_material_parameter);
+		node.add_local_signal("set_material_parameter", Model::set_material_parameter);
 		let model_arc = MODEL_REGISTRY.add(model);
 		let _ = model_arc.pending_model_path.set(
 			model_arc

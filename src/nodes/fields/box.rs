@@ -30,7 +30,7 @@ impl BoxField {
 			size: Mutex::new(size.into()),
 		};
 		box_field.add_field_methods(node);
-		node.add_local_signal("setSize", BoxField::set_size_flex);
+		node.add_local_signal("set_size", BoxField::set_size_flex);
 		let _ = node.field.set(Arc::new(Field::Box(box_field)));
 		Ok(())
 	}

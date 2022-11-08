@@ -24,7 +24,7 @@ impl EnvironmentItem {
 			&ITEM_TYPE_INFO_ENVIRONMENT,
 			ItemType::Environment(EnvironmentItem { path }),
 		);
-		node.add_local_method("getPath", EnvironmentItem::get_path_flex);
+		node.add_local_method("get_path", EnvironmentItem::get_path_flex);
 	}
 
 	fn get_path_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<Vec<u8>> {

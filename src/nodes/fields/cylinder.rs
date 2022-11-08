@@ -33,7 +33,7 @@ impl CylinderField {
 			radius: AtomicF32::new(radius.abs()),
 		};
 		cylinder_field.add_field_methods(node);
-		node.add_local_signal("setSize", CylinderField::set_size_flex);
+		node.add_local_signal("set_size", CylinderField::set_size_flex);
 		let _ = node.field.set(Arc::new(Field::Cylinder(cylinder_field)));
 		Ok(())
 	}

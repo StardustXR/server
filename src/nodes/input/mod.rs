@@ -83,7 +83,7 @@ impl InputMethod {
 			"Internal: Node does not have a spatial attached!"
 		);
 
-		node.add_local_signal("setDatamap", InputMethod::set_datamap);
+		node.add_local_signal("set_datamap", InputMethod::set_datamap);
 
 		let method = InputMethod {
 			uid: node.uid.clone(),
@@ -210,8 +210,8 @@ impl Drop for InputHandler {
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "input", false);
-	node.add_local_signal("createInputHandler", create_input_handler_flex);
-	node.add_local_signal("createInputMethodTip", tip::create_tip_flex);
+	node.add_local_signal("create_input_handler", create_input_handler_flex);
+	node.add_local_signal("create_input_method_tip", tip::create_tip_flex);
 	node.add_to_scenegraph();
 }
 

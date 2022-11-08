@@ -78,24 +78,27 @@ impl PanelItem {
 		}
 
 		node.add_local_signal(
-			"applySurfaceMaterial",
+			"apply_surface_material",
 			PanelItem::apply_surface_material_flex,
 		);
-		node.add_local_signal("applyCursorMaterial", PanelItem::apply_cursor_material_flex);
-		node.add_local_signal("pointerDeactivate", PanelItem::pointer_deactivate_flex);
-		node.add_local_signal("pointerScroll", PanelItem::pointer_scroll_flex);
-		node.add_local_signal("pointerButton", PanelItem::pointer_button_flex);
-		node.add_local_signal("pointerMotion", PanelItem::pointer_motion_flex);
 		node.add_local_signal(
-			"keyboardActivateString",
+			"apply_cursor_material",
+			PanelItem::apply_cursor_material_flex,
+		);
+		node.add_local_signal("pointer_deactivate", PanelItem::pointer_deactivate_flex);
+		node.add_local_signal("pointer_scroll", PanelItem::pointer_scroll_flex);
+		node.add_local_signal("pointer_button", PanelItem::pointer_button_flex);
+		node.add_local_signal("pointer_motion", PanelItem::pointer_motion_flex);
+		node.add_local_signal(
+			"keyboard_activate_string",
 			PanelItem::keyboard_activate_string_flex,
 		);
 		node.add_local_signal(
-			"keyboardActivateNames",
+			"keyboard_activate_names",
 			PanelItem::keyboard_activate_names_flex,
 		);
-		node.add_local_signal("keyboardDeactivate", PanelItem::keyboard_deactivate_flex);
-		node.add_local_signal("keyboardKeyState", PanelItem::keyboard_key_state_flex);
+		node.add_local_signal("keyboard_deactivate", PanelItem::keyboard_deactivate_flex);
+		node.add_local_signal("keyboard_key_state", PanelItem::keyboard_key_state_flex);
 		node.add_local_signal("resize", PanelItem::resize_flex);
 		node
 	}

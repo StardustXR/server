@@ -55,14 +55,14 @@ impl Spatial {
 			transform: Mutex::new(transform),
 			zone: Mutex::new(Weak::new()),
 		};
-		node.add_local_method("getTransform", Spatial::get_transform_flex);
-		node.add_local_signal("setTransform", Spatial::set_transform_flex);
-		node.add_local_signal("setSpatialParent", Spatial::set_spatial_parent_flex);
+		node.add_local_method("get_transform", Spatial::get_transform_flex);
+		node.add_local_signal("set_transform", Spatial::set_transform_flex);
+		node.add_local_signal("set_spatial_parent", Spatial::set_spatial_parent_flex);
 		node.add_local_signal(
-			"setSpatialParentInPlace",
+			"set_spatial_parent_in_place",
 			Spatial::set_spatial_parent_in_place_flex,
 		);
-		node.add_local_signal("setZoneable", Spatial::set_zoneable);
+		node.add_local_signal("set_zoneable", Spatial::set_zoneable);
 		let spatial_arc = Arc::new(spatial);
 		if zoneable {
 			ZONEABLE_REGISTRY.add_raw(&spatial_arc);
@@ -316,8 +316,8 @@ pub fn find_reference_space(
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "spatial", false);
-	node.add_local_signal("createSpatial", create_spatial_flex);
-	node.add_local_signal("createZone", create_zone_flex);
+	node.add_local_signal("create_spatial", create_spatial_flex);
+	node.add_local_signal("create_zone", create_zone_flex);
 	node.add_to_scenegraph();
 }
 
