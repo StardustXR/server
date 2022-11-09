@@ -1,18 +1,35 @@
-use super::{Item, ItemSpecialization, ItemType, ITEM_TYPE_INFO_ENVIRONMENT};
+use super::{Item, ItemSpecialization, ItemType};
 use crate::{
-	core::client::{Client, INTERNAL_CLIENT},
+	core::{
+		client::{Client, INTERNAL_CLIENT},
+		registry::Registry,
+	},
 	nodes::{
+		items::TypeInfo,
 		spatial::{find_spatial_parent, parse_transform, Spatial},
 		Node,
 	},
 };
 use anyhow::{anyhow, Result};
+use lazy_static::lazy_static;
 use serde::Deserialize;
 use stardust_xr::{
 	schemas::flex::{deserialize, serialize},
 	values::Transform,
 };
 use std::sync::Arc;
+
+lazy_static! {
+	pub(super) static ref ITEM_TYPE_INFO_ENVIRONMENT: TypeInfo = TypeInfo {
+		type_name: "environment",
+		aliased_local_signals: vec!["apply_sky_tex", "apply_sky_light"],
+		aliased_local_methods: vec![],
+		aliased_remote_signals: vec![],
+		ui: Default::default(),
+		items: Registry::new(),
+		acceptors: Registry::new(),
+	};
+}
 
 pub struct EnvironmentItem {
 	path: String,
@@ -66,20 +83,4 @@ pub(super) fn create_environment_item_flex(
 		.unwrap()
 		.make_alias(&calling_client, &parent_name);
 	Ok(())
-}
-
-pub(super) fn create_environment_item_acceptor_flex(
-	_node: &Node,
-	calling_client: Arc<Client>,
-	data: &[u8],
-) -> Result<()> {
-	super::create_item_acceptor_flex(calling_client, data, &ITEM_TYPE_INFO_ENVIRONMENT)
-}
-
-pub(super) fn register_environment_item_ui_flex(
-	_node: &Node,
-	calling_client: Arc<Client>,
-	_data: &[u8],
-) -> Result<()> {
-	super::register_item_ui_flex(calling_client, &ITEM_TYPE_INFO_ENVIRONMENT)
 }

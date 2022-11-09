@@ -8,7 +8,7 @@ use crate::{
 		registry::Registry,
 	},
 	nodes::{
-		items::{register_item_ui_flex, Item, ItemSpecialization, ItemType, TypeInfo},
+		items::{Item, ItemSpecialization, ItemType, TypeInfo},
 		spatial::Spatial,
 		Node,
 	},
@@ -29,7 +29,7 @@ use std::sync::{Arc, Weak};
 use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};
 
 lazy_static! {
-	static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
+	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
 		type_name: "panel",
 		aliased_local_signals: vec![
 			"apply_surface_material",
@@ -497,12 +497,4 @@ impl ItemSpecialization for PanelItem {
 
 		serialize((id, (panel_size, cursor_size.zip(cursor_hotspot)))).unwrap()
 	}
-}
-
-pub fn register_panel_item_ui_flex(
-	_node: &Node,
-	calling_client: Arc<Client>,
-	_data: &[u8],
-) -> Result<()> {
-	register_item_ui_flex(calling_client, &ITEM_TYPE_INFO_PANEL)
 }
