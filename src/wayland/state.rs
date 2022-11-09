@@ -44,6 +44,7 @@ impl ClientData for ClientState {
 
 pub struct WaylandState {
 	pub weak_ref: Weak<Mutex<WaylandState>>,
+	pub log: Logger,
 	pub display: Arc<Mutex<Display<WaylandState>>>,
 	pub display_handle: DisplayHandle,
 
@@ -102,6 +103,7 @@ impl WaylandState {
 		Arc::new_cyclic(|weak| {
 			Mutex::new(WaylandState {
 				weak_ref: weak.clone(),
+				log,
 				display,
 				display_handle,
 
