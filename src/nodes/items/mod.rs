@@ -23,19 +23,19 @@ use std::sync::{Arc, Weak};
 
 lazy_static! {
 	static ref ITEM_ALIAS_LOCAL_SIGNALS: Vec<&'static str> = vec![
-		"getTransform",
-		"setTransform",
-		"setSpatialParent",
-		"setSpatialParentInPlace",
-		"setZoneable",
+		"get_transform",
+		"set_transform",
+		"set_spatial_parent",
+		"set_spatial_parent_in_place",
+		"set_zoneable",
 		"release",
 	];
-	static ref ITEM_ALIAS_LOCAL_METHODS: Vec<&'static str> = vec!["captureInto"];
+	static ref ITEM_ALIAS_LOCAL_METHODS: Vec<&'static str> = vec!["capture_into"];
 	static ref ITEM_ALIAS_REMOTE_SIGNALS: Vec<&'static str> = vec![];
 	static ref ITEM_ALIAS_REMOTE_METHODS: Vec<&'static str> = vec![];
 	static ref ITEM_TYPE_INFO_ENVIRONMENT: TypeInfo = TypeInfo {
 		type_name: "environment",
-		aliased_local_signals: vec!["applySkyTex", "applySkyLight"],
+		aliased_local_signals: vec!["apply_sky_tex", "apply_sky_light"],
 		aliased_local_methods: vec![],
 		aliased_remote_signals: vec![],
 		ui: Default::default(),
@@ -215,19 +215,19 @@ impl ItemUI {
 			self.aliases.add(Arc::downgrade(&alias_node));
 
 			let _ = node.send_remote_signal(
-				"create",
+				"create_item",
 				&item.specialization.serialize_start_data(&item.uid),
 			);
 		}
 	}
 	fn handle_destroy_item(&self, item: &Item) {
-		self.send_state("destroy", item.uid.as_str());
+		self.send_state("destroy_item", item.uid.as_str());
 	}
 	fn handle_capture(&self, item: &Item) {
-		self.send_state("capture", item.uid.as_str());
+		self.send_state("capture_item", item.uid.as_str());
 	}
 	fn handle_release(&self, item: &Item) {
-		self.send_state("release", item.uid.as_str());
+		self.send_state("release_item", item.uid.as_str());
 	}
 	fn handle_create_acceptor(&self, acceptor: &ItemAcceptor) {
 		let node = self.node.upgrade().unwrap();
@@ -323,7 +323,7 @@ impl Drop for ItemAcceptor {
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "item", false);
 	node.add_local_signal(
-		"create_environment_item_",
+		"create_environment_item",
 		environment::create_environment_item_flex,
 	);
 	node.add_local_signal(
