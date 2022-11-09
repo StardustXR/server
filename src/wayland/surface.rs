@@ -10,7 +10,7 @@ use slog::Logger;
 use smithay::{
 	backend::renderer::{
 		gles2::{Gles2Renderer, Gles2Texture},
-		utils::{import_surface_tree, on_commit_buffer_handler, RendererSurfaceStateUserData},
+		utils::{import_surface_tree, RendererSurfaceStateUserData},
 		Texture,
 	},
 	desktop::utils::send_frames_surface_tree,
@@ -18,7 +18,7 @@ use smithay::{
 	reexports::wayland_server::{
 		backend::ObjectId, protocol::wl_surface::WlSurface, Display, DisplayHandle, Resource,
 	},
-	wayland::compositor::{self, SurfaceData},
+	wayland::compositor::{self, SurfaceData, SurfaceUserData},
 };
 use std::{
 	sync::{Arc, Weak},
@@ -128,10 +128,15 @@ impl CoreSurface {
 		on_mapped: F,
 		if_mapped: M,
 	) {
-		// Let Smithay handle all the buffer maintenance
-		on_commit_buffer_handler(&self.wl_surface());
+		// Avoid a panic in rare cases
+		if self.wl_surface().data::<SurfaceUserData>().is_none() {
+			return;
+		}
+
 		// Import all surface buffers into textures
-		import_surface_tree(renderer, &self.wl_surface(), log).unwrap();
+		if import_surface_tree(renderer, &self.wl_surface(), log).is_err() {
+			return;
+		}
 
 		let mapped = compositor::with_states(&self.wl_surface(), |data| {
 			data.data_map
