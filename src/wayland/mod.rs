@@ -14,7 +14,7 @@ use crate::wayland::state::ClientState;
 use anyhow::{ensure, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use slog::Logger;
+use slog::Drain;
 use smithay::{
 	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
 	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket, Resource},
@@ -63,7 +63,10 @@ pub struct Wayland {
 	state: Arc<Mutex<WaylandState>>,
 }
 impl Wayland {
-	pub fn new(log: Logger) -> Result<Self> {
+	pub fn new() -> Result<Self> {
+		let log = ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), slog::o!());
+		slog_stdlog::init()?;
+
 		let egl_raw_handles = get_sk_egl()?;
 		let renderer = unsafe {
 			Gles2Renderer::new(

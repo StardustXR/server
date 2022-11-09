@@ -45,6 +45,7 @@ impl EnvironmentItem {
 	}
 
 	fn get_path_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<Vec<u8>> {
+		#[allow(unreachable_patterns)]
 		let path: Result<String> = match &node.item.get().unwrap().specialization {
 			ItemType::Environment(env) => Ok(env.path.clone()),
 			_ => Err(anyhow!("")),
