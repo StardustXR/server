@@ -16,7 +16,7 @@ use smithay::{
 	desktop::utils::send_frames_surface_tree,
 	output::Output,
 	reexports::wayland_server::{
-		backend::ObjectId, protocol::wl_surface::WlSurface, Display, DisplayHandle, Resource,
+		self, protocol::wl_surface::WlSurface, Display, DisplayHandle, Resource,
 	},
 	wayland::compositor::{self, SurfaceData, SurfaceUserData},
 };
@@ -96,7 +96,7 @@ pub struct CoreSurface {
 	display: Weak<Mutex<Display<WaylandState>>>,
 	pub state: Weak<Mutex<WaylandState>>,
 	pub dh: DisplayHandle,
-	pub surface_id: ObjectId,
+	pub weak_surface: wayland_server::Weak<WlSurface>,
 	pub mapped_data: Mutex<Option<CoreSurfaceData>>,
 	pub pending_material_applications: Mutex<Vec<(Arc<Model>, u32)>>,
 }
@@ -112,7 +112,7 @@ impl CoreSurface {
 			display: Arc::downgrade(display),
 			state: Arc::downgrade(state),
 			dh,
-			surface_id: surface.id(),
+			weak_surface: surface.downgrade(),
 			mapped_data: Mutex::new(None),
 			pending_material_applications: Mutex::new(Vec::new()),
 		})
@@ -199,7 +199,7 @@ impl CoreSurface {
 	}
 
 	pub fn wl_surface(&self) -> WlSurface {
-		WlSurface::from_id(&self.dh, self.surface_id.clone()).unwrap()
+		self.weak_surface.upgrade().unwrap()
 	}
 
 	pub fn with_states<F, T>(&self, f: F) -> T
