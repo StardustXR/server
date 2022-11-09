@@ -45,7 +45,7 @@ lazy_static! {
 			"close",
 		],
 		aliased_local_methods: vec![],
-		aliased_remote_signals: vec!["resize", "setCursor",],
+		aliased_remote_signals: vec!["resize", "set_cursor",],
 		ui: Default::default(),
 		items: Registry::new(),
 		acceptors: Registry::new(),
@@ -232,7 +232,7 @@ impl PanelItem {
 			.node
 			.upgrade()
 			.unwrap()
-			.send_remote_signal("setCursor", &data);
+			.send_remote_signal("set_cursor", &data);
 		*cursor_changed = false;
 	}
 
