@@ -1,6 +1,7 @@
 mod core;
 mod nodes;
 mod objects;
+#[cfg(feature = "wayland")]
 mod wayland;
 
 use crate::core::destroy_queue;
@@ -8,13 +9,11 @@ use crate::nodes::{drawable, hmd, input};
 use crate::objects::input::mouse_pointer::MousePointer;
 use crate::objects::input::sk_controller::SkController;
 use crate::objects::input::sk_hand::SkHand;
-use crate::wayland::Wayland;
 
 use self::core::eventloop::EventLoop;
 use anyhow::Result;
 use clap::Parser;
 use directories::ProjectDirs;
-use slog::Drain;
 use std::sync::Arc;
 use stereokit::input::Handed;
 use stereokit::lifecycle::DepthMode;
@@ -42,8 +41,6 @@ struct CliArgs {
 fn main() -> Result<()> {
 	let project_dirs = ProjectDirs::from("", "", "stardust").unwrap();
 	let cli_args = Arc::new(CliArgs::parse());
-	let log = ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), slog::o!());
-	slog_stdlog::init()?;
 
 	let mut stereokit = Settings::default()
 		.app_name("Stardust XR")
@@ -105,11 +102,13 @@ fn main() -> Result<()> {
 		.spawn(move || event_loop(handle_sender, event_stop_rx))?;
 	let _tokio_handle = handle_receiver.blocking_recv()?.enter();
 
-	let mut wayland = Wayland::new(log)?;
+	#[cfg(feature = "wayland")]
+	let mut wayland = wayland::Wayland::new()?;
 	println!("Stardust ready!");
 	stereokit.run(
 		|sk, draw_ctx| {
 			hmd::frame(sk);
+			#[cfg(feature = "wayland")]
 			wayland.frame(sk);
 			destroy_queue::clear();
 
@@ -128,6 +127,7 @@ fn main() -> Result<()> {
 			nodes::root::Root::logic_step(sk.time_elapsed());
 			drawable::draw(sk, draw_ctx);
 
+			#[cfg(feature = "wayland")]
 			wayland.make_context_current();
 		},
 		|_| {
@@ -135,6 +135,7 @@ fn main() -> Result<()> {
 		},
 	);
 
+	#[cfg(feature = "wayland")]
 	drop(wayland);
 
 	let _ = event_stop_tx.send(());

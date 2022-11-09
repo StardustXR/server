@@ -9,6 +9,7 @@ use crate::core::node_collections::LifeLinkedNodeList;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
 use crate::nodes::fields::find_field;
+#[cfg(feature = "wayland")]
 use crate::wayland::panel_item::{PanelItem, ITEM_TYPE_INFO_PANEL};
 use anyhow::{anyhow, ensure, Result};
 use lazy_static::lazy_static;
@@ -152,6 +153,7 @@ pub trait ItemSpecialization {
 
 pub enum ItemType {
 	Environment(EnvironmentItem),
+	#[cfg(feature = "wayland")]
 	Panel(PanelItem),
 }
 impl Deref for ItemType {
@@ -160,6 +162,7 @@ impl Deref for ItemType {
 	fn deref(&self) -> &Self::Target {
 		match self {
 			ItemType::Environment(item) => item,
+			#[cfg(feature = "wayland")]
 			ItemType::Panel(item) => item,
 		}
 	}
@@ -325,6 +328,7 @@ pub fn create_interface(client: &Arc<Client>) {
 fn type_info(name: &str) -> Result<&'static TypeInfo> {
 	match name {
 		"environment" => Ok(&ITEM_TYPE_INFO_ENVIRONMENT),
+		#[cfg(feature = "wayland")]
 		"panel" => Ok(&ITEM_TYPE_INFO_PANEL),
 		_ => Err(anyhow!("Invalid item type")),
 	}
