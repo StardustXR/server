@@ -118,11 +118,11 @@ impl Zone {
 							&zoneable.node.upgrade().unwrap(),
 							AliasInfo {
 								local_signals: vec![
-									"setTransform",
-									"setSpatialParent",
-									"setSpatialParentInPlace",
+									"set_transform",
+									"set_spatial_parent",
+									"set_spatial_parent_in_place",
 								],
-								local_methods: vec!["getTransform"],
+								local_methods: vec!["get_transform"],
 								..Default::default()
 							},
 						);

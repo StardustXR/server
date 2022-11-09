@@ -35,7 +35,7 @@ pub fn make_alias(client: &Arc<Client>) -> Arc<Node> {
 		"hmd",
 		&HMD,
 		AliasInfo {
-			local_signals: vec!["getTransform"],
+			local_signals: vec!["get_transform"],
 			..Default::default()
 		},
 	)
