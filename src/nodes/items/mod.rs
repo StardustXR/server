@@ -1,6 +1,6 @@
 mod environment;
 
-use self::environment::EnvironmentItem;
+use self::environment::{EnvironmentItem, ITEM_TYPE_INFO_ENVIRONMENT};
 use super::fields::Field;
 use super::spatial::{find_spatial_parent, parse_transform, Spatial};
 use super::{Alias, Node};
@@ -9,7 +9,7 @@ use crate::core::node_collections::LifeLinkedNodeList;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
 use crate::nodes::fields::find_field;
-use crate::wayland::panel_item::{register_panel_item_ui_flex, PanelItem};
+use crate::wayland::panel_item::{PanelItem, ITEM_TYPE_INFO_PANEL};
 use anyhow::{anyhow, ensure, Result};
 use lazy_static::lazy_static;
 use nanoid::nanoid;
@@ -33,15 +33,6 @@ lazy_static! {
 	static ref ITEM_ALIAS_LOCAL_METHODS: Vec<&'static str> = vec!["capture_into"];
 	static ref ITEM_ALIAS_REMOTE_SIGNALS: Vec<&'static str> = vec![];
 	static ref ITEM_ALIAS_REMOTE_METHODS: Vec<&'static str> = vec![];
-	static ref ITEM_TYPE_INFO_ENVIRONMENT: TypeInfo = TypeInfo {
-		type_name: "environment",
-		aliased_local_signals: vec!["apply_sky_tex", "apply_sky_light"],
-		aliased_local_methods: vec![],
-		aliased_remote_signals: vec![],
-		ui: Default::default(),
-		items: Registry::new(),
-		acceptors: Registry::new(),
-	};
 }
 
 fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
@@ -326,35 +317,34 @@ pub fn create_interface(client: &Arc<Client>) {
 		"create_environment_item",
 		environment::create_environment_item_flex,
 	);
-	node.add_local_signal(
-		"register_environment_item_ui",
-		environment::register_environment_item_ui_flex,
-	);
-	node.add_local_signal("register_panel_item_ui", register_panel_item_ui_flex);
-	node.add_local_signal(
-		"create_environment_item_acceptor",
-		environment::create_environment_item_acceptor_flex,
-	);
+	node.add_local_signal("register_item_ui", register_item_ui_flex);
+	node.add_local_signal("create_item_acceptor", create_item_acceptor_flex);
 	node.add_to_scenegraph();
 }
 
-pub(self) fn create_item_acceptor_flex(
-	calling_client: Arc<Client>,
-	data: &[u8],
-	type_info: &'static TypeInfo,
-) -> Result<()> {
+fn type_info(name: &str) -> Result<&'static TypeInfo> {
+	match name {
+		"environment" => Ok(&ITEM_TYPE_INFO_ENVIRONMENT),
+		"panel" => Ok(&ITEM_TYPE_INFO_PANEL),
+		_ => Err(anyhow!("Invalid item type")),
+	}
+}
+
+fn create_item_acceptor_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateItemAcceptorInfo<'a> {
 		name: &'a str,
 		parent_path: &'a str,
 		transform: Transform,
 		field_path: &'a str,
+		item_type: &'a str,
 	}
 	let info: CreateItemAcceptorInfo = deserialize(data)?;
 	let parent_name = format!("/item/{}/acceptor/", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
 	let space = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
 	let field = find_field(&calling_client, info.field_path)?;
+	let type_info = type_info(info.item_type)?;
 
 	let node = Node::create(&INTERNAL_CLIENT, &parent_name, info.name, true).add_to_scenegraph();
 	Spatial::add_to(&node, Some(space), transform, false)?;
@@ -366,10 +356,13 @@ pub(self) fn create_item_acceptor_flex(
 	Ok(())
 }
 
-pub fn register_item_ui_flex(
-	calling_client: Arc<Client>,
-	type_info: &'static TypeInfo,
-) -> Result<()> {
+pub fn register_item_ui_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	#[derive(Deserialize)]
+	struct RegisterItemUIInfo<'a> {
+		item_type: &'a str,
+	}
+	let info: RegisterItemUIInfo = deserialize(data)?;
+	let type_info = type_info(info.item_type)?;
 	let ui = Node::create(&calling_client, "/item", type_info.type_name, true).add_to_scenegraph();
 	ItemUI::add_to(&ui, type_info)?;
 	Ok(())
