@@ -121,6 +121,9 @@ impl SeatDataInner {
 	pub fn pointer(&self) -> Option<&WlPointer> {
 		self.pointer.get()
 	}
+	pub fn pointer_active(&self) -> bool {
+		*self.pointer_active.lock()
+	}
 	pub fn keyboard(&self) -> Option<&WlKeyboard> {
 		self.keyboard.get()
 	}

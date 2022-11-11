@@ -10,7 +10,7 @@ use slog::Logger;
 use smithay::{
 	backend::renderer::{
 		gles2::{Gles2Renderer, Gles2Texture},
-		utils::{import_surface_tree, RendererSurfaceStateUserData},
+		utils::{import_surface_tree, on_commit_buffer_handler, RendererSurfaceStateUserData},
 		Texture,
 	},
 	desktop::utils::send_frames_surface_tree,
@@ -18,7 +18,7 @@ use smithay::{
 	reexports::wayland_server::{
 		self, protocol::wl_surface::WlSurface, Display, DisplayHandle, Resource,
 	},
-	wayland::compositor::{self, SurfaceData, SurfaceUserData},
+	wayland::compositor::{self, SurfaceData},
 };
 use std::{
 	sync::{Arc, Weak},
@@ -128,17 +128,16 @@ impl CoreSurface {
 		on_mapped: F,
 		if_mapped: M,
 	) {
-		// Avoid a panic in rare cases
-		if self.wl_surface().data::<SurfaceUserData>().is_none() {
-			return;
-		}
+		let Some(wl_surface) = self.wl_surface() else { return };
 
+		// Let smithay handle buffer management (has to be done here as RendererSurfaceStates is not thread safe)
+		on_commit_buffer_handler(&wl_surface);
 		// Import all surface buffers into textures
-		if import_surface_tree(renderer, &self.wl_surface(), log).is_err() {
+		if import_surface_tree(renderer, &wl_surface, log).is_err() {
 			return;
 		}
 
-		let mapped = compositor::with_states(&self.wl_surface(), |data| {
+		let mapped = compositor::with_states(&wl_surface, |data| {
 			data.data_map
 				.get::<RendererSurfaceStateUserData>()
 				.map(|surface_states| surface_states.borrow().wl_buffer().is_some())
@@ -170,7 +169,7 @@ impl CoreSurface {
 			if_mapped(data);
 		});
 
-		send_frames_surface_tree(&self.wl_surface(), &output, time, None, |_, _| {
+		send_frames_surface_tree(&wl_surface, &output, time, None, |_, _| {
 			Some(output.clone())
 		});
 	}
@@ -198,15 +197,16 @@ impl CoreSurface {
 		self.state.upgrade().unwrap()
 	}
 
-	pub fn wl_surface(&self) -> WlSurface {
-		self.weak_surface.upgrade().unwrap()
+	pub fn wl_surface(&self) -> Option<WlSurface> {
+		self.weak_surface.upgrade().ok()
 	}
 
-	pub fn with_states<F, T>(&self, f: F) -> T
+	pub fn with_states<F, T>(&self, f: F) -> Option<T>
 	where
 		F: FnOnce(&SurfaceData) -> T,
 	{
-		compositor::with_states(&self.wl_surface(), f)
+		self.wl_surface()
+			.map(|wl_surface| compositor::with_states(&wl_surface, f))
 	}
 
 	pub fn with_data<F, T>(&self, f: F) -> Option<T>

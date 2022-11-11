@@ -149,15 +149,13 @@ impl Wayland {
 		let time_ms = (sk.time_getf() * 1000.) as u64;
 
 		for core_surface in CORE_SURFACES.get_valid_contents() {
-			let client_id = match core_surface.wl_surface().client() {
-				Some(client) => client.id(),
-				None => continue,
-			};
+			let Some(client_id) = 
+				core_surface
+					.wl_surface()
+					.and_then(|surf| surf.client())
+					.map(|c| c.id()) else { continue };
 			let state = self.state.lock();
-			let seat_data = match state.seats.get(&client_id) {
-				Some(seat_data) => seat_data.clone(),
-				None => continue,
-			};
+			let Some(seat_data) = state.seats.get(&client_id).cloned() else { continue };
 			let output = state.output.clone();
 			core_surface.process(
 				sk,
