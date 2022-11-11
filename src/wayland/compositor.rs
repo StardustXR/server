@@ -1,6 +1,5 @@
 use super::{state::WaylandState, surface::CoreSurface};
 use smithay::{
-	backend::renderer::utils::on_commit_buffer_handler,
 	delegate_compositor,
 	reexports::wayland_server::protocol::wl_surface::WlSurface,
 	wayland::compositor::{self, CompositorHandler, CompositorState},
@@ -12,7 +11,6 @@ impl CompositorHandler for WaylandState {
 	}
 
 	fn commit(&mut self, surface: &WlSurface) {
-		on_commit_buffer_handler(surface);
 		compositor::with_states(surface, |data| {
 			data.data_map.insert_if_missing_threadsafe(|| {
 				CoreSurface::new(

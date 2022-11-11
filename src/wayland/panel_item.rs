@@ -22,7 +22,10 @@ use serde::Deserialize;
 use smithay::{
 	reexports::wayland_server::protocol::wl_pointer::{Axis, ButtonState},
 	utils::Size,
-	wayland::{compositor::SurfaceData, shell::xdg::XdgToplevelSurfaceData},
+	wayland::{
+		compositor::SurfaceData,
+		shell::xdg::{Configure, XdgToplevelSurfaceData},
+	},
 };
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::{Arc, Weak};
@@ -103,11 +106,11 @@ impl PanelItem {
 		node
 	}
 
-	pub fn from_node(node: &Node) -> &PanelItem {
-		match &node.item.get().unwrap().specialization {
-			ItemType::Panel(panel_item) => panel_item,
-			_ => unreachable!(),
-		}
+	pub fn from_node(node: &Node) -> Option<&PanelItem> {
+		node.item.get().and_then(|item| match &item.specialization {
+			ItemType::Panel(panel_item) => Some(panel_item),
+			_ => None,
+		})
 	}
 
 	fn apply_surface_material_flex(
@@ -144,6 +147,20 @@ impl PanelItem {
 		calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
+		let panel_item = match PanelItem::from_node(node) {
+			Some(panel_item) => panel_item,
+			None => return Ok(()),
+		};
+		let cursor = panel_item.seat_data.cursor.lock();
+		let cursor = match &*cursor {
+			Some(core_surface) => core_surface,
+			None => return Ok(()),
+		};
+		let core_surface = match cursor.lock().core_surface.upgrade() {
+			Some(core_surface) => core_surface,
+			None => return Ok(()),
+		};
+
 		#[derive(Deserialize)]
 		struct SurfaceMaterialInfo<'a> {
 			model_path: &'a str,
@@ -159,13 +176,7 @@ impl PanelItem {
 			.get()
 			.ok_or_else(|| anyhow!("Node is not a model"))?;
 
-		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if let Some(cursor) = &*panel_item.seat_data.cursor.lock() {
-				if let Some(core_surface) = cursor.lock().core_surface.upgrade() {
-					core_surface.apply_material(model.clone(), info.idx);
-				}
-			}
-		}
+		core_surface.apply_material(model.clone(), info.idx);
 
 		Ok(())
 	}
@@ -187,25 +198,22 @@ impl PanelItem {
 	}
 
 	pub fn if_mapped(_core_surface: &Arc<CoreSurface>, surface_data: &SurfaceData) {
-		if let Some(panel_node) = surface_data.data_map.get::<Arc<Node>>() {
-			let panel_item = PanelItem::from_node(panel_node);
+		let Some(panel_node) = surface_data.data_map.get::<Arc<Node>>() else { return };
+		let Some(panel_item) = PanelItem::from_node(panel_node) else { return };
 
-			// core_surface.with_data(|core_surface_data| {
-			// 	panel_item.resize();
-			// });
-
-			panel_item.set_cursor();
-		}
+		panel_item.set_cursor();
 	}
 
-	pub fn resize(&self) {
-		self.core_surface.upgrade().unwrap().with_data(|data| {
-			let _ = self
-				.node
-				.upgrade()
-				.unwrap()
-				.send_remote_signal("resize", &serialize(data.size).unwrap());
-		});
+	pub fn ack_resize(&self, xdg_config: Configure) {
+		let Configure::Toplevel(config) = xdg_config else { return };
+		let Some(size) = config.state.size else { return };
+		let Some(core_surface) = self.core_surface.upgrade() else { return };
+		core_surface.with_data(|data| data.size = Vector2::from([size.w as u32, size.h as u32]));
+		let _ = self
+			.node
+			.upgrade()
+			.unwrap()
+			.send_remote_signal("resize", &serialize((size.w, size.h)).unwrap());
 	}
 
 	pub fn set_cursor(&self) {
@@ -215,16 +223,12 @@ impl PanelItem {
 		}
 		let mut data = serialize(()).unwrap();
 
-		if let Some(cursor) = &*self.seat_data.cursor.lock() {
-			let cursor = cursor.lock();
+		let cursor = self.seat_data.cursor.lock();
+		if let Some(cursor) = cursor.as_ref().map(|cursor| cursor.lock()) {
 			if let Some(core_surface) = cursor.core_surface.upgrade() {
 				if let Some(mapped_data) = &*core_surface.mapped_data.lock() {
 					data = serialize((mapped_data.size, cursor.hotspot)).unwrap();
-				} else {
-					return;
-				};
-			} else {
-				return;
+				}
 			}
 		}
 
@@ -241,109 +245,109 @@ impl PanelItem {
 		_calling_client: Arc<Client>,
 		_data: &[u8],
 	) -> Result<()> {
-		let panel_item = PanelItem::from_node(node);
-		if *panel_item.seat_data.pointer_active.lock() {
-			if let Some(core_surface) = panel_item.core_surface.upgrade() {
-				if let Some(pointer) = panel_item.seat_data.pointer() {
-					pointer.leave(0, &core_surface.wl_surface());
-					*panel_item.seat_data.pointer_active.lock() = false;
-					pointer.frame();
-					core_surface.flush_clients();
-				}
-			}
+		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		if !panel_item.seat_data.pointer_active() {
+			return Ok(());
 		}
+		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
+		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
+
+		pointer.leave(0, &wl_surface);
+		*panel_item.seat_data.pointer_active.lock() = false;
+		pointer.frame();
+		core_surface.flush_clients();
 
 		Ok(())
 	}
 
 	fn pointer_motion_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if let Some(pointer) = panel_item.seat_data.pointer() {
-				if let Some(core_surface) = panel_item.core_surface.upgrade() {
-					if let Some(size) = core_surface.with_data(|data| data.size) {
-						let mut position: Vector2<f64> = deserialize(data)?;
-						position.x = position.x.clamp(0.0, size.x as f64);
-						position.y = position.y.clamp(0.0, size.y as f64);
-						let mut pointer_active = panel_item.seat_data.pointer_active.lock();
-						if *pointer_active {
-							pointer.motion(0, position.x, position.y);
-						} else {
-							pointer.enter(0, &core_surface.wl_surface(), position.x, position.y);
-							*pointer_active = true;
-						}
-						pointer.frame();
-						core_surface.flush_clients();
-					}
-				}
-			}
+		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		if !panel_item.seat_data.pointer_active() {
+			return Ok(());
 		}
+		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
+		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
+
+		let Some(pointer_surface_size) =
+			core_surface.with_data(|data| data.size) else { return Ok(()) };
+
+		let mut position: Vector2<f64> = deserialize(data)?;
+		position.x = position.x.clamp(0.0, pointer_surface_size.x as f64);
+		position.y = position.y.clamp(0.0, pointer_surface_size.y as f64);
+		let mut pointer_active = panel_item.seat_data.pointer_active.lock();
+		if *pointer_active {
+			pointer.motion(0, position.x, position.y);
+		} else {
+			pointer.enter(0, &wl_surface, position.x, position.y);
+			*pointer_active = true;
+		}
+		pointer.frame();
+		core_surface.flush_clients();
 
 		Ok(())
 	}
 
 	fn pointer_button_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if let Some(pointer) = panel_item.seat_data.pointer() {
-				if *panel_item.seat_data.pointer_active.lock() {
-					if let Some(core_surface) = panel_item.core_surface.upgrade() {
-						let (button, state): (u32, u32) = deserialize(data)?;
-						pointer.button(
-							0,
-							0,
-							button,
-							match state {
-								0 => ButtonState::Released,
-								1 => ButtonState::Pressed,
-								_ => {
-									bail!("Button state is out of bounds")
-								}
-							},
-						);
-						pointer.frame();
-						core_surface.flush_clients();
-					}
-				}
-			}
+		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		if !panel_item.seat_data.pointer_active() {
+			return Ok(());
 		}
+		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
+
+		let (button, state): (u32, u32) = deserialize(data)?;
+		pointer.button(
+			0,
+			0,
+			button,
+			match state {
+				0 => ButtonState::Released,
+				1 => ButtonState::Pressed,
+				_ => {
+					bail!("Button state is out of bounds")
+				}
+			},
+		);
+		pointer.frame();
+		core_surface.flush_clients();
 
 		Ok(())
 	}
 
 	fn pointer_scroll_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		if !panel_item.seat_data.pointer_active() {
+			return Ok(());
+		}
+		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
+
 		#[derive(Deserialize)]
 		struct PointerScrollArgs {
 			axis_continuous: Vector2<f32>,
 			axis_discrete: Option<Vector2<f32>>,
 		}
-		let args: PointerScrollArgs = deserialize(data)?;
-		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if let Some(pointer) = panel_item.seat_data.pointer() {
-				if *panel_item.seat_data.pointer_active.lock() {
-					if let Some(core_surface) = panel_item.core_surface.upgrade() {
-						let flex = flexbuffers::Reader::get_root(data)?;
-						if flex.flexbuffer_type().is_null() {
-							pointer.axis_stop(0, Axis::HorizontalScroll);
-							pointer.axis_stop(0, Axis::VerticalScroll);
-						} else {
-							pointer.axis(0, Axis::HorizontalScroll, args.axis_continuous.x as f64);
-							pointer.axis(0, Axis::VerticalScroll, args.axis_continuous.y as f64);
-							if let Some(axis_discrete_vec) = args.axis_discrete {
-								pointer.axis_discrete(
-									Axis::HorizontalScroll,
-									axis_discrete_vec.x as i32,
-								);
-								pointer.axis_discrete(
-									Axis::VerticalScroll,
-									axis_discrete_vec.y as i32,
-								);
-							}
-						}
-						pointer.frame();
-						core_surface.flush_clients();
-					}
+		let args: Option<PointerScrollArgs> = deserialize(data)?;
+
+		match args {
+			Some(args) => {
+				pointer.axis(0, Axis::HorizontalScroll, args.axis_continuous.x as f64);
+				pointer.axis(0, Axis::VerticalScroll, args.axis_continuous.y as f64);
+				if let Some(axis_discrete_vec) = args.axis_discrete {
+					pointer.axis_discrete(Axis::HorizontalScroll, axis_discrete_vec.x as i32);
+					pointer.axis_discrete(Axis::VerticalScroll, axis_discrete_vec.y as i32);
 				}
 			}
-		}
+			None => {
+				pointer.axis_stop(0, Axis::HorizontalScroll);
+				pointer.axis_stop(0, Axis::VerticalScroll);
+			}
+		};
+
+		pointer.frame();
+		core_surface.flush_clients();
 
 		Ok(())
 	}
@@ -391,19 +395,18 @@ impl PanelItem {
 	}
 
 	fn keyboard_activate_flex(node: &Node, keymap: &Keymap) -> Result<()> {
-		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if let Some(keyboard) = panel_item.seat_data.keyboard() {
-				if let Some(core_surface) = panel_item.core_surface.upgrade() {
-					let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
-					if keyboard_info.is_none() {
-						keyboard.enter(0, &core_surface.wl_surface(), vec![]);
-						keyboard.repeat_info(0, 0);
-					}
-					keyboard_info.replace(KeyboardInfo::new(keymap));
-					keyboard_info.as_ref().unwrap().keymap.send(keyboard)?;
-				}
-			}
+		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
+		let Some(keyboard) = panel_item.seat_data.keyboard() else { return Ok(()) };
+
+		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
+		if keyboard_info.is_none() {
+			keyboard.enter(0, &wl_surface, vec![]);
+			keyboard.repeat_info(0, 0);
 		}
+		keyboard_info.replace(KeyboardInfo::new(keymap));
+		keyboard_info.as_ref().unwrap().keymap.send(keyboard)?;
 
 		Ok(())
 	}
@@ -413,16 +416,15 @@ impl PanelItem {
 		_calling_client: Arc<Client>,
 		_data: &[u8],
 	) -> Result<()> {
-		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if let Some(keyboard) = panel_item.seat_data.keyboard() {
-				if let Some(core_surface) = panel_item.core_surface.upgrade() {
-					let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
-					if keyboard_info.is_some() {
-						keyboard.leave(0, &core_surface.wl_surface());
-						*keyboard_info = None;
-					}
-				}
-			}
+		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
+		let Some(keyboard) = panel_item.seat_data.keyboard() else { return Ok(()) };
+
+		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
+		if keyboard_info.is_some() {
+			keyboard.leave(0, &wl_surface);
+			*keyboard_info = None;
 		}
 
 		Ok(())
@@ -433,49 +435,48 @@ impl PanelItem {
 		_calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if let Some(keyboard) = panel_item.seat_data.keyboard() {
-				let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
-				if let Some(keyboard_info) = &mut *keyboard_info {
-					let (key, state): (u32, u32) = deserialize(data)?;
-					keyboard_info.process(key, state, keyboard)?;
-				}
-			}
+		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		let Some(keyboard) = panel_item.seat_data.keyboard() else { return Ok(()) };
+
+		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
+		if let Some(keyboard_info) = &mut *keyboard_info {
+			let (key, state): (u32, u32) = deserialize(data)?;
+			keyboard_info.process(key, state, keyboard)?;
 		}
 
 		Ok(())
 	}
 
 	fn resize_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if let Some(core_surface) = panel_item.core_surface.upgrade() {
-				let size: Vector2<u32> = deserialize(data)?;
+		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
+		let size: Vector2<u32> = deserialize(data)?;
 
-				let toplevel_surface = core_surface
-					.wayland_state()
-					.lock()
-					.xdg_shell_state
-					.toplevel_surfaces(|surfaces| {
-						surfaces
-							.iter()
-							.find(|surf| surf.wl_surface().clone() == core_surface.wl_surface())
-							.cloned()
-					});
+		let toplevel_surface = core_surface
+			.wayland_state()
+			.lock()
+			.xdg_shell_state
+			.toplevel_surfaces(|surfaces| {
+				surfaces
+					.iter()
+					.find(|surf| surf.wl_surface().clone() == wl_surface)
+					.cloned()
+			});
 
-				if let Some(toplevel_surface) = toplevel_surface {
-					let mut size_set = false;
-					toplevel_surface.with_pending_state(|state| {
-						state.size = Some(Size::default());
-						state.size.as_mut().unwrap().w = size.x as i32;
-						state.size.as_mut().unwrap().h = size.y as i32;
-						size_set = true;
-					});
-					if size_set {
-						toplevel_surface.send_configure();
-					}
-				}
+		if let Some(toplevel_surface) = toplevel_surface {
+			let mut size_set = false;
+			toplevel_surface.with_pending_state(|state| {
+				state.size = Some(Size::default());
+				state.size.as_mut().unwrap().w = size.x as i32;
+				state.size.as_mut().unwrap().h = size.y as i32;
+				size_set = true;
+			});
+			if size_set {
+				toplevel_surface.send_configure();
 			}
 		}
+
 		Ok(())
 	}
 }
