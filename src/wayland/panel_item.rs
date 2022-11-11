@@ -147,19 +147,10 @@ impl PanelItem {
 		calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		let panel_item = match PanelItem::from_node(node) {
-			Some(panel_item) => panel_item,
-			None => return Ok(()),
-		};
+		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
 		let cursor = panel_item.seat_data.cursor.lock();
-		let cursor = match &*cursor {
-			Some(core_surface) => core_surface,
-			None => return Ok(()),
-		};
-		let core_surface = match cursor.lock().core_surface.upgrade() {
-			Some(core_surface) => core_surface,
-			None => return Ok(()),
-		};
+		let Some(cursor) = &*cursor else { return Ok(())};
+		let Some(core_surface) = cursor.lock().core_surface.upgrade() else { return Ok(()) };
 
 		#[derive(Deserialize)]
 		struct SurfaceMaterialInfo<'a> {
@@ -263,9 +254,6 @@ impl PanelItem {
 
 	fn pointer_motion_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
-		if !panel_item.seat_data.pointer_active() {
-			return Ok(());
-		}
 		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
 		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
 		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
@@ -276,12 +264,11 @@ impl PanelItem {
 		let mut position: Vector2<f64> = deserialize(data)?;
 		position.x = position.x.clamp(0.0, pointer_surface_size.x as f64);
 		position.y = position.y.clamp(0.0, pointer_surface_size.y as f64);
-		let mut pointer_active = panel_item.seat_data.pointer_active.lock();
-		if *pointer_active {
+		if panel_item.seat_data.pointer_active() {
 			pointer.motion(0, position.x, position.y);
 		} else {
 			pointer.enter(0, &wl_surface, position.x, position.y);
-			*pointer_active = true;
+			*panel_item.seat_data.pointer_active.lock() = true;
 		}
 		pointer.frame();
 		core_surface.flush_clients();
