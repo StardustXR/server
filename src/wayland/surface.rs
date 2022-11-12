@@ -97,7 +97,7 @@ pub struct CoreSurface {
 	pub state: Weak<Mutex<WaylandState>>,
 	pub dh: DisplayHandle,
 	pub weak_surface: wayland_server::Weak<WlSurface>,
-	pub mapped_data: Mutex<Option<CoreSurfaceData>>,
+	mapped_data: Mutex<Option<CoreSurfaceData>>,
 	pub pending_material_applications: Mutex<Vec<(Arc<Model>, u32)>>,
 }
 
