@@ -209,9 +209,9 @@ impl Dispatch<WlPointer, SeatData, WaylandState> for SeatDelegate {
 				hotspot_x,
 				hotspot_y,
 			} => {
-				if !*seat_data.pointer_active.lock() {
-					return;
-				}
+				// if !seat_data.pointer_active() {
+				// 	return;
+				// }
 				*seat_data.0.cursor_changed.lock() = true;
 				if let Some(surface) = surface.as_ref() {
 					compositor::with_states(surface, |data| {

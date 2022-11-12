@@ -217,9 +217,9 @@ impl PanelItem {
 		let cursor = self.seat_data.cursor.lock();
 		if let Some(cursor) = cursor.as_ref().map(|cursor| cursor.lock()) {
 			if let Some(core_surface) = cursor.core_surface.upgrade() {
-				if let Some(mapped_data) = &*core_surface.mapped_data.lock() {
+				core_surface.with_data(|mapped_data| {
 					data = serialize((mapped_data.size, cursor.hotspot)).unwrap();
-				}
+				});
 			}
 		}
 
