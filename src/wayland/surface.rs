@@ -1,6 +1,6 @@
 use super::{shaders::PANEL_SHADER_BYTES, state::WaylandState};
 use crate::{
-	core::{destroy_queue, registry::Registry},
+	core::{delta::Delta, destroy_queue, registry::Registry},
 	nodes::drawable::model::Model,
 };
 use mint::Vector2;
@@ -58,7 +58,12 @@ impl CoreSurfaceData {
 			size: Vector2::from([0, 0]),
 		}
 	}
-	fn update_tex(&mut self, data: &RendererSurfaceStateUserData, renderer: &Gles2Renderer) {
+	fn update_tex(
+		&mut self,
+		surface: &CoreSurface,
+		data: &RendererSurfaceStateUserData,
+		renderer: &Gles2Renderer,
+	) {
 		if let Some(surface_size) = data.borrow().surface_size() {
 			self.size = Vector2::from([surface_size.w as u32, surface_size.h as u32]);
 		}
@@ -82,6 +87,11 @@ impl CoreSurfaceData {
 				sk_tex.set_address_mode(TextureAddress::Clamp);
 			}
 		}
+		if let Some(sk_mat) = &self.sk_mat {
+			if let Some(material_offset) = surface.material_offset.lock().delta() {
+				sk_mat.set_queue_offset(*material_offset as i32);
+			}
+		}
 	}
 }
 impl Drop for CoreSurfaceData {
@@ -98,6 +108,7 @@ pub struct CoreSurface {
 	pub dh: DisplayHandle,
 	pub weak_surface: wayland_server::Weak<WlSurface>,
 	mapped_data: Mutex<Option<CoreSurfaceData>>,
+	material_offset: Mutex<Delta<u32>>,
 	pub pending_material_applications: Mutex<Vec<(Arc<Model>, u32)>>,
 }
 
@@ -114,6 +125,7 @@ impl CoreSurface {
 			dh,
 			weak_surface: surface.downgrade(),
 			mapped_data: Mutex::new(None),
+			material_offset: Mutex::new(Delta::new(0)),
 			pending_material_applications: Mutex::new(Vec::new()),
 		})
 	}
@@ -157,6 +169,7 @@ impl CoreSurface {
 		self.with_states(|data| {
 			self.with_data(|mapped_data| {
 				mapped_data.update_tex(
+					self,
 					data.data_map.get::<RendererSurfaceStateUserData>().unwrap(),
 					renderer,
 				);
@@ -172,6 +185,10 @@ impl CoreSurface {
 		send_frames_surface_tree(&wl_surface, &output, time, None, |_, _| {
 			Some(output.clone())
 		});
+	}
+
+	pub fn set_material_offset(&self, material_offset: u32) {
+		*self.material_offset.lock().value_mut() = material_offset;
 	}
 
 	pub fn apply_material(&self, model: Arc<Model>, material_idx: u32) {

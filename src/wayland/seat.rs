@@ -239,7 +239,13 @@ impl Dispatch<WlPointer, SeatData, WaylandState> for SeatDelegate {
 				}
 				*seat_data.cursor.lock() = surface.and_then(|surf| {
 					compositor::with_states(&surf, |data| {
-						data.data_map.get::<Arc<Mutex<Cursor>>>().cloned()
+						let cursor = data.data_map.get::<Arc<Mutex<Cursor>>>();
+						if let Some(cursor) = cursor {
+							if let Some(core_surface) = cursor.lock().core_surface.upgrade() {
+								core_surface.set_material_offset(1);
+							}
+						}
+						cursor.cloned()
 					})
 				});
 			}

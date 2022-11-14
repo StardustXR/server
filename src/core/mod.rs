@@ -1,4 +1,5 @@
 pub mod client;
+pub mod delta;
 pub mod destroy_queue;
 pub mod eventloop;
 pub mod node_collections;
