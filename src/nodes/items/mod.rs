@@ -16,7 +16,7 @@ use lazy_static::lazy_static;
 use nanoid::nanoid;
 use parking_lot::Mutex;
 use serde::Deserialize;
-use stardust_xr::schemas::flex::deserialize;
+use stardust_xr::schemas::flex::{deserialize, serialize};
 use stardust_xr::values::Transform;
 
 use std::ops::Deref;
@@ -43,7 +43,7 @@ fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
 	*item.captured_acceptor.lock() = Arc::downgrade(acceptor);
 	acceptor.handle_capture(item);
 	if let Some(ui) = item.type_info.ui.lock().upgrade() {
-		ui.handle_capture(item);
+		ui.handle_capture_item(item);
 	}
 }
 fn release(item: &Arc<Item>) {
@@ -51,7 +51,7 @@ fn release(item: &Arc<Item>) {
 		*item.captured_acceptor.lock() = Weak::default();
 		acceptor.handle_release(item);
 		if let Some(ui) = item.type_info.ui.lock().upgrade() {
-			ui.handle_release(item);
+			ui.handle_release_item(item);
 		}
 	}
 }
@@ -64,22 +64,6 @@ pub struct TypeInfo {
 	pub ui: Mutex<Weak<ItemUI>>,
 	pub items: Registry<Item>,
 	pub acceptors: Registry<ItemAcceptor>,
-}
-
-fn capture_into_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-	let acceptor_path = flexbuffers::Reader::get_root(data)?
-		.get_str()
-		.map_err(|_| anyhow!("Acceptor path is not a string"))?;
-	let acceptor = calling_client
-		.scenegraph
-		.get_node(acceptor_path)
-		.ok_or_else(|| anyhow!("Acceptor node not found"))?;
-	let acceptor = acceptor
-		.item_acceptor
-		.get()
-		.ok_or_else(|| anyhow!("Acceptor node is not an acceptor!"))?;
-	capture(node.item.get().unwrap(), acceptor);
-	Ok(())
 }
 
 pub struct Item {
@@ -95,7 +79,6 @@ impl Item {
 		type_info: &'static TypeInfo,
 		specialization: ItemType,
 	) -> Arc<Self> {
-		node.add_local_signal("capture_into", capture_into_flex);
 		let item = Item {
 			node: Arc::downgrade(node),
 			uid: nanoid!(),
@@ -104,6 +87,9 @@ impl Item {
 			specialization,
 		};
 		let item = type_info.items.add(item);
+
+		node.add_local_signal("capture_into", Item::capture_into_flex);
+		node.add_local_signal("release", Item::release_flex);
 		if let Some(ui) = type_info.ui.lock().upgrade() {
 			ui.handle_create_item(&item);
 		}
@@ -136,6 +122,23 @@ impl Item {
 		);
 		let alias = node.alias.get().unwrap().clone();
 		(node, alias)
+	}
+
+	fn capture_into_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		let item = node.get_aspect("Item", "item", |n| &n.item)?;
+		let acceptor_path: &str = deserialize(data)?;
+		let acceptor_node = calling_client.get_node("Item", acceptor_path)?;
+		let acceptor =
+			acceptor_node.get_aspect("Item Acceptor", "acceptor", |n| &n.item_acceptor)?;
+		capture(item, acceptor);
+
+		Ok(())
+	}
+	fn release_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
+		let item = node.get_aspect("Item", "item", |n| &n.item)?;
+		release(item);
+
+		Ok(())
 	}
 }
 impl Drop for Item {
@@ -202,40 +205,41 @@ impl ItemUI {
 	}
 
 	fn handle_create_item(&self, item: &Item) {
-		let node = self.node.upgrade().unwrap();
-		if let Some(client) = node.get_client() {
-			let (alias_node, _) =
-				item.make_alias(&client, &(node.get_path().to_string() + "/item"));
-			self.aliases.add(Arc::downgrade(&alias_node));
+		let Some(node) = self.node.upgrade() else { return };
+		let Some(client) = node.get_client() else { return };
 
-			let _ = node.send_remote_signal(
-				"create_item",
-				&item.specialization.serialize_start_data(&item.uid),
-			);
-		}
+		let (alias_node, _) = item.make_alias(&client, &(node.get_path().to_string() + "/item"));
+		self.aliases.add(Arc::downgrade(&alias_node));
+
+		let _ = node.send_remote_signal(
+			"create_item",
+			&item.specialization.serialize_start_data(&item.uid),
+		);
 	}
 	fn handle_destroy_item(&self, item: &Item) {
 		self.send_state("destroy_item", item.uid.as_str());
 	}
-	fn handle_capture(&self, item: &Item) {
+	fn handle_capture_item(&self, item: &Item) {
 		self.send_state("capture_item", item.uid.as_str());
 	}
-	fn handle_release(&self, item: &Item) {
+	fn handle_release_item(&self, item: &Item) {
 		self.send_state("release_item", item.uid.as_str());
 	}
 	fn handle_create_acceptor(&self, acceptor: &ItemAcceptor) {
-		let node = self.node.upgrade().unwrap();
-		if let Some(client) = node.get_client() {
-			let aliases = acceptor.make_aliases(
-				&client,
-				&format!("/item/{}/acceptor", self.type_info.type_name),
-			);
-			aliases
-				.iter()
-				.for_each(|alias| self.aliases.add(Arc::downgrade(alias)));
-		}
+		let Some(node) = self.node.upgrade() else { return };
+		let Some(client) = node.get_client() else { return };
+
+		let (alias, field_alias) = acceptor.make_aliases(
+			&client,
+			&format!("/item/{}/acceptor", self.type_info.type_name),
+		);
+		self.aliases.add(Arc::downgrade(&alias));
+		self.aliases.add(Arc::downgrade(&field_alias));
+		let _ = node.send_remote_signal("create_acceptor", &serialize(&acceptor.uid).unwrap());
 	}
-	fn handle_destroy_acceptor(&self, _acceptor: &ItemAcceptor) {}
+	fn handle_destroy_acceptor(&self, acceptor: &ItemAcceptor) {
+		self.send_state("destroy_acceptor", acceptor.uid.as_str());
+	}
 }
 impl Drop for ItemUI {
 	fn drop(&mut self) {
@@ -244,17 +248,19 @@ impl Drop for ItemUI {
 }
 
 pub struct ItemAcceptor {
+	uid: String,
 	node: Weak<Node>,
 	type_info: &'static TypeInfo,
-	field: Mutex<Weak<Field>>,
+	field: Arc<Field>,
 	accepted: Registry<Item>,
 }
 impl ItemAcceptor {
-	fn add_to(node: &Arc<Node>, type_info: &'static TypeInfo, field: Weak<Field>) {
+	fn add_to(node: &Arc<Node>, type_info: &'static TypeInfo, field: Arc<Field>) {
 		let acceptor = type_info.acceptors.add(ItemAcceptor {
+			uid: nanoid!(),
 			node: Arc::downgrade(node),
 			type_info,
-			field: Mutex::new(field),
+			field,
 			accepted: Registry::new(),
 		});
 		if let Some(ui) = type_info.ui.lock().upgrade() {
@@ -262,32 +268,27 @@ impl ItemAcceptor {
 		}
 		let _ = node.item_acceptor.set(acceptor);
 	}
-	fn make_aliases(&self, client: &Arc<Client>, parent: &str) -> Vec<Arc<Node>> {
-		let mut aliases = Vec::new();
+	fn make_aliases(&self, client: &Arc<Client>, parent: &str) -> (Arc<Node>, Arc<Node>) {
 		let acceptor_node = &self.node.upgrade().unwrap();
 		let acceptor_alias = Alias::create(
 			client,
 			parent,
-			acceptor_node.uid.as_str(),
+			&self.uid,
 			acceptor_node,
 			AliasInfo {
 				local_signals: vec!["release"],
 				..Default::default()
 			},
 		);
-		if let Some(field) = self.field.lock().upgrade() {
-			let acceptor_field_alias = Alias::create(
-				client,
-				acceptor_alias.get_path(),
-				"field",
-				&field.spatial_ref().node.upgrade().unwrap(),
-				AliasInfo::default(),
-			);
+		let acceptor_field_alias = Alias::create(
+			client,
+			acceptor_alias.get_path(),
+			"field",
+			&self.field.spatial_ref().node.upgrade().unwrap(),
+			AliasInfo::default(),
+		);
 
-			aliases.push(acceptor_field_alias);
-		}
-		aliases.push(acceptor_alias);
-		aliases
+		(acceptor_alias, acceptor_field_alias)
 	}
 	fn send_event(&self, state: &str, name: &str) {
 		let _ = self
@@ -352,7 +353,7 @@ fn create_item_acceptor_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 
 	let node = Node::create(&INTERNAL_CLIENT, &parent_name, info.name, true).add_to_scenegraph();
 	Spatial::add_to(&node, Some(space), transform, false)?;
-	ItemAcceptor::add_to(&node, type_info, Arc::downgrade(&field));
+	ItemAcceptor::add_to(&node, type_info, field);
 	node.item
 		.get()
 		.unwrap()
