@@ -31,9 +31,8 @@ lazy_static! {
 		"set_zoneable",
 		"release",
 	];
-	static ref ITEM_ALIAS_LOCAL_METHODS: Vec<&'static str> = vec!["capture_into"];
+	static ref ITEM_ALIAS_LOCAL_METHODS: Vec<&'static str> = vec![];
 	static ref ITEM_ALIAS_REMOTE_SIGNALS: Vec<&'static str> = vec![];
-	static ref ITEM_ALIAS_REMOTE_METHODS: Vec<&'static str> = vec![];
 }
 
 fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
@@ -43,7 +42,7 @@ fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
 	*item.captured_acceptor.lock() = Arc::downgrade(acceptor);
 	acceptor.handle_capture(item);
 	if let Some(ui) = item.type_info.ui.lock().upgrade() {
-		ui.handle_capture_item(item);
+		ui.handle_capture_item(item, acceptor);
 	}
 }
 fn release(item: &Arc<Item>) {
@@ -51,7 +50,7 @@ fn release(item: &Arc<Item>) {
 		*item.captured_acceptor.lock() = Weak::default();
 		acceptor.handle_release(item);
 		if let Some(ui) = item.type_info.ui.lock().upgrade() {
-			ui.handle_release_item(item);
+			ui.handle_release_item(item, &acceptor);
 		}
 	}
 }
@@ -88,7 +87,6 @@ impl Item {
 		};
 		let item = type_info.items.add(item);
 
-		node.add_local_signal("capture_into", Item::capture_into_flex);
 		node.add_local_signal("release", Item::release_flex);
 		if let Some(ui) = type_info.ui.lock().upgrade() {
 			ui.handle_create_item(&item);
@@ -124,16 +122,6 @@ impl Item {
 		(node, alias)
 	}
 
-	fn capture_into_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let item = node.get_aspect("Item", "item", |n| &n.item)?;
-		let acceptor_path: &str = deserialize(data)?;
-		let acceptor_node = calling_client.get_node("Item", acceptor_path)?;
-		let acceptor =
-			acceptor_node.get_aspect("Item Acceptor", "acceptor", |n| &n.item_acceptor)?;
-		capture(item, acceptor);
-
-		Ok(())
-	}
 	fn release_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
 		let item = node.get_aspect("Item", "item", |n| &n.item)?;
 		release(item);
@@ -219,11 +207,21 @@ impl ItemUI {
 	fn handle_destroy_item(&self, item: &Item) {
 		self.send_state("destroy_item", item.uid.as_str());
 	}
-	fn handle_capture_item(&self, item: &Item) {
-		self.send_state("capture_item", item.uid.as_str());
+	fn handle_capture_item(&self, item: &Item, acceptor: &ItemAcceptor) {
+		let Some(node) = self.node.upgrade() else { return };
+
+		let _ = node.send_remote_signal(
+			"capture_item",
+			&serialize((item.uid.as_str(), acceptor.uid.as_str())).unwrap(),
+		);
 	}
-	fn handle_release_item(&self, item: &Item) {
-		self.send_state("release_item", item.uid.as_str());
+	fn handle_release_item(&self, item: &Item, acceptor: &ItemAcceptor) {
+		let Some(node) = self.node.upgrade() else { return };
+
+		let _ = node.send_remote_signal(
+			"release_item",
+			&serialize((item.uid.as_str(), acceptor.uid.as_str())).unwrap(),
+		);
 	}
 	fn handle_create_acceptor(&self, acceptor: &ItemAcceptor) {
 		let Some(node) = self.node.upgrade() else { return };
@@ -263,10 +261,21 @@ impl ItemAcceptor {
 			field,
 			accepted: Registry::new(),
 		});
+		node.add_local_signal("capture", ItemAcceptor::capture_flex);
 		if let Some(ui) = type_info.ui.lock().upgrade() {
 			ui.handle_create_acceptor(&acceptor);
 		}
 		let _ = node.item_acceptor.set(acceptor);
+	}
+
+	fn capture_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		let acceptor = node.get_aspect("Item acceptor", "item acceptor", |n| &n.item_acceptor)?;
+		let item_path: &str = deserialize(data)?;
+		let item_node = calling_client.get_node("Item", item_path)?;
+		let item = item_node.get_aspect("Item", "item", |n| &n.item)?;
+		capture(item, acceptor);
+
+		Ok(())
 	}
 	fn make_aliases(&self, client: &Arc<Client>, parent: &str) -> (Arc<Node>, Arc<Node>) {
 		let acceptor_node = &self.node.upgrade().unwrap();
@@ -276,7 +285,7 @@ impl ItemAcceptor {
 			&self.uid,
 			acceptor_node,
 			AliasInfo {
-				local_signals: vec!["release"],
+				local_signals: vec!["capture"],
 				..Default::default()
 			},
 		);
@@ -335,6 +344,18 @@ fn type_info(name: &str) -> Result<&'static TypeInfo> {
 	}
 }
 
+pub fn register_item_ui_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	#[derive(Deserialize)]
+	struct RegisterItemUIInfo<'a> {
+		item_type: &'a str,
+	}
+	let info: RegisterItemUIInfo = deserialize(data)?;
+	let type_info = type_info(info.item_type)?;
+	let ui = Node::create(&calling_client, "/item", type_info.type_name, true).add_to_scenegraph();
+	ItemUI::add_to(&ui, type_info)?;
+	Ok(())
+}
+
 fn create_item_acceptor_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateItemAcceptorInfo<'a> {
@@ -345,30 +366,19 @@ fn create_item_acceptor_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 		item_type: &'a str,
 	}
 	let info: CreateItemAcceptorInfo = deserialize(data)?;
-	let parent_name = format!("/item/{}/acceptor/", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
 	let space = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
 	let field = find_field(&calling_client, info.field_path)?;
 	let type_info = type_info(info.item_type)?;
 
-	let node = Node::create(&INTERNAL_CLIENT, &parent_name, info.name, true).add_to_scenegraph();
+	let node = Node::create(
+		&INTERNAL_CLIENT,
+		&format!("/item/{}/acceptor", type_info.type_name),
+		info.name,
+		true,
+	)
+	.add_to_scenegraph();
 	Spatial::add_to(&node, Some(space), transform, false)?;
 	ItemAcceptor::add_to(&node, type_info, field);
-	node.item
-		.get()
-		.unwrap()
-		.make_alias(&calling_client, &parent_name);
-	Ok(())
-}
-
-pub fn register_item_ui_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-	#[derive(Deserialize)]
-	struct RegisterItemUIInfo<'a> {
-		item_type: &'a str,
-	}
-	let info: RegisterItemUIInfo = deserialize(data)?;
-	let type_info = type_info(info.item_type)?;
-	let ui = Node::create(&calling_client, "/item", type_info.type_name, true).add_to_scenegraph();
-	ItemUI::add_to(&ui, type_info)?;
 	Ok(())
 }
