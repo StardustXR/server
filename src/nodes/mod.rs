@@ -28,6 +28,7 @@ use crate::core::registry::Registry;
 use self::alias::Alias;
 use self::data::{PulseReceiver, PulseSender};
 
+use self::drawable::lines::Lines;
 use self::drawable::model::Model;
 use self::drawable::text::Text;
 use self::fields::Field;
@@ -60,6 +61,7 @@ pub struct Node {
 	pub pulse_receiver: OnceCell<Arc<PulseReceiver>>,
 
 	// Drawable
+	pub lines: OnceCell<Arc<Lines>>,
 	pub model: OnceCell<Arc<Model>>,
 	pub text: OnceCell<Arc<Text>>,
 
@@ -113,6 +115,7 @@ impl Node {
 			zone: OnceCell::new(),
 			pulse_sender: OnceCell::new(),
 			pulse_receiver: OnceCell::new(),
+			lines: OnceCell::new(),
 			model: OnceCell::new(),
 			text: OnceCell::new(),
 			input_method: OnceCell::new(),
