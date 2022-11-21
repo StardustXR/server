@@ -1,3 +1,4 @@
+pub mod lines;
 pub mod model;
 pub mod text;
 
@@ -12,6 +13,7 @@ use stereokit::{lifecycle::DrawContext, texture::Texture, StereoKit};
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "drawable", false);
+	node.add_local_signal("create_lines", lines::create_flex);
 	node.add_local_signal("create_model", model::create_flex);
 	node.add_local_signal("create_text", text::create_flex);
 	node.add_local_signal("set_sky_file", set_sky_file_flex);
@@ -19,6 +21,7 @@ pub fn create_interface(client: &Arc<Client>) {
 }
 
 pub fn draw(sk: &mut StereoKit, draw_ctx: &DrawContext) {
+	lines::draw_all(draw_ctx);
 	model::draw_all(sk, draw_ctx);
 	text::draw_all(sk, draw_ctx);
 
