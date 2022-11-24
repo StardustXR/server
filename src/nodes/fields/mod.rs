@@ -1,10 +1,12 @@
 mod r#box;
 mod cylinder;
 mod sphere;
+pub mod torus;
 
 use self::cylinder::{create_cylinder_field_flex, CylinderField};
 use self::r#box::{create_box_field_flex, BoxField};
 use self::sphere::{create_sphere_field_flex, SphereField};
+use self::torus::{create_torus_field_flex, TorusField};
 
 use super::spatial::Spatial;
 use super::Node;
@@ -200,6 +202,7 @@ pub enum Field {
 	Box(BoxField),
 	Cylinder(CylinderField),
 	Sphere(SphereField),
+	Torus(TorusField),
 }
 
 impl Deref for Field {
@@ -209,6 +212,7 @@ impl Deref for Field {
 			Field::Box(field) => field,
 			Field::Cylinder(field) => field,
 			Field::Sphere(field) => field,
+			Field::Torus(field) => field,
 		}
 	}
 }
@@ -218,6 +222,7 @@ pub fn create_interface(client: &Arc<Client>) {
 	node.add_local_signal("create_box_field", create_box_field_flex);
 	node.add_local_signal("create_cylinder_field", create_cylinder_field_flex);
 	node.add_local_signal("create_sphere_field", create_sphere_field_flex);
+	node.add_local_signal("create_torus_field", create_torus_field_flex);
 	node.add_to_scenegraph();
 }
 
