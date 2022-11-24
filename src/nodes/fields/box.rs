@@ -40,9 +40,9 @@ impl BoxField {
 	}
 
 	pub fn set_size_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		if let Field::Box(box_field) = node.field.get().unwrap().as_ref() {
-			box_field.set_size(deserialize(data)?);
-		}
+		let Field::Box(box_field) = node.field.get().unwrap().as_ref() else { return Ok(()) };
+		box_field.set_size(deserialize(data)?);
+
 		Ok(())
 	}
 }

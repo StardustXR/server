@@ -40,10 +40,8 @@ impl SphereField {
 	}
 
 	pub fn set_radius_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let radius = flexbuffers::Reader::get_root(data)?.get_f64()? as f32;
-		if let Field::Sphere(sphere_field) = node.field.get().unwrap().as_ref() {
-			sphere_field.set_radius(radius);
-		}
+		let Field::Sphere(sphere_field) = node.field.get().unwrap().as_ref() else { return Ok(()) };
+		sphere_field.set_radius(deserialize(data)?);
 		Ok(())
 	}
 }
