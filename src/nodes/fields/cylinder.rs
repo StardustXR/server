@@ -44,10 +44,9 @@ impl CylinderField {
 	}
 
 	pub fn set_size_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		if let Field::Cylinder(cylinder_field) = node.field.get().unwrap().as_ref() {
-			let (length, radius) = deserialize(data)?;
-			cylinder_field.set_size(length, radius);
-		}
+		let Field::Cylinder(cylinder_field) = node.field.get().unwrap().as_ref() else { return Ok(()) };
+		let (length, radius) = deserialize(data)?;
+		cylinder_field.set_size(length, radius);
 		Ok(())
 	}
 }
@@ -84,6 +83,6 @@ pub fn create_cylinder_field_flex(
 	let transform = parse_transform(info.transform, true, true, false)?;
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform, false)?;
-	CylinderField::add_to(&node, dbg!(info.length), dbg!(info.radius))?;
+	CylinderField::add_to(&node, info.length, info.radius)?;
 	Ok(())
 }
