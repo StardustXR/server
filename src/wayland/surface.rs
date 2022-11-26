@@ -11,7 +11,7 @@ use smithay::{
 	backend::renderer::{
 		gles2::{Gles2Renderer, Gles2Texture},
 		utils::{import_surface_tree, on_commit_buffer_handler, RendererSurfaceStateUserData},
-		Texture,
+		Renderer, Texture,
 	},
 	desktop::utils::send_frames_surface_tree,
 	output::Output,
@@ -62,14 +62,14 @@ impl CoreSurfaceData {
 		&mut self,
 		surface: &CoreSurface,
 		data: &RendererSurfaceStateUserData,
-		renderer: &Gles2Renderer,
+		renderer_id: usize,
 	) {
 		if let Some(surface_size) = data.borrow().surface_size() {
 			self.size = Vector2::from([surface_size.w as u32, surface_size.h as u32]);
 		}
 		self.wl_tex = data
 			.borrow()
-			.texture(renderer)
+			.texture::<Gles2Renderer>(renderer_id)
 			.cloned()
 			.map(SendWrapper::new);
 		if let Some(smithay_tex) = self.wl_tex.as_ref() {
@@ -171,7 +171,7 @@ impl CoreSurface {
 				mapped_data.update_tex(
 					self,
 					data.data_map.get::<RendererSurfaceStateUserData>().unwrap(),
-					renderer,
+					renderer.id(),
 				);
 			});
 			self.apply_surface_materials();
