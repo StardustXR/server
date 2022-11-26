@@ -61,7 +61,7 @@ impl Lines {
 			.map(|p| SkLinePoint {
 				point: transform_mat.transform_point3a(Vec3A::from(p.point)).into(),
 				thickness: p.thickness,
-				color: Color32::from_slice(p.color.map(|c| (c / 255.0) as u8).as_slice()),
+				color: Color32::from_slice(p.color.map(|c| (c * 255.0) as u8).as_slice()),
 			})
 			.collect();
 		if data.cyclic && !points.is_empty() {
