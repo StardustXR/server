@@ -21,7 +21,7 @@ static LINES_REGISTRY: Registry<Lines> = Registry::new();
 struct LinePointRaw {
 	point: Vector3<f32>,
 	thickness: f32,
-	color: [u8; 4],
+	color: [f32; 4],
 }
 
 #[derive(Debug, Clone)]
@@ -61,7 +61,7 @@ impl Lines {
 			.map(|p| SkLinePoint {
 				point: transform_mat.transform_point3a(Vec3A::from(p.point)).into(),
 				thickness: p.thickness,
-				color: Color32::from_slice(&p.color),
+				color: Color32::from_slice(p.color.map(|c| (c / 255.0) as u8).as_slice()),
 			})
 			.collect();
 		if data.cyclic && !points.is_empty() {
