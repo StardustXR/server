@@ -93,14 +93,14 @@ impl Text {
 		let style =
 			self.style
 				.get_or_try_init(|| -> Result<SendWrapper<TextStyle>, anyhow::Error> {
-					let font = if let Some(path) = self.font_path.as_deref() {
-						Font::from_file(sk, path)
-					} else {
-						Some(Font::default(sk))
-					};
+					let font = self
+						.font_path
+						.as_deref()
+						.and_then(|path| Font::from_file(sk, path))
+						.unwrap_or(Font::default(sk));
 					Ok(SendWrapper::new(TextStyle::new(
 						sk,
-						font.ok_or(std::fmt::Error)?,
+						font,
 						1.0,
 						Rgba::new(Rgb::new(1.0, 1.0, 1.0), 1.0),
 					)))
