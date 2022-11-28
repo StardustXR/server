@@ -83,7 +83,12 @@ impl Lines {
 	}
 
 	pub fn set_points_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let points: Vec<LinePointRaw> = deserialize(data)?;
+		let mut points: Vec<LinePointRaw> = deserialize(data)?;
+		for p in &mut points {
+			p.color[0] = p.color[0].powf(2.2);
+			p.color[1] = p.color[1].powf(2.2);
+			p.color[2] = p.color[2].powf(2.2);
+		}
 		node.lines.get().unwrap().data.lock().points = points;
 		Ok(())
 	}
@@ -113,10 +118,16 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 		points: Vec<LinePointRaw>,
 		cyclic: bool,
 	}
-	let info: CreateTextInfo = deserialize(data)?;
+	let mut info: CreateTextInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/drawable/lines", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true)?;
+
+	for p in &mut info.points {
+		p.color[0] = p.color[0].powf(2.2);
+		p.color[1] = p.color[1].powf(2.2);
+		p.color[2] = p.color[2].powf(2.2);
+	}
 
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform, false)?;
