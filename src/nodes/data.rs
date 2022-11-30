@@ -81,18 +81,9 @@ impl PulseSender {
 		if !mask_matches(&self.mask, &receiver.mask) {
 			return;
 		}
-		let tx_node = match self.node.upgrade() {
-			Some(v) => v,
-			_ => return,
-		};
-		let tx_client = match tx_node.get_client() {
-			Some(v) => v,
-			_ => return,
-		};
-		let rx_node = match receiver.node.upgrade() {
-			Some(v) => v,
-			_ => return,
-		};
+		let Some(tx_node) = self.node.upgrade() else { return };
+		let Some(tx_client) = tx_node.get_client() else { return };
+		let Some(rx_node) = receiver.node.upgrade() else { return };
 		// Receiver itself
 		let rx_alias = Alias::create(
 			&tx_client,
@@ -104,22 +95,26 @@ impl PulseSender {
 				..Default::default()
 			},
 		);
-		self.aliases.add(receiver.uid.clone(), &rx_alias);
+		if let Some(rx_alias) = rx_alias {
+			self.aliases.add(receiver.uid.clone(), &rx_alias);
 
-		if let Some(rx_field_node) = receiver.field.spatial_ref().node.upgrade() {
-			// Receiver's field
-			let rx_field_alias = Alias::create(
-				&tx_client,
-				rx_alias.get_path(),
-				"field",
-				&rx_field_node,
-				AliasInfo {
-					local_methods: vec!["sendData", "getTransform"],
-					..Default::default()
-				},
-			);
-			self.aliases
-				.add(receiver.uid.clone() + "-field", &rx_field_alias);
+			if let Some(rx_field_node) = receiver.field.spatial_ref().node.upgrade() {
+				// Receiver's field
+				let rx_field_alias = Alias::create(
+					&tx_client,
+					rx_alias.get_path(),
+					"field",
+					&rx_field_node,
+					AliasInfo {
+						local_methods: vec!["sendData", "getTransform"],
+						..Default::default()
+					},
+				);
+				if let Some(rx_field_alias) = rx_field_alias {
+					self.aliases
+						.add(receiver.uid.clone() + "-field", &rx_field_alias);
+				}
+			}
 		}
 
 		#[derive(Serialize)]
@@ -158,8 +153,7 @@ impl PulseSender {
 
 	fn send_data_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let info: SendDataInfo = deserialize(data)?;
-		let capture_path = node.path.clone() + "/" + info.uid;
-		let receiver_node = calling_client.get_node("Pulse receiver", &capture_path)?;
+		let receiver_node = calling_client.get_node("Pulse receiver", info.uid)?;
 		let receiver =
 			receiver_node.get_aspect("Pulse Receiver", "pulse receiver", |n| &n.pulse_receiver)?;
 		let receiver_mask = &receiver_node

@@ -45,12 +45,10 @@ impl EnvironmentItem {
 	}
 
 	fn get_path_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<Vec<u8>> {
-		#[allow(unreachable_patterns)]
-		let path: Result<String> = match &node.item.get().unwrap().specialization {
-			ItemType::Environment(env) => Ok(env.path.clone()),
-			_ => Err(anyhow!("")),
+		let ItemType::Environment(environment_item) = &node.item.get().unwrap().specialization else {
+			return Err(anyhow!("Wrong item type?"))
 		};
-		Ok(flexbuffers::singleton(path?.as_str()))
+		Ok(flexbuffers::singleton(environment_item.path.as_str()))
 	}
 }
 impl ItemSpecialization for EnvironmentItem {
@@ -72,16 +70,16 @@ pub(super) fn create_environment_item_flex(
 		item_data: String,
 	}
 	let info: CreateEnvironmentItemInfo = deserialize(data)?;
-	let parent_name = format!("/item/{}/item/", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
-	let node = Node::create(&INTERNAL_CLIENT, &parent_name, info.name, true);
+	let parent_name = format!("/item/{}/item", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
 	let space = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false)?;
-	let node = node.add_to_scenegraph();
+
+	let node = Node::create(&INTERNAL_CLIENT, &parent_name, info.name, false).add_to_scenegraph();
 	Spatial::add_to(&node, None, transform * space.global_transform(), false)?;
 	EnvironmentItem::add_to(&node, info.item_data);
 	node.item
 		.get()
 		.unwrap()
-		.make_alias(&calling_client, &parent_name);
+		.make_alias_named(&calling_client, &parent_name, info.name);
 	Ok(())
 }

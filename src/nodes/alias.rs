@@ -24,15 +24,22 @@ impl Alias {
 		name: &str,
 		original: &Arc<Node>,
 		info: AliasInfo,
-	) -> Arc<Node> {
-		let node = Node::create(client, parent, name, true).add_to_scenegraph();
-		let alias = Alias {
-			node: Arc::downgrade(&node),
-			original: Arc::downgrade(original),
-			info,
-		};
-		let alias = original.aliases.add(alias);
-		let _ = node.alias.set(alias);
-		node
+	) -> Option<Arc<Node>> {
+		let node_free = client
+			.scenegraph
+			.get_node(&(parent.to_string() + "/" + name))
+			.is_none();
+
+		node_free.then(|| {
+			let node = Node::create(client, parent, name, true).add_to_scenegraph();
+			let alias = Alias {
+				node: Arc::downgrade(&node),
+				original: Arc::downgrade(original),
+				info,
+			};
+			let alias = original.aliases.add(alias);
+			let _ = node.alias.set(alias);
+			node
+		})
 	}
 }
