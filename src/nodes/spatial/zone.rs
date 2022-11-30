@@ -68,84 +68,75 @@ impl Zone {
 	}
 	fn capture_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let zone = node.zone.get().unwrap();
-		let capture_uid: &str = deserialize(data)?;
-		let capture_path = node.path.clone() + "/" + capture_uid;
-		let spatial = find_spatial(&calling_client, "Spatial", &capture_path)?;
+		let capture_path: &str = deserialize(data)?;
+		let spatial = find_spatial(&calling_client, "Spatial", capture_path)?;
 		capture(&spatial, zone);
 		Ok(())
 	}
-	fn release_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let capture_uid: &str = deserialize(data)?;
-		let capture_path = node.path.clone() + "/" + capture_uid;
-		let spatial = find_spatial(&calling_client, "Spatial", &capture_path)?;
+	fn release_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		let capture_path: &str = deserialize(data)?;
+		let spatial = find_spatial(&calling_client, "Spatial", capture_path)?;
 		release(&spatial);
 		Ok(())
 	}
 	fn update(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
 		let zone = node.zone.get().unwrap();
-		if let Some(field) = zone.field.upgrade() {
-			if let Some((zone_client, zone_node)) = zone
-				.spatial
-				.node
-				.upgrade()
-				.and_then(|n| n.get_client().zip(Some(n)))
-			{
-				let mut old_zoneables = zone.zoneables.lock();
-				for (_uid, zoneable) in old_zoneables.iter() {
-					zoneable.destroy();
-				}
-				let captured = zone.captured.get_valid_contents();
-				let zoneables = ZONEABLE_REGISTRY
-					.get_valid_contents()
-					.into_iter()
-					.filter(|zoneable| zoneable.node.upgrade().is_some())
-					.filter(|zoneable| {
-						if captured
-							.iter()
-							.any(|captured| Arc::ptr_eq(captured, zoneable))
-						{
-							return true;
-						}
-						let spatial_zone_distance = zoneable.zone_distance();
-						let self_zone_distance = field.distance(zoneable, vec3a(0.0, 0.0, 0.0));
-						self_zone_distance < 0.0 && spatial_zone_distance > self_zone_distance
-					})
-					.map(|zoneable| {
-						let alias = Alias::create(
-							&zone_client,
-							zone_node.get_path(),
-							&zoneable.uid,
-							&zoneable.node.upgrade().unwrap(),
-							AliasInfo {
-								local_signals: vec![
-									"set_transform",
-									"set_spatial_parent",
-									"set_spatial_parent_in_place",
-								],
-								local_methods: vec!["get_transform"],
-								..Default::default()
-							},
-						);
-						(zoneable.uid.clone(), alias)
-					})
-					.collect::<FxHashMap<String, Arc<Node>>>();
-
-				for entered_uid in zoneables.keys().filter(|k| !old_zoneables.contains_key(*k)) {
-					node.send_remote_signal("enter", &serialize(entered_uid)?)?;
-				}
-				for left_uid in old_zoneables.keys().filter(|k| !zoneables.contains_key(*k)) {
-					node.send_remote_signal("leave", &serialize(left_uid)?)?;
-				}
-
-				*old_zoneables = zoneables;
-
-				Ok(())
-			} else {
-				Err(anyhow::anyhow!("No client on node?"))
-			}
-		} else {
-			Err(anyhow::anyhow!("Zone's field has been destroyed"))
+		let Some(field) = zone.field.upgrade() else { return Err(anyhow::anyhow!("Zone's field has been destroyed")) };
+		let Some((zone_client, zone_node)) = zone
+			.spatial
+			.node
+			.upgrade()
+			.and_then(|n| n.get_client().zip(Some(n))) else { return Err(anyhow::anyhow!("No client on node?")) };
+		let mut old_zoneables = zone.zoneables.lock();
+		for (_uid, zoneable) in old_zoneables.iter() {
+			zoneable.destroy();
 		}
+		let captured = zone.captured.get_valid_contents();
+		let zoneables = ZONEABLE_REGISTRY
+			.get_valid_contents()
+			.into_iter()
+			.filter(|zoneable| zoneable.node.upgrade().is_some())
+			.filter(|zoneable| {
+				if captured
+					.iter()
+					.any(|captured| Arc::ptr_eq(captured, zoneable))
+				{
+					return true;
+				}
+				let spatial_zone_distance = zoneable.zone_distance();
+				let self_zone_distance = field.distance(zoneable, vec3a(0.0, 0.0, 0.0));
+				self_zone_distance < 0.0 && spatial_zone_distance > self_zone_distance
+			})
+			.filter_map(|zoneable| {
+				let alias = Alias::create(
+					&zone_client,
+					zone_node.get_path(),
+					&zoneable.uid,
+					&zoneable.node.upgrade().unwrap(),
+					AliasInfo {
+						local_signals: vec![
+							"set_transform",
+							"set_spatial_parent",
+							"set_spatial_parent_in_place",
+						],
+						local_methods: vec!["get_transform"],
+						..Default::default()
+					},
+				)?;
+				Some((zoneable.uid.clone(), alias))
+			})
+			.collect::<FxHashMap<String, Arc<Node>>>();
+
+		for entered_uid in zoneables.keys().filter(|k| !old_zoneables.contains_key(*k)) {
+			node.send_remote_signal("enter", &serialize(entered_uid)?)?;
+		}
+		for left_uid in old_zoneables.keys().filter(|k| !zoneables.contains_key(*k)) {
+			node.send_remote_signal("leave", &serialize(left_uid)?)?;
+		}
+
+		*old_zoneables = zoneables;
+
+		Ok(())
 	}
 }
 impl Drop for Zone {

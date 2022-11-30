@@ -4,7 +4,7 @@ use self::environment::{EnvironmentItem, ITEM_TYPE_INFO_ENVIRONMENT};
 use super::fields::Field;
 use super::spatial::{find_spatial_parent, parse_transform, Spatial};
 use super::{Alias, Node};
-use crate::core::client::{Client, INTERNAL_CLIENT};
+use crate::core::client::Client;
 use crate::core::node_collections::LifeLinkedNodeList;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
@@ -80,7 +80,7 @@ impl Item {
 	) -> Arc<Self> {
 		let item = Item {
 			node: Arc::downgrade(node),
-			uid: nanoid!(),
+			uid: node.uid.clone(),
 			type_info,
 			captured_acceptor: Default::default(),
 			specialization,
@@ -94,11 +94,16 @@ impl Item {
 		let _ = node.item.set(item.clone());
 		item
 	}
-	fn make_alias(&self, client: &Arc<Client>, parent: &str) -> (Arc<Node>, Arc<Alias>) {
-		let node = Alias::create(
+	fn make_alias_named(
+		&self,
+		client: &Arc<Client>,
+		parent: &str,
+		name: &str,
+	) -> Option<Arc<Node>> {
+		Alias::create(
 			client,
 			parent,
-			&self.uid,
+			name,
 			&self.node.upgrade().unwrap(),
 			AliasInfo {
 				local_signals: [
@@ -117,9 +122,10 @@ impl Item {
 				]
 				.concat(),
 			},
-		);
-		let alias = node.alias.get().unwrap().clone();
-		(node, alias)
+		)
+	}
+	fn make_alias(&self, client: &Arc<Client>, parent: &str) -> Option<Arc<Node>> {
+		self.make_alias_named(client, parent, &self.uid)
 	}
 
 	fn release_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
@@ -196,8 +202,10 @@ impl ItemUI {
 		let Some(node) = self.node.upgrade() else { return };
 		let Some(client) = node.get_client() else { return };
 
-		let (alias_node, _) = item.make_alias(&client, &(node.get_path().to_string() + "/item"));
-		self.aliases.add(Arc::downgrade(&alias_node));
+		if let Some(alias_node) = item.make_alias(&client, &(node.get_path().to_string() + "/item"))
+		{
+			self.aliases.add(Arc::downgrade(&alias_node));
+		}
 
 		let _ = node.send_remote_signal(
 			"create_item",
@@ -231,8 +239,12 @@ impl ItemUI {
 			&client,
 			&format!("/item/{}/acceptor", self.type_info.type_name),
 		);
-		self.aliases.add(Arc::downgrade(&alias));
-		self.aliases.add(Arc::downgrade(&field_alias));
+		if let Some(alias) = alias {
+			self.aliases.add(Arc::downgrade(&alias));
+		}
+		if let Some(field_alias) = field_alias {
+			self.aliases.add(Arc::downgrade(&field_alias));
+		}
 		let _ = node.send_remote_signal("create_acceptor", &serialize(&acceptor.uid).unwrap());
 	}
 	fn handle_destroy_acceptor(&self, acceptor: &ItemAcceptor) {
@@ -269,7 +281,7 @@ impl ItemAcceptor {
 	}
 
 	fn capture_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let acceptor = node.get_aspect("Item acceptor", "item acceptor", |n| &n.item_acceptor)?;
+		let acceptor = node.item_acceptor.get().unwrap();
 		let item_path: &str = deserialize(data)?;
 		let item_node = calling_client.get_node("Item", item_path)?;
 		let item = item_node.get_aspect("Item", "item", |n| &n.item)?;
@@ -277,7 +289,12 @@ impl ItemAcceptor {
 
 		Ok(())
 	}
-	fn make_aliases(&self, client: &Arc<Client>, parent: &str) -> (Arc<Node>, Arc<Node>) {
+
+	fn make_aliases(
+		&self,
+		client: &Arc<Client>,
+		parent: &str,
+	) -> (Option<Arc<Node>>, Option<Arc<Node>>) {
 		let acceptor_node = &self.node.upgrade().unwrap();
 		let acceptor_alias = Alias::create(
 			client,
@@ -289,35 +306,41 @@ impl ItemAcceptor {
 				..Default::default()
 			},
 		);
-		let acceptor_field_alias = Alias::create(
-			client,
-			acceptor_alias.get_path(),
-			"field",
-			&self.field.spatial_ref().node.upgrade().unwrap(),
-			AliasInfo::default(),
-		);
+
+		let acceptor_field_alias = acceptor_alias.as_ref().and_then(|acceptor_alias| {
+			Alias::create(
+				client,
+				acceptor_alias.get_path(),
+				"field",
+				&self.field.spatial_ref().node.upgrade().unwrap(),
+				AliasInfo::default(),
+			)
+		});
 
 		(acceptor_alias, acceptor_field_alias)
 	}
-	fn send_event(&self, state: &str, name: &str) {
+	fn handle_capture(&self, item: &Arc<Item>) {
+		self.accepted.add_raw(item);
+		let _ = self.node.upgrade().unwrap().send_remote_signal(
+			"capture",
+			&item.specialization.serialize_start_data(&item.uid),
+		);
+	}
+	fn handle_release(&self, item: &Item) {
+		self.accepted.remove(item);
 		let _ = self
 			.node
 			.upgrade()
 			.unwrap()
-			.send_remote_signal(state, flexbuffers::singleton(name).as_slice());
-	}
-	fn handle_capture(&self, item: &Arc<Item>) {
-		self.accepted.add_raw(item);
-		self.send_event("capture", item.uid.as_str());
-	}
-	fn handle_release(&self, item: &Item) {
-		self.accepted.remove(item);
-		self.send_event("release", item.uid.as_str());
+			.send_remote_signal("release", &serialize(&item.uid).unwrap());
 	}
 }
 impl Drop for ItemAcceptor {
 	fn drop(&mut self) {
 		self.type_info.acceptors.remove(self);
+		for accepted in self.accepted.get_valid_contents() {
+			release(&accepted);
+		}
 		if let Some(ui) = self.type_info.ui.lock().upgrade() {
 			ui.handle_destroy_acceptor(self);
 		}
@@ -372,7 +395,7 @@ fn create_item_acceptor_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 	let type_info = type_info(info.item_type)?;
 
 	let node = Node::create(
-		&INTERNAL_CLIENT,
+		&calling_client,
 		&format!("/item/{}/acceptor", type_info.type_name),
 		info.name,
 		true,

@@ -28,7 +28,7 @@ pub fn frame(sk: &StereoKit) {
 	);
 }
 
-pub fn make_alias(client: &Arc<Client>) -> Arc<Node> {
+pub fn make_alias(client: &Arc<Client>) -> Option<Arc<Node>> {
 	Alias::create(
 		client,
 		"",
