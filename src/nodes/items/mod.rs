@@ -5,7 +5,7 @@ use super::fields::Field;
 use super::spatial::{find_spatial_parent, parse_transform, Spatial};
 use super::{Alias, Node};
 use crate::core::client::Client;
-use crate::core::node_collections::LifeLinkedNodeList;
+use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
 use crate::nodes::fields::find_field;
@@ -46,8 +46,9 @@ fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
 	}
 }
 fn release(item: &Arc<Item>) {
-	if let Some(acceptor) = item.captured_acceptor.lock().upgrade() {
-		*item.captured_acceptor.lock() = Weak::default();
+	let mut captured_acceptor = item.captured_acceptor.lock();
+	if let Some(acceptor) = captured_acceptor.upgrade() {
+		*captured_acceptor = Weak::default();
 		acceptor.handle_release(item);
 		if let Some(ui) = item.type_info.ui.lock().upgrade() {
 			ui.handle_release_item(item, &acceptor);
@@ -168,7 +169,9 @@ impl Deref for ItemType {
 pub struct ItemUI {
 	node: Weak<Node>,
 	type_info: &'static TypeInfo,
-	aliases: LifeLinkedNodeList,
+	item_aliases: LifeLinkedNodeMap<String>,
+	acceptor_aliases: LifeLinkedNodeMap<String>,
+	acceptor_field_aliases: LifeLinkedNodeMap<String>,
 }
 impl ItemUI {
 	fn add_to(node: &Arc<Node>, type_info: &'static TypeInfo) -> Result<()> {
@@ -180,7 +183,9 @@ impl ItemUI {
 		let ui = Arc::new(ItemUI {
 			node: Arc::downgrade(node),
 			type_info,
-			aliases: Default::default(),
+			item_aliases: Default::default(),
+			acceptor_aliases: Default::default(),
+			acceptor_field_aliases: Default::default(),
 		});
 		*type_info.ui.lock() = Arc::downgrade(&ui);
 		let _ = node.item_ui.set(ui.clone());
@@ -204,7 +209,7 @@ impl ItemUI {
 
 		if let Some(alias_node) = item.make_alias(&client, &(node.get_path().to_string() + "/item"))
 		{
-			self.aliases.add(Arc::downgrade(&alias_node));
+			self.item_aliases.add(item.uid.clone(), &alias_node);
 		}
 
 		let _ = node.send_remote_signal(
@@ -213,6 +218,7 @@ impl ItemUI {
 		);
 	}
 	fn handle_destroy_item(&self, item: &Item) {
+		self.item_aliases.remove(&item.uid);
 		self.send_state("destroy_item", item.uid.as_str());
 	}
 	fn handle_capture_item(&self, item: &Item, acceptor: &ItemAcceptor) {
@@ -240,15 +246,18 @@ impl ItemUI {
 			&format!("/item/{}/acceptor", self.type_info.type_name),
 		);
 		if let Some(alias) = alias {
-			self.aliases.add(Arc::downgrade(&alias));
+			self.acceptor_aliases.add(acceptor.uid.clone(), &alias);
 		}
 		if let Some(field_alias) = field_alias {
-			self.aliases.add(Arc::downgrade(&field_alias));
+			self.acceptor_field_aliases
+				.add(acceptor.uid.clone(), &field_alias);
 		}
 		let _ = node.send_remote_signal("create_acceptor", &serialize(&acceptor.uid).unwrap());
 	}
 	fn handle_destroy_acceptor(&self, acceptor: &ItemAcceptor) {
 		self.send_state("destroy_acceptor", acceptor.uid.as_str());
+		self.acceptor_aliases.remove(&acceptor.uid);
+		self.acceptor_field_aliases.remove(&acceptor.uid);
 	}
 }
 impl Drop for ItemUI {
@@ -262,7 +271,7 @@ pub struct ItemAcceptor {
 	node: Weak<Node>,
 	type_info: &'static TypeInfo,
 	field: Arc<Field>,
-	accepted: Registry<Item>,
+	accepted: LifeLinkedNodeMap<String>,
 }
 impl ItemAcceptor {
 	fn add_to(node: &Arc<Node>, type_info: &'static TypeInfo, field: Arc<Field>) {
@@ -271,7 +280,7 @@ impl ItemAcceptor {
 			node: Arc::downgrade(node),
 			type_info,
 			field,
-			accepted: Registry::new(),
+			accepted: Default::default(),
 		});
 		node.add_local_signal("capture", ItemAcceptor::capture_flex);
 		if let Some(ui) = type_info.ui.lock().upgrade() {
@@ -320,27 +329,27 @@ impl ItemAcceptor {
 		(acceptor_alias, acceptor_field_alias)
 	}
 	fn handle_capture(&self, item: &Arc<Item>) {
-		self.accepted.add_raw(item);
-		let _ = self.node.upgrade().unwrap().send_remote_signal(
+		let Some(node) = self.node.upgrade() else { return };
+		let Some(client) = node.get_client() else { return };
+
+		if let Some(alias_node) = item.make_alias(&client, &node.path) {
+			self.accepted.add(item.uid.clone(), &alias_node);
+		}
+		let _ = node.send_remote_signal(
 			"capture",
 			&item.specialization.serialize_start_data(&item.uid),
 		);
 	}
 	fn handle_release(&self, item: &Item) {
-		self.accepted.remove(item);
-		let _ = self
-			.node
-			.upgrade()
-			.unwrap()
-			.send_remote_signal("release", &serialize(&item.uid).unwrap());
+		let Some(node) = self.node.upgrade() else { return };
+
+		self.accepted.remove(&item.uid);
+		let _ = node.send_remote_signal("release", &serialize(&item.uid).unwrap());
 	}
 }
 impl Drop for ItemAcceptor {
 	fn drop(&mut self) {
 		self.type_info.acceptors.remove(self);
-		for accepted in self.accepted.get_valid_contents() {
-			release(&accepted);
-		}
 		if let Some(ui) = self.type_info.ui.lock().upgrade() {
 			ui.handle_destroy_acceptor(self);
 		}
