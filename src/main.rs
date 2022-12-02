@@ -11,8 +11,8 @@ use crate::objects::input::sk_controller::SkController;
 use crate::objects::input::sk_hand::SkHand;
 
 use self::core::eventloop::EventLoop;
-use anyhow::Result;
 use clap::Parser;
+use color_eyre::eyre::Result;
 use directories::ProjectDirs;
 use std::sync::Arc;
 use stereokit::input::Handed;
@@ -151,7 +151,7 @@ fn main() -> Result<()> {
 async fn event_loop(
 	handle_sender: oneshot::Sender<Handle>,
 	stop_rx: oneshot::Receiver<()>,
-) -> anyhow::Result<()> {
+) -> color_eyre::eyre::Result<()> {
 	let _ = handle_sender.send(Handle::current());
 	// console_subscriber::init();
 

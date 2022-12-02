@@ -1,5 +1,5 @@
 use super::client::Client;
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use slab::Slab;
 use stardust_xr::server;
 use std::sync::atomic::AtomicU64;

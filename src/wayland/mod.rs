@@ -11,7 +11,7 @@ pub mod xdg_shell;
 
 use self::{panel_item::PanelItem, state::WaylandState, surface::CORE_SURFACES};
 use crate::wayland::state::ClientState;
-use anyhow::{ensure, Result};
+use color_eyre::eyre::{ensure, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use slog::Drain;

@@ -5,7 +5,7 @@ use crate::{
 		Node,
 	},
 };
-use anyhow::{anyhow, ensure, Result};
+use color_eyre::eyre::{ensure, eyre, Result};
 use glam::{vec3, Mat4, Vec2};
 use mint::Vector2;
 use once_cell::sync::OnceCell;
@@ -63,9 +63,7 @@ impl Text {
 			"Internal: Node already has text attached!"
 		);
 
-		let client = node
-			.get_client()
-			.ok_or_else(|| anyhow!("Client not found"))?;
+		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
 		let text = TEXT_REGISTRY.add(Text {
 			space: node.spatial.get().unwrap().clone(),
 			font_path: font_resource_id
@@ -90,21 +88,21 @@ impl Text {
 	}
 
 	fn draw(&self, sk: &StereoKit, draw_ctx: &DrawContext) {
-		let style =
-			self.style
-				.get_or_try_init(|| -> Result<SendWrapper<TextStyle>, anyhow::Error> {
-					let font = self
-						.font_path
-						.as_deref()
-						.and_then(|path| Font::from_file(sk, path))
-						.unwrap_or(Font::default(sk));
-					Ok(SendWrapper::new(TextStyle::new(
-						sk,
-						font,
-						1.0,
-						Rgba::new(Rgb::new(1.0, 1.0, 1.0), 1.0),
-					)))
-				});
+		let style = self.style.get_or_try_init(
+			|| -> Result<SendWrapper<TextStyle>, color_eyre::eyre::Error> {
+				let font = self
+					.font_path
+					.as_deref()
+					.and_then(|path| Font::from_file(sk, path))
+					.unwrap_or(Font::default(sk));
+				Ok(SendWrapper::new(TextStyle::new(
+					sk,
+					font,
+					1.0,
+					Rgba::new(Rgb::new(1.0, 1.0, 1.0), 1.0),
+				)))
+			},
+		);
 
 		if let Ok(style) = style {
 			let data = self.data.lock();

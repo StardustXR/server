@@ -1,6 +1,6 @@
 use crate::core::client::Client;
 use crate::nodes::Node;
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use once_cell::sync::OnceCell;
 use stardust_xr::scenegraph;
 use stardust_xr::scenegraph::ScenegraphError;

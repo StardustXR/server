@@ -10,7 +10,7 @@ use crate::{
 		Node,
 	},
 };
-use anyhow::{anyhow, Result};
+use color_eyre::eyre::{eyre, Result};
 use lazy_static::lazy_static;
 use serde::Deserialize;
 use stardust_xr::{
@@ -46,7 +46,7 @@ impl EnvironmentItem {
 
 	fn get_path_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<Vec<u8>> {
 		let ItemType::Environment(environment_item) = &node.item.get().unwrap().specialization else {
-			return Err(anyhow!("Wrong item type?"))
+			return Err(eyre!("Wrong item type?"))
 		};
 		Ok(flexbuffers::singleton(environment_item.path.as_str()))
 	}

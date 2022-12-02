@@ -4,7 +4,7 @@ use crate::core::destroy_queue;
 use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
-use anyhow::{anyhow, ensure, Result};
+use color_eyre::eyre::{ensure, eyre, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use prisma::{Rgb, Rgba};
@@ -66,12 +66,12 @@ impl Model {
 				.get_file(
 					&node
 						.get_client()
-						.ok_or_else(|| anyhow!("Client not found"))?
+						.ok_or_else(|| eyre!("Client not found"))?
 						.base_resource_prefixes
 						.lock()
 						.clone(),
 				)
-				.ok_or_else(|| anyhow!("Resource not found"))?,
+				.ok_or_else(|| eyre!("Resource not found"))?,
 		);
 		let _ = node.model.set(model_arc.clone());
 		Ok(model_arc)

@@ -12,7 +12,7 @@ use super::spatial::Spatial;
 use super::Node;
 use crate::core::client::Client;
 use crate::nodes::spatial::find_reference_space;
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use glam::{vec2, vec3a, Vec3, Vec3A};
 use mint::Vector3;
 use serde::{Deserialize, Serialize};

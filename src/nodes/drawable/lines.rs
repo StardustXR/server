@@ -5,7 +5,7 @@ use crate::{
 		Node,
 	},
 };
-use anyhow::{ensure, Result};
+use color_eyre::eyre::{ensure, Result};
 use glam::Vec3A;
 use mint::Vector3;
 use parking_lot::Mutex;

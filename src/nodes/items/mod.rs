@@ -11,7 +11,7 @@ use crate::nodes::alias::AliasInfo;
 use crate::nodes::fields::find_field;
 #[cfg(feature = "wayland")]
 use crate::wayland::panel_item::{PanelItem, ITEM_TYPE_INFO_PANEL};
-use anyhow::{anyhow, ensure, Result};
+use color_eyre::eyre::{ensure, eyre, Result};
 use lazy_static::lazy_static;
 use nanoid::nanoid;
 use parking_lot::Mutex;
@@ -372,7 +372,7 @@ fn type_info(name: &str) -> Result<&'static TypeInfo> {
 		"environment" => Ok(&ITEM_TYPE_INFO_ENVIRONMENT),
 		#[cfg(feature = "wayland")]
 		"panel" => Ok(&ITEM_TYPE_INFO_PANEL),
-		_ => Err(anyhow!("Invalid item type")),
+		_ => Err(eyre!("Invalid item type")),
 	}
 }
 

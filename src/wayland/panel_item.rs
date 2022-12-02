@@ -13,7 +13,7 @@ use crate::{
 		Node,
 	},
 };
-use anyhow::{anyhow, bail, Result};
+use color_eyre::eyre::{bail, eyre, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::Vector2;
@@ -127,11 +127,11 @@ impl PanelItem {
 		let model_node = calling_client
 			.scenegraph
 			.get_node(info.model_path)
-			.ok_or_else(|| anyhow!("Model node not found"))?;
+			.ok_or_else(|| eyre!("Model node not found"))?;
 		let model = model_node
 			.model
 			.get()
-			.ok_or_else(|| anyhow!("Node is not a model"))?;
+			.ok_or_else(|| eyre!("Node is not a model"))?;
 
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(core_surface) = panel_item.core_surface.upgrade() {
@@ -161,11 +161,11 @@ impl PanelItem {
 		let model_node = calling_client
 			.scenegraph
 			.get_node(info.model_path)
-			.ok_or_else(|| anyhow!("Model node not found"))?;
+			.ok_or_else(|| eyre!("Model node not found"))?;
 		let model = model_node
 			.model
 			.get()
-			.ok_or_else(|| anyhow!("Node is not a model"))?;
+			.ok_or_else(|| eyre!("Node is not a model"))?;
 
 		core_surface.apply_material(model.clone(), info.idx);
 
@@ -347,7 +347,7 @@ impl PanelItem {
 		let context = xkb::Context::new(0);
 		let keymap =
 			Keymap::new_from_string(&context, deserialize(data)?, XKB_KEYMAP_FORMAT_TEXT_V1, 0)
-				.ok_or_else(|| anyhow!("Keymap is not valid"))?;
+				.ok_or_else(|| eyre!("Keymap is not valid"))?;
 
 		PanelItem::keyboard_activate_flex(node, &keymap)
 	}
@@ -376,7 +376,7 @@ impl PanelItem {
 			names.options,
 			XKB_KEYMAP_FORMAT_TEXT_V1,
 		)
-		.ok_or_else(|| anyhow!("Keymap is not valid"))?;
+		.ok_or_else(|| eyre!("Keymap is not valid"))?;
 
 		PanelItem::keyboard_activate_flex(node, &keymap)
 	}

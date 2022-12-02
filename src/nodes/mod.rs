@@ -9,7 +9,7 @@ pub mod root;
 pub mod spatial;
 pub mod startup;
 
-use anyhow::{anyhow, Result};
+use color_eyre::eyre::{bail, eyre, Result};
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -162,7 +162,7 @@ impl Node {
 	{
 		aspect_fn(self)
 			.get()
-			.ok_or_else(|| anyhow!("{} is not a {} node", node_name, aspect_type))
+			.ok_or_else(|| eyre!("{} is not a {} node", node_name, aspect_type))
 	}
 
 	pub fn send_local_signal(
@@ -185,8 +185,9 @@ impl Node {
 				.local_signals
 				.get(method)
 				.ok_or(ScenegraphError::SignalNotFound)?;
-			signal(self, calling_client, data)
-				.map_err(|error| ScenegraphError::SignalError { error })
+			signal(self, calling_client, data).map_err(|error| ScenegraphError::SignalError {
+				error: error.to_string(),
+			})
 		}
 	}
 	pub fn execute_local_method(
@@ -209,8 +210,9 @@ impl Node {
 				.local_methods
 				.get(method)
 				.ok_or(ScenegraphError::MethodNotFound)?;
-			method(self, calling_client, data)
-				.map_err(|error| ScenegraphError::MethodError { error })
+			method(self, calling_client, data).map_err(|error| ScenegraphError::MethodError {
+				error: error.to_string(),
+			})
 		}
 	}
 	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
@@ -236,17 +238,15 @@ impl Node {
 		Ok(())
 	}
 	pub async fn execute_remote_method(&self, method: &str, data: Vec<u8>) -> Result<Vec<u8>> {
-		if let Some(client) = self.get_client() {
-			match client.message_sender_handle.as_ref() {
-				None => Err(anyhow!("Messenger does not exist for this node's client")),
-				Some(message_sender_handle) => {
-					message_sender_handle
-						.method(self.path.as_str(), method, &data)?
-						.await
-				}
-			}
-		} else {
-			Err(anyhow!("Client does not exist somehow?"))
-		}
+		let Some(client) = self.get_client() else {bail!("Client does not exist somehow?")};
+		let message_sender_handle = client
+			.message_sender_handle
+			.as_ref()
+			.ok_or(eyre!("Messenger does not exist for this node's client"))?;
+
+		message_sender_handle
+			.method(self.path.as_str(), method, &data)?
+			.await
+			.map_err(|e| eyre!(e))
 	}
 }

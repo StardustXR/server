@@ -9,7 +9,7 @@ repository = "https://github.com/StardustXR/stardust-xr-server/"
 homepage = "https://stardustxr.org"
 
 [dependencies]
-anyhow = "1.0.57"
+color-eyre = { version = "0.6.2", default-features = false }
 clap = { version = "4.0.8", features = ["derive"] }
 ctrlc = "3.2.2"
 dashmap = "5.3.4"
@@ -32,7 +32,7 @@ prisma = "0.1.1"
 slog = "2.7.0"
 slog-stdlog = "4.1.1"
 xkbcommon = { version = "0.5.0", default-features = false, optional = true }
-stardust-xr = "0.7.1"
+stardust-xr = "0.8.0"
 directories = "4.0.1"
 serde = { version = "1.0.145", features = ["derive"] }
 

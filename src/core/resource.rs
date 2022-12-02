@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use color_eyre::eyre::eyre;
 use serde::{de::Visitor, Deserialize};
 use std::path::PathBuf;
 
@@ -56,9 +56,7 @@ impl<'de> Visitor<'de> for ResourceVisitor {
 				path: PathBuf::from(path),
 			}
 		} else {
-			return Err(serde::de::Error::custom(anyhow!(
-				"Invalid format for string"
-			)));
+			return Err(serde::de::Error::custom(eyre!("Invalid format for string")));
 		})
 	}
 

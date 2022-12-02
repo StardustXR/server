@@ -4,7 +4,7 @@ use self::zone::{create_zone_flex, Zone};
 use super::Node;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
-use anyhow::{anyhow, ensure, Result};
+use color_eyre::eyre::{ensure, eyre, Result};
 use glam::{vec3a, Mat4, Quat};
 use mint::Vector3;
 use nanoid::nanoid;
@@ -147,7 +147,7 @@ impl Spatial {
 			.map(|parent| self.is_ancestor_of(parent.clone()))
 			.unwrap_or(false);
 		if is_ancestor {
-			return Err(anyhow!("Setting spatial parent would cause a loop"));
+			return Err(eyre!("Setting spatial parent would cause a loop"));
 		}
 
 		*self.parent.lock() = parent.cloned();
@@ -160,7 +160,7 @@ impl Spatial {
 			.map(|parent| self.is_ancestor_of(parent.clone()))
 			.unwrap_or(false);
 		if is_ancestor {
-			return Err(anyhow!("Setting spatial parent would cause a loop"));
+			return Err(eyre!("Setting spatial parent would cause a loop"));
 		}
 
 		self.set_local_transform(Spatial::space_to_space_matrix(
@@ -180,7 +180,7 @@ impl Spatial {
 		let this_spatial = node
 			.spatial
 			.get()
-			.ok_or_else(|| anyhow!("Node doesn't have a spatial?"))?;
+			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
 		let relative_spatial = find_reference_space(&calling_client, deserialize(data)?)?;
 
 		let (scale, rotation, position) = Spatial::space_to_space_matrix(
@@ -295,7 +295,7 @@ pub fn find_spatial(
 	calling_client: &Arc<Client>,
 	node_name: &'static str,
 	node_path: &str,
-) -> anyhow::Result<Arc<Spatial>> {
+) -> color_eyre::eyre::Result<Arc<Spatial>> {
 	calling_client
 		.get_node(node_name, node_path)?
 		.get_aspect(node_name, "spatial", |n| &n.spatial)
@@ -304,13 +304,13 @@ pub fn find_spatial(
 pub fn find_spatial_parent(
 	calling_client: &Arc<Client>,
 	node_path: &str,
-) -> anyhow::Result<Arc<Spatial>> {
+) -> color_eyre::eyre::Result<Arc<Spatial>> {
 	find_spatial(calling_client, "Spatial parent", node_path)
 }
 pub fn find_reference_space(
 	calling_client: &Arc<Client>,
 	node_path: &str,
-) -> anyhow::Result<Arc<Spatial>> {
+) -> color_eyre::eyre::Result<Arc<Spatial>> {
 	find_spatial(calling_client, "Reference space", node_path)
 }
 

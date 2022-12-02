@@ -6,31 +6,31 @@ use std::{
 	sync::{Arc, Weak},
 };
 
-#[derive(Default)]
-pub struct LifeLinkedNodeList {
-	nodes: Mutex<Vec<Weak<Node>>>,
-}
-impl LifeLinkedNodeList {
-	pub fn add(&self, node: Weak<Node>) {
-		self.nodes.lock().push(node);
-	}
+// #[derive(Default)]
+// pub struct LifeLinkedNodeList {
+// 	nodes: Mutex<Vec<Weak<Node>>>,
+// }
+// impl LifeLinkedNodeList {
+// 	pub fn add(&self, node: Weak<Node>) {
+// 		self.nodes.lock().push(node);
+// 	}
 
-	pub fn clear(&self) {
-		self.nodes
-			.lock()
-			.iter()
-			.filter_map(|node| node.upgrade())
-			.for_each(|node| {
-				node.destroy();
-			});
-		self.nodes.lock().clear();
-	}
-}
-impl Drop for LifeLinkedNodeList {
-	fn drop(&mut self) {
-		self.clear();
-	}
-}
+// 	pub fn clear(&self) {
+// 		self.nodes
+// 			.lock()
+// 			.iter()
+// 			.filter_map(|node| node.upgrade())
+// 			.for_each(|node| {
+// 				node.destroy();
+// 			});
+// 		self.nodes.lock().clear();
+// 	}
+// }
+// impl Drop for LifeLinkedNodeList {
+// 	fn drop(&mut self) {
+// 		self.clear();
+// 	}
+// }
 
 #[derive(Default)]
 pub struct LifeLinkedNodeMap<K: Hash + Eq> {

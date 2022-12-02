@@ -8,7 +8,7 @@ use crate::{
 		Node,
 	},
 };
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use glam::vec3a;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
@@ -81,12 +81,12 @@ impl Zone {
 	}
 	fn update(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
 		let zone = node.zone.get().unwrap();
-		let Some(field) = zone.field.upgrade() else { return Err(anyhow::anyhow!("Zone's field has been destroyed")) };
+		let Some(field) = zone.field.upgrade() else { return Err(color_eyre::eyre::eyre!("Zone's field has been destroyed")) };
 		let Some((zone_client, zone_node)) = zone
 			.spatial
 			.node
 			.upgrade()
-			.and_then(|n| n.get_client().zip(Some(n))) else { return Err(anyhow::anyhow!("No client on node?")) };
+			.and_then(|n| n.get_client().zip(Some(n))) else { return Err(color_eyre::eyre::eyre!("No client on node?")) };
 		let mut old_zoneables = zone.zoneables.lock();
 		for (_uid, zoneable) in old_zoneables.iter() {
 			zoneable.destroy();

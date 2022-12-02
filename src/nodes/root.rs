@@ -3,7 +3,7 @@ use super::startup::DESKTOP_STARTUP_IDS;
 use super::Node;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
-use anyhow::{anyhow, Result};
+use color_eyre::eyre::{eyre, Result};
 use glam::Mat4;
 use stardust_xr::schemas::flex::{deserialize, serialize};
 
@@ -39,7 +39,7 @@ impl Root {
 		let startup_settings = DESKTOP_STARTUP_IDS
 			.lock()
 			.remove(flexbuffers::Reader::get_root(data)?.get_str()?)
-			.ok_or_else(|| anyhow!("Desktop startup ID not found in the list!"))?;
+			.ok_or_else(|| eyre!("Desktop startup ID not found in the list!"))?;
 		node.spatial
 			.get()
 			.unwrap()
