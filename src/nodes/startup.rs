@@ -1,7 +1,7 @@
 use crate::core::client::Client;
 
 use super::Node;
-use anyhow::{anyhow, Result};
+use color_eyre::eyre::{eyre, Result};
 use glam::Mat4;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
@@ -27,11 +27,11 @@ impl StartupSettings {
 		let spatial_node = calling_client
 			.scenegraph
 			.get_node(startup_id)
-			.ok_or_else(|| anyhow!("Root spatial node does not exist"))?;
+			.ok_or_else(|| eyre!("Root spatial node does not exist"))?;
 		let spatial = spatial_node
 			.spatial
 			.get()
-			.ok_or_else(|| anyhow!("Root spatial node is not a spatial"))?;
+			.ok_or_else(|| eyre!("Root spatial node is not a spatial"))?;
 		node.startup_settings.get().unwrap().lock().transform = spatial.global_transform();
 
 		Ok(())

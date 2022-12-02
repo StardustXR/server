@@ -1,7 +1,7 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
 use crate::nodes::spatial::{find_spatial_parent, Spatial};
-use anyhow::{ensure, Result};
+use color_eyre::eyre::{ensure, Result};
 use glam::{Mat4, Vec3A};
 use mint::Vector3;
 use portable_atomic::AtomicF32;

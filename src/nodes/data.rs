@@ -7,7 +7,7 @@ use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::nodes::fields::find_field;
 use crate::nodes::spatial::find_spatial_parent;
-use anyhow::{anyhow, ensure, Result};
+use color_eyre::eyre::{ensure, eyre, Result};
 use glam::vec3a;
 use mint::{Quaternion, Vector3};
 use nanoid::nanoid;
@@ -37,9 +37,9 @@ pub struct Mask(pub Vec<u8>);
 impl Mask {
 	pub fn get_mask(&self) -> Result<flexbuffers::MapReader<&[u8]>> {
 		flexbuffers::Reader::get_root(self.0.as_slice())
-			.map_err(|_| anyhow!("Mask is not a valid flexbuffer"))?
+			.map_err(|_| eyre!("Mask is not a valid flexbuffer"))?
 			.get_map()
-			.map_err(|_| anyhow!("Mask is not a valid map"))
+			.map_err(|_| eyre!("Mask is not a valid map"))
 	}
 }
 

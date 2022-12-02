@@ -1,6 +1,6 @@
 use super::{state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE};
 use crate::nodes::items::Item;
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use mint::Vector2;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
@@ -46,12 +46,12 @@ impl KeyboardInfo {
 		let wl_key_state = match state {
 			0 => KeyState::Released,
 			1 => KeyState::Pressed,
-			_ => anyhow::bail!("Invalid key state!"),
+			_ => color_eyre::eyre::bail!("Invalid key state!"),
 		};
 		let xkb_key_state = match state {
 			0 => xkb::KeyDirection::Up,
 			1 => xkb::KeyDirection::Down,
-			_ => anyhow::bail!("Invalid key state!"),
+			_ => color_eyre::eyre::bail!("Invalid key state!"),
 		};
 		let state_components = self.state.update_key(key + 8, xkb_key_state);
 		if state_components != 0 {

@@ -4,7 +4,7 @@ use crate::nodes::fields::Field;
 use crate::nodes::input::{InputMethod, InputType};
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
 use crate::nodes::Node;
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use glam::{vec3a, Mat4};
 use serde::Deserialize;
 use stardust_xr::schemas::flat::{Datamap, InputDataType, Tip as FlatTip};

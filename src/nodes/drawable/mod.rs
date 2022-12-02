@@ -4,7 +4,7 @@ pub mod text;
 
 use super::Node;
 use crate::core::client::Client;
-use anyhow::Result;
+use color_eyre::eyre::Result;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;

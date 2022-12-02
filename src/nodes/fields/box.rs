@@ -1,7 +1,7 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
-use anyhow::{ensure, Result};
+use color_eyre::eyre::{ensure, Result};
 use glam::{vec3, vec3a, Vec3, Vec3A};
 use mint::Vector3;
 use parking_lot::Mutex;

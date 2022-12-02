@@ -13,7 +13,7 @@ use crate::core::client::Client;
 use crate::core::eventloop::FRAME;
 use crate::core::registry::Registry;
 use crate::nodes::fields::find_field;
-use anyhow::{ensure, Result};
+use color_eyre::eyre::{ensure, Result};
 use glam::Mat4;
 use nanoid::nanoid;
 use parking_lot::Mutex;

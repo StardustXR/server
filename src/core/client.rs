@@ -3,7 +3,7 @@ use crate::{
 	core::registry::Registry,
 	nodes::{data, drawable, fields, hmd, input, items, root::Root, spatial, startup, Node},
 };
-use anyhow::{anyhow, Result};
+use color_eyre::eyre::{eyre, Result};
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -104,7 +104,7 @@ impl Client {
 	pub fn get_node(&self, name: &'static str, path: &str) -> Result<Arc<Node>> {
 		self.scenegraph
 			.get_node(path)
-			.ok_or_else(|| anyhow!("{} not found", name))
+			.ok_or_else(|| eyre!("{} not found", name))
 	}
 
 	pub async fn disconnect(&self) {
