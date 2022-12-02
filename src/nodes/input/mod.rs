@@ -29,7 +29,8 @@ static INPUT_METHOD_REGISTRY: Registry<InputMethod> = Registry::new();
 static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
 
 pub trait InputSpecialization: Send + Sync {
-	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
+	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
+	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
 	fn serialize(
 		&self,
 		distance_link: &DistanceLink,
@@ -108,8 +109,13 @@ impl InputMethod {
 		Ok(())
 	}
 
-	fn distance(&self, to: &Field) -> f32 {
-		self.specialization.lock().distance(&self.spatial, to)
+	fn compare_distance(&self, to: &Field) -> f32 {
+		self.specialization
+			.lock()
+			.compare_distance(&self.spatial, to)
+	}
+	fn true_distance(&self, to: &Field) -> f32 {
+		self.specialization.lock().true_distance(&self.spatial, to)
 	}
 }
 impl Drop for InputMethod {
@@ -128,7 +134,7 @@ impl DistanceLink {
 	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Option<Self> {
 		let handler_field = handler.field.upgrade()?;
 		Some(DistanceLink {
-			distance: method.distance(&handler_field),
+			distance: method.compare_distance(&handler_field),
 			method,
 			handler,
 			handler_field,
@@ -147,7 +153,9 @@ impl DistanceLink {
 		let root = InputData {
 			uid: self.method.uid.clone(),
 			input,
-			distance: self.distance,
+			distance: self
+				.method
+				.true_distance(&self.handler.field.upgrade().unwrap()),
 			datamap,
 		};
 		root.serialize()
@@ -237,42 +245,47 @@ pub fn create_input_handler_flex(
 	InputHandler::add_to(&node, &field)?;
 	Ok(())
 }
-
 pub fn process_input() {
+	// Iterate over all valid input methods
 	for method in INPUT_METHOD_REGISTRY
 		.get_valid_contents()
 		.into_iter()
 		.filter(|method| *method.enabled.lock())
 		.filter(|method| method.datamap.lock().is_some())
 	{
+		// Get all valid input handlers and convert them to DistanceLink objects
 		let mut distance_links: Vec<DistanceLink> = INPUT_HANDLER_REGISTRY
 			.get_valid_contents()
 			.into_iter()
 			.filter(|handler| handler.field.upgrade().is_some())
 			.filter_map(|handler| DistanceLink::from(method.clone(), handler))
 			.collect();
-		distance_links.sort_unstable_by(|a, b| {
-			a.distance
-				.abs()
-				.partial_cmp(&b.distance.abs())
-				.unwrap()
-				.reverse()
-		});
 
-		let mut last_distance = 0.0;
+		// Sort the distance links by their distance in ascending order
+		distance_links
+			.sort_unstable_by(|a, b| a.distance.abs().partial_cmp(&b.distance.abs()).unwrap());
+
+		// Get the current frame
 		let frame = FRAME.load(Ordering::Relaxed);
+
+		// Get the list of captured input handlers for this method
 		let captures = method.captures.get_valid_contents();
+
+		// Iterate over the distance links and send input to them
 		for distance_link in distance_links {
 			distance_link.send_input(frame, method.datamap.lock().clone().unwrap());
-			if last_distance != distance_link.distance
-				&& captures
-					.iter()
-					.any(|c| Arc::ptr_eq(c, &distance_link.handler))
+
+			// If the current distance link is in the list of captured input handlers,
+			// break out of the loop to avoid sending input to the remaining distance links
+			if captures
+				.iter()
+				.any(|c| Arc::ptr_eq(c, &distance_link.handler))
 			{
 				break;
 			}
-			last_distance = distance_link.distance;
 		}
+
+		// Clear the list of captured input handlers for this method
 		method.captures.clear();
 	}
 }
