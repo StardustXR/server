@@ -11,7 +11,10 @@ pub struct Hand {
 	pub base: FlatHand,
 }
 impl InputSpecialization for Hand {
-	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+		self.true_distance(space, field).abs()
+	}
+	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		let mut min_distance = f32::MAX;
 
 		for tip in [

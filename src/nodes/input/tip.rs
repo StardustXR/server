@@ -25,7 +25,10 @@ impl Tip {
 	}
 }
 impl InputSpecialization for Tip {
-	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+		field.distance(space, vec3a(0.0, 0.0, 0.0)).abs()
+	}
+	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		field.distance(space, vec3a(0.0, 0.0, 0.0))
 	}
 	fn serialize(
