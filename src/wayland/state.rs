@@ -27,15 +27,16 @@ use smithay::{
 	},
 };
 use std::sync::{Arc, Weak};
+use tracing::info;
 
 pub struct ClientState;
 impl ClientData for ClientState {
 	fn initialized(&self, client_id: ClientId) {
-		println!("Wayland client {:?} connected", client_id);
+		info!("Wayland client {:?} connected", client_id);
 	}
 
 	fn disconnected(&self, client_id: ClientId, reason: DisconnectReason) {
-		println!(
+		info!(
 			"Wayland client {:?} disconnected because {:#?}",
 			client_id, reason
 		);
@@ -98,7 +99,7 @@ impl WaylandState {
 		);
 		display_handle.create_global::<Self, WlDataDeviceManager, _>(3, ());
 
-		println!("Init Wayland compositor");
+		info!("Init Wayland compositor");
 
 		Arc::new_cyclic(|weak| {
 			Mutex::new(WaylandState {
@@ -127,7 +128,7 @@ impl WaylandState {
 }
 impl Drop for WaylandState {
 	fn drop(&mut self) {
-		println!("Cleanly shut down the Wayland compositor");
+		info!("Cleanly shut down the Wayland compositor");
 	}
 }
 impl BufferHandler for WaylandState {

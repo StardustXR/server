@@ -17,7 +17,7 @@ use stereokit::{
 	StereoKit,
 };
 
-const SK_KEYMAP: &'static str = include_str!("sk.kmp");
+const SK_KEYMAP: &str = include_str!("sk.kmp");
 
 pub struct MousePointer {
 	node: Arc<Node>,

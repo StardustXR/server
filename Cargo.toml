@@ -30,11 +30,13 @@ thiserror = "1.0.31"
 send_wrapper = "0.6.0"
 prisma = "0.1.1"
 slog = "2.7.0"
-slog-stdlog = "4.1.1"
 xkbcommon = { version = "0.5.0", default-features = false, optional = true }
 stardust-xr = "0.8.0"
 directories = "4.0.1"
 serde = { version = "1.0.145", features = ["derive"] }
+tracing = "0.1.37"
+tracing-subscriber = "0.3.16"
+tracing-slog = "0.2.0"
 
 [dependencies.stereokit]
 default-features = false

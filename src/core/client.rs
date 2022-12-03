@@ -3,22 +3,29 @@ use crate::{
 	core::registry::Registry,
 	nodes::{data, drawable, fields, hmd, input, items, root::Root, spatial, startup, Node},
 };
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::{
+	eyre::{eyre, Result},
+	Report,
+};
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use stardust_xr::messenger::{self, MessageSenderHandle};
 use std::{
+	fs,
 	path::PathBuf,
 	sync::{Arc, Weak},
 };
 use tokio::{net::UnixStream, sync::Notify, task::JoinHandle};
+use tracing::{info, warn};
 
 lazy_static! {
 	pub static ref CLIENTS: Registry<Client> = Registry::new();
 	pub static ref INTERNAL_CLIENT: Arc<Client> = CLIENTS.add(Client {
 		event_loop: Weak::new(),
 		index: 0,
+		pid: None,
+		exe: None,
 
 		stop_notifier: Default::default(),
 		join_handle: OnceCell::new(),
@@ -33,6 +40,8 @@ lazy_static! {
 pub struct Client {
 	event_loop: Weak<EventLoop>,
 	index: usize,
+	pid: Option<i32>,
+	exe: Option<PathBuf>,
 	stop_notifier: Arc<Notify>,
 	join_handle: OnceCell<JoinHandle<Result<()>>>,
 
@@ -47,7 +56,16 @@ impl Client {
 		event_loop: &Arc<EventLoop>,
 		connection: UnixStream,
 	) -> Arc<Self> {
-		println!("New client connected");
+		let pid = connection.peer_cred().ok().and_then(|c| c.pid());
+		let exe = pid.and_then(|pid| fs::read_link(format!("/proc/{}/exe", pid)).ok());
+		info!(
+			index = index,
+			pid,
+			exe = exe
+				.as_ref()
+				.and_then(|exe| exe.to_str().map(|s| s.to_string())),
+			"New client connected"
+		);
 
 		let (mut messenger_tx, mut messenger_rx) = messenger::create(connection);
 		let scenegraph = Arc::new(Scenegraph::default());
@@ -55,6 +73,8 @@ impl Client {
 		let client = CLIENTS.add(Client {
 			event_loop: Arc::downgrade(event_loop),
 			index,
+			pid,
+			exe,
 			stop_notifier: Default::default(),
 			join_handle: OnceCell::new(),
 
@@ -88,11 +108,14 @@ impl Client {
 					}
 				};
 
-				let result = tokio::select! {
+				let result: Result<(), Report> = tokio::select! {
 					_ = client.stop_notifier.notified() => Ok(()),
 					e = dispatch_loop => e,
 					e = flush_loop => e,
 				};
+				if let Err(e) = &result {
+					warn!(error = e.root_cause(), "Client disconnected with error!");
+				}
 				client.disconnect().await;
 				result
 			}
@@ -118,6 +141,14 @@ impl Drop for Client {
 	fn drop(&mut self) {
 		self.stop_notifier.notify_one();
 		CLIENTS.remove(self);
-		println!("Client disconnected");
+		info!(
+			index = self.index,
+			pid = self.pid,
+			exe = self
+				.exe
+				.as_ref()
+				.and_then(|exe| exe.to_str().map(|s| s.to_string())),
+			"Client disconnected"
+		);
 	}
 }

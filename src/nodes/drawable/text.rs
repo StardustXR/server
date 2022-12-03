@@ -94,7 +94,7 @@ impl Text {
 					.font_path
 					.as_deref()
 					.and_then(|path| Font::from_file(sk, path))
-					.unwrap_or(Font::default(sk));
+					.unwrap_or_else(|| Font::default(sk));
 				Ok(SendWrapper::new(TextStyle::new(
 					sk,
 					font,

@@ -9,10 +9,11 @@ pub mod root;
 pub mod spatial;
 pub mod startup;
 
-use color_eyre::eyre::{bail, eyre, Result};
+use color_eyre::eyre::{eyre, Result};
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
@@ -44,6 +45,8 @@ pub type Method = fn(&Node, Arc<Client>, &[u8]) -> Result<Vec<u8>>;
 pub struct Node {
 	pub(super) uid: String,
 	path: String,
+	client: Weak<Client>,
+	message_sender_handle: Option<MessageSenderHandle>,
 	// trailing_slash_pos: usize,
 	local_signals: DashMap<String, Signal, BuildHasherDefault<FxHasher>>,
 	local_methods: DashMap<String, Method, BuildHasherDefault<FxHasher>>,
@@ -76,8 +79,6 @@ pub struct Node {
 
 	// Startup
 	pub startup_settings: OnceCell<Mutex<StartupSettings>>,
-
-	pub(crate) client: Weak<Client>,
 }
 
 impl Node {
@@ -101,6 +102,7 @@ impl Node {
 		let node = Node {
 			uid: nanoid!(),
 			client: Arc::downgrade(client),
+			message_sender_handle: client.message_sender_handle.clone(),
 			path,
 			// trailing_slash_pos: parent.len(),
 			local_signals: Default::default(),
@@ -132,9 +134,9 @@ impl Node {
 		self.get_client().unwrap().scenegraph.add_node(self)
 	}
 	pub fn destroy(&self) {
-		let _ = self
-			.get_client()
-			.map(|c| c.scenegraph.remove_node(self.get_path()));
+		if let Some(client) = self.get_client() {
+			client.scenegraph.remove_node(self.get_path());
+		}
 	}
 
 	pub fn destroy_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
@@ -220,29 +222,24 @@ impl Node {
 			.get_valid_contents()
 			.iter()
 			.filter(|alias| alias.info.remote_signals.iter().any(|e| e == &method))
-			.for_each(|alias| {
-				let _ = alias
-					.node
-					.upgrade()
-					.unwrap()
-					.send_remote_signal(method, data);
+			.filter_map(|alias| alias.node.upgrade())
+			.for_each(|node| {
+				let _ = node.send_remote_signal(method, data);
 			});
 		let path = self.path.clone();
 		let method = method.to_string();
 		let data = data.to_vec();
-		if let Some(client) = self.get_client() {
-			if let Some(message_sender_handle) = client.message_sender_handle.as_ref() {
-				message_sender_handle.signal(path.as_str(), method.as_str(), data.as_slice())?;
-			}
-		}
+		self.message_sender_handle
+			.as_ref()
+			.map(|handle| handle.signal(path.as_str(), method.as_str(), data.as_slice()))
+			.transpose()?;
 		Ok(())
 	}
 	pub async fn execute_remote_method(&self, method: &str, data: Vec<u8>) -> Result<Vec<u8>> {
-		let Some(client) = self.get_client() else {bail!("Client does not exist somehow?")};
-		let message_sender_handle = client
+		let message_sender_handle = self
 			.message_sender_handle
 			.as_ref()
-			.ok_or(eyre!("Messenger does not exist for this node's client"))?;
+			.ok_or(eyre!("Messenger does not exist for this node"))?;
 
 		message_sender_handle
 			.method(self.path.as_str(), method, &data)?
