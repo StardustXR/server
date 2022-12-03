@@ -19,12 +19,13 @@ use smithay::{
 	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
 	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket, Resource},
 };
+use tracing::info;
 use std::{
 	ffi::c_void,
 	os::unix::{net::UnixListener, prelude::FromRawFd},
 	sync::Arc,
 };
-use std::{os::unix::prelude::AsRawFd, time::Duration};
+use std::{os::unix::prelude::AsRawFd};
 use stereokit as sk;
 use stereokit::StereoKit;
 use tokio::{
@@ -64,8 +65,7 @@ pub struct Wayland {
 }
 impl Wayland {
 	pub fn new() -> Result<Self> {
-		let log = ::slog::Logger::root(::slog_stdlog::StdLog.fuse(), slog::o!());
-		slog_stdlog::init()?;
+		let log = ::slog::Logger::root(::tracing_slog::TracingSlogDrain.fuse(), slog::o!());
 
 		let egl_raw_handles = get_sk_egl()?;
 		let renderer = unsafe {
@@ -108,7 +108,7 @@ impl Wayland {
 	) -> Result<JoinHandle<Result<()>>> {
 		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
 		if let Some(socket_name) = socket.socket_name() {
-			println!("Wayland compositor {:?} active", socket_name);
+			info!("Wayland compositor {:?} active", socket_name);
 		}
 
 		let listen_async =
@@ -146,8 +146,6 @@ impl Wayland {
 	}
 
 	pub fn frame(&mut self, sk: &StereoKit) {
-		let time_ms = (sk.time_getf() * 1000.) as u64;
-
 		for core_surface in CORE_SURFACES.get_valid_contents() {
 			let Some(client_id) = 
 				core_surface
@@ -161,7 +159,6 @@ impl Wayland {
 				sk,
 				&mut self.renderer,
 				output,
-				Duration::from_millis(time_ms),
 				&self.log,
 				|data| {
 					PanelItem::on_mapped(&core_surface, data, seat_data);

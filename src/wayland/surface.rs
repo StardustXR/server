@@ -135,7 +135,6 @@ impl CoreSurface {
 		sk: &StereoKit,
 		renderer: &mut Gles2Renderer,
 		output: Output,
-		time: Duration,
 		log: &Logger,
 		on_mapped: F,
 		if_mapped: M,
@@ -182,9 +181,13 @@ impl CoreSurface {
 			if_mapped(data);
 		});
 
-		send_frames_surface_tree(&wl_surface, &output, time, None, |_, _| {
-			Some(output.clone())
-		});
+		send_frames_surface_tree(
+			&wl_surface,
+			&output,
+			Duration::from_secs_f64(sk.time_get()),
+			None,
+			|_, _| Some(output.clone()),
+		);
 	}
 
 	pub fn set_material_offset(&self, material_offset: u32) {

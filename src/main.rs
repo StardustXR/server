@@ -21,6 +21,7 @@ use stereokit::render::SphericalHarmonics;
 use stereokit::texture::Texture;
 use stereokit::{lifecycle::DisplayMode, Settings};
 use tokio::{runtime::Handle, sync::oneshot};
+use tracing::info;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -39,6 +40,7 @@ struct CliArgs {
 }
 
 fn main() -> Result<()> {
+	tracing_subscriber::fmt::init();
 	let project_dirs = ProjectDirs::from("", "", "stardust").unwrap();
 	let cli_args = Arc::new(CliArgs::parse());
 
@@ -55,7 +57,7 @@ fn main() -> Result<()> {
 		.depth_mode(DepthMode::D32)
 		.init()
 		.expect("StereoKit failed to initialize");
-	println!("Init StereoKit");
+	info!("Init StereoKit");
 
 	// Skytex/light stuff
 	{
@@ -104,7 +106,7 @@ fn main() -> Result<()> {
 
 	#[cfg(feature = "wayland")]
 	let mut wayland = wayland::Wayland::new()?;
-	println!("Stardust ready!");
+	info!("Stardust ready!");
 	stereokit.run(
 		|sk, draw_ctx| {
 			hmd::frame(sk);
@@ -131,7 +133,7 @@ fn main() -> Result<()> {
 			wayland.make_context_current();
 		},
 		|_| {
-			println!("Cleanly shut down StereoKit");
+			info!("Cleanly shut down StereoKit");
 		},
 	);
 
@@ -142,7 +144,7 @@ fn main() -> Result<()> {
 	event_thread
 		.join()
 		.expect("Failed to cleanly shut down event loop")?;
-	println!("Cleanly shut down Stardust");
+	info!("Cleanly shut down Stardust");
 	Ok(())
 }
 
@@ -157,8 +159,8 @@ async fn event_loop(
 
 	let (event_loop, event_loop_join_handle) =
 		EventLoop::new().expect("Couldn't create server socket");
-	println!("Init event loop");
-	println!("Stardust socket created at {}", event_loop.socket_path);
+	info!("Init event loop");
+	info!("Stardust socket created at {}", event_loop.socket_path);
 
 	let result = tokio::select! {
 		biased;
@@ -167,7 +169,7 @@ async fn event_loop(
 		e = event_loop_join_handle => e?,
 	};
 
-	println!("Cleanly shut down event loop");
+	info!("Cleanly shut down event loop");
 
 	unsafe {
 		stereokit::sys::sk_quit();
