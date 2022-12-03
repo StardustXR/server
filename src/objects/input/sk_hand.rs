@@ -77,8 +77,8 @@ impl SkHand {
 		}
 		let mut fbb = flexbuffers::Builder::default();
 		let mut map = fbb.start_map();
-		map.push("grabStrength", sk_hand.grip_activation);
-		map.push("pinchStrength", sk_hand.pinch_activation);
+		map.push("grab_strength", sk_hand.grip_activation);
+		map.push("pinch_strength", sk_hand.pinch_activation);
 		map.end_map();
 		*self.hand.datamap.lock() = Datamap::new(fbb.take_buffer()).ok();
 	}
