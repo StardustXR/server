@@ -13,6 +13,7 @@ use send_wrapper::SendWrapper;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
 use stardust_xr::values::Transform;
+use std::ffi::OsStr;
 use std::fmt::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -70,6 +71,7 @@ impl Model {
 						.base_resource_prefixes
 						.lock()
 						.clone(),
+					&[OsStr::new("glb"), OsStr::new("gltf")],
 				)
 				.ok_or_else(|| eyre!("Resource not found"))?,
 		);

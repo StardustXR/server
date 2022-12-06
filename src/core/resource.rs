@@ -1,27 +1,40 @@
 use color_eyre::eyre::eyre;
 use serde::{de::Visitor, Deserialize};
-use std::path::PathBuf;
+use std::{ffi::OsStr, path::PathBuf};
 
 pub enum ResourceID {
 	File(PathBuf),
 	Namespaced { namespace: String, path: PathBuf },
 }
 impl ResourceID {
-	pub fn get_file(&self, prefixes: &[PathBuf]) -> Option<PathBuf> {
+	pub fn get_file(&self, prefixes: &[PathBuf], extensions: &[&OsStr]) -> Option<PathBuf> {
 		match self {
-			ResourceID::File(file) => (file.is_absolute() && file.exists()).then_some(file.clone()),
+			ResourceID::File(file) => (file.is_absolute()
+				&& file.exists() && Self::has_extension(file, extensions))
+			.then_some(file.clone()),
 			ResourceID::Namespaced { namespace, path } => {
-				for prefix in prefixes {
-					let mut test_path = prefix.clone();
-					test_path.push(namespace.clone());
-					test_path.push(path.clone());
-
-					if test_path.as_path().exists() {
-						return Some(test_path);
-					}
-				}
-				None
+				let file_name = path.file_name()?;
+				prefixes
+					.iter()
+					.filter_map(|prefix| {
+						let prefixed_path = prefix.clone().join(namespace).join(path);
+						let parent = prefixed_path.parent()?;
+						std::fs::read_dir(parent).ok()
+					})
+					.flatten()
+					.filter_map(|item| item.ok())
+					.map(|dir_entry| dir_entry.path())
+					.filter(|path| path.file_stem() == Some(file_name))
+					.find(|path| Self::has_extension(path, extensions))
 			}
+		}
+	}
+
+	fn has_extension(path: &PathBuf, extensions: &[&OsStr]) -> bool {
+		if let Some(path_extension) = path.extension() {
+			extensions.contains(&path_extension)
+		} else {
+			false
 		}
 	}
 }

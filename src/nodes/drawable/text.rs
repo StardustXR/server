@@ -14,7 +14,7 @@ use prisma::{Flatten, Rgb, Rgba};
 use send_wrapper::SendWrapper;
 use serde::Deserialize;
 use stardust_xr::{schemas::flex::deserialize, values::Transform};
-use std::{path::PathBuf, sync::Arc};
+use std::{ffi::OsStr, path::PathBuf, sync::Arc};
 use stereokit::{
 	font::Font,
 	lifecycle::DrawContext,
@@ -66,8 +66,12 @@ impl Text {
 		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
 		let text = TEXT_REGISTRY.add(Text {
 			space: node.spatial.get().unwrap().clone(),
-			font_path: font_resource_id
-				.and_then(|res| res.get_file(&client.base_resource_prefixes.lock().clone())),
+			font_path: font_resource_id.and_then(|res| {
+				res.get_file(
+					&client.base_resource_prefixes.lock().clone(),
+					&[OsStr::new("ttf"), OsStr::new("otf")],
+				)
+			}),
 			style: OnceCell::new(),
 
 			data: Mutex::new(TextData {
