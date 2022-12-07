@@ -3,13 +3,17 @@ use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use slog::Logger;
 use smithay::{
+	backend::{
+		allocator::dmabuf::Dmabuf,
+		renderer::{gles2::Gles2Renderer, ImportDma},
+	},
 	delegate_output, delegate_shm,
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
 		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as DecorationMode,
 		wayland_server::{
 			backend::{ClientData, ClientId, DisconnectReason},
-			protocol::wl_data_device_manager::WlDataDeviceManager,
+			protocol::{wl_buffer::WlBuffer, wl_data_device_manager::WlDataDeviceManager},
 			Display, DisplayHandle,
 		},
 	},
@@ -17,6 +21,7 @@ use smithay::{
 	wayland::{
 		buffer::BufferHandler,
 		compositor::CompositorState,
+		dmabuf::{DmabufGlobal, DmabufState},
 		output::OutputManagerState,
 		shell::{
 			kde::decoration::KdeDecorationState,
@@ -55,6 +60,9 @@ pub struct WaylandState {
 	pub kde_decoration_state: KdeDecorationState,
 	pub xdg_shell_state: XdgShellState,
 	pub shm_state: ShmState,
+	pub dmabuf_state: DmabufState,
+	pub dmabuf_global: DmabufGlobal,
+	pub pending_dmabufs: Vec<Dmabuf>,
 	pub output_manager_state: OutputManagerState,
 	pub output: Output,
 	pub seats: FxHashMap<ClientId, SeatData>,
@@ -65,6 +73,7 @@ impl WaylandState {
 		log: Logger,
 		display: Arc<Mutex<Display<WaylandState>>>,
 		display_handle: DisplayHandle,
+		renderer: &Gles2Renderer,
 	) -> Arc<Mutex<Self>> {
 		let compositor_state = CompositorState::new::<Self, _>(&display_handle, log.clone());
 		let xdg_activation_state = XdgActivationState::new::<Self, _>(&display_handle, log.clone());
@@ -76,6 +85,12 @@ impl WaylandState {
 			log.clone(),
 		);
 		let shm_state = ShmState::new::<Self, _>(&display_handle, vec![], log.clone());
+		let mut dmabuf_state = DmabufState::new();
+		let dmabuf_global = dmabuf_state.create_global::<Self, _>(
+			&display_handle,
+			renderer.dmabuf_formats().cloned().collect::<Vec<_>>(),
+			log.clone(),
+		);
 		let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
 		let output = Output::new(
 			"1x".to_owned(),
@@ -87,7 +102,7 @@ impl WaylandState {
 			},
 			log.clone(),
 		);
-		let _global = output.create_global::<Self>(&display_handle);
+		let _output_global = output.create_global::<Self>(&display_handle);
 		output.change_current_state(
 			Some(Mode {
 				size: (4096, 4096).into(),
@@ -114,6 +129,9 @@ impl WaylandState {
 				kde_decoration_state,
 				xdg_shell_state,
 				shm_state,
+				dmabuf_state,
+				dmabuf_global,
+				pending_dmabufs: Vec::new(),
 				output_manager_state,
 				output,
 				seats: FxHashMap::default(),
@@ -132,14 +150,10 @@ impl Drop for WaylandState {
 	}
 }
 impl BufferHandler for WaylandState {
-	fn buffer_destroyed(
-		&mut self,
-		_buffer: &smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer,
-	) {
-	}
+	fn buffer_destroyed(&mut self, _buffer: &WlBuffer) {}
 }
 impl ShmHandler for WaylandState {
-	fn shm_state(&self) -> &smithay::wayland::shm::ShmState {
+	fn shm_state(&self) -> &ShmState {
 		&self.shm_state
 	}
 }
