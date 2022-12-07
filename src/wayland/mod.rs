@@ -1,13 +1,14 @@
-pub mod compositor;
+mod compositor;
 mod data_device;
-pub mod decoration;
+mod decoration;
 pub mod panel_item;
-pub mod seat;
-pub mod shaders;
-pub mod state;
-pub mod surface;
-pub mod xdg_activation;
-pub mod xdg_shell;
+mod seat;
+mod shaders;
+mod state;
+mod surface;
+mod xdg_activation;
+mod xdg_shell;
+mod dmabuf;
 
 use self::{panel_item::PanelItem, state::WaylandState, surface::CORE_SURFACES};
 use crate::wayland::state::ClientState;
@@ -16,7 +17,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use slog::Drain;
 use smithay::{
-	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
+	backend::{egl::EGLContext, renderer::{gles2::Gles2Renderer, ImportDma}},
 	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket, Resource},
 };
 use tracing::info;
@@ -84,7 +85,7 @@ impl Wayland {
 		let display_handle = display.handle();
 
 		let display = Arc::new(Mutex::new(display));
-		let state = WaylandState::new(log.clone(), display.clone(), display_handle);
+		let state = WaylandState::new(log.clone(), display.clone(), display_handle, &renderer);
 
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
 		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();
@@ -152,7 +153,10 @@ impl Wayland {
 					.wl_surface()
 					.and_then(|surf| surf.client())
 					.map(|c| c.id()) else { continue };
-			let state = self.state.lock();
+			let mut state = self.state.lock();
+			for dmabuf in state.pending_dmabufs.drain(1..) {
+				let _ = self.renderer.import_dmabuf(&dmabuf, None);
+			}
 			let Some(seat_data) = state.seats.get(&client_id).cloned() else { continue };
 			let output = state.output.clone();
 			core_surface.process(
