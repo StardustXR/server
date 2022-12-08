@@ -154,7 +154,7 @@ impl Wayland {
 					.and_then(|surf| surf.client())
 					.map(|c| c.id()) else { continue };
 			let mut state = self.state.lock();
-			for dmabuf in state.pending_dmabufs.drain(1..) {
+			for dmabuf in state.pending_dmabufs.drain(..) {
 				let _ = self.renderer.import_dmabuf(&dmabuf, None);
 			}
 			let Some(seat_data) = state.seats.get(&client_id).cloned() else { continue };
