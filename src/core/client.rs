@@ -1,4 +1,6 @@
 use super::scenegraph::Scenegraph;
+#[cfg(feature = "oxr_runtime")]
+use crate::openxr;
 use crate::{
 	core::{registry::OwnedRegistry, task},
 	nodes::{
@@ -108,6 +110,8 @@ impl Client {
 		items::create_interface(&client)?;
 		input::create_interface(&client)?;
 		startup::create_interface(&client)?;
+		#[cfg(feature = "openxr_runtime")]
+		openxr::create_interface(&client);
 
 		let pid_printable = pid
 			.map(|pid| pid.to_string())

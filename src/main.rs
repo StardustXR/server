@@ -1,6 +1,8 @@
 mod core;
 mod nodes;
 mod objects;
+#[cfg(feature = "openxr_runtime")]
+mod openxr;
 #[cfg(feature = "wayland")]
 mod wayland;
 
@@ -30,6 +32,8 @@ use tokio::{runtime::Handle, sync::oneshot};
 use tracing::metadata::LevelFilter;
 use tracing::{debug_span, error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+pub static SK_INFO: OnceCell<SystemInfo> = OnceCell::new();
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -113,6 +117,8 @@ fn main() {
 	.expect("StereoKit failed to initialize");
 	let _ = SK_MULTITHREAD.set(sk.multithreaded());
 	info!("Init StereoKit");
+
+	SK_INFO.set(stereokit.system_info()).unwrap();
 
 	sk.material_set_shader(
 		sk.material_find("default/material_pbr").unwrap(),

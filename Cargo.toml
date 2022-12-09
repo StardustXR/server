@@ -14,6 +14,7 @@ path = "src/main.rs"
 
 [features]
 default = ["wayland", "xwayland"]
+openxr_runtime = []
 wayland = ["dep:smithay", "dep:xkbcommon"]
 xwayland = ["smithay/xwayland"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]

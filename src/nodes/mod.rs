@@ -29,6 +29,8 @@ use tracing::{debug_span, instrument};
 
 use crate::core::client::Client;
 use crate::core::registry::Registry;
+#[cfg(feature = "openxr_runtime")]
+use crate::openxr;
 
 use self::alias::Alias;
 use self::audio::Sound;
@@ -101,6 +103,10 @@ pub struct Node {
 
 	// Startup
 	pub startup_settings: OnceCell<Mutex<StartupSettings>>,
+
+	// OpenXR
+	#[cfg(feature = "openxr_runtime")]
+	pub openxr_object: OnceCell<openxr::Object>,
 }
 
 impl Node {
@@ -144,6 +150,8 @@ impl Node {
 			item_acceptor: OnceCell::new(),
 			item_ui: OnceCell::new(),
 			sound: OnceCell::new(),
+			#[cfg(feature = "openxr_runtime")]
+			openxr_object: OnceCell::new(),
 			startup_settings: OnceCell::new(),
 		};
 		node.add_local_signal("set_enabled", Node::set_enabled_flex);
