@@ -7,7 +7,7 @@ use smithay::{
 		allocator::dmabuf::Dmabuf,
 		renderer::{gles2::Gles2Renderer, ImportDma},
 	},
-	delegate_output, delegate_shm,
+	delegate_dmabuf, delegate_output, delegate_shm,
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
 		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as DecorationMode,
@@ -21,7 +21,7 @@ use smithay::{
 	wayland::{
 		buffer::BufferHandler,
 		compositor::CompositorState,
-		dmabuf::{DmabufGlobal, DmabufState},
+		dmabuf::{self, DmabufGlobal, DmabufHandler, DmabufState},
 		output::OutputManagerState,
 		shell::{
 			kde::decoration::KdeDecorationState,
@@ -157,5 +157,19 @@ impl ShmHandler for WaylandState {
 		&self.shm_state
 	}
 }
+impl DmabufHandler for WaylandState {
+	fn dmabuf_state(&mut self) -> &mut DmabufState {
+		&mut self.dmabuf_state
+	}
+
+	fn dmabuf_imported(
+		&mut self,
+		_global: &DmabufGlobal,
+		_dmabuf: Dmabuf,
+	) -> Result<(), dmabuf::ImportError> {
+		Ok(())
+	}
+}
+delegate_dmabuf!(WaylandState);
 delegate_shm!(WaylandState);
 delegate_output!(WaylandState);

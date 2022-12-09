@@ -8,7 +8,6 @@ mod state;
 mod surface;
 mod xdg_activation;
 mod xdg_shell;
-mod dmabuf;
 
 use self::{panel_item::PanelItem, state::WaylandState, surface::CORE_SURFACES};
 use crate::wayland::state::ClientState;
@@ -17,7 +16,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use slog::Drain;
 use smithay::{
-	backend::{egl::EGLContext, renderer::{gles2::Gles2Renderer, ImportDma}},
+	backend::{egl::EGLContext, renderer::{gles2::Gles2Renderer}},
 	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket, Resource},
 };
 use tracing::info;
@@ -153,10 +152,7 @@ impl Wayland {
 					.wl_surface()
 					.and_then(|surf| surf.client())
 					.map(|c| c.id()) else { continue };
-			let mut state = self.state.lock();
-			for dmabuf in state.pending_dmabufs.drain(..) {
-				let _ = self.renderer.import_dmabuf(&dmabuf, None);
-			}
+			let state = self.state.lock();
 			let Some(seat_data) = state.seats.get(&client_id).cloned() else { continue };
 			let output = state.output.clone();
 			core_surface.process(
