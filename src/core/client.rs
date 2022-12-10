@@ -5,7 +5,7 @@ use crate::{
 		data, drawable, fields, hmd, input, items,
 		root::Root,
 		spatial,
-		startup::{self, StartupSettings, DESKTOP_STARTUP_IDS},
+		startup::{self, StartupSettings, STARTUP_SETTINGS},
 		Node,
 	},
 };
@@ -55,10 +55,8 @@ pub fn get_env(pid: i32) -> Result<FxHashMap<String, String>, std::io::Error> {
 	))
 }
 pub fn startup_settings(env: &FxHashMap<String, String>) -> Option<StartupSettings> {
-	DESKTOP_STARTUP_IDS
-		.lock()
-		.get(env.get("STARDUST_STARTUP_TOKEN")?)
-		.cloned()
+	let token = env.get("STARDUST_STARTUP_TOKEN")?;
+	STARTUP_SETTINGS.lock().get(token).cloned()
 }
 
 pub struct Client {

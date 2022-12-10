@@ -16,7 +16,7 @@ use std::{
 };
 
 lazy_static::lazy_static! {
-	pub static ref DESKTOP_STARTUP_IDS: Mutex<FxHashMap<String, StartupSettings>> = Default::default();
+	pub static ref STARTUP_SETTINGS: Mutex<FxHashMap<String, StartupSettings>> = Default::default();
 }
 
 #[derive(Default, Clone)]
@@ -61,7 +61,7 @@ impl StartupSettings {
 	) -> Result<Vec<u8>> {
 		let id = nanoid::nanoid!();
 		let data = serialize(&id)?;
-		DESKTOP_STARTUP_IDS
+		STARTUP_SETTINGS
 			.lock()
 			.insert(id, node.startup_settings.get().unwrap().lock().clone());
 		Ok(data)
