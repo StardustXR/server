@@ -78,7 +78,7 @@ impl CoreSurfaceData {
 				sk_tex.set_native(
 					smithay_tex.tex_id() as usize,
 					smithay::backend::renderer::gles2::ffi::RGBA8.into(),
-					TextureType::Image,
+					TextureType::ImageNoMips,
 					smithay_tex.width(),
 					smithay_tex.height(),
 					false,
