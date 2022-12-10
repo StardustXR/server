@@ -33,7 +33,7 @@ lazy_static! {
 		event_loop: Weak::new(),
 		index: 0,
 		pid: None,
-		env: None,
+		// env: None,
 		exe: None,
 
 		stop_notifier: Default::default(),
@@ -43,6 +43,7 @@ lazy_static! {
 		scenegraph: Default::default(),
 		root: OnceCell::new(),
 		base_resource_prefixes: Default::default(),
+		startup_settings: None,
 	});
 }
 
@@ -63,7 +64,7 @@ pub struct Client {
 	event_loop: Weak<EventLoop>,
 	index: usize,
 	pid: Option<i32>,
-	env: Option<FxHashMap<String, String>>,
+	// env: Option<FxHashMap<String, String>>,
 	exe: Option<PathBuf>,
 	stop_notifier: Arc<Notify>,
 	join_handle: OnceCell<JoinHandle<Result<()>>>,
@@ -72,6 +73,7 @@ pub struct Client {
 	pub scenegraph: Arc<Scenegraph>,
 	pub root: OnceCell<Arc<Root>>,
 	pub base_resource_prefixes: Mutex<Vec<PathBuf>>,
+	pub startup_settings: Option<StartupSettings>,
 }
 impl Client {
 	pub fn from_connection(
@@ -93,12 +95,13 @@ impl Client {
 
 		let (mut messenger_tx, mut messenger_rx) = messenger::create(connection);
 		let scenegraph = Arc::new(Scenegraph::default());
+		let startup_settings = env.as_ref().and_then(|env| startup_settings(env));
 
 		let client = CLIENTS.add(Client {
 			event_loop: Arc::downgrade(event_loop),
 			index,
 			pid,
-			env,
+			// env,
 			exe,
 			stop_notifier: Default::default(),
 			join_handle: OnceCell::new(),
@@ -107,6 +110,7 @@ impl Client {
 			scenegraph: scenegraph.clone(),
 			root: OnceCell::new(),
 			base_resource_prefixes: Default::default(),
+			startup_settings,
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
 		let _ = client.root.set(Root::create(&client));
@@ -118,15 +122,6 @@ impl Client {
 		items::create_interface(&client);
 		input::create_interface(&client);
 		startup::create_interface(&client);
-
-		if let Some(startup_settings) = client.env.as_ref().and_then(|env| startup_settings(env)) {
-			client
-				.root
-				.get()
-				.unwrap()
-				.spatial()
-				.set_local_transform(startup_settings.transform);
-		}
 
 		let _ = client.join_handle.set(tokio::spawn({
 			let client = client.clone();

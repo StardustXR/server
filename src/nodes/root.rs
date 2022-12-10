@@ -21,16 +21,21 @@ impl Root {
 		node.add_local_signal("subscribe_logic_step", Root::subscribe_logic_step);
 		node.add_local_signal("set_base_prefixes", Root::set_base_prefixes);
 		let node = node.add_to_scenegraph();
-		let _ = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
+		let _ = Spatial::add_to(
+			&node,
+			None,
+			client
+				.startup_settings
+				.as_ref()
+				.map(|settings| settings.transform)
+				.unwrap_or(Mat4::IDENTITY),
+			false,
+		);
 
 		ROOT_REGISTRY.add(Root {
 			node,
 			logic_step: AtomicBool::from(false),
 		})
-	}
-
-	pub fn spatial(&self) -> &Arc<Spatial> {
-		self.node.spatial.get().unwrap()
 	}
 
 	fn subscribe_logic_step(_node: &Node, calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
