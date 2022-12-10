@@ -8,7 +8,7 @@ use crate::{
 		registry::Registry,
 	},
 	nodes::{
-		items::{Item, ItemSpecialization, ItemType, TypeInfo},
+		items::{self, Item, ItemSpecialization, ItemType, TypeInfo},
 		spatial::Spatial,
 		Node,
 	},
@@ -103,13 +103,22 @@ impl PanelItem {
 		node.add_local_signal("keyboard_deactivate", PanelItem::keyboard_deactivate_flex);
 		node.add_local_signal("keyboard_key_state", PanelItem::keyboard_key_state_flex);
 		node.add_local_signal("resize", PanelItem::resize_flex);
+
 		if let Some(startup_settings) = core_surface
 			.pid()
 			.and_then(|pid| get_env(pid).ok())
 			.and_then(|env| startup_settings(&env))
 		{
 			spatial.set_local_transform(startup_settings.transform);
+			if let Some(acceptor) = startup_settings
+				.acceptors
+				.get(&*ITEM_TYPE_INFO_PANEL)
+				.and_then(|acc| acc.upgrade())
+			{
+				items::capture(&item, &acceptor);
+			}
 		}
+
 		node
 	}
 
