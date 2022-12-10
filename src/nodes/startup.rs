@@ -54,7 +54,7 @@ impl StartupSettings {
 		Ok(())
 	}
 
-	fn generate_desktop_startup_id_flex(
+	fn generate_startup_token_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
 		_data: &[u8],
@@ -104,8 +104,8 @@ pub fn create_startup_settings_flex(
 		StartupSettings::add_automatic_acceptor_flex,
 	);
 	node.add_local_method(
-		"generate_desktop_startup_id",
-		StartupSettings::generate_desktop_startup_id_flex,
+		"generate_startup_token",
+		StartupSettings::generate_startup_token_flex,
 	);
 
 	Ok(())
