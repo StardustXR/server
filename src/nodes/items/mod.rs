@@ -19,6 +19,7 @@ use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use stardust_xr::values::Transform;
 
+use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
 
@@ -35,7 +36,7 @@ lazy_static! {
 	static ref ITEM_ALIAS_REMOTE_SIGNALS: Vec<&'static str> = vec![];
 }
 
-fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
+pub fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
 	if item.captured_acceptor.lock().upgrade().is_some() {
 		release(item);
 	}
@@ -65,6 +66,17 @@ pub struct TypeInfo {
 	pub items: Registry<Item>,
 	pub acceptors: Registry<ItemAcceptor>,
 }
+impl Hash for TypeInfo {
+	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+		self.type_name.hash(state);
+	}
+}
+impl PartialEq for TypeInfo {
+	fn eq(&self, other: &Self) -> bool {
+		self.type_name == other.type_name
+	}
+}
+impl Eq for TypeInfo {}
 
 pub struct Item {
 	node: Weak<Node>,
@@ -269,7 +281,7 @@ impl Drop for ItemUI {
 pub struct ItemAcceptor {
 	uid: String,
 	node: Weak<Node>,
-	type_info: &'static TypeInfo,
+	pub type_info: &'static TypeInfo,
 	field: Arc<Field>,
 	accepted: LifeLinkedNodeMap<String>,
 }

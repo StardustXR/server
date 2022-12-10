@@ -1,6 +1,7 @@
 use crate::core::client::Client;
 
 use super::{
+	items::{ItemAcceptor, TypeInfo},
 	spatial::find_spatial,
 	Node,
 };
@@ -8,15 +9,20 @@ use color_eyre::eyre::Result;
 use glam::Mat4;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use std::sync::Arc;
+use stardust_xr::schemas::flex::{deserialize, serialize};
+use std::{
+	fmt::Debug,
+	sync::{Arc, Weak},
+};
 
 lazy_static::lazy_static! {
 	pub static ref DESKTOP_STARTUP_IDS: Mutex<FxHashMap<String, StartupSettings>> = Default::default();
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct StartupSettings {
 	pub transform: Mat4,
+	pub acceptors: FxHashMap<&'static TypeInfo, Weak<ItemAcceptor>>,
 }
 impl StartupSettings {
 	pub fn add_to(node: &Arc<Node>) {
@@ -32,6 +38,22 @@ impl StartupSettings {
 		Ok(())
 	}
 
+	fn add_automatic_acceptor_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
+		let acceptor_node = calling_client.get_node("Item acceptor", deserialize(data)?)?;
+		let acceptor =
+			acceptor_node.get_aspect("Item acceptor", "item acceptor", |n| &n.item_acceptor)?;
+		let mut startup_settings = node.startup_settings.get().unwrap().lock();
+		startup_settings
+			.acceptors
+			.insert(acceptor.type_info, Arc::downgrade(acceptor));
+
+		Ok(())
+	}
+
 	fn generate_desktop_startup_id_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
@@ -43,6 +65,21 @@ impl StartupSettings {
 			.lock()
 			.insert(id, node.startup_settings.get().unwrap().lock().clone());
 		Ok(data)
+	}
+}
+impl Debug for StartupSettings {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("StartupSettings")
+			.field("transform", &self.transform)
+			.field(
+				"acceptors",
+				&self
+					.acceptors
+					.iter()
+					.map(|(k, _)| k.type_name)
+					.collect::<Vec<_>>(),
+			)
+			.finish()
 	}
 }
 
@@ -62,6 +99,10 @@ pub fn create_startup_settings_flex(
 	StartupSettings::add_to(&node);
 
 	node.add_local_signal("set_root", StartupSettings::set_root_flex);
+	node.add_local_signal(
+		"add_automatic_acceptor",
+		StartupSettings::add_automatic_acceptor_flex,
+	);
 	node.add_local_method(
 		"generate_desktop_startup_id",
 		StartupSettings::generate_desktop_startup_id_flex,
