@@ -38,7 +38,7 @@ stardust-xr = "0.8.0"
 directories = "4.0.1"
 serde = { version = "1.0.145", features = ["derive"] }
 tracing = "0.1.37"
-tracing-subscriber = "0.3.16"
+tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 tracing-slog = "0.2.0"
 
 [dependencies.stereokit]
@@ -47,7 +47,7 @@ features = ["linux-egl"]
 version = "0.9.0"
 
 [dependencies.smithay]
-git = "https://github.com/Smithay/smithay.git"
+git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures
 default-features = false
 features = ["desktop", "renderer_gl", "wayland_frontend"]
 version = "*"
