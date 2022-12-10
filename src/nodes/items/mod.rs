@@ -105,6 +105,17 @@ impl Item {
 			ui.handle_create_item(&item);
 		}
 		let _ = node.item.set(item.clone());
+
+		if let Some(auto_acceptor) = node.get_client().and_then(|client| {
+			client
+				.startup_settings
+				.as_ref()
+				.and_then(|settings| settings.acceptors.get(type_info))
+				.and_then(|acceptor| acceptor.upgrade())
+		}) {
+			capture(&item, &auto_acceptor);
+		}
+
 		item
 	}
 	fn make_alias_named(
