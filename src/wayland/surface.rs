@@ -213,6 +213,18 @@ impl CoreSurface {
 		});
 	}
 
+	pub fn pid(&self) -> Option<i32> {
+		Some(
+			self.weak_surface
+				.upgrade()
+				.ok()?
+				.client()?
+				.get_credentials(&self.dh)
+				.ok()?
+				.pid,
+		)
+	}
+
 	pub fn wayland_state(&self) -> Arc<Mutex<WaylandState>> {
 		self.state.upgrade().unwrap()
 	}

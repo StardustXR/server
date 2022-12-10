@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
 	core::{
-		client::{Client, INTERNAL_CLIENT},
+		client::{get_env, startup_settings, Client, INTERNAL_CLIENT},
 		registry::Registry,
 	},
 	nodes::{
@@ -68,7 +68,7 @@ impl PanelItem {
 			&nanoid!(),
 			true,
 		));
-		Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
+		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
 
 		let specialization = ItemType::Panel(PanelItem {
 			node: Arc::downgrade(&node),
@@ -103,6 +103,13 @@ impl PanelItem {
 		node.add_local_signal("keyboard_deactivate", PanelItem::keyboard_deactivate_flex);
 		node.add_local_signal("keyboard_key_state", PanelItem::keyboard_key_state_flex);
 		node.add_local_signal("resize", PanelItem::resize_flex);
+		if let Some(startup_settings) = core_surface
+			.pid()
+			.and_then(|pid| get_env(pid).ok())
+			.and_then(|env| startup_settings(&env))
+		{
+			spatial.set_local_transform(startup_settings.transform);
+		}
 		node
 	}
 

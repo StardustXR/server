@@ -1,7 +1,10 @@
 use crate::core::client::Client;
 
-use super::Node;
-use color_eyre::eyre::{eyre, Result};
+use super::{
+	spatial::find_spatial,
+	Node,
+};
+use color_eyre::eyre::Result;
 use glam::Mat4;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
@@ -23,15 +26,7 @@ impl StartupSettings {
 	}
 
 	fn set_root_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let startup_id = flexbuffers::Reader::get_root(data)?.get_str()?;
-		let spatial_node = calling_client
-			.scenegraph
-			.get_node(startup_id)
-			.ok_or_else(|| eyre!("Root spatial node does not exist"))?;
-		let spatial = spatial_node
-			.spatial
-			.get()
-			.ok_or_else(|| eyre!("Root spatial node is not a spatial"))?;
+		let spatial = find_spatial(&calling_client, "Root spatial", deserialize(data)?)?;
 		node.startup_settings.get().unwrap().lock().transform = spatial.global_transform();
 
 		Ok(())
@@ -43,7 +38,7 @@ impl StartupSettings {
 		_data: &[u8],
 	) -> Result<Vec<u8>> {
 		let id = nanoid::nanoid!();
-		let data = flexbuffers::singleton(id.as_str());
+		let data = serialize(&id)?;
 		DESKTOP_STARTUP_IDS
 			.lock()
 			.insert(id, node.startup_settings.get().unwrap().lock().clone());
