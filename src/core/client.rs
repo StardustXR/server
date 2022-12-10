@@ -1,7 +1,13 @@
 use super::{eventloop::EventLoop, scenegraph::Scenegraph};
 use crate::{
 	core::registry::Registry,
-	nodes::{data, drawable, fields, hmd, input, items, root::Root, spatial, startup, Node},
+	nodes::{
+		data, drawable, fields, hmd, input, items,
+		root::Root,
+		spatial,
+		startup::{self, StartupSettings, DESKTOP_STARTUP_IDS},
+		Node,
+	},
 };
 use color_eyre::{
 	eyre::{eyre, Result},
@@ -10,9 +16,11 @@ use color_eyre::{
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use stardust_xr::messenger::{self, MessageSenderHandle};
 use std::{
 	fs,
+	iter::FromIterator,
 	path::PathBuf,
 	sync::{Arc, Weak},
 };
@@ -25,6 +33,7 @@ lazy_static! {
 		event_loop: Weak::new(),
 		index: 0,
 		pid: None,
+		env: None,
 		exe: None,
 
 		stop_notifier: Default::default(),
@@ -37,10 +46,26 @@ lazy_static! {
 	});
 }
 
+pub fn get_env(pid: i32) -> Result<FxHashMap<String, String>, std::io::Error> {
+	let env = fs::read_to_string(format!("/proc/{pid}/environ"))?;
+	Ok(FxHashMap::from_iter(
+		env.split('\0')
+			.filter_map(|var| var.split_once('='))
+			.map(|(k, v)| (k.to_string(), v.to_string())),
+	))
+}
+pub fn startup_settings(env: &FxHashMap<String, String>) -> Option<StartupSettings> {
+	DESKTOP_STARTUP_IDS
+		.lock()
+		.get(env.get("STARDUST_STARTUP_TOKEN")?)
+		.cloned()
+}
+
 pub struct Client {
 	event_loop: Weak<EventLoop>,
 	index: usize,
 	pid: Option<i32>,
+	env: Option<FxHashMap<String, String>>,
 	exe: Option<PathBuf>,
 	stop_notifier: Arc<Notify>,
 	join_handle: OnceCell<JoinHandle<Result<()>>>,
@@ -57,6 +82,7 @@ impl Client {
 		connection: UnixStream,
 	) -> Arc<Self> {
 		let pid = connection.peer_cred().ok().and_then(|c| c.pid());
+		let env = pid.and_then(|pid| get_env(pid).ok());
 		let exe = pid.and_then(|pid| fs::read_link(format!("/proc/{}/exe", pid)).ok());
 		info!(
 			index = index,
@@ -74,6 +100,7 @@ impl Client {
 			event_loop: Arc::downgrade(event_loop),
 			index,
 			pid,
+			env,
 			exe,
 			stop_notifier: Default::default(),
 			join_handle: OnceCell::new(),
@@ -93,6 +120,15 @@ impl Client {
 		items::create_interface(&client);
 		input::create_interface(&client);
 		startup::create_interface(&client);
+
+		if let Some(startup_settings) = client.env.as_ref().and_then(|env| startup_settings(env)) {
+			client
+				.root
+				.get()
+				.unwrap()
+				.spatial()
+				.set_local_transform(startup_settings.transform);
+		}
 
 		let _ = client.join_handle.set(tokio::spawn({
 			let client = client.clone();
