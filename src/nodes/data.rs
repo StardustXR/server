@@ -22,9 +22,9 @@ pub static PULSE_RECEIVER_REGISTRY: Registry<PulseReceiver> = Registry::new();
 pub fn mask_matches(mask_map_lesser: &Mask, mask_map_greater: &Mask) -> bool {
 	(|| -> Result<_> {
 		for key in mask_map_lesser.get_mask()?.iter_keys() {
-			let lesser_key_type = mask_map_lesser.get_mask()?.index(key)?.flexbuffer_type();
-			let greater_key_type = mask_map_greater.get_mask()?.index(key)?.flexbuffer_type();
-			if lesser_key_type != greater_key_type {
+			let lesser_key = mask_map_lesser.get_mask()?.index(key)?;
+			let greater_key = mask_map_greater.get_mask()?.index(key)?;
+			if lesser_key.to_string() != greater_key.to_string() {
 				return Err(flexbuffers::ReaderError::InvalidPackedType {}.into());
 			}
 		}
