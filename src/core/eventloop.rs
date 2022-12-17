@@ -2,6 +2,7 @@ use super::client::Client;
 use color_eyre::eyre::Result;
 use slab::Slab;
 use stardust_xr::server;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::net::UnixListener;
@@ -11,7 +12,7 @@ use tokio::task::JoinHandle;
 pub static FRAME: AtomicU64 = AtomicU64::new(0);
 
 pub struct EventLoop {
-	pub socket_path: String,
+	pub socket_path: PathBuf,
 	stop_notifier: Arc<Notify>,
 	pub clients: Mutex<Slab<Arc<Client>>>,
 }
