@@ -30,11 +30,10 @@ impl SkController {
 		if *self.tip.enabled.lock() {
 			self.tip.spatial.set_local_transform_components(
 				None,
-				Transform {
-					position: Some(controller.pose.position),
-					rotation: Some(controller.pose.orientation),
-					scale: None,
-				},
+				Transform::from_position_rotation(
+					controller.pose.position,
+					controller.pose.orientation,
+				),
 			);
 		}
 		let mut fbb = flexbuffers::Builder::default();

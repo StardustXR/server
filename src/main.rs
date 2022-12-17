@@ -160,7 +160,10 @@ async fn event_loop(
 	let (event_loop, event_loop_join_handle) =
 		EventLoop::new().expect("Couldn't create server socket");
 	info!("Init event loop");
-	info!("Stardust socket created at {}", event_loop.socket_path);
+	info!(
+		"Stardust socket created at {}",
+		event_loop.socket_path.display()
+	);
 
 	let result = tokio::select! {
 		biased;

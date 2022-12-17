@@ -267,11 +267,11 @@ impl Drop for Spatial {
 
 pub fn parse_transform(
 	transform: Transform,
-	translation: bool,
+	position: bool,
 	rotation: bool,
 	scale: bool,
 ) -> Result<Mat4> {
-	let translation = translation
+	let position = position
 		.then_some(transform.position)
 		.flatten()
 		.unwrap_or_else(|| Vector3::from([0.0; 3]));
@@ -287,7 +287,7 @@ pub fn parse_transform(
 	Ok(Mat4::from_scale_rotation_translation(
 		scale.into(),
 		rotation.into(),
-		translation.into(),
+		position.into(),
 	))
 }
 
