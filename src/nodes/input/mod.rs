@@ -6,13 +6,14 @@ use self::hand::Hand;
 use self::pointer::Pointer;
 use self::tip::Tip;
 
-use super::fields::Field;
-use super::spatial::{find_spatial_parent, parse_transform, Spatial};
-use super::Node;
+use super::{
+	fields::{find_field, Field},
+	spatial::{find_spatial_parent, parse_transform, Spatial},
+	Node,
+};
 use crate::core::client::Client;
 use crate::core::eventloop::FRAME;
 use crate::core::registry::Registry;
-use crate::nodes::fields::find_field;
 use color_eyre::eyre::{ensure, Result};
 use glam::Mat4;
 use nanoid::nanoid;
@@ -237,7 +238,7 @@ pub fn create_input_handler_flex(
 	}
 	let info: CreateInputHandlerInfo = deserialize(data)?;
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, false)?;
+	let transform = parse_transform(info.transform, true, true, true)?;
 	let field = find_field(&calling_client, info.field_path)?;
 
 	let node = Node::create(&calling_client, "/input/handler", info.name, true).add_to_scenegraph();
