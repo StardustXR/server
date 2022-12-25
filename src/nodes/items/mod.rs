@@ -175,7 +175,7 @@ pub trait ItemSpecialization {
 pub enum ItemType {
 	Environment(EnvironmentItem),
 	#[cfg(feature = "wayland")]
-	Panel(PanelItem),
+	Panel(Arc<PanelItem>),
 }
 impl Deref for ItemType {
 	type Target = dyn ItemSpecialization;
@@ -184,7 +184,7 @@ impl Deref for ItemType {
 		match self {
 			ItemType::Environment(item) => item,
 			#[cfg(feature = "wayland")]
-			ItemType::Panel(item) => item,
+			ItemType::Panel(item) => &**item,
 		}
 	}
 }

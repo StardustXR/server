@@ -1,5 +1,6 @@
-use super::{state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE};
-use crate::nodes::items::Item;
+use super::{
+	panel_item::PanelItem, state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE,
+};
 use color_eyre::eyre::Result;
 use mint::Vector2;
 use nanoid::nanoid;
@@ -9,11 +10,11 @@ use smithay::{
 	input::keyboard::{KeymapFile, ModifiersState},
 	reexports::wayland_server::{
 		backend::{ClientId, GlobalId},
-		delegate_dispatch, delegate_global_dispatch,
 		protocol::{
 			wl_keyboard::{self, KeyState, WlKeyboard},
 			wl_pointer::{self, WlPointer},
 			wl_seat::{self, Capability, WlSeat, EVT_NAME_SINCE},
+			wl_surface::WlSurface,
 			wl_touch::{self, WlTouch},
 		},
 		Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
@@ -25,7 +26,6 @@ use std::{ops::Deref, sync::Weak};
 use xkbcommon::xkb::{self, Keymap};
 
 pub struct Cursor {
-	pub core_surface: Weak<CoreSurface>,
 	pub hotspot: Vector2<i32>,
 }
 
@@ -70,8 +70,6 @@ impl KeyboardInfo {
 }
 unsafe impl Send for KeyboardInfo {}
 
-pub struct SeatDelegate;
-
 #[derive(Clone)]
 pub struct SeatData(Arc<SeatDataInner>);
 impl SeatData {
@@ -80,8 +78,6 @@ impl SeatData {
 			client,
 			global_id: OnceCell::new(),
 			panel_item: OnceCell::new(),
-			cursor: Mutex::new(None),
-			cursor_changed: Mutex::new(false),
 			pointer: OnceCell::new(),
 			pointer_active: Mutex::new(false),
 			keyboard: OnceCell::new(),
@@ -107,10 +103,8 @@ impl Deref for SeatData {
 
 pub struct SeatDataInner {
 	client: ClientId,
-	pub global_id: OnceCell<GlobalId>,
-	pub panel_item: OnceCell<Weak<Item>>,
-	pub cursor: Mutex<Option<Arc<Mutex<Cursor>>>>,
-	pub cursor_changed: Mutex<bool>,
+	global_id: OnceCell<GlobalId>,
+	pub panel_item: OnceCell<Weak<PanelItem>>,
 	pointer: OnceCell<WlPointer>,
 	pub pointer_active: Mutex<bool>,
 	keyboard: OnceCell<WlKeyboard>,
@@ -131,6 +125,16 @@ impl SeatDataInner {
 	pub fn touch(&self) -> Option<&WlTouch> {
 		self.touch.get()
 	}
+
+	pub fn cursor(&self) -> Option<WlSurface> {
+		self.panel_item
+			.get()?
+			.upgrade()?
+			.cursor
+			.lock()
+			.as_ref()
+			.and_then(|c| c.upgrade().ok())
+	}
 }
 impl Drop for SeatDataInner {
 	fn drop(&mut self) {
@@ -139,7 +143,7 @@ impl Drop for SeatDataInner {
 	}
 }
 
-impl GlobalDispatch<WlSeat, SeatData, WaylandState> for SeatDelegate {
+impl GlobalDispatch<WlSeat, SeatData, WaylandState> for WaylandState {
 	fn bind(
 		_state: &mut WaylandState,
 		_handle: &DisplayHandle,
@@ -161,9 +165,8 @@ impl GlobalDispatch<WlSeat, SeatData, WaylandState> for SeatDelegate {
 		client.id() == data.0.client
 	}
 }
-delegate_global_dispatch!(WaylandState: [WlSeat: SeatData] => SeatDelegate);
 
-impl Dispatch<WlSeat, SeatData, WaylandState> for SeatDelegate {
+impl Dispatch<WlSeat, SeatData, WaylandState> for WaylandState {
 	fn request(
 		_state: &mut WaylandState,
 		_client: &Client,
@@ -190,14 +193,13 @@ impl Dispatch<WlSeat, SeatData, WaylandState> for SeatDelegate {
 		}
 	}
 }
-delegate_dispatch!(WaylandState: [WlSeat: SeatData] => SeatDelegate);
 
-impl Dispatch<WlPointer, SeatData, WaylandState> for SeatDelegate {
+impl Dispatch<WlPointer, SeatData, WaylandState> for WaylandState {
 	fn request(
 		state: &mut WaylandState,
 		_client: &Client,
 		_resource: &WlPointer,
-		request: <WlPointer as Resource>::Request,
+		request: wl_pointer::Request,
 		seat_data: &SeatData,
 		dh: &DisplayHandle,
 		_data_init: &mut DataInit<'_, WaylandState>,
@@ -209,54 +211,42 @@ impl Dispatch<WlPointer, SeatData, WaylandState> for SeatDelegate {
 				hotspot_x,
 				hotspot_y,
 			} => {
-				// if !seat_data.pointer_active() {
-				// 	return;
-				// }
-				*seat_data.0.cursor_changed.lock() = true;
 				if let Some(surface) = surface.as_ref() {
+					CoreSurface::add_to(&state.display, dh.clone(), surface);
 					compositor::with_states(surface, |data| {
 						data.data_map.insert_if_missing_threadsafe(|| {
-							CoreSurface::new(
-								&state.weak_ref.upgrade().unwrap(),
-								&state.display,
-								dh.clone(),
-								surface,
-							)
-						});
-						if !data.data_map.insert_if_missing_threadsafe(|| {
 							Arc::new(Mutex::new(Cursor {
-								core_surface: Arc::downgrade(
-									data.data_map.get::<Arc<CoreSurface>>().unwrap(),
-								),
 								hotspot: Vector2::from([hotspot_x, hotspot_y]),
 							}))
-						}) {
-							let mut cursor =
-								data.data_map.get::<Arc<Mutex<Cursor>>>().unwrap().lock();
-							cursor.hotspot = Vector2::from([hotspot_x, hotspot_y]);
+						});
+						let mut cursor = data.data_map.get::<Arc<Mutex<Cursor>>>().unwrap().lock();
+						cursor.hotspot = Vector2::from([hotspot_x, hotspot_y]);
+
+						if let Some(core_surface) = data.data_map.get::<Arc<CoreSurface>>() {
+							core_surface.set_material_offset(1);
 						}
 					})
 				}
-				*seat_data.cursor.lock() = surface.and_then(|surf| {
-					compositor::with_states(&surf, |data| {
-						let cursor = data.data_map.get::<Arc<Mutex<Cursor>>>();
-						if let Some(cursor) = cursor {
-							if let Some(core_surface) = cursor.lock().core_surface.upgrade() {
-								core_surface.set_material_offset(1);
-							}
-						}
-						cursor.cloned()
-					})
-				});
+				*seat_data
+					.panel_item
+					.get()
+					.unwrap()
+					.upgrade()
+					.unwrap()
+					.cursor
+					.lock() = surface.as_ref().map(|surf| surf.downgrade());
+
+				if let Some(panel_item) = seat_data.panel_item.get().and_then(|i| i.upgrade()) {
+					panel_item.set_cursor(surface.as_ref(), hotspot_x, hotspot_y);
+				}
 			}
 			wl_pointer::Request::Release => (),
 			_ => unreachable!(),
 		}
 	}
 }
-delegate_dispatch!(WaylandState: [WlPointer: SeatData] => SeatDelegate);
 
-impl Dispatch<WlKeyboard, SeatData, WaylandState> for SeatDelegate {
+impl Dispatch<WlKeyboard, SeatData, WaylandState> for WaylandState {
 	fn request(
 		_state: &mut WaylandState,
 		_client: &Client,
@@ -272,9 +262,8 @@ impl Dispatch<WlKeyboard, SeatData, WaylandState> for SeatDelegate {
 		}
 	}
 }
-delegate_dispatch!(WaylandState: [WlKeyboard: SeatData] => SeatDelegate);
 
-impl Dispatch<WlTouch, SeatData, WaylandState> for SeatDelegate {
+impl Dispatch<WlTouch, SeatData, WaylandState> for WaylandState {
 	fn request(
 		_state: &mut WaylandState,
 		_client: &Client,
@@ -290,4 +279,3 @@ impl Dispatch<WlTouch, SeatData, WaylandState> for SeatDelegate {
 		}
 	}
 }
-delegate_dispatch!(WaylandState: [WlTouch: SeatData] => SeatDelegate);
