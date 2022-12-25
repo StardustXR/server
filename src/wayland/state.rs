@@ -10,6 +10,7 @@ use smithay::{
 	delegate_dmabuf, delegate_output, delegate_shm,
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
+		wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase,
 		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as DecorationMode,
 		wayland_server::{
 			backend::{ClientData, ClientId, DisconnectReason},
@@ -23,10 +24,7 @@ use smithay::{
 		compositor::CompositorState,
 		dmabuf::{self, DmabufGlobal, DmabufHandler, DmabufState},
 		output::OutputManagerState,
-		shell::{
-			kde::decoration::KdeDecorationState,
-			xdg::{decoration::XdgDecorationState, XdgShellState},
-		},
+		shell::kde::decoration::KdeDecorationState,
 		shm::{ShmHandler, ShmState},
 		xdg_activation::XdgActivationState,
 	},
@@ -56,9 +54,7 @@ pub struct WaylandState {
 
 	pub compositor_state: CompositorState,
 	pub xdg_activation_state: XdgActivationState,
-	pub xdg_decoration_state: XdgDecorationState,
 	pub kde_decoration_state: KdeDecorationState,
-	pub xdg_shell_state: XdgShellState,
 	pub shm_state: ShmState,
 	pub dmabuf_state: DmabufState,
 	pub dmabuf_global: DmabufGlobal,
@@ -77,8 +73,6 @@ impl WaylandState {
 	) -> Arc<Mutex<Self>> {
 		let compositor_state = CompositorState::new::<Self, _>(&display_handle, log.clone());
 		let xdg_activation_state = XdgActivationState::new::<Self, _>(&display_handle, log.clone());
-		let xdg_shell_state = XdgShellState::new::<Self, _>(&display_handle, log.clone());
-		let xdg_decoration_state = XdgDecorationState::new::<Self, _>(&display_handle, log.clone());
 		let kde_decoration_state = KdeDecorationState::new::<Self, _>(
 			&display_handle,
 			DecorationMode::Server,
@@ -113,6 +107,7 @@ impl WaylandState {
 			None,
 		);
 		display_handle.create_global::<Self, WlDataDeviceManager, _>(3, ());
+		display_handle.create_global::<Self, XdgWmBase, _>(5, ());
 
 		info!("Init Wayland compositor");
 
@@ -125,9 +120,7 @@ impl WaylandState {
 
 				compositor_state,
 				xdg_activation_state,
-				xdg_decoration_state,
 				kde_decoration_state,
-				xdg_shell_state,
 				shm_state,
 				dmabuf_state,
 				dmabuf_global,

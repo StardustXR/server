@@ -1,6 +1,7 @@
 use super::{
-	seat::{KeyboardInfo, SeatData},
+	seat::{Cursor, KeyboardInfo, SeatData},
 	surface::CoreSurface,
+	xdg_shell::{XdgSurfaceData, XdgToplevelData},
 };
 use crate::{
 	core::{
@@ -18,14 +19,23 @@ use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::Vector2;
 use nanoid::nanoid;
-use serde::Deserialize;
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
 use smithay::{
-	reexports::wayland_server::protocol::wl_pointer::{Axis, ButtonState},
-	utils::Size,
-	wayland::{
-		compositor::SurfaceData,
-		shell::xdg::{Configure, XdgToplevelSurfaceData},
+	reexports::{
+		wayland_protocols::xdg::shell::server::xdg_toplevel::{
+			XdgToplevel, EVT_CONFIGURE_BOUNDS_SINCE,
+		},
+		wayland_server::{
+			backend::Credentials,
+			protocol::{
+				wl_pointer::{Axis, ButtonState},
+				wl_surface::WlSurface,
+			},
+			Resource, Weak as WlWeak,
+		},
 	},
+	wayland::compositor,
 };
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::{Arc, Weak};
@@ -48,20 +58,57 @@ lazy_static! {
 			"close",
 		],
 		aliased_local_methods: vec![],
-		aliased_remote_signals: vec!["resize", "set_cursor",],
+		aliased_remote_signals: vec!["commit_toplevel", "set_cursor",],
 		ui: Default::default(),
 		items: Registry::new(),
 		acceptors: Registry::new(),
 	};
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ToplevelState {
+	#[serde(skip_serializing)]
+	pub mapped: bool,
+	#[serde(skip_serializing)]
+	pub parent: Option<WlWeak<XdgToplevel>>,
+	pub title: String,
+	pub app_id: String,
+	pub size: Vector2<u32>,
+	pub max_size: Vector2<u32>,
+	pub min_size: Vector2<u32>,
+	pub states: Vec<u8>,
+	#[serde(skip_serializing)]
+	pub queued_state: Option<Box<ToplevelState>>,
+}
+impl Default for ToplevelState {
+	fn default() -> Self {
+		Self {
+			mapped: false,
+			parent: None,
+			title: String::default(),
+			app_id: String::default(),
+			size: Vector2::from([0; 2]),
+			max_size: Vector2::from([0; 2]),
+			min_size: Vector2::from([0; 2]),
+			states: Vec::new(),
+			queued_state: None,
+		}
+	}
+}
+
 pub struct PanelItem {
 	node: Weak<Node>,
-	core_surface: Weak<CoreSurface>,
+	client_credentials: Option<Credentials>,
+	pub toplevel: WlWeak<XdgToplevel>,
+	pub cursor: Mutex<Option<WlWeak<WlSurface>>>,
 	seat_data: SeatData,
 }
 impl PanelItem {
-	pub fn create(core_surface: &Arc<CoreSurface>, seat_data: SeatData) -> Arc<Node> {
+	pub fn create(
+		toplevel: XdgToplevel,
+		client_credentials: Option<Credentials>,
+		seat_data: SeatData,
+	) -> (Arc<Node>, Arc<PanelItem>) {
 		let node = Arc::new(Node::create(
 			&INTERNAL_CLIENT,
 			"/item/panel/item",
@@ -69,17 +116,23 @@ impl PanelItem {
 			true,
 		));
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
-
-		let specialization = ItemType::Panel(PanelItem {
+		let panel_item = Arc::new(PanelItem {
 			node: Arc::downgrade(&node),
-			core_surface: Arc::downgrade(core_surface),
+			client_credentials,
+			toplevel: toplevel.downgrade(),
+			cursor: Mutex::new(None),
 			seat_data,
 		});
-		let item = Item::add_to(&node, &ITEM_TYPE_INFO_PANEL, specialization);
-		if let ItemType::Panel(panel) = &item.specialization {
-			let _ = panel.seat_data.panel_item.set(Arc::downgrade(&item));
-		}
+		let _ = panel_item
+			.seat_data
+			.panel_item
+			.set(Arc::downgrade(&panel_item));
 
+		let item = Item::add_to(
+			&node,
+			&ITEM_TYPE_INFO_PANEL,
+			ItemType::Panel(panel_item.clone()),
+		);
 		node.add_local_signal(
 			"apply_surface_material",
 			PanelItem::apply_surface_material_flex,
@@ -102,11 +155,11 @@ impl PanelItem {
 		);
 		node.add_local_signal("keyboard_deactivate", PanelItem::keyboard_deactivate_flex);
 		node.add_local_signal("keyboard_key_state", PanelItem::keyboard_key_state_flex);
-		node.add_local_signal("resize", PanelItem::resize_flex);
+		node.add_local_signal("configure_toplevel", PanelItem::configure_toplevel_flex);
 
-		if let Some(startup_settings) = core_surface
-			.pid()
-			.and_then(|pid| get_env(pid).ok())
+		if let Some(startup_settings) = panel_item
+			.client_credentials
+			.and_then(|cred| get_env(cred.pid).ok())
 			.and_then(|env| startup_settings(&env))
 		{
 			spatial.set_local_transform(startup_settings.transform);
@@ -119,13 +172,42 @@ impl PanelItem {
 			}
 		}
 
-		node
+		(node, panel_item)
 	}
 
 	pub fn from_node(node: &Node) -> Option<&PanelItem> {
 		node.item.get().and_then(|item| match &item.specialization {
-			ItemType::Panel(panel_item) => Some(panel_item),
+			ItemType::Panel(panel_item) => Some(&**panel_item),
 			_ => None,
+		})
+	}
+
+	fn toplevel_surface_data(&self) -> Option<XdgSurfaceData> {
+		Some(
+			self.toplevel
+				.upgrade()
+				.ok()?
+				.data::<XdgToplevelData>()?
+				.xdg_surface_data
+				.clone(),
+		)
+	}
+	pub fn toplevel_state(&self) -> Option<Arc<Mutex<ToplevelState>>> {
+		Some(
+			self.toplevel
+				.upgrade()
+				.ok()?
+				.data::<XdgToplevelData>()?
+				.state
+				.clone(),
+		)
+	}
+	fn toplevel_wl_surface(&self) -> Option<WlSurface> {
+		self.toplevel_surface_data()?.wl_surface.upgrade().ok()
+	}
+	fn core_surface(&self) -> Option<Arc<CoreSurface>> {
+		compositor::with_states(&self.toplevel_wl_surface()?, |data| {
+			data.data_map.get::<Arc<CoreSurface>>().cloned()
 		})
 	}
 
@@ -150,7 +232,7 @@ impl PanelItem {
 			.ok_or_else(|| eyre!("Node is not a model"))?;
 
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
-			if let Some(core_surface) = panel_item.core_surface.upgrade() {
+			if let Some(core_surface) = panel_item.core_surface() {
 				core_surface.apply_material(model.clone(), info.idx);
 			}
 		}
@@ -164,9 +246,8 @@ impl PanelItem {
 		data: &[u8],
 	) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
-		let cursor = panel_item.seat_data.cursor.lock();
-		let Some(cursor) = &*cursor else { return Ok(())};
-		let Some(core_surface) = cursor.lock().core_surface.upgrade() else { return Ok(()) };
+		let Some(cursor) = panel_item.seat_data.cursor() else { return Ok(())};
+		let Some(core_surface) = CoreSurface::from_wl_surface(&cursor) else { return Ok(()) };
 
 		#[derive(Deserialize)]
 		struct SurfaceMaterialInfo<'a> {
@@ -188,65 +269,6 @@ impl PanelItem {
 		Ok(())
 	}
 
-	pub fn on_mapped(
-		core_surface: &Arc<CoreSurface>,
-		surface_data: &SurfaceData,
-		seat_data: SeatData,
-	) {
-		if surface_data
-			.data_map
-			.get::<XdgToplevelSurfaceData>()
-			.is_some()
-		{
-			surface_data
-				.data_map
-				.insert_if_missing_threadsafe(|| PanelItem::create(core_surface, seat_data));
-		}
-	}
-
-	pub fn if_mapped(_core_surface: &Arc<CoreSurface>, surface_data: &SurfaceData) {
-		let Some(panel_node) = surface_data.data_map.get::<Arc<Node>>() else { return };
-		let Some(panel_item) = PanelItem::from_node(panel_node) else { return };
-
-		panel_item.set_cursor();
-	}
-
-	pub fn ack_resize(&self, xdg_config: Configure) {
-		let Configure::Toplevel(config) = xdg_config else { return };
-		let Some(size) = config.state.size else { return };
-		let Some(core_surface) = self.core_surface.upgrade() else { return };
-		core_surface.with_data(|data| data.size = Vector2::from([size.w as u32, size.h as u32]));
-		let _ = self
-			.node
-			.upgrade()
-			.unwrap()
-			.send_remote_signal("resize", &serialize((size.w, size.h)).unwrap());
-	}
-
-	pub fn set_cursor(&self) {
-		let mut cursor_changed = self.seat_data.cursor_changed.lock();
-		if !*cursor_changed {
-			return;
-		}
-		let mut data = serialize(()).unwrap();
-
-		let cursor = self.seat_data.cursor.lock();
-		if let Some(cursor) = cursor.as_ref().map(|cursor| cursor.lock()) {
-			if let Some(core_surface) = cursor.core_surface.upgrade() {
-				core_surface.with_data(|mapped_data| {
-					data = serialize((mapped_data.size, cursor.hotspot)).unwrap();
-				});
-			}
-		}
-
-		let _ = self
-			.node
-			.upgrade()
-			.unwrap()
-			.send_remote_signal("set_cursor", &data);
-		*cursor_changed = false;
-	}
-
 	fn pointer_deactivate_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
@@ -256,7 +278,7 @@ impl PanelItem {
 		if !panel_item.seat_data.pointer_active() {
 			return Ok(());
 		}
-		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
 		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
 
@@ -270,7 +292,7 @@ impl PanelItem {
 
 	fn pointer_motion_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
-		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
 		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
 
@@ -297,7 +319,7 @@ impl PanelItem {
 		if !panel_item.seat_data.pointer_active() {
 			return Ok(());
 		}
-		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
 
 		let (button, state): (u32, u32) = deserialize(data)?;
@@ -324,7 +346,7 @@ impl PanelItem {
 		if !panel_item.seat_data.pointer_active() {
 			return Ok(());
 		}
-		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
 
 		#[derive(Deserialize)]
@@ -399,7 +421,7 @@ impl PanelItem {
 
 	fn keyboard_activate_flex(node: &Node, keymap: &Keymap) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
-		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
 		let Some(keyboard) = panel_item.seat_data.keyboard() else { return Ok(()) };
 
@@ -420,7 +442,7 @@ impl PanelItem {
 		_data: &[u8],
 	) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
-		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
 		let Some(keyboard) = panel_item.seat_data.keyboard() else { return Ok(()) };
 
@@ -450,55 +472,94 @@ impl PanelItem {
 		Ok(())
 	}
 
-	fn resize_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn configure_toplevel_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
-		let Some(core_surface) = panel_item.core_surface.upgrade() else { return Ok(()) };
-		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
-		let size: Vector2<u32> = deserialize(data)?;
+		let Ok(xdg_toplevel) = panel_item.toplevel.upgrade() else { return Ok(()) };
+		let Some(xdg_surface) = panel_item.toplevel_surface_data().and_then(|d| d.xdg_surface.upgrade().ok()) else { return Ok(()) };
 
-		let toplevel_surface = core_surface
-			.wayland_state()
-			.lock()
-			.xdg_shell_state
-			.toplevel_surfaces(|surfaces| {
-				surfaces
-					.iter()
-					.find(|surf| surf.wl_surface().clone() == wl_surface)
-					.cloned()
-			});
-
-		if let Some(toplevel_surface) = toplevel_surface {
-			let mut size_set = false;
-			toplevel_surface.with_pending_state(|state| {
-				state.size = Some(Size::default());
-				state.size.as_mut().unwrap().w = size.x as i32;
-				state.size.as_mut().unwrap().h = size.y as i32;
-				size_set = true;
-			});
-			if size_set {
-				toplevel_surface.send_configure();
-			}
+		#[derive(Deserialize)]
+		struct ConfigureToplevelInfo {
+			size: Option<Vector2<u32>>,
+			states: Vec<u8>,
+			bounds: Option<Vector2<u32>>,
 		}
 
+		let info: ConfigureToplevelInfo = deserialize(data)?;
+		if let Some(xdg_state) = panel_item.toplevel_state() {
+			xdg_state.lock().queued_state.as_mut().unwrap().states = info.states.clone();
+		}
+		if let Some(bounds) = info.bounds {
+			if xdg_toplevel.version() > EVT_CONFIGURE_BOUNDS_SINCE {
+				xdg_toplevel.configure_bounds(bounds.x as i32, bounds.y as i32);
+			}
+		}
+		let size = info.size.unwrap_or(Vector2::from([0; 2]));
+		xdg_toplevel.configure(size.x as i32, size.y as i32, info.states);
+		xdg_surface.configure(0);
+
 		Ok(())
+	}
+
+	pub fn commit_toplevel(&self) {
+		let mapped = self.core_surface().map(|c| c.mapped()).unwrap_or(false);
+		let Some(state) = self.toplevel_state() else { return };
+		let Some(surface_data) = self.toplevel_surface_data() else { return };
+		let mut state = state.lock();
+		{
+			let queued_state = state.queued_state.as_mut().unwrap();
+			queued_state.mapped = mapped;
+			queued_state.size = *surface_data.size.lock();
+		}
+
+		let Some(node) = self.node.upgrade() else { return };
+		let queued_state = state.queued_state.take().unwrap();
+		*state = (*queued_state).clone();
+		state.queued_state = Some(queued_state);
+
+		let _ = node.send_remote_signal("commit_toplevel", &serialize(&*state).unwrap());
+	}
+
+	pub fn set_cursor(&self, surface: Option<&WlSurface>, hotspot_x: i32, hotspot_y: i32) {
+		let Some(node) = self.node.upgrade() else { return };
+		let mut data = serialize(()).unwrap();
+
+		let cursor_size = surface
+			.and_then(|c| CoreSurface::from_wl_surface(c))
+			.and_then(|c| c.with_data(|data| data.size));
+
+		if let Some(size) = cursor_size {
+			data = serialize((size, (hotspot_x, hotspot_y))).unwrap();
+		}
+
+		let _ = node.send_remote_signal("set_cursor", &data);
 	}
 }
 impl ItemSpecialization for PanelItem {
 	fn serialize_start_data(&self, id: &str) -> Vec<u8> {
-		// Panel size
-		let panel_size = self
-			.core_surface
-			.upgrade()
-			.unwrap()
-			.with_data(|data| data.size);
+		let cursor = self.cursor.lock().as_ref().and_then(|c| c.upgrade().ok());
+		let cursor_size = cursor
+			.as_ref()
+			.and_then(|c| CoreSurface::from_wl_surface(&c))
+			.and_then(|c| c.with_data(|data| data.size));
+		let cursor_hotspot = cursor
+			.and_then(|c| {
+				compositor::with_states(&c, |data| data.data_map.get::<Arc<Cursor>>().cloned())
+			})
+			.map(|cursor| cursor.hotspot);
 
-		let cursor_lock = (*self.seat_data.cursor.lock()).clone();
-		let cursor_size = cursor_lock
-			.clone()
-			.and_then(|cursor| cursor.lock().core_surface.upgrade())
-			.and_then(|surf| surf.with_data(|data| data.size));
-		let cursor_hotspot = cursor_lock.map(|cursor| cursor.lock().hotspot);
-
-		serialize((id, (panel_size, cursor_size.zip(cursor_hotspot)))).unwrap()
+		let toplevel_state = self.toplevel_state();
+		let toplevel_state = toplevel_state.as_ref().map(|state| state.lock());
+		serialize((
+			id,
+			(
+				toplevel_state.and_then(|state| state.mapped.then_some(state.clone())),
+				cursor_size.zip(cursor_hotspot),
+			),
+		))
+		.unwrap()
 	}
 }

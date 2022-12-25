@@ -1,9 +1,10 @@
-use super::{state::WaylandState, surface::CoreSurface};
+use super::{panel_item::PanelItem, state::WaylandState, surface::CoreSurface};
 use smithay::{
 	delegate_compositor,
 	reexports::wayland_server::protocol::wl_surface::WlSurface,
 	wayland::compositor::{self, CompositorHandler, CompositorState},
 };
+use std::sync::Arc;
 
 impl CompositorHandler for WaylandState {
 	fn compositor_state(&mut self) -> &mut CompositorState {
@@ -11,16 +12,12 @@ impl CompositorHandler for WaylandState {
 	}
 
 	fn commit(&mut self, surface: &WlSurface) {
-		compositor::with_states(surface, |data| {
-			data.data_map.insert_if_missing_threadsafe(|| {
-				CoreSurface::new(
-					&self.weak_ref.upgrade().unwrap(),
-					&self.display,
-					self.display_handle.clone(),
-					surface,
-				)
-			})
-		});
+		CoreSurface::add_to(&self.display, self.display_handle.clone(), surface);
+		if let Some(panel_item) = compositor::with_states(surface, |data| {
+			data.data_map.get::<Arc<PanelItem>>().cloned()
+		}) {
+			panel_item.commit_toplevel();
+		};
 	}
 }
 

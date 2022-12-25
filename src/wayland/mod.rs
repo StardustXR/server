@@ -9,28 +9,28 @@ mod surface;
 mod xdg_activation;
 mod xdg_shell;
 
-use self::{panel_item::PanelItem, state::WaylandState, surface::CORE_SURFACES};
+use self::{state::WaylandState, surface::CORE_SURFACES};
 use crate::wayland::state::ClientState;
 use color_eyre::eyre::{ensure, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use slog::Drain;
 use smithay::{
-	backend::{egl::EGLContext, renderer::{gles2::Gles2Renderer}},
-	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket, Resource},
+	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
+	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket},
 };
-use tracing::info;
+use std::os::unix::prelude::AsRawFd;
 use std::{
 	ffi::c_void,
 	os::unix::{net::UnixListener, prelude::FromRawFd},
 	sync::Arc,
 };
-use std::{os::unix::prelude::AsRawFd};
 use stereokit as sk;
 use stereokit::StereoKit;
 use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
 };
+use tracing::info;
 
 struct EGLRawHandles {
 	display: *const c_void,
@@ -147,26 +147,9 @@ impl Wayland {
 
 	pub fn frame(&mut self, sk: &StereoKit) {
 		for core_surface in CORE_SURFACES.get_valid_contents() {
-			let Some(client_id) = 
-				core_surface
-					.wl_surface()
-					.and_then(|surf| surf.client())
-					.map(|c| c.id()) else { continue };
 			let state = self.state.lock();
-			let Some(seat_data) = state.seats.get(&client_id).cloned() else { continue };
 			let output = state.output.clone();
-			core_surface.process(
-				sk,
-				&mut self.renderer,
-				output,
-				&self.log,
-				|data| {
-					PanelItem::on_mapped(&core_surface, data, seat_data);
-				},
-				|data| {
-					PanelItem::if_mapped(&core_surface, data);
-				},
-			);
+			core_surface.process(sk, &mut self.renderer, output, &self.log);
 		}
 
 		self.display.lock().flush_clients().unwrap();
