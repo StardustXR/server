@@ -45,7 +45,7 @@ lazy_static! {
 	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
 		type_name: "panel",
 		aliased_local_signals: vec![
-			"apply_surface_material",
+			"apply_toplevel_material",
 			"apply_cursor_material",
 			"pointer_deactivate",
 			"pointer_scroll",
@@ -54,7 +54,7 @@ lazy_static! {
 			"keyboard_set_active",
 			"keyboard_set_keyState",
 			"keyboard_set_modifiers",
-			"resize",
+			"configure_toplevel",
 			"close",
 		],
 		aliased_local_methods: vec![],
@@ -134,8 +134,8 @@ impl PanelItem {
 			ItemType::Panel(panel_item.clone()),
 		);
 		node.add_local_signal(
-			"apply_surface_material",
-			PanelItem::apply_surface_material_flex,
+			"apply_toplevel_material",
+			PanelItem::apply_toplevel_material_flex,
 		);
 		node.add_local_signal(
 			"apply_cursor_material",
@@ -211,7 +211,7 @@ impl PanelItem {
 		})
 	}
 
-	fn apply_surface_material_flex(
+	fn apply_toplevel_material_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
 		data: &[u8],
