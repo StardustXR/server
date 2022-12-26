@@ -71,11 +71,11 @@ pub struct ToplevelState {
 	pub mapped: bool,
 	#[serde(skip_serializing)]
 	pub parent: Option<WlWeak<XdgToplevel>>,
-	pub title: String,
-	pub app_id: String,
+	pub title: Option<String>,
+	pub app_id: Option<String>,
 	pub size: Vector2<u32>,
-	pub max_size: Vector2<u32>,
-	pub min_size: Vector2<u32>,
+	pub max_size: Option<Vector2<u32>>,
+	pub min_size: Option<Vector2<u32>>,
 	pub states: Vec<u8>,
 	#[serde(skip_serializing)]
 	pub queued_state: Option<Box<ToplevelState>>,
@@ -85,11 +85,11 @@ impl Default for ToplevelState {
 		Self {
 			mapped: false,
 			parent: None,
-			title: String::default(),
-			app_id: String::default(),
+			title: None,
+			app_id: None,
 			size: Vector2::from([0; 2]),
-			max_size: Vector2::from([0; 2]),
-			min_size: Vector2::from([0; 2]),
+			max_size: None,
+			min_size: None,
 			states: Vec::new(),
 			queued_state: None,
 		}
