@@ -299,12 +299,12 @@ impl Dispatch<XdgToplevel, XdgToplevelData, WaylandState> for WaylandState {
 			xdg_toplevel::Request::SetTitle { title } => {
 				let mut state = data.state.lock();
 				let queued_state = state.queued_state.as_mut().unwrap();
-				queued_state.title = Some(title);
+				queued_state.title = (!title.is_empty()).then_some(title);
 			}
 			xdg_toplevel::Request::SetAppId { app_id } => {
 				let mut state = data.state.lock();
 				let queued_state = state.queued_state.as_mut().unwrap();
-				queued_state.app_id = Some(app_id);
+				queued_state.app_id = (!app_id.is_empty()).then_some(app_id);
 			}
 			xdg_toplevel::Request::ShowWindowMenu {
 				seat: _,
@@ -321,12 +321,14 @@ impl Dispatch<XdgToplevel, XdgToplevelData, WaylandState> for WaylandState {
 			xdg_toplevel::Request::SetMaxSize { width, height } => {
 				let mut state = data.state.lock();
 				let queued_state = state.queued_state.as_mut().unwrap();
-				queued_state.max_size = Some(Vector2::from([width as u32, height as u32]));
+				queued_state.max_size = (width > 1 || height > 1)
+					.then_some(Vector2::from([width as u32, height as u32]));
 			}
 			xdg_toplevel::Request::SetMinSize { width, height } => {
 				let mut state = data.state.lock();
 				let queued_state = state.queued_state.as_mut().unwrap();
-				queued_state.min_size = Some(Vector2::from([width as u32, height as u32]));
+				queued_state.min_size = (width > 1 || height > 1)
+					.then_some(Vector2::from([width as u32, height as u32]));
 			}
 			xdg_toplevel::Request::SetMaximized => (),
 			xdg_toplevel::Request::UnsetMaximized => (),
