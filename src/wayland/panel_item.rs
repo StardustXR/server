@@ -512,7 +512,14 @@ impl PanelItem {
 		{
 			let queued_state = state.queued_state.as_mut().unwrap();
 			queued_state.mapped = mapped;
-			queued_state.size = *surface_data.size.lock();
+			if mapped {
+				queued_state.size = surface_data.size.lock().unwrap_or_else(|| {
+					self.core_surface()
+						.unwrap()
+						.with_data(|data| Vector2::from([data.size.x / 2, data.size.y / 2]))
+						.unwrap()
+				});
+			}
 		}
 
 		let Some(node) = self.node.upgrade() else { return };
