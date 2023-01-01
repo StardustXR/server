@@ -83,7 +83,7 @@ impl GlobalDispatch<XdgWmBase, (), WaylandState> for WaylandState {
 #[derive(Debug)]
 pub struct WaylandSurface {
 	wl_surface: Weak<WlSurface>,
-	size: Arc<Mutex<Vector2<u32>>>,
+	size: Arc<Mutex<Option<Vector2<u32>>>>,
 }
 
 impl Dispatch<XdgWmBase, (), WaylandState> for WaylandState {
@@ -105,7 +105,7 @@ impl Dispatch<XdgWmBase, (), WaylandState> for WaylandState {
 					id,
 					WaylandSurface {
 						wl_surface: surface.downgrade(),
-						size: Arc::new(Mutex::new(Vector2::from([0; 2]))),
+						size: Arc::new(Mutex::new(None)),
 					},
 				);
 			}
@@ -210,7 +210,7 @@ impl Dispatch<XdgPositioner, Arc<Mutex<PositionerData>>, WaylandState> for Wayla
 pub struct XdgSurfaceData {
 	pub wl_surface: Weak<WlSurface>,
 	pub xdg_surface: Weak<XdgSurface>,
-	pub size: Arc<Mutex<Vector2<u32>>>,
+	pub size: Arc<Mutex<Option<Vector2<u32>>>>,
 }
 impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 	fn request(
@@ -266,7 +266,7 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 				width,
 				height,
 			} => {
-				*data.size.lock() = Vector2::from([width as u32, height as u32]);
+				*data.size.lock() = Some(Vector2::from([width as u32, height as u32]));
 			}
 			xdg_surface::Request::AckConfigure { serial: _ } => (),
 			xdg_surface::Request::Destroy => (),
