@@ -561,6 +561,18 @@ impl PanelItem {
 
 		let _ = node.send_remote_signal("set_cursor", &data);
 	}
+
+	pub fn on_drop(&self) {
+		let Ok(toplevel_surface) = self.toplevel_surface.upgrade() else { return; };
+		let Some(focused_surface) = self.seat_data.pointer_focused_surface() else { return; };
+
+		if focused_surface.id() == toplevel_surface.id() {
+			let Some(pointer) = self.seat_data.pointer() else { return };
+			pointer.leave(0, &toplevel_surface);
+			pointer.frame();
+			*self.seat_data.pointer_focus.lock() = None;
+		}
+	}
 }
 impl ItemSpecialization for PanelItem {
 	fn serialize_start_data(&self, id: &str) -> Vec<u8> {
