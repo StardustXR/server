@@ -17,12 +17,14 @@ use smithay::{
 			wl_surface::WlSurface,
 			wl_touch::{self, WlTouch},
 		},
-		Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+		Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak as WlWeak,
 	},
 	wayland::compositor,
 };
-use std::sync::Arc;
-use std::{ops::Deref, sync::Weak};
+use std::{
+	ops::Deref,
+	sync::{Arc, Weak},
+};
 use xkbcommon::xkb::{self, Keymap};
 
 pub struct Cursor {
@@ -79,7 +81,7 @@ impl SeatData {
 			global_id: OnceCell::new(),
 			panel_item: OnceCell::new(),
 			pointer: OnceCell::new(),
-			pointer_active: Mutex::new(false),
+			pointer_focus: Mutex::new(None),
 			keyboard: OnceCell::new(),
 			keyboard_info: Mutex::new(None),
 			touch: OnceCell::new(),
@@ -106,7 +108,7 @@ pub struct SeatDataInner {
 	global_id: OnceCell<GlobalId>,
 	pub panel_item: OnceCell<Weak<PanelItem>>,
 	pointer: OnceCell<WlPointer>,
-	pub pointer_active: Mutex<bool>,
+	pub pointer_focus: Mutex<Option<WlWeak<WlSurface>>>,
 	keyboard: OnceCell<WlKeyboard>,
 	pub keyboard_info: Mutex<Option<KeyboardInfo>>,
 	touch: OnceCell<WlTouch>,
@@ -116,7 +118,13 @@ impl SeatDataInner {
 		self.pointer.get()
 	}
 	pub fn pointer_active(&self) -> bool {
-		*self.pointer_active.lock()
+		self.pointer_focus.lock().is_some()
+	}
+	pub fn pointer_focused_surface(&self) -> Option<WlSurface> {
+		self.pointer_focus
+			.lock()
+			.as_ref()
+			.and_then(|focus| focus.upgrade().ok())
 	}
 	pub fn keyboard(&self) -> Option<&WlKeyboard> {
 		self.keyboard.get()
