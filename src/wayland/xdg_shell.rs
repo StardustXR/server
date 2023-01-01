@@ -335,7 +335,13 @@ impl Dispatch<XdgToplevel, XdgToplevelData, WaylandState> for WaylandState {
 			xdg_toplevel::Request::SetFullscreen { output: _ } => (),
 			xdg_toplevel::Request::UnsetFullscreen => (),
 			xdg_toplevel::Request::SetMinimized => (),
-			xdg_toplevel::Request::Destroy => (),
+			xdg_toplevel::Request::Destroy => {
+				let Ok(wl_surface) = data.xdg_surface_data.wl_surface.upgrade() else { return };
+				let Some(panel_item) = compositor::with_states(&wl_surface, |data| {
+					data.data_map.get::<Arc<PanelItem>>().cloned()
+				}) else { return };
+				panel_item.on_drop();
+			}
 			_ => unreachable!(),
 		}
 	}
