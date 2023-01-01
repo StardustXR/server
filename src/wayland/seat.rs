@@ -227,17 +227,10 @@ impl Dispatch<WlPointer, SeatData, WaylandState> for WaylandState {
 						}
 					})
 				}
-				*seat_data
-					.panel_item
-					.get()
-					.unwrap()
-					.upgrade()
-					.unwrap()
-					.cursor
-					.lock() = surface.as_ref().map(|surf| surf.downgrade());
 
 				if let Some(panel_item) = seat_data.panel_item.get().and_then(|i| i.upgrade()) {
 					panel_item.set_cursor(surface.as_ref(), hotspot_x, hotspot_y);
+					*panel_item.cursor.lock() = surface.as_ref().map(|surf| surf.downgrade());
 				}
 			}
 			wl_pointer::Request::Release => (),
