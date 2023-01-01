@@ -99,6 +99,7 @@ impl Default for ToplevelState {
 pub struct PanelItem {
 	node: Weak<Node>,
 	client_credentials: Option<Credentials>,
+	toplevel_surface: WlWeak<WlSurface>,
 	pub toplevel: WlWeak<XdgToplevel>,
 	pub cursor: Mutex<Option<WlWeak<WlSurface>>>,
 	seat_data: SeatData,
@@ -119,6 +120,12 @@ impl PanelItem {
 		let panel_item = Arc::new(PanelItem {
 			node: Arc::downgrade(&node),
 			client_credentials,
+			toplevel_surface: toplevel
+				.data::<XdgToplevelData>()
+				.unwrap()
+				.xdg_surface_data
+				.wl_surface
+				.clone(),
 			toplevel: toplevel.downgrade(),
 			cursor: Mutex::new(None),
 			seat_data,
@@ -283,7 +290,7 @@ impl PanelItem {
 		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
 
 		pointer.leave(0, &wl_surface);
-		*panel_item.seat_data.pointer_active.lock() = false;
+		*panel_item.seat_data.pointer_focus.lock() = None;
 		pointer.frame();
 		core_surface.flush_clients();
 
@@ -302,11 +309,21 @@ impl PanelItem {
 		let mut position: Vector2<f64> = deserialize(data)?;
 		position.x = position.x.clamp(0.0, pointer_surface_size.x as f64);
 		position.y = position.y.clamp(0.0, pointer_surface_size.y as f64);
-		if panel_item.seat_data.pointer_active() {
-			pointer.motion(0, position.x, position.y);
-		} else {
+
+		let mut pointer_focus = panel_item.seat_data.pointer_focus.lock();
+		if let Some(old_surface) = pointer_focus
+			.as_ref()
+			.and_then(|surf| surf.upgrade().ok())
+			.filter(|surf| surf.id() != wl_surface.id())
+		{
+			pointer.leave(0, &old_surface);
+			*pointer_focus = None;
+		}
+		if pointer_focus.is_none() {
 			pointer.enter(0, &wl_surface, position.x, position.y);
-			*panel_item.seat_data.pointer_active.lock() = true;
+			*pointer_focus = Some(wl_surface.downgrade());
+		} else {
+			pointer.motion(0, position.x, position.y);
 		}
 		pointer.frame();
 		core_surface.flush_clients();
