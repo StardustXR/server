@@ -23,7 +23,6 @@ use smithay::{
 		buffer::BufferHandler,
 		compositor::CompositorState,
 		dmabuf::{self, DmabufGlobal, DmabufHandler, DmabufState},
-		output::OutputManagerState,
 		shell::kde::decoration::KdeDecorationState,
 		shm::{ShmHandler, ShmState},
 	},
@@ -58,7 +57,6 @@ pub struct WaylandState {
 	pub dmabuf_state: DmabufState,
 	pub dmabuf_global: DmabufGlobal,
 	pub pending_dmabufs: Vec<Dmabuf>,
-	pub output_manager_state: OutputManagerState,
 	pub output: Output,
 	pub seats: FxHashMap<ClientId, SeatData>,
 }
@@ -84,7 +82,6 @@ impl WaylandState {
 			renderer.dmabuf_formats().cloned().collect::<Vec<_>>(),
 			log.clone(),
 		);
-		let output_manager_state = OutputManagerState::new_with_xdg_output::<Self>(&display_handle);
 		let output = Output::new(
 			"1x".to_owned(),
 			smithay::output::PhysicalProperties {
@@ -124,7 +121,6 @@ impl WaylandState {
 				dmabuf_state,
 				dmabuf_global,
 				pending_dmabufs: Vec::new(),
-				output_manager_state,
 				output,
 				seats: FxHashMap::default(),
 			})
