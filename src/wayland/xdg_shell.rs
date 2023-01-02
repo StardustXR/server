@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use super::{
-	panel_item::{PanelItem, ToplevelState},
+	panel_item::{PanelItem, RecommendedState, ToplevelState},
 	state::WaylandState,
 };
 use mint::Vector2;
@@ -280,6 +280,14 @@ pub struct XdgToplevelData {
 	pub state: Arc<Mutex<ToplevelState>>,
 	pub xdg_surface_data: XdgSurfaceData,
 }
+impl XdgToplevelData {
+	fn panel_item(&self) -> Option<Arc<PanelItem>> {
+		let wl_surface = self.xdg_surface_data.wl_surface.upgrade().ok()?;
+		compositor::with_states(&wl_surface, |data| {
+			data.data_map.get::<Arc<PanelItem>>().cloned()
+		})
+	}
+}
 impl Dispatch<XdgToplevel, XdgToplevelData, WaylandState> for WaylandState {
 	fn request(
 		_state: &mut WaylandState,
@@ -312,12 +320,19 @@ impl Dispatch<XdgToplevel, XdgToplevelData, WaylandState> for WaylandState {
 				x: _,
 				y: _,
 			} => (),
-			xdg_toplevel::Request::Move { seat: _, serial: _ } => (),
+			xdg_toplevel::Request::Move { seat: _, serial: _ } => {
+				let Some(panel_item) = data.panel_item() else { return };
+				panel_item.recommend_toplevel_state(RecommendedState::Move);
+			}
 			xdg_toplevel::Request::Resize {
 				seat: _,
 				serial: _,
-				edges: _,
-			} => (),
+				edges,
+			} => {
+				let WEnum::Value(edges) = edges else { return };
+				let Some(panel_item) = data.panel_item() else { return };
+				panel_item.recommend_toplevel_state(RecommendedState::Resize(edges as u32));
+			}
 			xdg_toplevel::Request::SetMaxSize { width, height } => {
 				let mut state = data.state.lock();
 				let queued_state = state.queued_state.as_mut().unwrap();
@@ -330,16 +345,28 @@ impl Dispatch<XdgToplevel, XdgToplevelData, WaylandState> for WaylandState {
 				queued_state.min_size = (width > 1 || height > 1)
 					.then_some(Vector2::from([width as u32, height as u32]));
 			}
-			xdg_toplevel::Request::SetMaximized => (),
-			xdg_toplevel::Request::UnsetMaximized => (),
-			xdg_toplevel::Request::SetFullscreen { output: _ } => (),
-			xdg_toplevel::Request::UnsetFullscreen => (),
-			xdg_toplevel::Request::SetMinimized => (),
+			xdg_toplevel::Request::SetMaximized => {
+				let Some(panel_item) = data.panel_item() else { return };
+				panel_item.recommend_toplevel_state(RecommendedState::Maximize(true));
+			}
+			xdg_toplevel::Request::UnsetMaximized => {
+				let Some(panel_item) = data.panel_item() else { return };
+				panel_item.recommend_toplevel_state(RecommendedState::Maximize(false));
+			}
+			xdg_toplevel::Request::SetFullscreen { output: _ } => {
+				let Some(panel_item) = data.panel_item() else { return };
+				panel_item.recommend_toplevel_state(RecommendedState::Fullscreen(true));
+			}
+			xdg_toplevel::Request::UnsetFullscreen => {
+				let Some(panel_item) = data.panel_item() else { return };
+				panel_item.recommend_toplevel_state(RecommendedState::Fullscreen(true));
+			}
+			xdg_toplevel::Request::SetMinimized => {
+				let Some(panel_item) = data.panel_item() else { return };
+				panel_item.recommend_toplevel_state(RecommendedState::Minimize);
+			}
 			xdg_toplevel::Request::Destroy => {
-				let Ok(wl_surface) = data.xdg_surface_data.wl_surface.upgrade() else { return };
-				let Some(panel_item) = compositor::with_states(&wl_surface, |data| {
-					data.data_map.get::<Arc<PanelItem>>().cloned()
-				}) else { return };
+				let Some(panel_item) = data.panel_item() else { return };
 				panel_item.on_drop();
 			}
 			_ => unreachable!(),
