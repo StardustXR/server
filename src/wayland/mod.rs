@@ -6,7 +6,7 @@ mod seat;
 mod shaders;
 mod state;
 mod surface;
-mod xdg_activation;
+// mod xdg_activation;
 mod xdg_shell;
 
 use self::{state::WaylandState, surface::CORE_SURFACES};

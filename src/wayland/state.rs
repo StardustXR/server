@@ -26,7 +26,6 @@ use smithay::{
 		output::OutputManagerState,
 		shell::kde::decoration::KdeDecorationState,
 		shm::{ShmHandler, ShmState},
-		xdg_activation::XdgActivationState,
 	},
 };
 use std::sync::{Arc, Weak};
@@ -53,7 +52,7 @@ pub struct WaylandState {
 	pub display_handle: DisplayHandle,
 
 	pub compositor_state: CompositorState,
-	pub xdg_activation_state: XdgActivationState,
+	// pub xdg_activation_state: XdgActivationState,
 	pub kde_decoration_state: KdeDecorationState,
 	pub shm_state: ShmState,
 	pub dmabuf_state: DmabufState,
@@ -72,7 +71,7 @@ impl WaylandState {
 		renderer: &Gles2Renderer,
 	) -> Arc<Mutex<Self>> {
 		let compositor_state = CompositorState::new::<Self, _>(&display_handle, log.clone());
-		let xdg_activation_state = XdgActivationState::new::<Self, _>(&display_handle, log.clone());
+		// let xdg_activation_state = XdgActivationState::new::<Self, _>(&display_handle, log.clone());
 		let kde_decoration_state = KdeDecorationState::new::<Self, _>(
 			&display_handle,
 			DecorationMode::Server,
@@ -119,7 +118,7 @@ impl WaylandState {
 				display_handle,
 
 				compositor_state,
-				xdg_activation_state,
+				// xdg_activation_state,
 				kde_decoration_state,
 				shm_state,
 				dmabuf_state,
