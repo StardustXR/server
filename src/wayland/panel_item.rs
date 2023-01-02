@@ -58,7 +58,7 @@ lazy_static! {
 			"close",
 		],
 		aliased_local_methods: vec![],
-		aliased_remote_signals: vec!["commit_toplevel", "set_cursor",],
+		aliased_remote_signals: vec!["commit_toplevel", "recommend_toplevel_state", "set_cursor"],
 		ui: Default::default(),
 		items: Registry::new(),
 		acceptors: Registry::new(),
@@ -94,6 +94,16 @@ impl Default for ToplevelState {
 			queued_state: None,
 		}
 	}
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "type", content = "content")]
+pub enum RecommendedState {
+	Maximize(bool),
+	Fullscreen(bool),
+	Minimize,
+	Move,
+	Resize(u32),
 }
 
 pub struct PanelItem {
@@ -498,7 +508,7 @@ impl PanelItem {
 		let Ok(xdg_toplevel) = panel_item.toplevel.upgrade() else { return Ok(()) };
 		let Some(xdg_surface) = panel_item.toplevel_surface_data().and_then(|d| d.xdg_surface.upgrade().ok()) else { return Ok(()) };
 
-		#[derive(Deserialize)]
+		#[derive(Debug, Deserialize)]
 		struct ConfigureToplevelInfo {
 			size: Option<Vector2<u32>>,
 			states: Vec<u8>,
@@ -545,6 +555,14 @@ impl PanelItem {
 		state.queued_state = Some(queued_state);
 
 		let _ = node.send_remote_signal("commit_toplevel", &serialize(&*state).unwrap());
+	}
+
+	pub fn recommend_toplevel_state(&self, state: RecommendedState) {
+		let Some(node) = self.node.upgrade() else { return };
+		dbg!(&state);
+		let data = serialize(state).unwrap();
+
+		let _ = node.send_remote_signal("recommend_toplevel_state", &data);
 	}
 
 	pub fn set_cursor(&self, surface: Option<&WlSurface>, hotspot_x: i32, hotspot_y: i32) {
