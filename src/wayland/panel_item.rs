@@ -24,8 +24,9 @@ use serde::{Deserialize, Serialize};
 use smithay::{
 	reexports::{
 		wayland_protocols::xdg::shell::server::xdg_toplevel::{
-			XdgToplevel, EVT_CONFIGURE_BOUNDS_SINCE,
+			XdgToplevel, EVT_CONFIGURE_BOUNDS_SINCE, EVT_WM_CAPABILITIES_SINCE,
 		},
+		wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_handle_v1::State,
 		wayland_server::{
 			backend::Credentials,
 			protocol::{
@@ -46,6 +47,8 @@ lazy_static! {
 		type_name: "panel",
 		aliased_local_signals: vec![
 			"apply_toplevel_material",
+			"configure_toplevel",
+			"set_toplevel_capabilities",
 			"apply_cursor_material",
 			"pointer_deactivate",
 			"pointer_scroll",
@@ -54,7 +57,6 @@ lazy_static! {
 			"keyboard_set_active",
 			"keyboard_set_keyState",
 			"keyboard_set_modifiers",
-			"configure_toplevel",
 			"close",
 		],
 		aliased_local_methods: vec![],
@@ -154,6 +156,13 @@ impl PanelItem {
 			"apply_toplevel_material",
 			PanelItem::apply_toplevel_material_flex,
 		);
+		node.add_local_signal("configure_toplevel", PanelItem::configure_toplevel_flex);
+		if toplevel.version() >= EVT_WM_CAPABILITIES_SINCE {
+			node.add_local_signal(
+				"set_toplevel_capabilities",
+				PanelItem::set_toplevel_capabilities_flex,
+			);
+		}
 		node.add_local_signal(
 			"apply_cursor_material",
 			PanelItem::apply_cursor_material_flex,
@@ -172,7 +181,6 @@ impl PanelItem {
 		);
 		node.add_local_signal("keyboard_deactivate", PanelItem::keyboard_deactivate_flex);
 		node.add_local_signal("keyboard_key_state", PanelItem::keyboard_key_state_flex);
-		node.add_local_signal("configure_toplevel", PanelItem::configure_toplevel_flex);
 
 		if let Some(startup_settings) = panel_item
 			.client_credentials
@@ -526,6 +534,21 @@ impl PanelItem {
 		}
 		let size = info.size.unwrap_or(Vector2::from([0; 2]));
 		xdg_toplevel.configure(size.x as i32, size.y as i32, info.states);
+		xdg_surface.configure(0);
+
+		Ok(())
+	}
+
+	fn set_toplevel_capabilities_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
+		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		let Ok(xdg_toplevel) = panel_item.toplevel.upgrade() else { return Ok(()) };
+		let Some(xdg_surface) = panel_item.toplevel_surface_data().and_then(|d| d.xdg_surface.upgrade().ok()) else { return Ok(()) };
+
+		xdg_toplevel.wm_capabilities(deserialize(data)?);
 		xdg_surface.configure(0);
 
 		Ok(())

@@ -13,7 +13,7 @@ use smithay::{
 			xdg_popup::{self, XdgPopup},
 			xdg_positioner::{self, Anchor, ConstraintAdjustment, Gravity, XdgPositioner},
 			xdg_surface::{self, XdgSurface},
-			xdg_toplevel::{self, XdgToplevel},
+			xdg_toplevel::{self, XdgToplevel, EVT_WM_CAPABILITIES_SINCE},
 			xdg_wm_base::{self, XdgWmBase},
 		},
 		wayland_server::{
@@ -240,6 +240,9 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 					},
 				);
 
+				if toplevel.version() >= EVT_WM_CAPABILITIES_SINCE {
+					toplevel.wm_capabilities(vec![]);
+				}
 				toplevel.configure(0, 0, vec![]);
 				xdg_surface.configure(0);
 
