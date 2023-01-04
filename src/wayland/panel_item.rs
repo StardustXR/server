@@ -457,7 +457,7 @@ impl PanelItem {
 	fn keyboard_activate_flex(node: &Node, keymap: &Keymap) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
 		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
-		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
+		let Some(wl_surface) = panel_item.toplevel_wl_surface() else { return Ok(()) };
 		let Some(keyboard) = panel_item.seat_data.keyboard() else { return Ok(()) };
 
 		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
@@ -467,6 +467,7 @@ impl PanelItem {
 		}
 		keyboard_info.replace(KeyboardInfo::new(keymap));
 		keyboard_info.as_ref().unwrap().keymap.send(keyboard)?;
+		core_surface.flush_clients();
 
 		Ok(())
 	}
@@ -478,13 +479,14 @@ impl PanelItem {
 	) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
 		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
-		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
+		let Some(wl_surface) = panel_item.toplevel_wl_surface() else { return Ok(()) };
 		let Some(keyboard) = panel_item.seat_data.keyboard() else { return Ok(()) };
 
 		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
 		if keyboard_info.is_some() {
 			keyboard.leave(SERIAL_COUNTER.inc(), &wl_surface);
 			*keyboard_info = None;
+			core_surface.flush_clients();
 		}
 
 		Ok(())
@@ -496,12 +498,14 @@ impl PanelItem {
 		data: &[u8],
 	) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		let Some(keyboard) = panel_item.seat_data.keyboard() else { return Ok(()) };
 
 		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
 		if let Some(keyboard_info) = &mut *keyboard_info {
 			let (key, state): (u32, u32) = deserialize(data)?;
 			keyboard_info.process(key, state, keyboard)?;
+			core_surface.flush_clients();
 		}
 
 		Ok(())
@@ -513,6 +517,7 @@ impl PanelItem {
 		data: &[u8],
 	) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		let Ok(xdg_toplevel) = panel_item.toplevel.upgrade() else { return Ok(()) };
 		let Some(xdg_surface) = panel_item.toplevel_surface_data().and_then(|d| d.xdg_surface.upgrade().ok()) else { return Ok(()) };
 
@@ -535,6 +540,7 @@ impl PanelItem {
 		let size = info.size.unwrap_or(Vector2::from([0; 2]));
 		xdg_toplevel.configure(size.x as i32, size.y as i32, info.states);
 		xdg_surface.configure(SERIAL_COUNTER.inc());
+		core_surface.flush_clients();
 
 		Ok(())
 	}
@@ -545,11 +551,13 @@ impl PanelItem {
 		data: &[u8],
 	) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
+		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		let Ok(xdg_toplevel) = panel_item.toplevel.upgrade() else { return Ok(()) };
 		let Some(xdg_surface) = panel_item.toplevel_surface_data().and_then(|d| d.xdg_surface.upgrade().ok()) else { return Ok(()) };
 
 		xdg_toplevel.wm_capabilities(deserialize(data)?);
 		xdg_surface.configure(SERIAL_COUNTER.inc());
+		core_surface.flush_clients();
 
 		Ok(())
 	}
@@ -563,12 +571,17 @@ impl PanelItem {
 			let queued_state = state.queued_state.as_mut().unwrap();
 			queued_state.mapped = mapped;
 			if mapped {
-				queued_state.size = surface_data.size.lock().unwrap_or_else(|| {
-					self.core_surface()
-						.unwrap()
-						.with_data(|data| Vector2::from([data.size.x / 2, data.size.y / 2]))
-						.unwrap()
-				});
+				queued_state.size = surface_data
+					.geometry
+					.lock()
+					.as_ref()
+					.map(|geo| geo.size)
+					.unwrap_or_else(|| {
+						self.core_surface()
+							.unwrap()
+							.with_data(|data| Vector2::from([data.size.x / 2, data.size.y / 2]))
+							.unwrap()
+					});
 			}
 		}
 
