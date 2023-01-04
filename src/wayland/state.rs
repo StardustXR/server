@@ -10,7 +10,10 @@ use smithay::{
 	delegate_dmabuf, delegate_output, delegate_shm,
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
-		wayland_protocols::xdg::shell::server::xdg_wm_base::XdgWmBase,
+		wayland_protocols::xdg::{
+			decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+			shell::server::xdg_wm_base::XdgWmBase,
+		},
 		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as DecorationMode,
 		wayland_server::{
 			backend::{ClientData, ClientId, DisconnectReason},
@@ -104,6 +107,7 @@ impl WaylandState {
 		);
 		display_handle.create_global::<Self, WlDataDeviceManager, _>(3, ());
 		display_handle.create_global::<Self, XdgWmBase, _>(5, ());
+		display_handle.create_global::<Self, ZxdgDecorationManagerV1, _>(1, ());
 
 		info!("Init Wayland compositor");
 
