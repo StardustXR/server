@@ -1,4 +1,4 @@
-use super::{state::WaylandState, xdg_shell::XdgSurfaceData};
+use super::state::WaylandState;
 use smithay::{
 	delegate_kde_decoration,
 	reexports::{
@@ -9,8 +9,12 @@ use smithay::{
 			},
 			shell::server::xdg_toplevel::XdgToplevel,
 		},
+		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration::{
+			Mode as KdeMode, OrgKdeKwinServerDecoration,
+		},
 		wayland_server::{
-			Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak,
+			protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle,
+			GlobalDispatch, New, Resource, WEnum, Weak,
 		},
 	},
 	wayland::shell::{self, kde::decoration::KdeDecorationHandler},
@@ -59,7 +63,7 @@ impl Dispatch<ZxdgDecorationManagerV1, (), WaylandState> for WaylandState {
 		data_init: &mut DataInit<'_, WaylandState>,
 	) {
 		match request {
-			zxdg_decoration_manager_v1::Request::Destroy => todo!(),
+			zxdg_decoration_manager_v1::Request::Destroy => (),
 			zxdg_decoration_manager_v1::Request::GetToplevelDecoration { id, toplevel } => {
 				data_init.init(id, toplevel.downgrade());
 			}
@@ -73,32 +77,16 @@ impl Dispatch<ZxdgToplevelDecorationV1, Weak<XdgToplevel>, WaylandState> for Way
 		_client: &Client,
 		resource: &ZxdgToplevelDecorationV1,
 		request: zxdg_toplevel_decoration_v1::Request,
-		data: &Weak<XdgToplevel>,
+		_data: &Weak<XdgToplevel>,
 		_dhandle: &DisplayHandle,
 		_data_init: &mut DataInit<'_, WaylandState>,
 	) {
 		match request {
 			zxdg_toplevel_decoration_v1::Request::SetMode { mode: _ } => {
 				resource.configure(Mode::ServerSide);
-				data.upgrade()
-					.unwrap()
-					.data::<XdgSurfaceData>()
-					.unwrap()
-					.xdg_surface
-					.upgrade()
-					.unwrap()
-					.configure(0);
 			}
 			zxdg_toplevel_decoration_v1::Request::UnsetMode => {
 				resource.configure(Mode::ServerSide);
-				data.upgrade()
-					.unwrap()
-					.data::<XdgSurfaceData>()
-					.unwrap()
-					.xdg_surface
-					.upgrade()
-					.unwrap()
-					.configure(0);
 			}
 			zxdg_toplevel_decoration_v1::Request::Destroy => (),
 			_ => unreachable!(),
@@ -109,6 +97,19 @@ impl Dispatch<ZxdgToplevelDecorationV1, Weak<XdgToplevel>, WaylandState> for Way
 impl KdeDecorationHandler for WaylandState {
 	fn kde_decoration_state(&self) -> &shell::kde::decoration::KdeDecorationState {
 		&self.kde_decoration_state
+	}
+
+	fn new_decoration(&mut self, _surface: &WlSurface, decoration: &OrgKdeKwinServerDecoration) {
+		decoration.mode(KdeMode::Server);
+	}
+
+	fn request_mode(
+		&mut self,
+		_surface: &WlSurface,
+		decoration: &OrgKdeKwinServerDecoration,
+		_mode: WEnum<KdeMode>,
+	) {
+		decoration.mode(KdeMode::Server);
 	}
 }
 delegate_kde_decoration!(WaylandState);
