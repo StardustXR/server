@@ -3,6 +3,7 @@ use std::sync::Arc;
 use super::{
 	panel_item::{PanelItem, RecommendedState, ToplevelState},
 	state::WaylandState,
+	SERIAL_COUNTER,
 };
 use mint::Vector2;
 use parking_lot::Mutex;
@@ -243,8 +244,8 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 				if toplevel.version() >= EVT_WM_CAPABILITIES_SINCE {
 					toplevel.wm_capabilities(vec![]);
 				}
-				toplevel.configure(0, 0, vec![]);
-				xdg_surface.configure(0);
+				toplevel.configure(0, 0, vec![1]);
+				xdg_surface.configure(SERIAL_COUNTER.inc());
 
 				let (node, item) = PanelItem::create(
 					toplevel,
@@ -264,8 +265,8 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 				data_init.init(id, ());
 			}
 			xdg_surface::Request::SetWindowGeometry {
-				x: _,
-				y: _,
+				x,
+				y,
 				width,
 				height,
 			} => {

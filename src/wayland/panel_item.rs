@@ -2,6 +2,7 @@ use super::{
 	seat::{Cursor, KeyboardInfo, SeatData},
 	surface::CoreSurface,
 	xdg_shell::{XdgSurfaceData, XdgToplevelData},
+	SERIAL_COUNTER,
 };
 use crate::{
 	core::{
@@ -26,7 +27,6 @@ use smithay::{
 		wayland_protocols::xdg::shell::server::xdg_toplevel::{
 			XdgToplevel, EVT_CONFIGURE_BOUNDS_SINCE, EVT_WM_CAPABILITIES_SINCE,
 		},
-		wayland_protocols_wlr::foreign_toplevel::v1::server::zwlr_foreign_toplevel_handle_v1::State,
 		wayland_server::{
 			backend::Credentials,
 			protocol::{
@@ -307,7 +307,7 @@ impl PanelItem {
 		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
 		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
 
-		pointer.leave(0, &wl_surface);
+		pointer.leave(SERIAL_COUNTER.inc(), &wl_surface);
 		*panel_item.seat_data.pointer_focus.lock() = None;
 		pointer.frame();
 		core_surface.flush_clients();
@@ -334,11 +334,11 @@ impl PanelItem {
 			.and_then(|surf| surf.upgrade().ok())
 			.filter(|surf| surf.id() != wl_surface.id())
 		{
-			pointer.leave(0, &old_surface);
+			pointer.leave(SERIAL_COUNTER.inc(), &old_surface);
 			*pointer_focus = None;
 		}
 		if pointer_focus.is_none() {
-			pointer.enter(0, &wl_surface, position.x, position.y);
+			pointer.enter(SERIAL_COUNTER.inc(), &wl_surface, position.x, position.y);
 			*pointer_focus = Some(wl_surface.downgrade());
 		} else {
 			pointer.motion(0, position.x, position.y);
@@ -359,7 +359,7 @@ impl PanelItem {
 
 		let (button, state): (u32, u32) = deserialize(data)?;
 		pointer.button(
-			0,
+			SERIAL_COUNTER.inc(),
 			0,
 			button,
 			match state {
@@ -462,7 +462,7 @@ impl PanelItem {
 
 		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
 		if keyboard_info.is_none() {
-			keyboard.enter(0, &wl_surface, vec![]);
+			keyboard.enter(SERIAL_COUNTER.inc(), &wl_surface, vec![]);
 			keyboard.repeat_info(0, 0);
 		}
 		keyboard_info.replace(KeyboardInfo::new(keymap));
@@ -483,7 +483,7 @@ impl PanelItem {
 
 		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
 		if keyboard_info.is_some() {
-			keyboard.leave(0, &wl_surface);
+			keyboard.leave(SERIAL_COUNTER.inc(), &wl_surface);
 			*keyboard_info = None;
 		}
 
@@ -534,7 +534,7 @@ impl PanelItem {
 		}
 		let size = info.size.unwrap_or(Vector2::from([0; 2]));
 		xdg_toplevel.configure(size.x as i32, size.y as i32, info.states);
-		xdg_surface.configure(0);
+		xdg_surface.configure(SERIAL_COUNTER.inc());
 
 		Ok(())
 	}
@@ -549,7 +549,7 @@ impl PanelItem {
 		let Some(xdg_surface) = panel_item.toplevel_surface_data().and_then(|d| d.xdg_surface.upgrade().ok()) else { return Ok(()) };
 
 		xdg_toplevel.wm_capabilities(deserialize(data)?);
-		xdg_surface.configure(0);
+		xdg_surface.configure(SERIAL_COUNTER.inc());
 
 		Ok(())
 	}
@@ -609,7 +609,7 @@ impl PanelItem {
 
 		if focused_surface.id() == toplevel_surface.id() {
 			let Some(pointer) = self.seat_data.pointer() else { return };
-			pointer.leave(0, &toplevel_surface);
+			pointer.leave(SERIAL_COUNTER.inc(), &toplevel_surface);
 			pointer.frame();
 			*self.seat_data.pointer_focus.lock() = None;
 		}
