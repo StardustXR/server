@@ -78,7 +78,7 @@ pub struct ToplevelState {
 	pub size: Vector2<u32>,
 	pub max_size: Option<Vector2<u32>>,
 	pub min_size: Option<Vector2<u32>>,
-	pub states: Vec<u8>,
+	pub states: Vec<u32>,
 	#[serde(skip_serializing)]
 	pub queued_state: Option<Box<ToplevelState>>,
 }
@@ -524,7 +524,7 @@ impl PanelItem {
 		#[derive(Debug, Deserialize)]
 		struct ConfigureToplevelInfo {
 			size: Option<Vector2<u32>>,
-			states: Vec<u8>,
+			states: Vec<u32>,
 			bounds: Option<Vector2<u32>>,
 		}
 
@@ -538,7 +538,14 @@ impl PanelItem {
 			}
 		}
 		let size = info.size.unwrap_or(Vector2::from([0; 2]));
-		xdg_toplevel.configure(size.x as i32, size.y as i32, info.states);
+		xdg_toplevel.configure(
+			size.x as i32,
+			size.y as i32,
+			info.states
+				.into_iter()
+				.flat_map(|state| state.to_ne_bytes())
+				.collect::<Vec<_>>(),
+		);
 		xdg_surface.configure(SERIAL_COUNTER.inc());
 		core_surface.flush_clients();
 

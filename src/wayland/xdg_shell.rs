@@ -245,7 +245,7 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 				if toplevel.version() >= EVT_WM_CAPABILITIES_SINCE {
 					toplevel.wm_capabilities(vec![]);
 				}
-				toplevel.configure(0, 0, vec![1]);
+				toplevel.configure(0, 0, vec![]);
 				xdg_surface.configure(SERIAL_COUNTER.inc());
 
 				let (node, item) = PanelItem::create(
