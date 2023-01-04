@@ -3,6 +3,7 @@ use std::sync::Arc;
 use super::{
 	panel_item::{PanelItem, RecommendedState, ToplevelState},
 	state::WaylandState,
+	surface::{CoreSurface, SurfaceGeometry},
 	SERIAL_COUNTER,
 };
 use mint::Vector2;
@@ -84,7 +85,7 @@ impl GlobalDispatch<XdgWmBase, (), WaylandState> for WaylandState {
 #[derive(Debug)]
 pub struct WaylandSurface {
 	wl_surface: Weak<WlSurface>,
-	size: Arc<Mutex<Option<Vector2<u32>>>>,
+	geometry: Arc<Mutex<Option<SurfaceGeometry>>>,
 }
 
 impl Dispatch<XdgWmBase, (), WaylandState> for WaylandState {
@@ -106,7 +107,7 @@ impl Dispatch<XdgWmBase, (), WaylandState> for WaylandState {
 					id,
 					WaylandSurface {
 						wl_surface: surface.downgrade(),
-						size: Arc::new(Mutex::new(None)),
+						geometry: Arc::new(Mutex::new(None)),
 					},
 				);
 			}
@@ -211,7 +212,7 @@ impl Dispatch<XdgPositioner, Arc<Mutex<PositionerData>>, WaylandState> for Wayla
 pub struct XdgSurfaceData {
 	pub wl_surface: Weak<WlSurface>,
 	pub xdg_surface: Weak<XdgSurface>,
-	pub size: Arc<Mutex<Option<Vector2<u32>>>>,
+	pub geometry: Arc<Mutex<Option<SurfaceGeometry>>>,
 }
 impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 	fn request(
@@ -236,7 +237,7 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 						xdg_surface_data: XdgSurfaceData {
 							wl_surface: data.wl_surface.clone(),
 							xdg_surface: xdg_surface.downgrade(),
-							size: data.size.clone(),
+							geometry: data.geometry.clone(),
 						},
 					},
 				);
@@ -270,7 +271,17 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 				width,
 				height,
 			} => {
-				*data.size.lock() = Some(Vector2::from([width as u32, height as u32]));
+				let geometry = SurfaceGeometry {
+					origin: [x as u32, y as u32].into(),
+					size: [width as u32, height as u32].into(),
+				};
+				*data.geometry.lock() = Some(geometry);
+				let Ok(wl_surface) = data.wl_surface.upgrade() else { return; };
+				compositor::with_states(&wl_surface, |data| {
+					if let Some(core_surface) = data.data_map.get::<CoreSurface>() {
+						core_surface.set_geometry(geometry);
+					}
+				});
 			}
 			xdg_surface::Request::AckConfigure { serial: _ } => (),
 			xdg_surface::Request::Destroy => (),
