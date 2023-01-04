@@ -6,7 +6,7 @@ pub struct Delta<T> {
 }
 #[allow(dead_code)]
 impl<T> Delta<T> {
-	pub fn new(value: T) -> Self {
+	pub const fn new(value: T) -> Self {
 		Delta {
 			value,
 			changed: false,
@@ -20,7 +20,7 @@ impl<T> Delta<T> {
 		self.changed = false;
 		delta
 	}
-	pub fn value(&self) -> &T {
+	pub const fn value(&self) -> &T {
 		&self.value
 	}
 	pub fn value_mut(&mut self) -> &mut T {
