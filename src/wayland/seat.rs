@@ -1,5 +1,6 @@
 use super::{
 	panel_item::PanelItem, state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE,
+	SERIAL_COUNTER,
 };
 use color_eyre::eyre::Result;
 use mint::Vector2;
@@ -66,7 +67,7 @@ impl KeyboardInfo {
 				0,
 			);
 		}
-		keyboard.key(0, 0, key, wl_key_state);
+		keyboard.key(SERIAL_COUNTER.inc(), 0, key, wl_key_state);
 		Ok(())
 	}
 }

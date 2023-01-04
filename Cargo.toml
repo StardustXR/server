@@ -40,6 +40,7 @@ serde = { version = "1.0.145", features = ["derive"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 tracing-slog = "0.2.0"
+global_counter = "0.2.2"
 
 [dependencies.stereokit]
 default-features = false

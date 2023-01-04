@@ -12,6 +12,7 @@ mod xdg_shell;
 use self::{state::WaylandState, surface::CORE_SURFACES};
 use crate::wayland::state::ClientState;
 use color_eyre::eyre::{ensure, Result};
+use global_counter::primitive::exact::CounterU32;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use slog::Drain;
@@ -31,6 +32,8 @@ use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
 };
 use tracing::info;
+
+pub static SERIAL_COUNTER: CounterU32 = CounterU32::new(0);
 
 struct EGLRawHandles {
 	display: *const c_void,
