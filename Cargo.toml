@@ -8,9 +8,6 @@ license = "GPLv2"
 repository = "https://github.com/StardustXR/stardust-xr-server/"
 homepage = "https://stardustxr.org"
 
-[profile.dev]
-opt-level = 3
-
 [dependencies]
 color-eyre = { version = "0.6.2", default-features = false }
 clap = { version = "4.0.8", features = ["derive"] }
