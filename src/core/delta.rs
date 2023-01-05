@@ -1,5 +1,6 @@
 use std::ops::{Deref, DerefMut};
 
+#[derive(Debug)]
 pub struct Delta<T> {
 	value: T,
 	changed: bool,
@@ -20,11 +21,14 @@ impl<T> Delta<T> {
 		self.changed = false;
 		delta
 	}
+	pub fn mark_changed(&mut self) {
+		self.changed = true;
+	}
 	pub const fn value(&self) -> &T {
 		&self.value
 	}
 	pub fn value_mut(&mut self) -> &mut T {
-		self.changed = true;
+		self.mark_changed();
 		&mut self.value
 	}
 }
@@ -37,7 +41,7 @@ impl<T> Deref for Delta<T> {
 }
 impl<T> DerefMut for Delta<T> {
 	fn deref_mut(&mut self) -> &mut Self::Target {
-		self.changed = true;
+		self.mark_changed();
 		&mut self.value
 	}
 }
