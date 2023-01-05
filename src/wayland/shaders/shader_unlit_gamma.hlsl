@@ -28,7 +28,7 @@ psIn vs(vsIn input, uint id : SV_InstanceID) {
 	float3 world = mul(float4(input.pos.xyz, 1), sk_inst[id].world).xyz;
 	o.pos        = mul(float4(world,         1), sk_viewproj[o.view_id]);
 
-	o.uv    = (input.uv) + uv_offset * uv_scale;
+	o.uv    = (input.uv + uv_offset) * uv_scale;
 	return o;
 }
 float4 ps(psIn input) : SV_TARGET {

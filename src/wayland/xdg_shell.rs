@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::{
 	panel_item::{PanelItem, RecommendedState, ToplevelState},
 	state::WaylandState,
-	surface::{CoreSurface, SurfaceGeometry},
+	surface::SurfaceGeometry,
 	SERIAL_COUNTER,
 };
 use mint::Vector2;
@@ -278,9 +278,10 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 				*data.geometry.lock() = Some(geometry);
 				let Ok(wl_surface) = data.wl_surface.upgrade() else { return; };
 				compositor::with_states(&wl_surface, |data| {
-					if let Some(core_surface) = data.data_map.get::<CoreSurface>() {
-						core_surface.set_geometry(geometry);
-					}
+					// if let Some(core_surface) = data.data_map.get::<Arc<CoreSurface>>() {
+					// 	core_surface.set_geometry(geometry);
+					// }
+					data.data_map.insert_if_missing_threadsafe(|| geometry);
 				});
 			}
 			xdg_surface::Request::AckConfigure { serial: _ } => (),

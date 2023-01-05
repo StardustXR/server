@@ -3,7 +3,6 @@ use crate::{
 	core::{delta::Delta, destroy_queue, registry::Registry},
 	nodes::drawable::model::Model,
 };
-use glam::vec2;
 use mint::Vector2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -67,7 +66,7 @@ pub struct CoreSurface {
 	sk_tex: OnceCell<SendWrapper<SKTexture>>,
 	sk_mat: OnceCell<Arc<SendWrapper<Material>>>,
 	material_offset: Mutex<Delta<u32>>,
-	geometry: Mutex<Delta<SurfaceGeometry>>,
+	// geometry: Mutex<Delta<Option<SurfaceGeometry>>>,
 	pub pending_material_applications: Mutex<Vec<(Arc<Model>, u32)>>,
 }
 
@@ -78,6 +77,9 @@ impl CoreSurface {
 		surface: &WlSurface,
 	) {
 		compositor::with_states(surface, |data| {
+			// let mut geometry: Delta<Option<SurfaceGeometry>> =
+			// 	Delta::new(data.data_map.get::<SurfaceGeometry>().cloned());
+			// geometry.mark_changed();
 			data.data_map.insert_if_missing_threadsafe(|| {
 				CORE_SURFACES.add(CoreSurface {
 					display: Arc::downgrade(display),
@@ -87,10 +89,7 @@ impl CoreSurface {
 					sk_tex: OnceCell::new(),
 					sk_mat: OnceCell::new(),
 					material_offset: Mutex::new(Delta::new(0)),
-					geometry: Mutex::new(Delta::new(SurfaceGeometry {
-						origin: [0; 2].into(),
-						size: [0; 2].into(),
-					})),
+					// geometry: Mutex::new(geometry),
 					pending_material_applications: Mutex::new(Vec::new()),
 				})
 			});
@@ -147,11 +146,12 @@ impl CoreSurface {
 		self.with_states(|data| {
 			// let just_mapped = mapped_data.is_none();
 			// if just_mapped {
-			let smithay_tex = data
+			let renderer_surface_state = data
 				.data_map
 				.get::<RendererSurfaceStateUserData>()
 				.unwrap()
-				.borrow()
+				.borrow();
+			let smithay_tex = renderer_surface_state
 				.texture::<Gles2Renderer>(renderer.id())
 				.unwrap()
 				.clone();
@@ -173,16 +173,25 @@ impl CoreSurface {
 			if let Some(material_offset) = self.material_offset.lock().delta() {
 				sk_mat.set_queue_offset(*material_offset as i32);
 			}
-			if let Some(geometry) = self.geometry.lock().delta() {
-				let tex_size = vec2(smithay_tex.width() as f32, smithay_tex.height() as f32);
-				let geometry_origin = vec2(geometry.origin.x as f32, geometry.origin.y as f32);
-				let geometry_size = vec2(geometry.size.x as f32, geometry.size.y as f32);
-				sk_mat.set_parameter("uv_offset", &Vector2::from(geometry_origin / tex_size));
-				sk_mat.set_parameter("uv_scale", &Vector2::from(geometry_size / tex_size));
-			}
+			// if let Some(geometry) = self.geometry.lock().delta().cloned().unwrap_or_default() {
+			// 	let buffer_size = renderer_surface_state.buffer_size().unwrap();
+			// 	let surface_size = dbg!(vec2(buffer_size.w as f32, buffer_size.h as f32));
+			// 	let geometry_origin =
+			// 		dbg!(vec2(geometry.origin.x as f32, geometry.origin.y as f32));
+			// 	let geometry_size = dbg!(vec2(geometry.size.x as f32, geometry.size.y as f32));
+			// 	sk_mat.set_parameter(
+			// 		"uv_offset",
+			// 		&Vector2::from(dbg!(geometry_origin / surface_size)),
+			// 	);
+			// 	sk_mat.set_parameter(
+			// 		"uv_scale",
+			// 		&Vector2::from(dbg!(geometry_size / surface_size)),
+			// 	);
+			// }
 
+			let surface_size = renderer_surface_state.surface_size().unwrap();
 			let new_mapped_data = CoreSurfaceData {
-				size: Vector2::from([smithay_tex.width(), smithay_tex.height()]),
+				size: Vector2::from([surface_size.w as u32, surface_size.h as u32]),
 				wl_tex: Some(SendWrapper::new(smithay_tex)),
 			};
 			*mapped_data = Some(new_mapped_data);
@@ -207,9 +216,9 @@ impl CoreSurface {
 		*self.material_offset.lock().value_mut() = material_offset;
 	}
 
-	pub fn set_geometry(&self, geometry: SurfaceGeometry) {
-		*self.geometry.lock().value_mut() = geometry;
-	}
+	// pub fn set_geometry(&self, geometry: SurfaceGeometry) {
+	// *self.geometry.lock().value_mut() = Some(geometry);
+	// }
 
 	pub fn apply_material(&self, model: Arc<Model>, material_idx: u32) {
 		self.pending_material_applications
