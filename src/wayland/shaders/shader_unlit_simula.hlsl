@@ -4,19 +4,19 @@
 
 //--name = stardust/text_shader
 //--diffuse     = white
-//--fcFactor    = 1.0
-//--ripple      = 4.0
 //--uv_offset   = 0.0, 0.0
 //--uv_scale    = 1.0, 1.0
+//--fcFactor    = 1.0
+//--ripple      = 4.0
 //--alpha_min   = 0.0
 //--alpha_max   = 1.0
 Texture2D    diffuse   : register(t0);
 SamplerState diffuse_s : register(s0);
 float4       diffuse_i;
-float        fcFactor;
-float        ripple;
 float2       uv_scale;
 float2       uv_offset;
+float        fcFactor;
+float        ripple;
 float        alpha_min;
 float        alpha_max;
 
@@ -39,7 +39,7 @@ psIn vs(vsIn input, uint id : SV_InstanceID) {
 	float3 world = mul(float4(input.pos.xyz, 1), sk_inst[id].world).xyz;
 	o.pos        = mul(float4(world,         1), sk_viewproj[o.view_id]);
 
-	o.uv    = (input.uv) + uv_offset * uv_scale;
+	o.uv    = (input.uv + uv_offset) * uv_scale;
 	return o;
 }
 
