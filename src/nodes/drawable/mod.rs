@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
 use std::{path::PathBuf, sync::Arc};
-use stereokit::{lifecycle::DrawContext, texture::Texture, StereoKit};
+use stereokit::{lifecycle::StereoKitDraw, render::StereoKitRender, texture::Texture};
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "drawable", false);
@@ -20,10 +20,10 @@ pub fn create_interface(client: &Arc<Client>) {
 	node.add_to_scenegraph();
 }
 
-pub fn draw(sk: &mut StereoKit, draw_ctx: &DrawContext) {
-	lines::draw_all(draw_ctx);
-	model::draw_all(sk, draw_ctx);
-	text::draw_all(sk, draw_ctx);
+pub fn draw(sk: &StereoKitDraw) {
+	lines::draw_all(sk);
+	model::draw_all(sk);
+	text::draw_all(sk);
 
 	let new_skytex = QUEUED_SKYTEX.lock().take();
 	let mut new_skylight = QUEUED_SKYLIGHT.lock().take();

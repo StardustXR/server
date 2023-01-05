@@ -44,8 +44,8 @@ global_counter = "0.2.2"
 
 [dependencies.stereokit]
 default-features = false
-features = ["linux-egl"]
-version = "0.9.0"
+features = ["linux-egl", "color_named", "prisma"]
+version = "0.10.0"
 
 [dependencies.smithay]
 git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures

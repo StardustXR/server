@@ -5,7 +5,7 @@ use crate::{
 };
 use glam::{vec3, Mat4};
 use std::sync::Arc;
-use stereokit::StereoKit;
+use stereokit::input::StereoKitInput;
 
 lazy_static::lazy_static! {
 	static ref HMD: Arc<Node> = create();
@@ -18,7 +18,7 @@ fn create() -> Arc<Node> {
 	node
 }
 
-pub fn frame(sk: &StereoKit) {
+pub fn frame(sk: &impl StereoKitInput) {
 	let spatial = HMD.spatial.get().unwrap();
 	let hmd_pose = sk.input_head();
 	*spatial.transform.lock() = Mat4::from_scale_rotation_translation(

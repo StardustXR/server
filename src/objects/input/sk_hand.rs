@@ -6,8 +6,8 @@ use glam::Mat4;
 use stardust_xr::schemas::flat::{Datamap, Hand as FlatHand, Joint};
 use std::sync::{Arc, Weak};
 use stereokit::{
-	input::{ButtonState, Handed, Joint as SkJoint},
-	StereoKit,
+	input::{ButtonState, Handed, Joint as SkJoint, StereoKitInput},
+	lifecycle::StereoKitDraw,
 };
 
 fn convert_joint(joint: SkJoint) -> Joint {
@@ -37,7 +37,7 @@ impl SkHand {
 			handed,
 		}
 	}
-	pub fn update(&mut self, sk: &StereoKit) {
+	pub fn update(&mut self, sk: &StereoKitDraw) {
 		let sk_hand = sk.input_hand(self.handed);
 		if let InputType::Hand(hand) = &mut *self.hand.specialization.lock() {
 			let controller = sk.input_controller(self.handed);
