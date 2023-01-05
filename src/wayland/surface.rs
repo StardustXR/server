@@ -26,10 +26,11 @@ use std::{
 	time::Duration,
 };
 use stereokit::{
+	lifecycle::StereoKitDraw,
 	material::{Material, Transparency},
 	shader::Shader,
 	texture::{Texture as SKTexture, TextureAddress, TextureFormat, TextureSample, TextureType},
-	StereoKit,
+	time::StereoKitTime,
 };
 
 pub static CORE_SURFACES: Registry<CoreSurface> = Registry::new();
@@ -104,7 +105,7 @@ impl CoreSurface {
 
 	pub fn process(
 		&self,
-		sk: &StereoKit,
+		sk: &StereoKitDraw,
 		renderer: &mut Gles2Renderer,
 		output: Output,
 		log: &Logger,
@@ -119,8 +120,8 @@ impl CoreSurface {
 		self.sk_mat.get_or_init(|| {
 			let shader = Shader::from_mem(sk, PANEL_SHADER_BYTES).unwrap();
 			let mat = Material::create(sk, &shader).unwrap();
-			mat.set_parameter("diffuse", &**sk_tex);
-			mat.set_transparency(Transparency::Blend);
+			mat.set_parameter(sk, "diffuse", &**sk_tex);
+			mat.set_transparency(sk, Transparency::Blend);
 			Arc::new(SendWrapper::new(mat))
 		});
 
@@ -171,7 +172,7 @@ impl CoreSurface {
 				sk_tex.set_address_mode(TextureAddress::Clamp);
 			}
 			if let Some(material_offset) = self.material_offset.lock().delta() {
-				sk_mat.set_queue_offset(*material_offset as i32);
+				sk_mat.set_queue_offset(sk, *material_offset as i32);
 			}
 			// if let Some(geometry) = self.geometry.lock().delta().cloned().unwrap_or_default() {
 			// 	let buffer_size = renderer_surface_state.buffer_size().unwrap();

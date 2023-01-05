@@ -9,11 +9,11 @@ use color_eyre::eyre::{ensure, Result};
 use glam::Vec3A;
 use mint::Vector3;
 use parking_lot::Mutex;
-use prisma::{Flatten, Lerp};
+use prisma::{Flatten, Lerp, Rgba};
 use serde::Deserialize;
 use stardust_xr::{schemas::flex::deserialize, values::Transform};
 use std::{collections::VecDeque, sync::Arc};
-use stereokit::{lifecycle::DrawContext, lines::LinePoint as SkLinePoint, values::Color32};
+use stereokit::{lifecycle::StereoKitDraw, lines::LinePoint as SkLinePoint, values::Color128};
 
 static LINES_REGISTRY: Registry<Lines> = Registry::new();
 
@@ -52,21 +52,21 @@ impl Lines {
 		Ok(lines)
 	}
 
-	fn draw(&self, draw_ctx: &DrawContext) {
+	fn draw(&self, draw_ctx: &StereoKitDraw) {
 		let transform_mat = self.space.global_transform();
 		let data = self.data.lock().clone();
 		let mut points: VecDeque<SkLinePoint> = data
 			.points
-			.into_iter()
+			.iter()
 			.map(|p| SkLinePoint {
 				point: transform_mat.transform_point3a(Vec3A::from(p.point)).into(),
 				thickness: p.thickness,
-				color: Color32::from_slice(p.color.map(|c| (c * 255.0) as u8).as_slice()),
+				color: p.color.map(|c| (c * 255.0) as u8).into(),
 			})
 			.collect();
 		if data.cyclic && !points.is_empty() {
-			let first = points.front().unwrap();
-			let last = points.back().unwrap();
+			let first = data.points.first().unwrap();
+			let last = data.points.last().unwrap();
 			let connect_point = SkLinePoint {
 				point: Vector3 {
 					x: (first.point.x + last.point.x) * 0.5,
@@ -74,7 +74,10 @@ impl Lines {
 					z: (first.point.z + last.point.z) * 0.5,
 				},
 				thickness: (first.thickness + last.thickness) * 0.5,
-				color: first.color.lerp(&last.color, 0.5),
+				color: Color128::from(
+					Rgba::from_slice(&first.color).lerp(&Rgba::from_slice(&last.color), 0.5),
+				)
+				.into(),
 			};
 			points.push_front(connect_point.clone());
 			points.push_back(connect_point);
@@ -103,7 +106,7 @@ impl Drop for Lines {
 	}
 }
 
-pub fn draw_all(draw_ctx: &DrawContext) {
+pub fn draw_all(draw_ctx: &StereoKitDraw) {
 	for lines in LINES_REGISTRY.get_valid_contents() {
 		lines.draw(draw_ctx);
 	}

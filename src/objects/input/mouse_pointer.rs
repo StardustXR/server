@@ -12,10 +12,7 @@ use glam::{vec3, Mat4};
 use nanoid::nanoid;
 use stardust_xr::{schemas::flat::Datamap, values::Transform};
 use std::{convert::TryFrom, sync::Arc};
-use stereokit::{
-	input::{ButtonState, Key, Ray as SkRay},
-	StereoKit,
-};
+use stereokit::input::{ButtonState, Key, Ray as SkRay, StereoKitInput};
 
 const SK_KEYMAP: &str = include_str!("sk.kmp");
 
@@ -48,7 +45,7 @@ impl MousePointer {
 			keyboard_sender,
 		}
 	}
-	pub fn update(&self, sk: &StereoKit) {
+	pub fn update(&self, sk: &impl StereoKitInput) {
 		let mouse = sk.input_mouse();
 
 		if let Some(ray) = SkRay::from_mouse(mouse) {
@@ -90,7 +87,7 @@ impl MousePointer {
 		self.send_keyboard_input(sk);
 	}
 
-	fn send_keyboard_input(&self, sk: &StereoKit) {
+	fn send_keyboard_input(&self, sk: &impl StereoKitInput) {
 		let rx = PULSE_RECEIVER_REGISTRY
 			.get_valid_contents()
 			.into_iter()

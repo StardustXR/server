@@ -10,16 +10,17 @@ use glam::{vec3, Mat4, Vec2};
 use mint::Vector2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use prisma::{Flatten, Rgb, Rgba};
+use prisma::{Flatten, Rgba};
 use send_wrapper::SendWrapper;
 use serde::Deserialize;
 use stardust_xr::{schemas::flex::deserialize, values::Transform};
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
 use stereokit::{
+	color_named::WHITE,
 	font::Font,
-	lifecycle::DrawContext,
+	lifecycle::StereoKitDraw,
 	text::{self, TextAlign, TextFit, TextStyle},
-	StereoKit,
+	values::Color128,
 };
 
 static TEXT_REGISTRY: Registry<Text> = Registry::new();
@@ -91,7 +92,7 @@ impl Text {
 		Ok(text)
 	}
 
-	fn draw(&self, sk: &StereoKit, draw_ctx: &DrawContext) {
+	fn draw(&self, sk: &StereoKitDraw) {
 		let style = self.style.get_or_try_init(
 			|| -> Result<SendWrapper<TextStyle>, color_eyre::eyre::Error> {
 				let font = self
@@ -99,12 +100,7 @@ impl Text {
 					.as_deref()
 					.and_then(|path| Font::from_file(sk, path))
 					.unwrap_or_else(|| Font::default(sk));
-				Ok(SendWrapper::new(TextStyle::new(
-					sk,
-					font,
-					1.0,
-					Rgba::new(Rgb::new(1.0, 1.0, 1.0), 1.0),
-				)))
+				Ok(SendWrapper::new(TextStyle::new(sk, font, 1.0, WHITE)))
 			},
 		);
 
@@ -118,7 +114,7 @@ impl Text {
 				));
 			if let Some(bounds) = data.bounds {
 				text::draw_in(
-					draw_ctx,
+					sk,
 					&data.text,
 					transform,
 					bounds / data.character_height,
@@ -127,11 +123,11 @@ impl Text {
 					data.bounds_align,
 					data.text_align,
 					vec3(0.0, 0.0, 0.0),
-					data.color,
+					Color128::from(data.color),
 				);
 			} else {
 				text::draw_at(
-					draw_ctx,
+					sk,
 					&data.text,
 					transform,
 					style,
@@ -169,9 +165,9 @@ impl Drop for Text {
 	}
 }
 
-pub fn draw_all(sk: &StereoKit, draw_ctx: &DrawContext) {
+pub fn draw_all(sk: &StereoKitDraw) {
 	for text in TEXT_REGISTRY.get_valid_contents() {
-		text.draw(sk, draw_ctx);
+		text.draw(sk);
 	}
 }
 

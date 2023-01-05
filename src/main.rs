@@ -17,9 +17,11 @@ use directories::ProjectDirs;
 use std::sync::Arc;
 use stereokit::input::Handed;
 use stereokit::lifecycle::DepthMode;
+use stereokit::lifecycle::DisplayMode;
 use stereokit::render::SphericalHarmonics;
+use stereokit::render::StereoKitRender;
 use stereokit::texture::Texture;
-use stereokit::{lifecycle::DisplayMode, Settings};
+use stereokit::time::StereoKitTime;
 use tokio::{runtime::Handle, sync::oneshot};
 use tracing::info;
 
@@ -44,7 +46,7 @@ fn main() -> Result<()> {
 	let project_dirs = ProjectDirs::from("", "", "stardust").unwrap();
 	let cli_args = Arc::new(CliArgs::parse());
 
-	let mut stereokit = Settings::default()
+	let stereokit = stereokit::Settings::default()
 		.app_name("Stardust XR")
 		.overlay_app(cli_args.overlay_priority.is_some())
 		.overlay_priority(cli_args.overlay_priority.unwrap_or(u32::MAX))
@@ -108,7 +110,7 @@ fn main() -> Result<()> {
 	let mut wayland = wayland::Wayland::new()?;
 	info!("Stardust ready!");
 	stereokit.run(
-		|sk, draw_ctx| {
+		|sk| {
 			hmd::frame(sk);
 			#[cfg(feature = "wayland")]
 			wayland.frame(sk);
@@ -127,7 +129,7 @@ fn main() -> Result<()> {
 			}
 			input::process_input();
 			nodes::root::Root::logic_step(sk.time_elapsed());
-			drawable::draw(sk, draw_ctx);
+			drawable::draw(sk);
 
 			#[cfg(feature = "wayland")]
 			wayland.make_context_current();

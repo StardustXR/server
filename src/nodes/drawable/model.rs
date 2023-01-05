@@ -7,7 +7,6 @@ use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
 use color_eyre::eyre::{ensure, eyre, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use prisma::{Rgb, Rgba};
 use rustc_hash::FxHashMap;
 use send_wrapper::SendWrapper;
 use serde::Deserialize;
@@ -17,12 +16,12 @@ use std::ffi::OsStr;
 use std::fmt::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
-use stereokit::lifecycle::DrawContext;
+use stereokit::color_named::WHITE;
+use stereokit::lifecycle::StereoKitDraw;
 use stereokit::material::Material;
 use stereokit::model::Model as SKModel;
 use stereokit::render::RenderLayer;
 use stereokit::texture::Texture;
-use stereokit::StereoKit;
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
 
@@ -102,17 +101,14 @@ impl Model {
 		Ok(())
 	}
 
-	fn draw(&self, sk: &StereoKit, draw_ctx: &DrawContext) {
+	fn draw(&self, sk: &StereoKitDraw) {
 		let sk_model = self
 			.sk_model
-			.get_or_try_init(|| {
-				self.pending_model_path
-					.get()
-					.and_then(|path| SKModel::from_file(sk, path.as_path(), None))
-					.as_ref()
-					.cloned()
-					.map(SendWrapper::new)
-					.ok_or(Error)
+			.get_or_try_init(|| -> color_eyre::eyre::Result<SendWrapper<SKModel>> {
+				let pending_model_path = self.pending_model_path.get().ok_or(Error)?;
+				let model = SKModel::from_file(sk, pending_model_path.as_path(), None)?;
+
+				Ok(SendWrapper::new(model.clone()))
 			})
 			.ok();
 
@@ -120,7 +116,7 @@ impl Model {
 			{
 				let mut material_replacements = self.pending_material_replacements.lock();
 				for (material_idx, replacement_material) in material_replacements.iter() {
-					sk_model.set_material(*material_idx as i32, replacement_material);
+					sk_model.set_material(sk, *material_idx as i32, replacement_material);
 				}
 				material_replacements.clear();
 			}
@@ -133,7 +129,7 @@ impl Model {
 						match parameter_value {
 							MaterialParameter::Texture(path) => {
 								if let Some(tex) = Texture::from_file(sk, path.as_path(), true, 0) {
-									material.set_parameter(parameter_name.as_str(), &tex);
+									material.set_parameter(sk, parameter_name.as_str(), &tex);
 								}
 							}
 						}
@@ -143,12 +139,7 @@ impl Model {
 			}
 
 			let global_transform = self.space.global_transform().into();
-			sk_model.draw(
-				draw_ctx,
-				global_transform,
-				Rgba::new(Rgb::new(1_f32, 1_f32, 1_f32), 1_f32),
-				RenderLayer::Layer0,
-			);
+			sk_model.draw(sk, global_transform, WHITE, RenderLayer::Layer0);
 		}
 	}
 }
@@ -161,9 +152,9 @@ impl Drop for Model {
 	}
 }
 
-pub fn draw_all(sk: &StereoKit, draw_ctx: &DrawContext) {
+pub fn draw_all(sk: &StereoKitDraw) {
 	for model in MODEL_REGISTRY.get_valid_contents() {
-		model.draw(sk, draw_ctx);
+		model.draw(sk);
 	}
 }
 

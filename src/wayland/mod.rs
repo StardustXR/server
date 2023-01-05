@@ -15,6 +15,7 @@ use color_eyre::eyre::{ensure, Result};
 use global_counter::primitive::exact::CounterU32;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use sk::lifecycle::StereoKitDraw;
 use slog::Drain;
 use smithay::{
 	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
@@ -27,7 +28,6 @@ use std::{
 	sync::Arc,
 };
 use stereokit as sk;
-use stereokit::StereoKit;
 use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
 };
@@ -148,7 +148,7 @@ impl Wayland {
 		}))
 	}
 
-	pub fn frame(&mut self, sk: &StereoKit) {
+	pub fn frame(&mut self, sk: &StereoKitDraw) {
 		for core_surface in CORE_SURFACES.get_valid_contents() {
 			let state = self.state.lock();
 			let output = state.output.clone();
