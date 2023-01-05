@@ -68,11 +68,9 @@ impl Lines {
 			let first = data.points.first().unwrap();
 			let last = data.points.last().unwrap();
 			let connect_point = SkLinePoint {
-				point: Vector3 {
-					x: (first.point.x + last.point.x) * 0.5,
-					y: (first.point.y + last.point.y) * 0.5,
-					z: (first.point.z + last.point.z) * 0.5,
-				},
+				point: transform_mat
+					.transform_point3a(Vec3A::from(first.point).lerp(Vec3A::from(last.point), 0.5))
+					.into(),
 				thickness: (first.thickness + last.thickness) * 0.5,
 				color: Color128::from(
 					Rgba::from_slice(&first.color).lerp(&Rgba::from_slice(&last.color), 0.5),
