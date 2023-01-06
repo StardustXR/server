@@ -5,6 +5,7 @@ use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
 use color_eyre::eyre::{ensure, eyre, Result};
+use mint::{ColumnMatrix4, Vector2, Vector3, Vector4};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
@@ -17,18 +18,95 @@ use std::fmt::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
 use stereokit::color_named::WHITE;
-use stereokit::lifecycle::StereoKitDraw;
+use stereokit::lifecycle::{StereoKitContext, StereoKitDraw};
 use stereokit::material::Material;
 use stereokit::model::Model as SKModel;
 use stereokit::render::RenderLayer;
 use stereokit::texture::Texture;
+use stereokit::values::Color128;
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
 
 #[derive(Deserialize, Debug)]
-#[serde(untagged)]
+#[serde(tag = "t", content = "c")]
 pub enum MaterialParameter {
+	Float(f32),
+	Vector2(Vector2<f32>),
+	Vector3(Vector3<f32>),
+	Vector4(Vector4<f32>),
+	Color([f32; 4]),
+	Int(i32),
+	Int2(Vector2<i32>),
+	Int3(Vector3<i32>),
+	Int4(Vector4<i32>),
+	Bool(bool),
+	UInt(u32),
+	UInt2(Vector2<u32>),
+	UInt3(Vector3<u32>),
+	UInt4(Vector4<u32>),
+	Matrix(ColumnMatrix4<f32>),
 	Texture(PathBuf),
+}
+impl MaterialParameter {
+	fn apply_to_material(
+		&self,
+		sk: &impl StereoKitContext,
+		material: &Material,
+		parameter_name: &str,
+	) {
+		match self {
+			MaterialParameter::Float(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::Vector2(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::Vector3(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::Vector4(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::Color(val) => {
+				material.set_parameter(sk, parameter_name, &Color128::from(val.clone()));
+			}
+			MaterialParameter::Int(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::Int2(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::Int3(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::Int4(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::Bool(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::UInt(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::UInt2(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::UInt3(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::UInt4(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::Matrix(val) => {
+				material.set_parameter(sk, parameter_name, val);
+			}
+			MaterialParameter::Texture(path) => {
+				if let Some(tex) = Texture::from_file(sk, path.as_path(), true, 0) {
+					material.set_parameter(sk, parameter_name, &tex);
+				}
+			}
+		}
+	}
 }
 
 pub struct Model {
@@ -58,7 +136,7 @@ impl Model {
 			pending_material_replacements: Mutex::new(FxHashMap::default()),
 			sk_model: OnceCell::new(),
 		};
-		node.add_local_signal("set_material_parameter", Model::set_material_parameter);
+		node.add_local_signal("set_material_parameter", Model::set_material_parameter_flex);
 		let model_arc = MODEL_REGISTRY.add(model);
 		let _ = model_arc.pending_model_path.set(
 			model_arc
@@ -78,7 +156,7 @@ impl Model {
 		Ok(model_arc)
 	}
 
-	fn set_material_parameter(
+	fn set_material_parameter_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
 		data: &[u8],
@@ -126,13 +204,7 @@ impl Model {
 				for ((material_idx, parameter_name), parameter_value) in material_parameters.iter()
 				{
 					if let Some(material) = sk_model.get_material(sk, *material_idx as i32) {
-						match parameter_value {
-							MaterialParameter::Texture(path) => {
-								if let Some(tex) = Texture::from_file(sk, path.as_path(), true, 0) {
-									material.set_parameter(sk, parameter_name.as_str(), &tex);
-								}
-							}
-						}
+						parameter_value.apply_to_material(sk, &material, parameter_name.as_str());
 					}
 				}
 				material_parameters.clear();

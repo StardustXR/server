@@ -42,7 +42,7 @@ global_counter = "0.2.2"
 [dependencies.stereokit]
 default-features = false
 features = ["linux-egl", "color_named", "prisma"]
-version = "0.10.0"
+version = "0.11.0"
 
 [dependencies.smithay]
 git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures
@@ -54,3 +54,8 @@ optional = true
 [features]
 default = ["wayland"]
 wayland = ["dep:smithay", "dep:xkbcommon"]
+
+[patch.crates-io.stereokit]
+path = "../stereokit-rs"
+# [patch.crates-io.stereokit-sys]
+# path = "../stereokit-sys"
