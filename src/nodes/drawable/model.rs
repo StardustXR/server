@@ -45,11 +45,12 @@ pub enum MaterialParameter {
 	UInt3(Vector3<u32>),
 	UInt4(Vector4<u32>),
 	Matrix(ColumnMatrix4<f32>),
-	Texture(PathBuf),
+	Texture(ResourceID),
 }
 impl MaterialParameter {
 	fn apply_to_material(
 		&self,
+		client: &Client,
 		sk: &impl StereoKitContext,
 		material: &Material,
 		parameter_name: &str,
@@ -100,8 +101,12 @@ impl MaterialParameter {
 			MaterialParameter::Matrix(val) => {
 				material.set_parameter(sk, parameter_name, val);
 			}
-			MaterialParameter::Texture(path) => {
-				if let Some(tex) = Texture::from_file(sk, path.as_path(), true, 0) {
+			MaterialParameter::Texture(resource) => {
+				let Some(texture_path) = resource.get_file(
+					&client.base_resource_prefixes.lock().clone(),
+					&[OsStr::new("png"), OsStr::new("jpg")],
+				) else { return; };
+				if let Some(tex) = Texture::from_file(sk, texture_path, true, 0) {
 					material.set_parameter(sk, parameter_name, &tex);
 				}
 			}
@@ -204,7 +209,12 @@ impl Model {
 				for ((material_idx, parameter_name), parameter_value) in material_parameters.iter()
 				{
 					if let Some(material) = sk_model.get_material(sk, *material_idx as i32) {
-						parameter_value.apply_to_material(sk, &material, parameter_name.as_str());
+						parameter_value.apply_to_material(
+							&self.space.node.upgrade().unwrap().client.upgrade().unwrap(), // TODO: don't unwrap
+							sk,
+							&material,
+							parameter_name.as_str(),
+						);
 					}
 				}
 				material_parameters.clear();

@@ -2,6 +2,7 @@ use color_eyre::eyre::eyre;
 use serde::{de::Visitor, Deserialize};
 use std::{ffi::OsStr, path::PathBuf};
 
+#[derive(Debug)]
 pub enum ResourceID {
 	File(PathBuf),
 	Namespaced { namespace: String, path: PathBuf },
