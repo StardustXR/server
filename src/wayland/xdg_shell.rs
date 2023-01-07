@@ -1,5 +1,4 @@
 use std::sync::Arc;
-
 use super::{
 	panel_item::{PanelItem, RecommendedState, ToplevelState},
 	state::WaylandState,
@@ -25,50 +24,6 @@ use smithay::{
 	},
 	wayland::compositor,
 };
-
-// impl XdgShellHandler for WaylandState {
-// 	fn xdg_shell_state(&mut self) -> &mut WaylandState {
-// 		&mut self.xdg_shell_state
-// 	}
-
-// 	fn new_toplevel(&mut self, surface: ToplevelSurface) {
-// 		self.output.enter(surface.wl_surface());
-// 		surface.with_pending_state(|state| {
-// 			state.states.set(State::Maximized);
-// 			state.states.set(State::Activated);
-// 			state.decoration_mode = Some(Mode::ServerSide);
-// 		});
-// 		surface.send_configure();
-
-// 		let client = surface.wl_surface().client().unwrap();
-// 		let (node, item) = PanelItem::create(
-// 			&surface,
-// 			client.get_credentials(&self.display_handle).ok(),
-// 			self.seats.get(&client.id()).unwrap().clone(),
-// 		);
-// 		compositor::with_states(surface.wl_surface(), |surface_data| {
-// 			surface_data.data_map.insert_if_missing_threadsafe(|| node);
-// 			surface_data.data_map.insert_if_missing_threadsafe(|| item);
-// 		});
-// 	}
-// 	fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
-// 		self.output.enter(surface.wl_surface());
-// 		let _ = surface.send_configure();
-// 		// let panel_item = compositor::with_states(&surface.get_parent_surface().unwrap(), |data| {
-// 		// 	data.data_map.get::<Arc<PanelItem>>().cloned()
-// 		// });
-// 	}
-// 	fn ack_configure(&mut self, surface: WlSurface, configure: Configure) {
-// 		compositor::with_states(&surface, |data| {
-// 			if let Some(panel_item) = data.data_map.get::<Arc<PanelItem>>() {
-// 				panel_item.ack_resize(configure);
-// 			}
-// 		});
-// 	}
-
-// 	fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {}
-// }
-// delegate_xdg_shell!(WaylandState);
 
 impl GlobalDispatch<XdgWmBase, (), WaylandState> for WaylandState {
 	fn bind(
