@@ -191,24 +191,25 @@ impl InputHandler {
 		let method = Arc::downgrade(&distance_link.method);
 		let handler = Arc::downgrade(&distance_link.handler);
 
-		tokio::spawn(async move {
-			let data = node.execute_remote_method("input", data).await;
-			if frame == FRAME.load(Ordering::Relaxed) {
-				if let Ok(data) = data {
-					let capture = flexbuffers::Reader::get_root(data.as_slice())
-						.and_then(|data| data.get_bool())
-						.unwrap_or(false);
+		if let Ok(data) = node.execute_remote_method("input", data) {
+			tokio::spawn(async move {
+				if let Ok(data) = data.await {
+					if frame == FRAME.load(Ordering::Relaxed) {
+						let capture = flexbuffers::Reader::get_root(data.as_slice())
+							.and_then(|data| data.get_bool())
+							.unwrap_or(false);
 
-					if let Some(method) = method.upgrade() {
-						if let Some(handler) = handler.upgrade() {
-							if capture {
-								method.captures.add_raw(&handler);
+						if let Some(method) = method.upgrade() {
+							if let Some(handler) = handler.upgrade() {
+								if capture {
+									method.captures.add_raw(&handler);
+								}
 							}
 						}
 					}
 				}
-			}
-		});
+			});
+		}
 	}
 }
 impl Drop for InputHandler {
