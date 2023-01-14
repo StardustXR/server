@@ -15,6 +15,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
@@ -235,15 +236,18 @@ impl Node {
 			.transpose()?;
 		Ok(())
 	}
-	pub async fn execute_remote_method(&self, method: &str, data: Vec<u8>) -> Result<Vec<u8>> {
+	pub fn execute_remote_method(
+		&self,
+		method: &str,
+		data: Vec<u8>,
+	) -> Result<impl Future<Output = Result<Vec<u8>>>> {
 		let message_sender_handle = self
 			.message_sender_handle
 			.as_ref()
 			.ok_or(eyre!("Messenger does not exist for this node"))?;
 
-		message_sender_handle
-			.method(self.path.as_str(), method, &data)?
-			.await
-			.map_err(|e| eyre!(e))
+		let future = message_sender_handle.method(self.path.as_str(), method, &data)?;
+
+		Ok(async { future.await.map_err(|e| eyre!(e)) })
 	}
 }
