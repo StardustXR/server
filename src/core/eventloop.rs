@@ -1,62 +1,49 @@
 use super::client::Client;
 use color_eyre::eyre::Result;
-use slab::Slab;
+use once_cell::sync::OnceCell;
 use stardust_xr::server;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::net::UnixListener;
-use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 
 pub static FRAME: AtomicU64 = AtomicU64::new(0);
 
 pub struct EventLoop {
 	pub socket_path: PathBuf,
-	stop_notifier: Arc<Notify>,
-	pub clients: Mutex<Slab<Arc<Client>>>,
+	join_handle: OnceCell<JoinHandle<()>>,
 }
 
 impl EventLoop {
-	pub fn new() -> Result<(Arc<Self>, JoinHandle<Result<()>>)> {
+	pub fn new() -> Result<Arc<Self>> {
 		let socket_path = server::get_free_socket_path()
 			.ok_or_else(|| std::io::Error::from(std::io::ErrorKind::Other))?;
 		let socket = UnixListener::bind(socket_path.clone())?;
 
 		let event_loop = Arc::new(EventLoop {
 			socket_path,
-			stop_notifier: Default::default(),
-			clients: Mutex::new(Slab::new()),
+			join_handle: OnceCell::new(),
 		});
 
-		let event_loop_join_handle = tokio::spawn({
-			let event_loop = event_loop.clone();
-			async move { EventLoop::event_loop(socket, event_loop).await }
-		});
+		let join_handle = tokio::task::Builder::new()
+			.name("event loop")
+			.spawn(async move {
+				loop {
+					let Ok((socket, _)) = socket.accept().await else { continue };
+					Client::from_connection(socket);
+				}
+			})?;
+		let _ = event_loop.join_handle.set(join_handle);
 
-		Ok((event_loop, event_loop_join_handle))
-	}
-
-	async fn event_loop(socket: UnixListener, event_loop: Arc<EventLoop>) -> Result<()> {
-		let event_loop_async = async {
-			loop {
-				let (socket, _) = socket.accept().await?;
-				let mut clients = event_loop.clients.lock().await;
-				let vacant_client = clients.vacant_entry();
-				let idx = vacant_client.key();
-				vacant_client.insert(Client::from_connection(idx, &event_loop, socket));
-			}
-		};
-
-		tokio::select! {
-			_ = event_loop.stop_notifier.notified() => Ok(()),
-			e = event_loop_async => e,
-		}
+		Ok(event_loop)
 	}
 }
 
 impl Drop for EventLoop {
 	fn drop(&mut self) {
-		self.stop_notifier.notify_one();
+		if let Some(join_handle) = self.join_handle.take() {
+			join_handle.abort();
+		}
 	}
 }

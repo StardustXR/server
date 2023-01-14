@@ -42,9 +42,8 @@ struct CliArgs {
 }
 
 fn main() -> Result<()> {
-	if !cfg!(feature = "profile") {
-		tracing_subscriber::fmt::init();
-	}
+	#[cfg(not(feature = "profile"))]
+	tracing_subscriber::fmt::init();
 	#[cfg(feature = "profile")]
 	console_subscriber::init();
 	let project_dirs = ProjectDirs::from("", "", "stardust").unwrap();
@@ -163,8 +162,7 @@ async fn event_loop(
 	let _ = handle_sender.send(Handle::current());
 	// console_subscriber::init();
 
-	let (event_loop, event_loop_join_handle) =
-		EventLoop::new().expect("Couldn't create server socket");
+	let event_loop = EventLoop::new().expect("Couldn't create server socket");
 	info!("Init event loop");
 	info!(
 		"Stardust socket created at {}",
@@ -175,7 +173,6 @@ async fn event_loop(
 		biased;
 		_ = tokio::signal::ctrl_c() => Ok(()),
 		_ = stop_rx => Ok(()),
-		e = event_loop_join_handle => e?,
 	};
 
 	info!("Cleanly shut down event loop");

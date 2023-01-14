@@ -123,29 +123,31 @@ impl Wayland {
 		let dh1 = display.lock().handle();
 		let mut dh2 = dh1.clone();
 
-		Ok(tokio::task::spawn(async move {
-			let _socket = socket; // Keep the socket alive
-			loop {
-				tokio::select! {
-					e = global_destroy_queue.recv() => { // New global to destroy
-						dh1.remove_global::<WaylandState>(e.unwrap());
-					}
-					acc = listen_async.accept() => { // New client connected
-						let (stream, _) = acc?;
-						let client = dh2.insert_client(stream.into_std()?, Arc::new(ClientState))?;
+		Ok(tokio::task::Builder::new()
+			.name("wayland loop")
+			.spawn(async move {
+				let _socket = socket; // Keep the socket alive
+				loop {
+					tokio::select! {
+						e = global_destroy_queue.recv() => { // New global to destroy
+							dh1.remove_global::<WaylandState>(e.unwrap());
+						}
+						acc = listen_async.accept() => { // New client connected
+							let (stream, _) = acc?;
+							let client = dh2.insert_client(stream.into_std()?, Arc::new(ClientState))?;
 
-						state.lock().new_client(client.id(), &dh2);
-					}
-					e = dispatch_poll_listener.readable() => { // Dispatch
-						let mut guard = e?;
-						let mut display = display.lock();
-						display.dispatch_clients(&mut *state.lock())?;
-						display.flush_clients()?;
-						guard.clear_ready();
+							state.lock().new_client(client.id(), &dh2);
+						}
+						e = dispatch_poll_listener.readable() => { // Dispatch
+							let mut guard = e?;
+							let mut display = display.lock();
+							display.dispatch_clients(&mut *state.lock())?;
+							display.flush_clients()?;
+							guard.clear_ready();
+						}
 					}
 				}
-			}
-		}))
+			})?)
 	}
 
 	pub fn frame(&mut self, sk: &StereoKitDraw) {
