@@ -1,6 +1,6 @@
-use super::{eventloop::EventLoop, scenegraph::Scenegraph};
+use super::scenegraph::Scenegraph;
 use crate::{
-	core::registry::Registry,
+	core::registry::OwnedRegistry,
 	nodes::{
 		data, drawable, fields, hmd, input, items,
 		root::Root,
@@ -9,35 +9,26 @@ use crate::{
 		Node,
 	},
 };
-use color_eyre::{
-	eyre::{eyre, Result},
-	Report,
-};
+use color_eyre::eyre::{eyre, Result};
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use stardust_xr::messenger::{self, MessageSenderHandle};
-use std::{
-	fs,
-	iter::FromIterator,
-	path::PathBuf,
-	sync::{Arc, Weak},
-};
-use tokio::{net::UnixStream, sync::Notify, task::JoinHandle};
-use tracing::{info, warn};
+use std::{fs, iter::FromIterator, path::PathBuf, sync::Arc};
+use tokio::{net::UnixStream, task::JoinHandle};
+use tracing::info;
 
 lazy_static! {
-	pub static ref CLIENTS: Registry<Client> = Registry::new();
+	pub static ref CLIENTS: OwnedRegistry<Client> = OwnedRegistry::new();
 	pub static ref INTERNAL_CLIENT: Arc<Client> = CLIENTS.add(Client {
-		event_loop: Weak::new(),
-		index: 0,
 		pid: None,
 		// env: None,
 		exe: None,
 
-		stop_notifier: Default::default(),
-		join_handle: OnceCell::new(),
+		dispatch_join_handle: OnceCell::new(),
+		flush_join_handle: OnceCell::new(),
+		disconnect_status: OnceCell::new(),
 
 		message_sender_handle: None,
 		scenegraph: Default::default(),
@@ -61,13 +52,12 @@ pub fn startup_settings(env: &FxHashMap<String, String>) -> Option<StartupSettin
 }
 
 pub struct Client {
-	event_loop: Weak<EventLoop>,
-	index: usize,
 	pid: Option<i32>,
 	// env: Option<FxHashMap<String, String>>,
 	exe: Option<PathBuf>,
-	stop_notifier: Arc<Notify>,
-	join_handle: OnceCell<JoinHandle<Result<()>>>,
+	dispatch_join_handle: OnceCell<JoinHandle<Result<()>>>,
+	flush_join_handle: OnceCell<JoinHandle<Result<()>>>,
+	disconnect_status: OnceCell<Result<()>>,
 
 	pub message_sender_handle: Option<MessageSenderHandle>,
 	pub scenegraph: Arc<Scenegraph>,
@@ -76,16 +66,11 @@ pub struct Client {
 	pub startup_settings: Option<StartupSettings>,
 }
 impl Client {
-	pub fn from_connection(
-		index: usize,
-		event_loop: &Arc<EventLoop>,
-		connection: UnixStream,
-	) -> Arc<Self> {
+	pub fn from_connection(connection: UnixStream) -> Arc<Self> {
 		let pid = connection.peer_cred().ok().and_then(|c| c.pid());
 		let env = pid.and_then(|pid| get_env(pid).ok());
 		let exe = pid.and_then(|pid| fs::read_link(format!("/proc/{}/exe", pid)).ok());
 		info!(
-			index = index,
 			pid,
 			exe = exe
 				.as_ref()
@@ -98,13 +83,13 @@ impl Client {
 		let startup_settings = env.as_ref().and_then(|env| startup_settings(env));
 
 		let client = CLIENTS.add(Client {
-			event_loop: Arc::downgrade(event_loop),
-			index,
 			pid,
 			// env,
-			exe,
-			stop_notifier: Default::default(),
-			join_handle: OnceCell::new(),
+			exe: exe.clone(),
+
+			dispatch_join_handle: OnceCell::new(),
+			flush_join_handle: OnceCell::new(),
+			disconnect_status: OnceCell::new(),
 
 			message_sender_handle: Some(messenger_tx.handle()),
 			scenegraph: scenegraph.clone(),
@@ -123,32 +108,57 @@ impl Client {
 		input::create_interface(&client);
 		startup::create_interface(&client);
 
-		let _ = client.join_handle.set(tokio::spawn({
-			let client = client.clone();
-			async move {
-				let dispatch_loop = async move {
-					loop {
-						messenger_rx.dispatch(&*scenegraph).await?
+		let pid_printable = pid
+			.map(|pid| pid.to_string())
+			.unwrap_or_else(|| "??".to_string());
+		let exe_printable = exe
+			.and_then(|exe| {
+				exe.file_name()
+					.and_then(|exe| exe.to_str())
+					.map(|exe| exe.to_string())
+			})
+			.unwrap_or_else(|| "??".to_string());
+		let _ = client.dispatch_join_handle.get_or_try_init(|| {
+			tokio::task::Builder::new()
+				.name(&format!(
+					"client dispatch pid={} exe={}",
+					&pid_printable, &exe_printable,
+				))
+				.spawn({
+					let client = client.clone();
+					async move {
+						loop {
+							match messenger_rx.dispatch(&*scenegraph).await {
+								Err(e) => {
+									client.disconnect(Err(e.into()));
+								}
+								_ => (),
+							}
+						}
 					}
-				};
-				let flush_loop = async {
-					loop {
-						messenger_tx.flush().await?
+				})
+		});
+		let _ = client.flush_join_handle.get_or_try_init(|| {
+			tokio::task::Builder::new()
+				.name(&format!(
+					"client flush pid={} exe={}",
+					&pid_printable, &exe_printable,
+				))
+				.spawn({
+					let client = client.clone();
+					async move {
+						loop {
+							match messenger_tx.flush().await {
+								Err(e) => {
+									client.disconnect(Err(e.into()));
+								}
+								_ => (),
+							}
+						}
 					}
-				};
+				})
+		});
 
-				let result: Result<(), Report> = tokio::select! {
-					_ = client.stop_notifier.notified() => Ok(()),
-					e = dispatch_loop => e,
-					e = flush_loop => e,
-				};
-				if let Err(e) = &result {
-					warn!(error = e.root_cause(), "Client disconnected with error!");
-				}
-				client.disconnect().await;
-				result
-			}
-		}));
 		client
 	}
 
@@ -159,24 +169,30 @@ impl Client {
 			.ok_or_else(|| eyre!("{} not found", name))
 	}
 
-	pub async fn disconnect(&self) {
-		self.stop_notifier.notify_one();
-		if let Some(event_loop) = self.event_loop.upgrade() {
-			event_loop.clients.lock().await.remove(self.index);
+	pub fn disconnect(&self, reason: Result<()>) {
+		let _ = self.disconnect_status.set(reason);
+		if let Some(dispatch_join_handle) = self.dispatch_join_handle.get() {
+			dispatch_join_handle.abort();
 		}
+		if let Some(flush_join_handle) = self.flush_join_handle.get() {
+			flush_join_handle.abort();
+		}
+		CLIENTS.remove(self);
 	}
 }
 impl Drop for Client {
 	fn drop(&mut self) {
-		self.stop_notifier.notify_one();
-		CLIENTS.remove(self);
 		info!(
-			index = self.index,
 			pid = self.pid,
 			exe = self
 				.exe
 				.as_ref()
 				.and_then(|exe| exe.to_str().map(|s| s.to_string())),
+			disconnect_status = match self.disconnect_status.take() {
+				Some(Ok(_)) => "Graceful disconnect".to_string(),
+				Some(Err(e)) => format!("Error: {}", e.root_cause()),
+				None => "Unknown".to_string(),
+			},
 			"Client disconnected"
 		);
 	}

@@ -148,7 +148,9 @@ impl SeatDataInner {
 impl Drop for SeatDataInner {
 	fn drop(&mut self) {
 		let id = self.global_id.take().unwrap();
-		tokio::spawn(async move { GLOBAL_DESTROY_QUEUE.get().unwrap().send(id).await });
+		let _ = tokio::task::Builder::new()
+			.name("global destroy queue garbage collection")
+			.spawn(async move { GLOBAL_DESTROY_QUEUE.get().unwrap().send(id).await });
 	}
 }
 
