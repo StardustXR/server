@@ -51,9 +51,14 @@ features = ["desktop", "renderer_gl", "wayland_frontend"]
 version = "*"
 optional = true
 
+[dependencies.console-subscriber]
+version = "0.1.8"
+optional = true
+
 [features]
 default = ["wayland"]
 wayland = ["dep:smithay", "dep:xkbcommon"]
+profile = ["dep:console-subscriber"]
 
 # [patch.crates-io.stereokit]
 # path = "../stereokit-rs"

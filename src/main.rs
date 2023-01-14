@@ -42,7 +42,11 @@ struct CliArgs {
 }
 
 fn main() -> Result<()> {
-	tracing_subscriber::fmt::init();
+	if !cfg!(feature = "profile") {
+		tracing_subscriber::fmt::init();
+	}
+	#[cfg(feature = "profile")]
+	console_subscriber::init();
 	let project_dirs = ProjectDirs::from("", "", "stardust").unwrap();
 	let cli_args = Arc::new(CliArgs::parse());
 
