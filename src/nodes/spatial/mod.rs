@@ -73,14 +73,14 @@ impl Spatial {
 		Ok(spatial_arc)
 	}
 
-	#[instrument]
+	#[instrument(level = "debug", skip_all)]
 	pub fn space_to_space_matrix(from: Option<&Spatial>, to: Option<&Spatial>) -> Mat4 {
 		let space_to_world_matrix = from.map_or(Mat4::IDENTITY, |from| from.global_transform());
 		let world_to_space_matrix = to.map_or(Mat4::IDENTITY, |to| to.global_transform().inverse());
 		world_to_space_matrix * space_to_world_matrix
 	}
 
-	#[instrument]
+	#[instrument(level = "debug", skip_all)]
 	pub fn local_transform(&self) -> Mat4 {
 		*self.transform.lock()
 	}
@@ -94,7 +94,7 @@ impl Spatial {
 	pub fn set_local_transform(&self, transform: Mat4) {
 		*self.transform.lock() = transform;
 	}
-	#[instrument]
+	#[instrument(level = "debug", skip(self, reference_space))]
 	pub fn set_local_transform_components(
 		&self,
 		reference_space: Option<&Spatial>,
@@ -132,7 +132,7 @@ impl Spatial {
 		);
 	}
 
-	#[instrument]
+	#[instrument(level = "debug", skip_all)]
 	pub fn is_ancestor_of(&self, spatial: Arc<Spatial>) -> bool {
 		let mut current_ancestor = spatial;
 		loop {
@@ -149,7 +149,7 @@ impl Spatial {
 		}
 	}
 
-	#[instrument]
+	#[instrument(level = "debug", skip_all)]
 	pub fn set_spatial_parent(&self, parent: Option<&Arc<Spatial>>) -> Result<()> {
 		let is_ancestor = parent
 			.map(|parent| self.is_ancestor_of(parent.clone()))
@@ -163,7 +163,7 @@ impl Spatial {
 		Ok(())
 	}
 
-	#[instrument]
+	#[instrument(level = "debug", skip_all)]
 	pub fn set_spatial_parent_in_place(&self, parent: Option<&Arc<Spatial>>) -> Result<()> {
 		let is_ancestor = parent
 			.map(|parent| self.is_ancestor_of(parent.clone()))

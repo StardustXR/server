@@ -25,6 +25,7 @@ use stardust_xr::values::Transform;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
+use tracing::{debug_span, instrument};
 
 static INPUT_METHOD_REGISTRY: Registry<InputMethod> = Registry::new();
 static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
@@ -145,6 +146,7 @@ impl DistanceLink {
 	fn send_input(&self, frame: u64, datamap: Datamap) {
 		self.handler.send_input(frame, self, datamap);
 	}
+	#[instrument(level = "debug", skip(self))]
 	fn serialize(&self, datamap: Datamap) -> Vec<u8> {
 		let input = self.method.specialization.lock().serialize(
 			self,
@@ -185,6 +187,7 @@ impl InputHandler {
 		Ok(())
 	}
 
+	#[instrument(level = "debug", skip(self, distance_link))]
 	fn send_input(&self, frame: u64, distance_link: &DistanceLink, datamap: Datamap) {
 		let data = distance_link.serialize(datamap);
 		let node = self.node.upgrade().unwrap();
@@ -250,39 +253,49 @@ pub fn create_input_handler_flex(
 #[tracing::instrument(level = "debug")]
 pub fn process_input() {
 	// Iterate over all valid input methods
-	for method in INPUT_METHOD_REGISTRY
-		.get_valid_contents()
-		.into_iter()
-		.filter(|method| *method.enabled.lock())
-		.filter(|method| method.datamap.lock().is_some())
-	{
-		// Get all valid input handlers and convert them to DistanceLink objects
-		let mut distance_links: Vec<DistanceLink> = INPUT_HANDLER_REGISTRY
+	let methods = debug_span!("Get valid methods").in_scope(|| {
+		INPUT_METHOD_REGISTRY
 			.get_valid_contents()
 			.into_iter()
-			.filter(|handler| handler.field.upgrade().is_some())
-			.filter_map(|handler| DistanceLink::from(method.clone(), handler))
-			.collect();
+			.filter(|method| *method.enabled.lock())
+			.filter(|method| method.datamap.lock().is_some())
+	});
+	for method in methods {
+		debug_span!("Process input method").in_scope(|| {
+			// Get all valid input handlers and convert them to DistanceLink objects
+			let mut distance_links: Vec<DistanceLink> = debug_span!("Generate distance links")
+				.in_scope(|| {
+					INPUT_HANDLER_REGISTRY
+						.get_valid_contents()
+						.into_iter()
+						.filter(|handler| handler.field.upgrade().is_some())
+						.filter_map(|handler| DistanceLink::from(method.clone(), handler))
+						.collect()
+				});
 
-		// Sort the distance links by their distance in ascending order
-		distance_links
-			.sort_unstable_by(|a, b| a.distance.abs().partial_cmp(&b.distance.abs()).unwrap());
+			// Sort the distance links by their distance in ascending order
+			debug_span!("Sort distance links").in_scope(|| {
+				distance_links.sort_unstable_by(|a, b| {
+					a.distance.abs().partial_cmp(&b.distance.abs()).unwrap()
+				});
+			});
 
-		// Get the current frame
-		let frame = FRAME.load(Ordering::Relaxed);
+			// Get the current frame
+			let frame = FRAME.load(Ordering::Relaxed);
 
-		// Iterate over the distance links and send input to them
-		for distance_link in distance_links {
-			distance_link.send_input(frame, method.datamap.lock().clone().unwrap());
+			// Iterate over the distance links and send input to them
+			for distance_link in distance_links {
+				distance_link.send_input(frame, method.datamap.lock().clone().unwrap());
 
-			// If the current distance link is in the list of captured input handlers,
-			// break out of the loop to avoid sending input to the remaining distance links
-			if method.captures.contains(&distance_link.handler) {
-				break;
+				// If the current distance link is in the list of captured input handlers,
+				// break out of the loop to avoid sending input to the remaining distance links
+				if method.captures.contains(&distance_link.handler) {
+					break;
+				}
 			}
-		}
 
-		// Clear the list of captured input handlers for this method
-		method.captures.clear();
+			// Clear the list of captured input handlers for this method
+			method.captures.clear();
+		});
 	}
 }
