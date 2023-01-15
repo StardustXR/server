@@ -12,8 +12,10 @@ use parking_lot::Mutex;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use stardust_xr::values::Transform;
+use std::fmt::Debug;
 use std::ptr;
 use std::sync::{Arc, Weak};
+use tracing::instrument;
 
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
@@ -71,12 +73,14 @@ impl Spatial {
 		Ok(spatial_arc)
 	}
 
+	#[instrument]
 	pub fn space_to_space_matrix(from: Option<&Spatial>, to: Option<&Spatial>) -> Mat4 {
 		let space_to_world_matrix = from.map_or(Mat4::IDENTITY, |from| from.global_transform());
 		let world_to_space_matrix = to.map_or(Mat4::IDENTITY, |to| to.global_transform().inverse());
 		world_to_space_matrix * space_to_world_matrix
 	}
 
+	#[instrument]
 	pub fn local_transform(&self) -> Mat4 {
 		*self.transform.lock()
 	}
@@ -86,9 +90,11 @@ impl Spatial {
 			None => *self.transform.lock(),
 		}
 	}
+	#[instrument]
 	pub fn set_local_transform(&self, transform: Mat4) {
 		*self.transform.lock() = transform;
 	}
+	#[instrument]
 	pub fn set_local_transform_components(
 		&self,
 		reference_space: Option<&Spatial>,
@@ -126,6 +132,7 @@ impl Spatial {
 		);
 	}
 
+	#[instrument]
 	pub fn is_ancestor_of(&self, spatial: Arc<Spatial>) -> bool {
 		let mut current_ancestor = spatial;
 		loop {
@@ -142,6 +149,7 @@ impl Spatial {
 		}
 	}
 
+	#[instrument]
 	pub fn set_spatial_parent(&self, parent: Option<&Arc<Spatial>>) -> Result<()> {
 		let is_ancestor = parent
 			.map(|parent| self.is_ancestor_of(parent.clone()))
@@ -155,6 +163,7 @@ impl Spatial {
 		Ok(())
 	}
 
+	#[instrument]
 	pub fn set_spatial_parent_in_place(&self, parent: Option<&Arc<Spatial>>) -> Result<()> {
 		let is_ancestor = parent
 			.map(|parent| self.is_ancestor_of(parent.clone()))
@@ -249,6 +258,7 @@ impl Spatial {
 		Ok(())
 	}
 
+	#[instrument]
 	pub(self) fn zone_distance(&self) -> f32 {
 		self.zone
 			.lock()
@@ -256,6 +266,16 @@ impl Spatial {
 			.and_then(|zone| zone.field.upgrade())
 			.map(|field| field.distance(self, vec3a(0.0, 0.0, 0.0)))
 			.unwrap_or(f32::MAX)
+	}
+}
+impl Debug for Spatial {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Spatial")
+			.field("uid", &self.uid)
+			.field("parent", &self.parent)
+			.field("old_parent", &self.old_parent)
+			.field("transform", &self.transform)
+			.finish()
 	}
 }
 impl Drop for Spatial {
