@@ -6,6 +6,7 @@ use crate::{
 use glam::{vec3, Mat4};
 use std::sync::Arc;
 use stereokit::input::StereoKitInput;
+use tracing::instrument;
 
 lazy_static::lazy_static! {
 	static ref HMD: Arc<Node> = create();
@@ -18,6 +19,7 @@ fn create() -> Arc<Node> {
 	node
 }
 
+#[instrument(level = "debug", name = "Update HMD Pose", skip(sk))]
 pub fn frame(sk: &impl StereoKitInput) {
 	let spatial = HMD.spatial.get().unwrap();
 	let hmd_pose = sk.input_head();

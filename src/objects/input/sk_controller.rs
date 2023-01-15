@@ -6,6 +6,7 @@ use glam::Mat4;
 use stardust_xr::{schemas::flat::Datamap, values::Transform};
 use std::sync::{Arc, Weak};
 use stereokit::input::{ButtonState, Handed, StereoKitInput};
+use tracing::instrument;
 
 pub struct SkController {
 	tip: Arc<InputMethod>,
@@ -21,6 +22,7 @@ impl SkController {
 			handed,
 		}
 	}
+	#[instrument(level = "debug", name = "Update StereoKit Tip Input Method", skip_all)]
 	pub fn update(&mut self, sk: &impl StereoKitInput) {
 		let controller = sk.input_controller(self.handed);
 		*self.tip.enabled.lock() = controller.tracked.contains(ButtonState::Active);

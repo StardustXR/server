@@ -1,3 +1,5 @@
+use crate::core::task;
+
 use super::{
 	panel_item::PanelItem, state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE,
 	SERIAL_COUNTER,
@@ -148,9 +150,9 @@ impl SeatDataInner {
 impl Drop for SeatDataInner {
 	fn drop(&mut self) {
 		let id = self.global_id.take().unwrap();
-		let _ = tokio::task::Builder::new()
-			.name("global destroy queue garbage collection")
-			.spawn(async move { GLOBAL_DESTROY_QUEUE.get().unwrap().send(id).await });
+		let _ = task::new(|| "global destroy queue garbage collection", async move {
+			GLOBAL_DESTROY_QUEUE.get().unwrap().send(id).await
+		});
 	}
 }
 

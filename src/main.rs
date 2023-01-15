@@ -23,7 +23,8 @@ use stereokit::render::StereoKitRender;
 use stereokit::texture::Texture;
 use stereokit::time::StereoKitTime;
 use tokio::{runtime::Handle, sync::oneshot};
-use tracing::info;
+use tracing::{debug_span, info};
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -42,10 +43,25 @@ struct CliArgs {
 }
 
 fn main() -> Result<()> {
-	#[cfg(not(feature = "profile"))]
-	tracing_subscriber::fmt::init();
-	#[cfg(feature = "profile")]
-	console_subscriber::init();
+	let registry = tracing_subscriber::registry();
+	#[cfg(feature = "profile_app")]
+	let (chrome_layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
+		.include_args(true)
+		.build();
+	#[cfg(feature = "profile_app")]
+	let registry = registry.with(chrome_layer);
+
+	#[cfg(feature = "profile_tokio")]
+	let (console_layer, _) = console_subscriber::ConsoleLayer::builder().build();
+	#[cfg(feature = "profile_tokio")]
+	let registry = registry.with(console_layer);
+
+	let log_layer = fmt::Layer::new()
+		.with_thread_names(true)
+		.with_ansi(true)
+		.with_filter(EnvFilter::from_default_env());
+	registry.with(log_layer).init();
+
 	let project_dirs = ProjectDirs::from("", "", "stardust").unwrap();
 	let cli_args = Arc::new(CliArgs::parse());
 
@@ -112,35 +128,40 @@ fn main() -> Result<()> {
 	#[cfg(feature = "wayland")]
 	let mut wayland = wayland::Wayland::new()?;
 	info!("Stardust ready!");
-	stereokit.run(
-		|sk| {
-			hmd::frame(sk);
-			#[cfg(feature = "wayland")]
-			wayland.frame(sk);
-			destroy_queue::clear();
+	debug_span!("StereoKit").in_scope(|| {
+		stereokit.run(
+			|sk| {
+				let _span = debug_span!("StereoKit step");
+				let _span = _span.enter();
 
-			if let Some(mouse_pointer) = &mouse_pointer {
-				mouse_pointer.update(sk);
-			}
-			if let Some(hands) = &mut hands {
-				hands[0].update(sk);
-				hands[1].update(sk);
-			}
-			if let Some(controllers) = &mut controllers {
-				controllers[0].update(sk);
-				controllers[1].update(sk);
-			}
-			input::process_input();
-			nodes::root::Root::logic_step(sk.time_elapsed());
-			drawable::draw(sk);
+				hmd::frame(sk);
+				#[cfg(feature = "wayland")]
+				wayland.frame(sk);
+				destroy_queue::clear();
 
-			#[cfg(feature = "wayland")]
-			wayland.make_context_current();
-		},
-		|_| {
-			info!("Cleanly shut down StereoKit");
-		},
-	);
+				if let Some(mouse_pointer) = &mouse_pointer {
+					mouse_pointer.update(sk);
+				}
+				if let Some(hands) = &mut hands {
+					hands[0].update(sk);
+					hands[1].update(sk);
+				}
+				if let Some(controllers) = &mut controllers {
+					controllers[0].update(sk);
+					controllers[1].update(sk);
+				}
+				input::process_input();
+				nodes::root::Root::logic_step(sk.time_elapsed());
+				drawable::draw(sk);
+
+				#[cfg(feature = "wayland")]
+				wayland.make_context_current();
+			},
+			|_| {
+				info!("Cleanly shut down StereoKit");
+			},
+		)
+	});
 
 	#[cfg(feature = "wayland")]
 	drop(wayland);

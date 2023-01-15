@@ -11,9 +11,9 @@ use super::{
 	spatial::{find_spatial_parent, parse_transform, Spatial},
 	Node,
 };
-use crate::core::client::Client;
 use crate::core::eventloop::FRAME;
 use crate::core::registry::Registry;
+use crate::core::{client::Client, task};
 use color_eyre::eyre::{ensure, Result};
 use glam::Mat4;
 use nanoid::nanoid;
@@ -192,25 +192,23 @@ impl InputHandler {
 		let handler = Arc::downgrade(&distance_link.handler);
 
 		if let Ok(data) = node.execute_remote_method("input", data) {
-			let _ = tokio::task::Builder::new()
-				.name("input capture")
-				.spawn(async move {
-					if let Ok(data) = data.await {
-						if frame == FRAME.load(Ordering::Relaxed) {
-							let capture = flexbuffers::Reader::get_root(data.as_slice())
-								.and_then(|data| data.get_bool())
-								.unwrap_or(false);
+			let _ = task::new(|| "input capture", async move {
+				if let Ok(data) = data.await {
+					if frame == FRAME.load(Ordering::Relaxed) {
+						let capture = flexbuffers::Reader::get_root(data.as_slice())
+							.and_then(|data| data.get_bool())
+							.unwrap_or(false);
 
-							if capture {
-								if let Some(method) = method.upgrade() {
-									if let Some(handler) = handler.upgrade() {
-										method.captures.add_raw(&handler);
-									}
+						if capture {
+							if let Some(method) = method.upgrade() {
+								if let Some(handler) = handler.upgrade() {
+									method.captures.add_raw(&handler);
 								}
 							}
 						}
 					}
-				});
+				}
+			});
 		}
 	}
 }
@@ -249,6 +247,7 @@ pub fn create_input_handler_flex(
 	InputHandler::add_to(&node, &field)?;
 	Ok(())
 }
+#[tracing::instrument(level = "debug")]
 pub fn process_input() {
 	// Iterate over all valid input methods
 	for method in INPUT_METHOD_REGISTRY
