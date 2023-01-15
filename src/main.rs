@@ -17,8 +17,8 @@ use directories::ProjectDirs;
 use std::sync::Arc;
 use std::time::Duration;
 use stereokit::input::Handed;
-use stereokit::lifecycle::DepthMode;
 use stereokit::lifecycle::DisplayMode;
+use stereokit::lifecycle::{DepthMode, LogFilter};
 use stereokit::render::SphericalHarmonics;
 use stereokit::render::StereoKitRender;
 use stereokit::texture::Texture;
@@ -68,6 +68,7 @@ fn main() -> Result<()> {
 
 	let stereokit = stereokit::Settings::default()
 		.app_name("Stardust XR")
+		.log_filter(LogFilter::None)
 		.overlay_app(cli_args.overlay_priority.is_some())
 		.overlay_priority(cli_args.overlay_priority.unwrap_or(u32::MAX))
 		.disable_desktop_input_window(true)
