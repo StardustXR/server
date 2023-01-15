@@ -10,7 +10,7 @@ mod surface;
 mod xdg_shell;
 
 use self::{state::WaylandState, surface::CORE_SURFACES};
-use crate::wayland::state::ClientState;
+use crate::{core::task, wayland::state::ClientState};
 use color_eyre::eyre::{ensure, Result};
 use global_counter::primitive::exact::CounterU32;
 use once_cell::sync::OnceCell;
@@ -31,7 +31,7 @@ use stereokit as sk;
 use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
 };
-use tracing::info;
+use tracing::{info, instrument};
 
 pub static SERIAL_COUNTER: CounterU32 = CounterU32::new(0);
 
@@ -123,33 +123,32 @@ impl Wayland {
 		let dh1 = display.lock().handle();
 		let mut dh2 = dh1.clone();
 
-		Ok(tokio::task::Builder::new()
-			.name("wayland loop")
-			.spawn(async move {
-				let _socket = socket; // Keep the socket alive
-				loop {
-					tokio::select! {
-						e = global_destroy_queue.recv() => { // New global to destroy
-							dh1.remove_global::<WaylandState>(e.unwrap());
-						}
-						acc = listen_async.accept() => { // New client connected
-							let (stream, _) = acc?;
-							let client = dh2.insert_client(stream.into_std()?, Arc::new(ClientState))?;
+		Ok(task::new(|| "wayland loop", async move {
+			let _socket = socket; // Keep the socket alive
+			loop {
+				tokio::select! {
+					e = global_destroy_queue.recv() => { // New global to destroy
+						dh1.remove_global::<WaylandState>(e.unwrap());
+					}
+					acc = listen_async.accept() => { // New client connected
+						let (stream, _) = acc?;
+						let client = dh2.insert_client(stream.into_std()?, Arc::new(ClientState))?;
 
-							state.lock().new_client(client.id(), &dh2);
-						}
-						e = dispatch_poll_listener.readable() => { // Dispatch
-							let mut guard = e?;
-							let mut display = display.lock();
-							display.dispatch_clients(&mut *state.lock())?;
-							display.flush_clients()?;
-							guard.clear_ready();
-						}
+						state.lock().new_client(client.id(), &dh2);
+					}
+					e = dispatch_poll_listener.readable() => { // Dispatch
+						let mut guard = e?;
+						let mut display = display.lock();
+						display.dispatch_clients(&mut *state.lock())?;
+						display.flush_clients()?;
+						guard.clear_ready();
 					}
 				}
-			})?)
+			}
+		})?)
 	}
 
+	#[instrument(level = "debug", name = "Wayland frame", skip(self, sk))]
 	pub fn frame(&mut self, sk: &StereoKitDraw) {
 		for core_surface in CORE_SURFACES.get_valid_contents() {
 			let state = self.state.lock();

@@ -1,4 +1,5 @@
 use super::client::Client;
+use super::task;
 use color_eyre::eyre::Result;
 use once_cell::sync::OnceCell;
 use stardust_xr::server;
@@ -26,14 +27,12 @@ impl EventLoop {
 			join_handle: OnceCell::new(),
 		});
 
-		let join_handle = tokio::task::Builder::new()
-			.name("event loop")
-			.spawn(async move {
-				loop {
-					let Ok((socket, _)) = socket.accept().await else { continue };
-					Client::from_connection(socket);
-				}
-			})?;
+		let join_handle = task::new(|| "event loop", async move {
+			loop {
+				let Ok((socket, _)) = socket.accept().await else { continue };
+				Client::from_connection(socket);
+			}
+		})?;
 		let _ = event_loop.join_handle.set(join_handle);
 
 		Ok(event_loop)

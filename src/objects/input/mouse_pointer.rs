@@ -13,6 +13,7 @@ use nanoid::nanoid;
 use stardust_xr::{schemas::flat::Datamap, values::Transform};
 use std::{convert::TryFrom, sync::Arc};
 use stereokit::input::{ButtonState, Key, Ray as SkRay, StereoKitInput};
+use tracing::instrument;
 
 const SK_KEYMAP: &str = include_str!("sk.kmp");
 
@@ -45,6 +46,7 @@ impl MousePointer {
 			keyboard_sender,
 		}
 	}
+	#[instrument(level = "debug", name = "Update Flatscreen Pointer Ray", skip_all)]
 	pub fn update(&self, sk: &impl StereoKitInput) {
 		let mouse = sk.input_mouse();
 

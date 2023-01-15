@@ -1,6 +1,6 @@
 use super::scenegraph::Scenegraph;
 use crate::{
-	core::registry::OwnedRegistry,
+	core::{registry::OwnedRegistry, task},
 	nodes::{
 		data, drawable, fields, hmd, input, items,
 		root::Root,
@@ -119,12 +119,14 @@ impl Client {
 			})
 			.unwrap_or_else(|| "??".to_string());
 		let _ = client.dispatch_join_handle.get_or_try_init(|| {
-			tokio::task::Builder::new()
-				.name(&format!(
-					"client dispatch pid={} exe={}",
-					&pid_printable, &exe_printable,
-				))
-				.spawn({
+			task::new(
+				|| {
+					format!(
+						"client dispatch pid={} exe={}",
+						&pid_printable, &exe_printable,
+					)
+				},
+				{
 					let client = client.clone();
 					async move {
 						loop {
@@ -136,15 +138,13 @@ impl Client {
 							}
 						}
 					}
-				})
+				},
+			)
 		});
 		let _ = client.flush_join_handle.get_or_try_init(|| {
-			tokio::task::Builder::new()
-				.name(&format!(
-					"client flush pid={} exe={}",
-					&pid_printable, &exe_printable,
-				))
-				.spawn({
+			task::new(
+				|| format!("client flush pid={} exe={}", &pid_printable, &exe_printable,),
+				{
 					let client = client.clone();
 					async move {
 						loop {
@@ -156,7 +156,8 @@ impl Client {
 							}
 						}
 					}
-				})
+				},
+			)
 		});
 
 		client

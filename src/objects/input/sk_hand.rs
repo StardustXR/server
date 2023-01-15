@@ -9,6 +9,7 @@ use stereokit::{
 	input::{ButtonState, Handed, Joint as SkJoint, StereoKitInput},
 	lifecycle::StereoKitDraw,
 };
+use tracing::instrument;
 
 fn convert_joint(joint: SkJoint) -> Joint {
 	Joint {
@@ -37,6 +38,7 @@ impl SkHand {
 			handed,
 		}
 	}
+	#[instrument(level = "debug", name = "Update Hand Input Method", skip_all)]
 	pub fn update(&mut self, sk: &StereoKitDraw) {
 		let sk_hand = sk.input_hand(self.handed);
 		if let InputType::Hand(hand) = &mut *self.hand.specialization.lock() {

@@ -5,6 +5,7 @@ use crate::core::registry::Registry;
 use color_eyre::eyre::Result;
 use glam::Mat4;
 use stardust_xr::schemas::flex::{deserialize, serialize};
+use tracing::instrument;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -48,6 +49,7 @@ impl Root {
 		Ok(())
 	}
 
+	#[instrument(level = "debug")]
 	pub fn logic_step(delta: f64) {
 		if let Ok(data) = serialize((delta, 0.0)) {
 			for root in ROOT_REGISTRY.get_valid_contents() {

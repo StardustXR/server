@@ -10,6 +10,7 @@ use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
 use std::{path::PathBuf, sync::Arc};
 use stereokit::{lifecycle::StereoKitDraw, render::StereoKitRender, texture::Texture};
+use tracing::instrument;
 
 pub fn create_interface(client: &Arc<Client>) {
 	let node = Node::create(client, "", "drawable", false);
@@ -20,6 +21,7 @@ pub fn create_interface(client: &Arc<Client>) {
 	node.add_to_scenegraph();
 }
 
+#[instrument(level = "debug", skip(sk))]
 pub fn draw(sk: &StereoKitDraw) {
 	lines::draw_all(sk);
 	model::draw_all(sk);
