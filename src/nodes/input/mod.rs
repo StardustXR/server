@@ -215,6 +215,11 @@ impl InputHandler {
 		}
 	}
 }
+impl PartialEq for InputHandler {
+	fn eq(&self, other: &Self) -> bool {
+		self.spatial == other.spatial
+	}
+}
 impl Drop for InputHandler {
 	fn drop(&mut self) {
 		INPUT_HANDLER_REGISTRY.remove(self);
@@ -283,19 +288,17 @@ pub fn process_input() {
 			// Get the current frame
 			let frame = FRAME.load(Ordering::Relaxed);
 
+			let captures = method.captures.take_valid_contents();
 			// Iterate over the distance links and send input to them
 			for distance_link in distance_links {
 				distance_link.send_input(frame, method.datamap.lock().clone().unwrap());
 
 				// If the current distance link is in the list of captured input handlers,
 				// break out of the loop to avoid sending input to the remaining distance links
-				if method.captures.contains(&distance_link.handler) {
+				if captures.contains(&distance_link.handler) {
 					break;
 				}
 			}
-
-			// Clear the list of captured input handlers for this method
-			method.captures.clear();
 		});
 	}
 }

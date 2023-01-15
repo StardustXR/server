@@ -268,6 +268,11 @@ impl Spatial {
 			.unwrap_or(f32::MAX)
 	}
 }
+impl PartialEq for Spatial {
+	fn eq(&self, other: &Self) -> bool {
+		self.uid == other.uid
+	}
+}
 impl Debug for Spatial {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Spatial")
