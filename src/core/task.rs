@@ -1,8 +1,10 @@
 use color_eyre::eyre::Result;
 use std::future::Future;
 use tokio::task::JoinHandle;
+use tracing::instrument;
 
 #[allow(unused_variables)]
+#[instrument(level = "debug", skip_all)]
 pub fn new<
 	F: FnOnce() -> S,
 	S: AsRef<str>,

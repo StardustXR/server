@@ -5,6 +5,7 @@ use once_cell::sync::OnceCell;
 use stardust_xr::scenegraph;
 use stardust_xr::scenegraph::ScenegraphError;
 use std::sync::{Arc, Weak};
+use tracing::{debug, debug_span, instrument};
 
 use core::hash::BuildHasherDefault;
 use dashmap::DashMap;
@@ -27,10 +28,12 @@ impl Scenegraph {
 		node_arc
 	}
 	pub fn add_node_raw(&self, node: Arc<Node>) {
+		debug!(node = ?&*node, "Add node");
 		let path = node.get_path().to_string();
 		self.nodes.insert(path, node);
 	}
 
+	#[instrument(level = "debug", skip(self))]
 	pub fn get_node(&self, path: &str) -> Option<Arc<Node>> {
 		let mut node = self.nodes.get(path)?.clone();
 		if let Some(alias) = node.alias.get() {
@@ -40,6 +43,7 @@ impl Scenegraph {
 	}
 
 	pub fn remove_node(&self, path: &str) -> Option<Arc<Node>> {
+		debug!(path, "Remove node");
 		let (_, node) = self.nodes.remove(path)?;
 		Some(node)
 	}
@@ -47,9 +51,11 @@ impl Scenegraph {
 
 impl scenegraph::Scenegraph for Scenegraph {
 	fn send_signal(&self, path: &str, method: &str, data: &[u8]) -> Result<(), ScenegraphError> {
-		self.get_node(path)
-			.ok_or(ScenegraphError::NodeNotFound)?
-			.send_local_signal(self.get_client(), method, data)
+		debug_span!("Handle signal", path, method).in_scope(|| {
+			self.get_node(path)
+				.ok_or(ScenegraphError::NodeNotFound)?
+				.send_local_signal(self.get_client(), method, data)
+		})
 	}
 	fn execute_method(
 		&self,
@@ -57,8 +63,10 @@ impl scenegraph::Scenegraph for Scenegraph {
 		method: &str,
 		data: &[u8],
 	) -> Result<Vec<u8>, ScenegraphError> {
-		self.get_node(path)
-			.ok_or(ScenegraphError::NodeNotFound)?
-			.execute_local_method(self.get_client(), method, data)
+		debug_span!("Handle method", path, method).in_scope(|| {
+			self.get_node(path)
+				.ok_or(ScenegraphError::NodeNotFound)?
+				.execute_local_method(self.get_client(), method, data)
+		})
 	}
 }

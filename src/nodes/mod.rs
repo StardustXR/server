@@ -15,11 +15,12 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
+use std::fmt::Debug;
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
-use tracing::debug_span;
+use tracing::{debug_span, instrument};
 
 use core::hash::BuildHasherDefault;
 use dashmap::DashMap;
@@ -189,10 +190,8 @@ impl Node {
 				.local_signals
 				.get(method)
 				.ok_or(ScenegraphError::SignalNotFound)?;
-			debug_span!("Handle signal").in_scope(|| {
-				signal(self, calling_client, data).map_err(|error| ScenegraphError::SignalError {
-					error: error.to_string(),
-				})
+			signal(self, calling_client, data).map_err(|error| ScenegraphError::SignalError {
+				error: error.to_string(),
 			})
 		}
 	}
@@ -224,6 +223,7 @@ impl Node {
 			})
 		}
 	}
+	#[instrument(level = "debug", skip_all)]
 	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
 		self.aliases
 			.get_valid_contents()
@@ -242,6 +242,7 @@ impl Node {
 			.transpose()?;
 		Ok(())
 	}
+	#[instrument(level = "debug", skip_all)]
 	pub fn execute_remote_method(
 		&self,
 		method: &str,
@@ -255,5 +256,13 @@ impl Node {
 		let future = message_sender_handle.method(self.path.as_str(), method, &data)?;
 
 		Ok(async { future.await.map_err(|e| eyre!(e)) })
+	}
+}
+impl Debug for Node {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Node")
+			.field("uid", &self.uid)
+			.field("path", &self.path)
+			.finish()
 	}
 }
