@@ -201,9 +201,9 @@ impl InputHandler {
 								.and_then(|data| data.get_bool())
 								.unwrap_or(false);
 
-							if let Some(method) = method.upgrade() {
-								if let Some(handler) = handler.upgrade() {
-									if capture {
+							if capture {
+								if let Some(method) = method.upgrade() {
+									if let Some(handler) = handler.upgrade() {
 										method.captures.add_raw(&handler);
 									}
 								}
@@ -272,19 +272,13 @@ pub fn process_input() {
 		// Get the current frame
 		let frame = FRAME.load(Ordering::Relaxed);
 
-		// Get the list of captured input handlers for this method
-		let captures = method.captures.get_valid_contents();
-
 		// Iterate over the distance links and send input to them
 		for distance_link in distance_links {
 			distance_link.send_input(frame, method.datamap.lock().clone().unwrap());
 
 			// If the current distance link is in the list of captured input handlers,
 			// break out of the loop to avoid sending input to the remaining distance links
-			if captures
-				.iter()
-				.any(|c| Arc::ptr_eq(c, &distance_link.handler))
-			{
+			if method.captures.contains(&distance_link.handler) {
 				break;
 			}
 		}

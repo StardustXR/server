@@ -26,6 +26,11 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 			.lock()
 			.insert(Arc::as_ptr(t) as *const () as usize, Arc::downgrade(t));
 	}
+	pub fn contains(&self, t: &T) -> bool {
+		self.0
+			.lock()
+			.contains_key(&(ptr::addr_of!(*t) as *const () as usize))
+	}
 	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
 		self.0
 			.lock()
@@ -64,6 +69,11 @@ impl<T: Send + Sync + ?Sized> OwnedRegistry<T> {
 	}
 	pub fn get_vec(&self) -> Vec<Arc<T>> {
 		self.0.lock().values().cloned().collect::<Vec<_>>()
+	}
+	pub fn contains(&self, t: &T) -> bool {
+		self.0
+			.lock()
+			.contains_key(&(ptr::addr_of!(*t) as *const () as usize))
 	}
 	pub fn remove(&self, t: &T) {
 		self.0
