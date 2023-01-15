@@ -15,6 +15,7 @@ use clap::Parser;
 use color_eyre::eyre::Result;
 use directories::ProjectDirs;
 use std::sync::Arc;
+use std::time::Duration;
 use stereokit::input::Handed;
 use stereokit::lifecycle::DepthMode;
 use stereokit::lifecycle::DisplayMode;
@@ -128,6 +129,9 @@ fn main() -> Result<()> {
 	#[cfg(feature = "wayland")]
 	let mut wayland = wayland::Wayland::new()?;
 	info!("Stardust ready!");
+
+	let mut last_frame_delta = Duration::ZERO;
+	let mut sleep_duration = Duration::ZERO;
 	debug_span!("StereoKit").in_scope(|| {
 		stereokit.run(
 			|sk| {
@@ -152,6 +156,26 @@ fn main() -> Result<()> {
 				}
 				input::process_input();
 				nodes::root::Root::logic_step(sk.time_elapsed());
+				{
+					let frame_delta = Duration::from_secs_f64(sk.time_elapsed_unscaled());
+					if last_frame_delta < frame_delta {
+						if let Some(frame_delta_delta) = frame_delta.checked_sub(last_frame_delta) {
+							if let Some(new_sleep_duration) =
+								sleep_duration.checked_sub(frame_delta_delta)
+							{
+								sleep_duration = new_sleep_duration;
+							}
+						}
+					} else {
+						sleep_duration += Duration::from_micros(250);
+					}
+
+					debug_span!("Sleep", ?sleep_duration, ?frame_delta, ?last_frame_delta)
+						.in_scope(|| {
+							last_frame_delta = frame_delta;
+							std::thread::sleep(sleep_duration); // to give clients a chance to even update anything before drawing
+						});
+				}
 				drawable::draw(sk);
 
 				#[cfg(feature = "wayland")]
