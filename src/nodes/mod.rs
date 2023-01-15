@@ -19,6 +19,7 @@ use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
+use tracing::debug_span;
 
 use core::hash::BuildHasherDefault;
 use dashmap::DashMap;
@@ -188,8 +189,10 @@ impl Node {
 				.local_signals
 				.get(method)
 				.ok_or(ScenegraphError::SignalNotFound)?;
-			signal(self, calling_client, data).map_err(|error| ScenegraphError::SignalError {
-				error: error.to_string(),
+			debug_span!("Handle signal").in_scope(|| {
+				signal(self, calling_client, data).map_err(|error| ScenegraphError::SignalError {
+					error: error.to_string(),
+				})
 			})
 		}
 	}
@@ -213,8 +216,11 @@ impl Node {
 				.local_methods
 				.get(method)
 				.ok_or(ScenegraphError::MethodNotFound)?;
-			method(self, calling_client, data).map_err(|error| ScenegraphError::MethodError {
-				error: error.to_string(),
+
+			debug_span!("Handle method").in_scope(|| {
+				method(self, calling_client, data).map_err(|error| ScenegraphError::MethodError {
+					error: error.to_string(),
+				})
 			})
 		}
 	}

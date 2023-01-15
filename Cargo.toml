@@ -55,6 +55,7 @@ optional = true
 [dependencies.tracing-chrome]
 version = "0.7.0"
 optional = true
+
 [features]
 default = ["wayland"]
 wayland = ["dep:smithay", "dep:xkbcommon"]
