@@ -105,12 +105,12 @@ fn main() -> Result<()> {
 
 	let mouse_pointer = cli_args.flatscreen.then(MousePointer::new);
 	let mut hands =
-		(!cli_args.flatscreen).then(|| [SkHand::new(Handed::Left), SkHand::new(Handed::Right)]);
+		(!cli_args.flatscreen).then(|| (SkHand::new(Handed::Left), SkHand::new(Handed::Right)));
 	let mut controllers = (!cli_args.flatscreen && !cli_args.disable_controller).then(|| {
-		[
+		(
 			SkController::new(Handed::Left),
 			SkController::new(Handed::Right),
-		]
+		)
 	});
 
 	if hands.is_none() {
@@ -147,13 +147,13 @@ fn main() -> Result<()> {
 				if let Some(mouse_pointer) = &mouse_pointer {
 					mouse_pointer.update(sk);
 				}
-				if let Some(hands) = &mut hands {
-					hands[0].update(sk);
-					hands[1].update(sk);
+				if let Some((left_hand, right_hand)) = &mut hands {
+					left_hand.update(sk);
+					right_hand.update(sk);
 				}
-				if let Some(controllers) = &mut controllers {
-					controllers[0].update(sk);
-					controllers[1].update(sk);
+				if let Some((left_controller, right_controller)) = &mut controllers {
+					left_controller.update(sk);
+					right_controller.update(sk);
 				}
 				input::process_input();
 				nodes::root::Root::logic_step(sk.time_elapsed());
