@@ -22,21 +22,25 @@ static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 pub struct Spatial {
 	uid: String,
 	pub(super) node: Weak<Node>,
+	self_ref: Weak<Spatial>,
 	parent: Mutex<Option<Arc<Spatial>>>,
-	pub(self) old_parent: Mutex<Option<Arc<Spatial>>>,
+	old_parent: Mutex<Option<Arc<Spatial>>>,
 	pub(super) transform: Mutex<Mat4>,
-	pub(self) zone: Mutex<Weak<Zone>>,
+	zone: Mutex<Weak<Zone>>,
+	children: Registry<Spatial>,
 }
 
 impl Spatial {
 	pub fn new(node: Weak<Node>, parent: Option<Arc<Spatial>>, transform: Mat4) -> Arc<Self> {
-		Arc::new(Spatial {
+		Arc::new_cyclic(|self_ref| Spatial {
 			uid: nanoid!(),
 			node,
+			self_ref: self_ref.clone(),
 			parent: Mutex::new(parent),
 			old_parent: Mutex::new(None),
 			transform: Mutex::new(transform),
 			zone: Mutex::new(Weak::new()),
+			children: Registry::new(),
 		})
 	}
 	pub fn add_to(
@@ -49,14 +53,7 @@ impl Spatial {
 			node.spatial.get().is_none(),
 			"Internal: Node already has a Spatial aspect!"
 		);
-		let spatial = Spatial {
-			uid: nanoid!(),
-			node: Arc::downgrade(node),
-			parent: Mutex::new(parent),
-			old_parent: Mutex::new(None),
-			transform: Mutex::new(transform),
-			zone: Mutex::new(Weak::new()),
-		};
+		let spatial = Spatial::new(Arc::downgrade(node), parent, transform);
 		node.add_local_method("get_transform", Spatial::get_transform_flex);
 		node.add_local_signal("set_transform", Spatial::set_transform_flex);
 		node.add_local_signal("set_spatial_parent", Spatial::set_spatial_parent_flex);
@@ -65,12 +62,11 @@ impl Spatial {
 			Spatial::set_spatial_parent_in_place_flex,
 		);
 		node.add_local_signal("set_zoneable", Spatial::set_zoneable);
-		let spatial_arc = Arc::new(spatial);
 		if zoneable {
-			ZONEABLE_REGISTRY.add_raw(&spatial_arc);
+			ZONEABLE_REGISTRY.add_raw(&spatial);
 		}
-		let _ = node.spatial.set(spatial_arc.clone());
-		Ok(spatial_arc)
+		let _ = node.spatial.set(spatial.clone());
+		Ok(spatial)
 	}
 
 	#[instrument(level = "debug", skip_all)]
@@ -149,6 +145,20 @@ impl Spatial {
 		}
 	}
 
+	fn set_parent(&self, new_parent: Option<&Arc<Spatial>>) {
+		let mut parent = self.parent.lock();
+		if let Some(parent) = &*parent {
+			parent.children.remove(self);
+		}
+		if let Some(new_parent) = new_parent {
+			new_parent
+				.children
+				.add_raw(&self.self_ref.upgrade().unwrap());
+		}
+
+		*parent = new_parent.cloned();
+	}
+
 	#[instrument(level = "debug", skip_all)]
 	pub fn set_spatial_parent(&self, parent: Option<&Arc<Spatial>>) -> Result<()> {
 		let is_ancestor = parent
@@ -157,8 +167,7 @@ impl Spatial {
 		if is_ancestor {
 			return Err(eyre!("Setting spatial parent would cause a loop"));
 		}
-
-		*self.parent.lock() = parent.cloned();
+		self.set_parent(parent);
 
 		Ok(())
 	}
@@ -176,7 +185,7 @@ impl Spatial {
 			Some(self),
 			parent.cloned().as_deref(),
 		));
-		*self.parent.lock() = parent.cloned();
+		self.set_parent(parent);
 
 		Ok(())
 	}
