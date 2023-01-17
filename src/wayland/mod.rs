@@ -31,7 +31,7 @@ use stereokit as sk;
 use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
 };
-use tracing::{info, instrument};
+use tracing::{debug, debug_span, info, instrument};
 
 pub static SERIAL_COUNTER: CounterU32 = CounterU32::new(0);
 
@@ -62,6 +62,7 @@ pub struct Wayland {
 	log: slog::Logger,
 
 	display: Arc<Mutex<Display<WaylandState>>>,
+	pub socket_name: String,
 	join_handle: JoinHandle<Result<()>>,
 	renderer: Gles2Renderer,
 	state: Arc<Mutex<WaylandState>>,
@@ -92,12 +93,17 @@ impl Wayland {
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
 		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();
 
+		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
+		let socket_name = socket.socket_name().unwrap().to_str().unwrap().to_string();
+		info!(socket_name, "Wayland active");
+
 		let join_handle =
-			Wayland::start_loop(display.clone(), state.clone(), global_destroy_queue)?;
+			Wayland::start_loop(display.clone(), socket, state.clone(), global_destroy_queue)?;
 
 		Ok(Wayland {
 			log,
 			display,
+			socket_name,
 			join_handle,
 			renderer,
 			state,
@@ -106,14 +112,10 @@ impl Wayland {
 
 	fn start_loop(
 		display: Arc<Mutex<Display<WaylandState>>>,
+		socket: ListeningSocket,
 		state: Arc<Mutex<WaylandState>>,
 		mut global_destroy_queue: mpsc::Receiver<GlobalId>,
 	) -> Result<JoinHandle<Result<()>>> {
-		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
-		if let Some(socket_name) = socket.socket_name() {
-			info!("Wayland compositor {:?} active", socket_name);
-		}
-
 		let listen_async =
 			AsyncUnixListener::from_std(unsafe { UnixListener::from_raw_fd(socket.as_raw_fd()) })?;
 
@@ -128,6 +130,7 @@ impl Wayland {
 			loop {
 				tokio::select! {
 					e = global_destroy_queue.recv() => { // New global to destroy
+						debug!(?e, "destroy global");
 						dh1.remove_global::<WaylandState>(e.unwrap());
 					}
 					acc = listen_async.accept() => { // New client connected
@@ -138,9 +141,12 @@ impl Wayland {
 					}
 					e = dispatch_poll_listener.readable() => { // Dispatch
 						let mut guard = e?;
-						let mut display = display.lock();
-						display.dispatch_clients(&mut *state.lock())?;
-						display.flush_clients()?;
+						debug_span!("Dispatch wayland event").in_scope(|| -> Result<(), color_eyre::Report> {
+							let mut display = display.lock();
+							display.dispatch_clients(&mut *state.lock())?;
+							display.flush_clients()?;
+							Ok(())
+						})?;
 						guard.clear_ready();
 					}
 				}

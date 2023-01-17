@@ -40,6 +40,7 @@ use smithay::{
 };
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::{Arc, Weak};
+use tracing::debug;
 use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};
 
 lazy_static! {
@@ -98,7 +99,7 @@ impl Default for ToplevelState {
 	}
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 #[serde(tag = "type", content = "content")]
 pub enum RecommendedState {
 	Maximize(bool),
@@ -122,6 +123,7 @@ impl PanelItem {
 		client_credentials: Option<Credentials>,
 		seat_data: SeatData,
 	) -> (Arc<Node>, Arc<PanelItem>) {
+		debug!(?toplevel, ?client_credentials, "Create panel item");
 		let node = Arc::new(Node::create(
 			&INTERNAL_CLIENT,
 			"/item/panel/item",
@@ -241,7 +243,7 @@ impl PanelItem {
 		calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		#[derive(Deserialize)]
+		#[derive(Debug, Deserialize)]
 		struct SurfaceMaterialInfo<'a> {
 			model_path: &'a str,
 			idx: u32,
@@ -255,6 +257,7 @@ impl PanelItem {
 			.model
 			.get()
 			.ok_or_else(|| eyre!("Node is not a model"))?;
+		debug!(?info, "Apply toplevel material");
 
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
 			if let Some(core_surface) = panel_item.core_surface() {
@@ -274,12 +277,13 @@ impl PanelItem {
 		let Some(cursor) = panel_item.seat_data.cursor() else { return Ok(())};
 		let Some(core_surface) = CoreSurface::from_wl_surface(&cursor) else { return Ok(()) };
 
-		#[derive(Deserialize)]
+		#[derive(Debug, Deserialize)]
 		struct SurfaceMaterialInfo<'a> {
 			model_path: &'a str,
 			idx: u32,
 		}
 		let info: SurfaceMaterialInfo = deserialize(data)?;
+		debug!(?cursor, ?info, "Apply cursor material");
 		let model_node = calling_client
 			.scenegraph
 			.get_node(info.model_path)
@@ -307,6 +311,7 @@ impl PanelItem {
 		let Some(wl_surface) = core_surface.wl_surface() else { return Ok(()) };
 		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
 
+		debug!(?wl_surface, ?pointer, "Pointer deactivate");
 		pointer.leave(SERIAL_COUNTER.inc(), &wl_surface);
 		*panel_item.seat_data.pointer_focus.lock() = None;
 		pointer.frame();
@@ -327,6 +332,7 @@ impl PanelItem {
 		let mut position: Vector2<f64> = deserialize(data)?;
 		position.x = position.x.clamp(0.0, pointer_surface_size.x as f64);
 		position.y = position.y.clamp(0.0, pointer_surface_size.y as f64);
+		debug!(?wl_surface, ?pointer, ?position, "Pointer motion");
 
 		let mut pointer_focus = panel_item.seat_data.pointer_focus.lock();
 		if let Some(old_surface) = pointer_focus
@@ -358,6 +364,7 @@ impl PanelItem {
 		let Some(pointer) = panel_item.seat_data.pointer() else { return Ok(()) };
 
 		let (button, state): (u32, u32) = deserialize(data)?;
+		debug!(?pointer, button, state, "Pointer button");
 		pointer.button(
 			SERIAL_COUNTER.inc(),
 			0,
@@ -390,6 +397,8 @@ impl PanelItem {
 			axis_discrete: Option<Vector2<f32>>,
 		}
 		let args: Option<PointerScrollArgs> = deserialize(data)?;
+
+		debug!(?pointer, "Pointer scroll");
 
 		match args {
 			Some(args) => {
@@ -430,7 +439,7 @@ impl PanelItem {
 		_calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		#[derive(Deserialize)]
+		#[derive(Debug, Deserialize)]
 		struct Names<'a> {
 			rules: &'a str,
 			model: &'a str,
@@ -462,12 +471,13 @@ impl PanelItem {
 
 		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
 		if keyboard_info.is_none() {
+			debug!(?keyboard, ?wl_surface, "Activate keyboard");
 			keyboard.enter(SERIAL_COUNTER.inc(), &wl_surface, vec![]);
 			keyboard.repeat_info(0, 0);
+			keyboard_info.replace(KeyboardInfo::new(keymap));
+			keyboard_info.as_ref().unwrap().keymap.send(keyboard)?;
+			core_surface.flush_clients();
 		}
-		keyboard_info.replace(KeyboardInfo::new(keymap));
-		keyboard_info.as_ref().unwrap().keymap.send(keyboard)?;
-		core_surface.flush_clients();
 
 		Ok(())
 	}
@@ -481,6 +491,8 @@ impl PanelItem {
 		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		let Some(wl_surface) = panel_item.toplevel_wl_surface() else { return Ok(()) };
 		let Some(keyboard) = panel_item.seat_data.keyboard() else { return Ok(()) };
+
+		debug!(?keyboard, ?wl_surface, "Deactivate keyboard");
 
 		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
 		if keyboard_info.is_some() {
@@ -504,6 +516,7 @@ impl PanelItem {
 		let mut keyboard_info = panel_item.seat_data.keyboard_info.lock();
 		if let Some(keyboard_info) = &mut *keyboard_info {
 			let (key, state): (u32, u32) = deserialize(data)?;
+			debug!(?keyboard, key, state, "Set keyboard key state");
 			keyboard_info.process(key, state, keyboard)?;
 			core_surface.flush_clients();
 		}
@@ -529,6 +542,7 @@ impl PanelItem {
 		}
 
 		let info: ConfigureToplevelInfo = deserialize(data)?;
+		debug!(info = ?&info, "Configure toplevel info");
 		if let Some(xdg_state) = panel_item.toplevel_state() {
 			xdg_state.lock().queued_state.as_mut().unwrap().states = info.states.clone();
 		}
@@ -562,7 +576,9 @@ impl PanelItem {
 		let Ok(xdg_toplevel) = panel_item.toplevel.upgrade() else { return Ok(()) };
 		let Some(xdg_surface) = panel_item.toplevel_surface_data().and_then(|d| d.xdg_surface.upgrade().ok()) else { return Ok(()) };
 
-		xdg_toplevel.wm_capabilities(deserialize(data)?);
+		let capabilities: Vec<u8> = deserialize(data)?;
+		debug!("Set toplevel capabilities");
+		xdg_toplevel.wm_capabilities(capabilities);
 		xdg_surface.configure(SERIAL_COUNTER.inc());
 		core_surface.flush_clients();
 
@@ -592,6 +608,8 @@ impl PanelItem {
 			}
 		}
 
+		debug!(state = ?&*state, "Commit toplevel");
+
 		let Some(node) = self.node.upgrade() else { return };
 		let queued_state = state.queued_state.take().unwrap();
 		*state = (*queued_state).clone();
@@ -602,14 +620,15 @@ impl PanelItem {
 
 	pub fn recommend_toplevel_state(&self, state: RecommendedState) {
 		let Some(node) = self.node.upgrade() else { return };
-		dbg!(&state);
 		let data = serialize(state).unwrap();
+		debug!(?state, "Recommend toplevel state");
 
 		let _ = node.send_remote_signal("recommend_toplevel_state", &data);
 	}
 
 	pub fn set_cursor(&self, surface: Option<&WlSurface>, hotspot_x: i32, hotspot_y: i32) {
 		let Some(node) = self.node.upgrade() else { return };
+		debug!(?surface, hotspot_x, hotspot_y, "Set cursor size");
 		let mut data = serialize(()).unwrap();
 
 		let cursor_size = surface
@@ -626,6 +645,8 @@ impl PanelItem {
 	pub fn on_drop(&self) {
 		let Ok(toplevel_surface) = self.toplevel_surface.upgrade() else { return; };
 		let Some(focused_surface) = self.seat_data.pointer_focused_surface() else { return; };
+
+		debug!("Drop panel item");
 
 		if focused_surface.id() == toplevel_surface.id() {
 			let Some(pointer) = self.seat_data.pointer() else { return };

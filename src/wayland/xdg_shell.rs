@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use super::{
 	panel_item::{PanelItem, RecommendedState, ToplevelState},
 	state::WaylandState,
@@ -24,6 +23,8 @@ use smithay::{
 	},
 	wayland::compositor,
 };
+use std::sync::Arc;
+use tracing::{debug, warn};
 
 impl GlobalDispatch<XdgWmBase, (), WaylandState> for WaylandState {
 	fn bind(
@@ -55,19 +56,26 @@ impl Dispatch<XdgWmBase, (), WaylandState> for WaylandState {
 	) {
 		match request {
 			xdg_wm_base::Request::CreatePositioner { id } => {
-				data_init.init(id, Arc::new(Mutex::new(PositionerData::default())));
+				let positioner =
+					data_init.init(id, Arc::new(Mutex::new(PositionerData::default())));
+				debug!(?positioner, "Create XDG positioner");
 			}
 			xdg_wm_base::Request::GetXdgSurface { id, surface } => {
-				data_init.init(
+				let xdg_surface = data_init.init(
 					id,
 					WaylandSurface {
 						wl_surface: surface.downgrade(),
 						geometry: Arc::new(Mutex::new(None)),
 					},
 				);
+				debug!(?xdg_surface, "Create XDG surface");
 			}
-			xdg_wm_base::Request::Pong { serial: _ } => (),
-			xdg_wm_base::Request::Destroy => (),
+			xdg_wm_base::Request::Pong { serial } => {
+				debug!(serial, "Client pong");
+			}
+			xdg_wm_base::Request::Destroy => {
+				debug!("Destroy XDG WM base");
+			}
 			_ => unreachable!(),
 		}
 	}
@@ -103,7 +111,7 @@ impl Dispatch<XdgPositioner, Arc<Mutex<PositionerData>>, WaylandState> for Wayla
 	fn request(
 		_state: &mut WaylandState,
 		_client: &Client,
-		resource: &XdgPositioner,
+		positioner: &XdgPositioner,
 		request: xdg_positioner::Request,
 		data: &Arc<Mutex<PositionerData>>,
 		_dhandle: &DisplayHandle,
@@ -111,6 +119,7 @@ impl Dispatch<XdgPositioner, Arc<Mutex<PositionerData>>, WaylandState> for Wayla
 	) {
 		match request {
 			xdg_positioner::Request::SetSize { width, height } => {
+				debug!(?positioner, width, height, "Set positioner size");
 				data.lock().size = Vector2::from([width as u32, height as u32]);
 			}
 			xdg_positioner::Request::SetAnchorRect {
@@ -120,43 +129,66 @@ impl Dispatch<XdgPositioner, Arc<Mutex<PositionerData>>, WaylandState> for Wayla
 				height,
 			} => {
 				if width < 1 || height < 1 {
-					resource.post_error(
+					positioner.post_error(
 						xdg_positioner::Error::InvalidInput,
 						"Invalid size for positioner's anchor rectangle.",
+					);
+					warn!(
+						?positioner,
+						width, height, "Invalid size for positioner's anchor rectangle"
 					);
 					return;
 				}
 
+				debug!(
+					?positioner,
+					x, y, width, height, "Set positioner anchor rectangle"
+				);
 				let mut data = data.lock();
 				data.anchor_rect_pos = [x, y].into();
 				data.anchor_rect_size = [width as u32, height as u32].into();
 			}
 			xdg_positioner::Request::SetAnchor { anchor } => {
 				if let WEnum::Value(anchor) = anchor {
+					debug!(?positioner, ?anchor, "Set positioner anchor");
 					data.lock().anchor = anchor as u32;
 				}
 			}
 			xdg_positioner::Request::SetGravity { gravity } => {
 				if let WEnum::Value(gravity) = gravity {
+					debug!(?positioner, ?gravity, "Set positioner gravity");
 					data.lock().gravity = gravity as u32;
 				}
 			}
 			xdg_positioner::Request::SetConstraintAdjustment {
 				constraint_adjustment,
 			} => {
+				debug!(
+					?positioner,
+					constraint_adjustment, "Set positioner constraint adjustment"
+				);
 				data.lock().constraint_adjustment = constraint_adjustment;
 			}
 			xdg_positioner::Request::SetOffset { x, y } => {
+				debug!(?positioner, x, y, "Set positioner offset");
 				data.lock().offset = [x, y].into();
 			}
 			xdg_positioner::Request::SetReactive => {
+				debug!(?positioner, "Set positioner reactive");
 				data.lock().reactive = true;
 			}
 			xdg_positioner::Request::SetParentSize {
-				parent_width: _,
-				parent_height: _,
-			} => (),
-			xdg_positioner::Request::SetParentConfigure { serial: _ } => (),
+				parent_width,
+				parent_height,
+			} => {
+				debug!(
+					?positioner,
+					parent_width, parent_height, "Set positioner parent size"
+				);
+			}
+			xdg_positioner::Request::SetParentConfigure { serial } => {
+				debug!(?positioner, serial, "Set positioner parent size");
+			}
 			xdg_positioner::Request::Destroy => (),
 			_ => unreachable!(),
 		}
@@ -196,6 +228,7 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 						},
 					},
 				);
+				debug!(?toplevel, ?xdg_surface, "Create XDG toplevel");
 
 				if toplevel.version() >= EVT_WM_CAPABILITIES_SINCE {
 					toplevel.wm_capabilities(vec![]);
@@ -218,7 +251,9 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 				parent: _,
 				positioner: _,
 			} => {
-				data_init.init(id, ());
+				let popup = data_init.init(id, ());
+				debug!(?popup, ?xdg_surface, "Create XDG popup");
+				popup.popup_done(); // temporary hack to avoid apps locking up before popups are implemented
 			}
 			xdg_surface::Request::SetWindowGeometry {
 				x,
@@ -226,6 +261,10 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 				width,
 				height,
 			} => {
+				debug!(
+					?xdg_surface,
+					x, y, width, height, "Set XDG surface geometry"
+				);
 				let geometry = SurfaceGeometry {
 					origin: [x as u32, y as u32].into(),
 					size: [width as u32, height as u32].into(),
@@ -239,8 +278,12 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 					data.data_map.insert_if_missing_threadsafe(|| geometry);
 				});
 			}
-			xdg_surface::Request::AckConfigure { serial: _ } => (),
-			xdg_surface::Request::Destroy => (),
+			xdg_surface::Request::AckConfigure { serial } => {
+				debug!(?xdg_surface, serial, "Acknowledge XDG surface configure");
+			}
+			xdg_surface::Request::Destroy => {
+				debug!(?xdg_surface, "Destroy XDG surface");
+			}
 			_ => unreachable!(),
 		}
 	}
@@ -263,7 +306,7 @@ impl Dispatch<XdgToplevel, XdgToplevelData, WaylandState> for WaylandState {
 	fn request(
 		_state: &mut WaylandState,
 		_client: &Client,
-		_resource: &XdgToplevel,
+		xdg_toplevel: &XdgToplevel,
 		request: xdg_toplevel::Request,
 		data: &XdgToplevelData,
 		_dhandle: &DisplayHandle,
@@ -271,46 +314,63 @@ impl Dispatch<XdgToplevel, XdgToplevelData, WaylandState> for WaylandState {
 	) {
 		match request {
 			xdg_toplevel::Request::SetParent { parent } => {
+				debug!(?xdg_toplevel, ?parent, "Set XDG Toplevel parent");
 				let mut state = data.state.lock();
 				let queued_state = state.queued_state.as_mut().unwrap();
 				queued_state.parent = parent.map(|toplevel| toplevel.downgrade());
 			}
 			xdg_toplevel::Request::SetTitle { title } => {
+				debug!(?xdg_toplevel, ?title, "Set XDG Toplevel title");
 				let mut state = data.state.lock();
 				let queued_state = state.queued_state.as_mut().unwrap();
 				queued_state.title = (!title.is_empty()).then_some(title);
 			}
 			xdg_toplevel::Request::SetAppId { app_id } => {
+				debug!(?xdg_toplevel, ?app_id, "Set XDG Toplevel app ID");
 				let mut state = data.state.lock();
 				let queued_state = state.queued_state.as_mut().unwrap();
 				queued_state.app_id = (!app_id.is_empty()).then_some(app_id);
 			}
-			xdg_toplevel::Request::ShowWindowMenu {
-				seat: _,
-				serial: _,
-				x: _,
-				y: _,
-			} => (),
-			xdg_toplevel::Request::Move { seat: _, serial: _ } => {
+			xdg_toplevel::Request::ShowWindowMenu { seat, serial, x, y } => {
+				debug!(
+					?xdg_toplevel,
+					?seat,
+					serial,
+					x,
+					y,
+					"Show XDG Toplevel window menu"
+				);
+			}
+			xdg_toplevel::Request::Move { seat, serial } => {
+				debug!(?xdg_toplevel, ?seat, serial, "XDG Toplevel move request");
 				let Some(panel_item) = data.panel_item() else { return };
 				panel_item.recommend_toplevel_state(RecommendedState::Move);
 			}
 			xdg_toplevel::Request::Resize {
-				seat: _,
-				serial: _,
+				seat,
+				serial,
 				edges,
 			} => {
 				let WEnum::Value(edges) = edges else { return };
+				debug!(
+					?xdg_toplevel,
+					?seat,
+					serial,
+					?edges,
+					"XDG Toplevel resize request"
+				);
 				let Some(panel_item) = data.panel_item() else { return };
 				panel_item.recommend_toplevel_state(RecommendedState::Resize(edges as u32));
 			}
 			xdg_toplevel::Request::SetMaxSize { width, height } => {
+				debug!(?xdg_toplevel, width, height, "Set XDG Toplevel max size");
 				let mut state = data.state.lock();
 				let queued_state = state.queued_state.as_mut().unwrap();
 				queued_state.max_size = (width > 1 || height > 1)
 					.then_some(Vector2::from([width as u32, height as u32]));
 			}
 			xdg_toplevel::Request::SetMinSize { width, height } => {
+				debug!(?xdg_toplevel, width, height, "Set XDG Toplevel min size");
 				let mut state = data.state.lock();
 				let queued_state = state.queued_state.as_mut().unwrap();
 				queued_state.min_size = (width > 1 || height > 1)
@@ -337,6 +397,7 @@ impl Dispatch<XdgToplevel, XdgToplevelData, WaylandState> for WaylandState {
 				panel_item.recommend_toplevel_state(RecommendedState::Minimize);
 			}
 			xdg_toplevel::Request::Destroy => {
+				debug!(?xdg_toplevel, "Destroy XDG Toplevel");
 				let Some(panel_item) = data.panel_item() else { return };
 				panel_item.on_drop();
 			}
@@ -349,19 +410,24 @@ impl Dispatch<XdgPopup, (), WaylandState> for WaylandState {
 	fn request(
 		_state: &mut WaylandState,
 		_client: &Client,
-		_resource: &XdgPopup,
+		xdg_popup: &XdgPopup,
 		request: xdg_popup::Request,
 		_data: &(),
 		_dhandle: &DisplayHandle,
 		_data_init: &mut DataInit<'_, WaylandState>,
 	) {
 		match request {
-			xdg_popup::Request::Grab { seat: _, serial: _ } => (),
-			xdg_popup::Request::Reposition {
-				positioner: _,
-				token: _,
-			} => (),
-			xdg_popup::Request::Destroy => (),
+			xdg_popup::Request::Grab { seat, serial } => {
+				debug!(?xdg_popup, ?seat, serial, "XDG popup grab");
+				xdg_popup.popup_done(); // temporary hack to avoid apps locking up before popups are implemented
+			}
+			xdg_popup::Request::Reposition { positioner, token } => {
+				debug!(?xdg_popup, ?positioner, token, "XDG popup reposition");
+				xdg_popup.popup_done(); // temporary hack to avoid apps locking up before popups are implemented
+			}
+			xdg_popup::Request::Destroy => {
+				debug!(?xdg_popup, "Destroy XDG popup");
+			}
 			_ => unreachable!(),
 		}
 	}

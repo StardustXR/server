@@ -1,8 +1,6 @@
 use super::client::Client;
 use super::task;
 use color_eyre::eyre::Result;
-use once_cell::sync::OnceCell;
-use stardust_xr::server;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -12,20 +10,12 @@ use tokio::task::JoinHandle;
 pub static FRAME: AtomicU64 = AtomicU64::new(0);
 
 pub struct EventLoop {
-	pub socket_path: PathBuf,
-	join_handle: OnceCell<JoinHandle<()>>,
+	join_handle: JoinHandle<()>,
 }
 
 impl EventLoop {
-	pub fn new() -> Result<Arc<Self>> {
-		let socket_path = server::get_free_socket_path()
-			.ok_or_else(|| std::io::Error::from(std::io::ErrorKind::Other))?;
-		let socket = UnixListener::bind(socket_path.clone())?;
-
-		let event_loop = Arc::new(EventLoop {
-			socket_path,
-			join_handle: OnceCell::new(),
-		});
+	pub fn new(socket_path: PathBuf) -> Result<Arc<Self>> {
+		let socket = UnixListener::bind(socket_path)?;
 
 		let join_handle = task::new(|| "event loop", async move {
 			loop {
@@ -33,7 +23,7 @@ impl EventLoop {
 				Client::from_connection(socket);
 			}
 		})?;
-		let _ = event_loop.join_handle.set(join_handle);
+		let event_loop = Arc::new(EventLoop { join_handle });
 
 		Ok(event_loop)
 	}
@@ -41,8 +31,6 @@ impl EventLoop {
 
 impl Drop for EventLoop {
 	fn drop(&mut self) {
-		if let Some(join_handle) = self.join_handle.take() {
-			join_handle.abort();
-		}
+		self.join_handle.abort();
 	}
 }
