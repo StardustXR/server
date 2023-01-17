@@ -5,6 +5,7 @@ use smithay::{
 	wayland::compositor::{self, CompositorHandler, CompositorState},
 };
 use std::sync::Arc;
+use tracing::debug;
 
 impl CompositorHandler for WaylandState {
 	fn compositor_state(&mut self) -> &mut CompositorState {
@@ -12,6 +13,7 @@ impl CompositorHandler for WaylandState {
 	}
 
 	fn commit(&mut self, surface: &WlSurface) {
+		debug!(?surface, "Surface commit");
 		CoreSurface::add_to(&self.display, self.display_handle.clone(), surface);
 		if let Some(panel_item) = compositor::with_states(surface, |data| {
 			data.data_map.get::<Arc<PanelItem>>().cloned()

@@ -14,6 +14,9 @@ use self::core::eventloop::EventLoop;
 use clap::Parser;
 use color_eyre::eyre::Result;
 use directories::ProjectDirs;
+use stardust_xr::server;
+use std::path::PathBuf;
+use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
 use stereokit::input::Handed;
@@ -41,6 +44,11 @@ struct CliArgs {
 	/// Don't create a tip input for controller because SOME RUNTIMES will lie
 	#[clap(long, action)]
 	disable_controller: bool,
+}
+
+struct EventLoopInfo {
+	tokio_handle: Handle,
+	socket_path: PathBuf,
 }
 
 fn main() -> Result<()> {
@@ -121,15 +129,24 @@ fn main() -> Result<()> {
 	}
 
 	let (event_stop_tx, event_stop_rx) = oneshot::channel::<()>();
-	let (handle_sender, handle_receiver) = oneshot::channel::<Handle>();
+	let (info_sender, info_receiver) = oneshot::channel::<EventLoopInfo>();
 	let event_thread = std::thread::Builder::new()
 		.name("event_loop".to_owned())
-		.spawn(move || event_loop(handle_sender, event_stop_rx))?;
-	let _tokio_handle = handle_receiver.blocking_recv()?.enter();
+		.spawn(move || event_loop(info_sender, event_stop_rx))?;
+	let event_loop_info = info_receiver.blocking_recv()?;
+	let _tokio_handle = event_loop_info.tokio_handle.enter();
 
 	#[cfg(feature = "wayland")]
 	let mut wayland = wayland::Wayland::new()?;
 	info!("Stardust ready!");
+
+	let _startup = Command::new(project_dirs.config_dir().join("startup"))
+		.env("WAYLAND_DISPLAY", &wayland.socket_name)
+		.env(
+			"STARDUST_INSTANCE",
+			event_loop_info.socket_path.file_name().unwrap(),
+		)
+		.spawn();
 
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
@@ -202,18 +219,20 @@ fn main() -> Result<()> {
 // #[tokio::main]
 #[tokio::main(flavor = "current_thread")]
 async fn event_loop(
-	handle_sender: oneshot::Sender<Handle>,
+	info_sender: oneshot::Sender<EventLoopInfo>,
 	stop_rx: oneshot::Receiver<()>,
 ) -> color_eyre::eyre::Result<()> {
-	let _ = handle_sender.send(Handle::current());
-	// console_subscriber::init();
-
-	let event_loop = EventLoop::new().expect("Couldn't create server socket");
+	let socket_path = server::get_free_socket_path().unwrap();
+	let _event_loop = EventLoop::new(socket_path.clone()).expect("Couldn't create server socket");
 	info!("Init event loop");
 	info!(
-		"Stardust socket created at {}",
-		event_loop.socket_path.display()
+		socket_path = ?socket_path.display(),
+		"Stardust socket created"
 	);
+	let _ = info_sender.send(EventLoopInfo {
+		tokio_handle: Handle::current(),
+		socket_path,
+	});
 
 	let result = tokio::select! {
 		biased;
