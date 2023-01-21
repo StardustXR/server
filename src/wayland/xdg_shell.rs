@@ -238,6 +238,7 @@ impl Dispatch<XdgSurface, WaylandSurface, WaylandState> for WaylandState {
 
 				let (node, item) = PanelItem::create(
 					toplevel,
+					data.wl_surface.upgrade().unwrap(),
 					client.get_credentials(&state.display_handle).ok(),
 					state.seats.get(&client.id()).unwrap().clone(),
 				);

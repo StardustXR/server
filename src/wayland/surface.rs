@@ -174,21 +174,6 @@ impl CoreSurface {
 			if let Some(material_offset) = self.material_offset.lock().delta() {
 				sk_mat.set_queue_offset(sk, *material_offset as i32);
 			}
-			// if let Some(geometry) = self.geometry.lock().delta().cloned().unwrap_or_default() {
-			// 	let buffer_size = renderer_surface_state.buffer_size().unwrap();
-			// 	let surface_size = dbg!(vec2(buffer_size.w as f32, buffer_size.h as f32));
-			// 	let geometry_origin =
-			// 		dbg!(vec2(geometry.origin.x as f32, geometry.origin.y as f32));
-			// 	let geometry_size = dbg!(vec2(geometry.size.x as f32, geometry.size.y as f32));
-			// 	sk_mat.set_parameter(
-			// 		"uv_offset",
-			// 		&Vector2::from(dbg!(geometry_origin / surface_size)),
-			// 	);
-			// 	sk_mat.set_parameter(
-			// 		"uv_scale",
-			// 		&Vector2::from(dbg!(geometry_size / surface_size)),
-			// 	);
-			// }
 
 			let surface_size = renderer_surface_state.surface_size().unwrap();
 			let new_mapped_data = CoreSurfaceData {
@@ -196,7 +181,6 @@ impl CoreSurface {
 				wl_tex: Some(SendWrapper::new(smithay_tex)),
 			};
 			*mapped_data = Some(new_mapped_data);
-			// }
 		});
 		self.apply_surface_materials();
 
@@ -207,10 +191,6 @@ impl CoreSurface {
 			None,
 			|_, _| Some(output.clone()),
 		);
-	}
-
-	pub fn mapped(&self) -> bool {
-		self.mapped_data.lock().is_some()
 	}
 
 	pub fn set_material_offset(&self, material_offset: u32) {
@@ -248,11 +228,8 @@ impl CoreSurface {
 			.map(|wl_surface| compositor::with_states(&wl_surface, f))
 	}
 
-	pub fn with_data<F, T>(&self, f: F) -> Option<T>
-	where
-		F: FnOnce(&mut CoreSurfaceData) -> T,
-	{
-		self.mapped_data.lock().as_mut().map(f)
+	pub fn size(&self) -> Option<Vector2<u32>> {
+		self.mapped_data.lock().as_ref().map(|d| d.size)
 	}
 
 	pub fn flush_clients(&self) {
