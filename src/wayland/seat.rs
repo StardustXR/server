@@ -32,41 +32,11 @@ use smithay::{
 };
 use std::{
 	collections::VecDeque,
-	ops::Deref,
 	sync::{Arc, Weak},
 	time::{Duration, Instant},
 };
 use tracing::{debug, warn};
 use xkbcommon::xkb::{self, Keymap};
-
-#[derive(Clone)]
-pub struct SeatData(Arc<SeatDataInner>);
-impl SeatData {
-	pub fn new(dh: &DisplayHandle, client: ClientId) -> Self {
-		let seat_data = SeatData(Arc::new(SeatDataInner {
-			client,
-			global_id: OnceCell::new(),
-			panels: Mutex::new(FxHashMap::default()),
-			pointer: OnceCell::new(),
-			keyboard: OnceCell::new(),
-			touch: OnceCell::new(),
-		}));
-
-		seat_data
-			.global_id
-			.set(dh.create_global::<WaylandState, _, _>(7, seat_data.clone()))
-			.unwrap();
-
-		seat_data
-	}
-}
-impl Deref for SeatData {
-	type Target = SeatDataInner;
-
-	fn deref(&self) -> &Self::Target {
-		&self.0
-	}
-}
 
 pub struct KeyboardInfo {
 	keymap: KeymapFile,
@@ -160,7 +130,7 @@ impl PanelInfo {
 			keyboard_info: None,
 		}
 	}
-	pub fn set_pointer_active(&mut self, seat_data: &SeatDataInner, active: bool) {
+	pub fn set_pointer_active(&mut self, seat_data: &SeatData, active: bool) {
 		if active && self.pointer_queue.is_none() {
 			self.pointer_queue.replace(Default::default());
 		}
@@ -248,7 +218,7 @@ impl PanelInfo {
 
 		locked
 	}
-	pub fn set_keyboard_active(&mut self, seat_data: &SeatDataInner, active: bool) {
+	pub fn set_keyboard_active(&mut self, seat_data: &SeatData, active: bool) {
 		if active && self.keyboard_queue.is_none() {
 			self.keyboard_queue.replace(Default::default());
 		}
@@ -294,7 +264,7 @@ impl PanelInfo {
 	}
 }
 
-pub struct SeatDataInner {
+pub struct SeatData {
 	client: ClientId,
 	global_id: OnceCell<GlobalId>,
 	panels: Mutex<FxHashMap<ObjectId, PanelInfo>>,
@@ -302,7 +272,25 @@ pub struct SeatDataInner {
 	keyboard: OnceCell<(WlKeyboard, Mutex<Option<ObjectId>>)>,
 	touch: OnceCell<WlTouch>,
 }
-impl SeatDataInner {
+impl SeatData {
+	pub fn new(dh: &DisplayHandle, client: ClientId) -> Arc<Self> {
+		let seat_data = Arc::new(SeatData {
+			client,
+			global_id: OnceCell::new(),
+			panels: Mutex::new(FxHashMap::default()),
+			pointer: OnceCell::new(),
+			keyboard: OnceCell::new(),
+			touch: OnceCell::new(),
+		});
+
+		seat_data
+			.global_id
+			.set(dh.create_global::<WaylandState, _, _>(7, seat_data.clone()))
+			.unwrap();
+
+		seat_data
+	}
+
 	// pub fn set_focus(&self, toplevel: &WlSurface, focus: &WlSurface) {
 	// 	if let Some(panel_info) = self.panels.lock().get_mut(&toplevel.id()) {
 	// 		panel_info.focus = focus.downgrade();
@@ -445,7 +433,7 @@ impl SeatDataInner {
 		}
 	}
 }
-impl Drop for SeatDataInner {
+impl Drop for SeatData {
 	fn drop(&mut self) {
 		let id = self.global_id.take().unwrap();
 		let _ = task::new(|| "global destroy queue garbage collection", async move {
@@ -454,13 +442,13 @@ impl Drop for SeatDataInner {
 	}
 }
 
-impl GlobalDispatch<WlSeat, SeatData, WaylandState> for WaylandState {
+impl GlobalDispatch<WlSeat, Arc<SeatData>, WaylandState> for WaylandState {
 	fn bind(
 		_state: &mut WaylandState,
 		_handle: &DisplayHandle,
 		_client: &Client,
 		resource: New<WlSeat>,
-		data: &SeatData,
+		data: &Arc<SeatData>,
 		data_init: &mut DataInit<'_, WaylandState>,
 	) {
 		let resource = data_init.init(resource, data.clone());
@@ -472,33 +460,33 @@ impl GlobalDispatch<WlSeat, SeatData, WaylandState> for WaylandState {
 		resource.capabilities(Capability::Pointer | Capability::Keyboard);
 	}
 
-	fn can_view(client: Client, data: &SeatData) -> bool {
-		client.id() == data.0.client
+	fn can_view(client: Client, data: &Arc<SeatData>) -> bool {
+		client.id() == data.client
 	}
 }
 
-impl Dispatch<WlSeat, SeatData, WaylandState> for WaylandState {
+impl Dispatch<WlSeat, Arc<SeatData>, WaylandState> for WaylandState {
 	fn request(
 		_state: &mut WaylandState,
 		_client: &Client,
 		_resource: &WlSeat,
 		request: wl_seat::Request,
-		data: &SeatData,
+		data: &Arc<SeatData>,
 		_dh: &DisplayHandle,
 		data_init: &mut DataInit<'_, WaylandState>,
 	) {
 		match request {
 			wl_seat::Request::GetPointer { id } => {
 				let pointer = data_init.init(id, data.clone());
-				let _ = data.0.pointer.set((pointer, Mutex::new(None)));
+				let _ = data.pointer.set((pointer, Mutex::new(None)));
 			}
 			wl_seat::Request::GetKeyboard { id } => {
 				let keyboard = data_init.init(id, data.clone());
 				keyboard.repeat_info(0, 0);
-				let _ = data.0.keyboard.set((keyboard, Mutex::new(None)));
+				let _ = data.keyboard.set((keyboard, Mutex::new(None)));
 			}
 			wl_seat::Request::GetTouch { id } => {
-				let _ = data.0.touch.set(data_init.init(id, data.clone()));
+				let _ = data.touch.set(data_init.init(id, data.clone()));
 			}
 			wl_seat::Request::Release => (),
 			_ => unreachable!(),
@@ -509,13 +497,13 @@ impl Dispatch<WlSeat, SeatData, WaylandState> for WaylandState {
 pub struct Cursor {
 	pub hotspot: Vector2<i32>,
 }
-impl Dispatch<WlPointer, SeatData, WaylandState> for WaylandState {
+impl Dispatch<WlPointer, Arc<SeatData>, WaylandState> for WaylandState {
 	fn request(
 		state: &mut WaylandState,
 		_client: &Client,
 		_resource: &WlPointer,
 		request: wl_pointer::Request,
-		seat_data: &SeatData,
+		seat_data: &Arc<SeatData>,
 		dh: &DisplayHandle,
 		_data_init: &mut DataInit<'_, WaylandState>,
 	) {
@@ -557,13 +545,13 @@ impl Dispatch<WlPointer, SeatData, WaylandState> for WaylandState {
 	}
 }
 
-impl Dispatch<WlKeyboard, SeatData, WaylandState> for WaylandState {
+impl Dispatch<WlKeyboard, Arc<SeatData>, WaylandState> for WaylandState {
 	fn request(
 		_state: &mut WaylandState,
 		_client: &Client,
 		_resource: &WlKeyboard,
 		request: <WlKeyboard as Resource>::Request,
-		_data: &SeatData,
+		_data: &Arc<SeatData>,
 		_dh: &DisplayHandle,
 		_data_init: &mut DataInit<'_, WaylandState>,
 	) {
@@ -574,13 +562,13 @@ impl Dispatch<WlKeyboard, SeatData, WaylandState> for WaylandState {
 	}
 }
 
-impl Dispatch<WlTouch, SeatData, WaylandState> for WaylandState {
+impl Dispatch<WlTouch, Arc<SeatData>, WaylandState> for WaylandState {
 	fn request(
 		_state: &mut WaylandState,
 		_client: &Client,
 		_resource: &WlTouch,
 		request: <WlTouch as Resource>::Request,
-		_data: &SeatData,
+		_data: &Arc<SeatData>,
 		_dh: &DisplayHandle,
 		_data_init: &mut DataInit<'_, WaylandState>,
 	) {
