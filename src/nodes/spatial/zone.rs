@@ -28,7 +28,7 @@ pub fn capture(spatial: &Arc<Spatial>, zone: &Arc<Zone>) {
 		.unwrap_or(f32::MAX);
 	if new_distance.abs() < old_distance.abs() {
 		release(spatial);
-		*spatial.old_parent.lock() = spatial.parent.lock().clone();
+		*spatial.old_parent.lock() = spatial.get_parent();
 		*spatial.zone.lock() = Arc::downgrade(zone);
 		zone.captured.add_raw(spatial);
 		let node = zone.spatial.node.upgrade().unwrap();
@@ -36,7 +36,7 @@ pub fn capture(spatial: &Arc<Spatial>, zone: &Arc<Zone>) {
 	}
 }
 pub fn release(spatial: &Spatial) {
-	let _ = spatial.set_spatial_parent_in_place(spatial.old_parent.lock().take().as_ref());
+	let _ = spatial.set_spatial_parent_in_place(spatial.old_parent.lock().take());
 	let mut spatial_zone = spatial.zone.lock();
 	if let Some(spatial_zone) = spatial_zone.upgrade() {
 		let node = spatial_zone.spatial.node.upgrade().unwrap();
