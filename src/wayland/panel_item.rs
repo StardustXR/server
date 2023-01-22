@@ -327,18 +327,18 @@ impl PanelItem {
 
 		#[derive(Debug, Deserialize)]
 		struct PointerScrollArgs {
-			axis_continuous: Vector2<f32>,
+			axis_continuous: Option<Vector2<f32>>,
 			axis_discrete: Option<Vector2<f32>>,
 		}
-		let args: Option<PointerScrollArgs> = deserialize(data)?;
+		let args: PointerScrollArgs = deserialize(data)?;
 
 		debug!(?args, "Pointer scroll");
 
 		panel_item.seat_data.pointer_event(
 			&toplevel,
 			PointerEvent::Scroll {
-				axis_continuous: args.as_ref().map(|a| a.axis_continuous),
-				axis_discrete: args.and_then(|a| a.axis_discrete),
+				axis_continuous: args.axis_continuous,
+				axis_discrete: args.axis_discrete,
 			},
 		);
 		panel_item.flush_clients();
