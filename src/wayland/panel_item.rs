@@ -505,8 +505,7 @@ impl PanelItem {
 		let Some(state) = self.toplevel_state() else { return };
 		let mut state = state.lock();
 		let mut queued_state = state.queued_state.take().unwrap();
-		queued_state.mapped =
-			mapped_size.is_some() && mapped_size.unwrap().x > 0 && mapped_size.unwrap().y > 0;
+		queued_state.mapped = mapped_size.is_some();
 		if let Some(size) = mapped_size {
 			queued_state.size = size;
 		}
@@ -568,9 +567,10 @@ impl ItemSpecialization for PanelItem {
 
 		let toplevel_state = self.toplevel_state();
 		let toplevel_state = toplevel_state.as_ref().map(|state| state.lock());
-		let toplevel_state = toplevel_state.and_then(|state| {
-			(state.mapped && state.size.x > 0 && state.size.y > 0).then_some(state.clone())
-		});
+		let toplevel_state = toplevel_state
+			.as_ref()
+			.and_then(|state| state.mapped.then_some(&**state));
+
 		serialize((id, (toplevel_state, cursor_size.zip(cursor_hotspot)))).unwrap()
 	}
 }
