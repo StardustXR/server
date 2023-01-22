@@ -96,9 +96,23 @@ impl Spatial {
 		reference_space: Option<&Spatial>,
 		transform: Transform,
 	) {
+		if reference_space == Some(self) {
+			self.set_local_transform(
+				self.local_transform()
+					* Mat4::from_scale_rotation_translation(
+						transform.scale.map(|s| s.into()).unwrap_or_default(),
+						transform.rotation.map(|r| r.into()).unwrap_or_default(),
+						transform.position.map(|t| t.into()).unwrap_or_default(),
+					),
+			);
+			return;
+		}
 		let reference_to_parent_transform = reference_space
 			.map(|reference_space| {
-				Spatial::space_to_space_matrix(Some(reference_space), self.parent.lock().as_deref())
+				Spatial::space_to_space_matrix(
+					Some(reference_space),
+					self.parent.lock().clone().as_deref(),
+				)
 			})
 			.unwrap_or(Mat4::IDENTITY);
 		let mut local_transform_in_reference_space =
