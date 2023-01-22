@@ -61,7 +61,7 @@ pub struct WaylandState {
 	pub dmabuf_global: DmabufGlobal,
 	pub pending_dmabufs: Vec<Dmabuf>,
 	pub output: Output,
-	pub seats: FxHashMap<ClientId, SeatData>,
+	pub seats: FxHashMap<ClientId, Arc<SeatData>>,
 }
 
 impl WaylandState {

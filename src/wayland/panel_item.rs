@@ -111,14 +111,14 @@ pub struct PanelItem {
 	client_credentials: Option<Credentials>,
 	toplevel: WlWeak<XdgToplevel>,
 	pub cursor: Mutex<Option<WlWeak<WlSurface>>>,
-	seat_data: SeatData,
+	seat_data: Arc<SeatData>,
 }
 impl PanelItem {
 	pub fn create(
 		toplevel: XdgToplevel,
 		wl_surface: WlSurface,
 		client_credentials: Option<Credentials>,
-		seat_data: SeatData,
+		seat_data: Arc<SeatData>,
 	) -> (Arc<Node>, Arc<PanelItem>) {
 		debug!(?toplevel, ?client_credentials, "Create panel item");
 		let node = Arc::new(Node::create(
