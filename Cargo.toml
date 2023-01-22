@@ -10,27 +10,26 @@ homepage = "https://stardustxr.org"
 
 [dependencies]
 color-eyre = { version = "0.6.2", default-features = false }
-clap = { version = "4.0.8", features = ["derive"] }
-dashmap = "5.3.4"
+clap = { version = "4.1.1", features = ["derive"] }
+dashmap = "5.4.0"
 flatbuffers = "22.9.29"
 flexbuffers = "2.0.0"
 glam = {version = "0.22.0", features = ["mint"]}
 lazy_static = "1.4.0"
 mint = "0.5.9"
 nanoid = "0.4.0"
-once_cell = "1.12.0"
+once_cell = "1.17.0"
 parking_lot = "0.12.1"
-portable-atomic = {version = "1.0.0", features = ["float", "std"]}
+portable-atomic = {version = "1.0.1", features = ["float", "std"]}
 rustc-hash = "1.1.0"
-slab = "0.4.6"
 tokio = { version = "1", features = ["rt", "signal"] }
 send_wrapper = "0.6.0"
 prisma = "0.1.1"
 slog = "2.7.0"
 xkbcommon = { version = "0.5.0", default-features = false, optional = true }
-stardust-xr = "0.10.4"
+stardust-xr = "0.10.5"
 directories = "4.0.1"
-serde = { version = "1.0.145", features = ["derive"] }
+serde = { version = "1.0.152", features = ["derive"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 tracing-slog = "0.2.0"
@@ -67,3 +66,5 @@ profile_app = ["dep:tracing-chrome"]
 # path = "../stereokit-rs"
 # [patch.crates-io.stereokit-sys]
 # path = "../stereokit-sys"
+# [patch.crates-io.stardust-xr]
+# path = "../core/core"
