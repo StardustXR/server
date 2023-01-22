@@ -81,7 +81,7 @@ impl Spatial {
 		*self.transform.lock()
 	}
 	pub fn global_transform(&self) -> Mat4 {
-		match self.parent.lock().clone() {
+		match self.get_parent() {
 			Some(value) => value.global_transform() * *self.transform.lock(),
 			None => *self.transform.lock(),
 		}
@@ -109,10 +109,7 @@ impl Spatial {
 		}
 		let reference_to_parent_transform = reference_space
 			.map(|reference_space| {
-				Spatial::space_to_space_matrix(
-					Some(reference_space),
-					self.parent.lock().clone().as_deref(),
-				)
+				Spatial::space_to_space_matrix(Some(reference_space), self.get_parent().as_deref())
 			})
 			.unwrap_or(Mat4::IDENTITY);
 		let mut local_transform_in_reference_space =
@@ -150,8 +147,7 @@ impl Spatial {
 				return true;
 			}
 
-			let current_ancestor_parent = current_ancestor.parent.lock().clone();
-			if let Some(parent) = current_ancestor_parent {
+			if let Some(parent) = current_ancestor.get_parent() {
 				current_ancestor = parent;
 			} else {
 				return false;
@@ -159,23 +155,26 @@ impl Spatial {
 		}
 	}
 
-	fn set_parent(&self, new_parent: Option<&Arc<Spatial>>) {
-		let mut parent = self.parent.lock();
-		if let Some(parent) = &*parent {
+	fn get_parent(&self) -> Option<Arc<Spatial>> {
+		self.parent.lock().clone()
+	}
+	fn set_parent(&self, new_parent: Option<Arc<Spatial>>) {
+		if let Some(parent) = self.get_parent() {
 			parent.children.remove(self);
 		}
-		if let Some(new_parent) = new_parent {
+		if let Some(new_parent) = &new_parent {
 			new_parent
 				.children
 				.add_raw(&self.self_ref.upgrade().unwrap());
 		}
 
-		*parent = new_parent.cloned();
+		*self.parent.lock() = new_parent;
 	}
 
 	#[instrument(level = "debug", skip_all)]
-	pub fn set_spatial_parent(&self, parent: Option<&Arc<Spatial>>) -> Result<()> {
+	pub fn set_spatial_parent(&self, parent: Option<Arc<Spatial>>) -> Result<()> {
 		let is_ancestor = parent
+			.as_ref()
 			.map(|parent| self.is_ancestor_of(parent.clone()))
 			.unwrap_or(false);
 		if is_ancestor {
@@ -187,8 +186,9 @@ impl Spatial {
 	}
 
 	#[instrument(level = "debug", skip_all)]
-	pub fn set_spatial_parent_in_place(&self, parent: Option<&Arc<Spatial>>) -> Result<()> {
+	pub fn set_spatial_parent_in_place(&self, parent: Option<Arc<Spatial>>) -> Result<()> {
 		let is_ancestor = parent
+			.as_ref()
 			.map(|parent| self.is_ancestor_of(parent.clone()))
 			.unwrap_or(false);
 		if is_ancestor {
@@ -197,7 +197,7 @@ impl Spatial {
 
 		self.set_local_transform(Spatial::space_to_space_matrix(
 			Some(self),
-			parent.cloned().as_deref(),
+			parent.as_deref(),
 		));
 		self.set_parent(parent);
 
@@ -252,10 +252,7 @@ impl Spatial {
 		data: &[u8],
 	) -> Result<()> {
 		let parent = find_spatial_parent(&calling_client, deserialize(data)?)?;
-		node.spatial
-			.get()
-			.unwrap()
-			.set_spatial_parent(Some(&parent))
+		node.spatial.get().unwrap().set_spatial_parent(Some(parent))
 	}
 	pub fn set_spatial_parent_in_place_flex(
 		node: &Node,
@@ -266,7 +263,7 @@ impl Spatial {
 		node.spatial
 			.get()
 			.unwrap()
-			.set_spatial_parent_in_place(Some(&parent))?;
+			.set_spatial_parent_in_place(Some(parent))?;
 		Ok(())
 	}
 	pub fn set_zoneable(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
