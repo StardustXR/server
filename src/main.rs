@@ -217,7 +217,7 @@ fn main() -> Result<()> {
 }
 
 // #[tokio::main]
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn event_loop(
 	info_sender: oneshot::Sender<EventLoopInfo>,
 	stop_rx: oneshot::Receiver<()>,
