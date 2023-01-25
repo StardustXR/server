@@ -81,7 +81,7 @@ pub fn create_torus_field_flex(
 	let node = Node::create(&calling_client, "/field", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
-	let node = node.add_to_scenegraph();
+	let node = node.add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	TorusField::add_to(&node, info.radius_a, info.radius_b)?;
 	Ok(())

@@ -122,7 +122,8 @@ impl Zone {
 						local_methods: vec!["get_transform"],
 						..Default::default()
 					},
-				)?;
+				)
+				.ok()?;
 				Some((zoneable.uid.clone(), alias))
 			})
 			.collect::<FxHashMap<String, Arc<Node>>>();
@@ -160,7 +161,8 @@ pub fn create_zone_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) 
 	let transform = parse_transform(info.transform, true, true, false);
 	let field = find_field(&calling_client, info.field_path)?;
 
-	let node = Node::create(&calling_client, "/spatial/zone", info.name, true).add_to_scenegraph();
+	let node =
+		Node::create(&calling_client, "/spatial/zone", info.name, true).add_to_scenegraph()?;
 	let space = Spatial::add_to(&node, Some(parent), transform, false)?;
 	Zone::add_to(&node, space, &field);
 	Ok(())

@@ -217,13 +217,13 @@ impl Deref for Field {
 	}
 }
 
-pub fn create_interface(client: &Arc<Client>) {
+pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	let node = Node::create(client, "", "field", false);
 	node.add_local_signal("create_box_field", create_box_field_flex);
 	node.add_local_signal("create_cylinder_field", create_cylinder_field_flex);
 	node.add_local_signal("create_sphere_field", create_sphere_field_flex);
 	node.add_local_signal("create_torus_field", create_torus_field_flex);
-	node.add_to_scenegraph();
+	node.add_to_scenegraph().map(|_| ())
 }
 
 pub fn find_field(client: &Client, path: &str) -> Result<Arc<Field>> {

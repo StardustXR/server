@@ -192,7 +192,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 	let transform = parse_transform(info.transform, true, true, true);
 	let color = Rgba::from_slice(&info.color);
 
-	let node = node.add_to_scenegraph();
+	let node = node.add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	Text::add_to(
 		&node,

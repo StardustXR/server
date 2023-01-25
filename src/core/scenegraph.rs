@@ -18,8 +18,8 @@ pub struct Scenegraph {
 }
 
 impl Scenegraph {
-	pub fn get_client(&self) -> Arc<Client> {
-		self.client.get().unwrap().upgrade().unwrap()
+	pub fn get_client(&self) -> Option<Arc<Client>> {
+		self.client.get()?.upgrade()
 	}
 
 	pub fn add_node(&self, node: Node) -> Arc<Node> {
@@ -51,10 +51,11 @@ impl Scenegraph {
 
 impl scenegraph::Scenegraph for Scenegraph {
 	fn send_signal(&self, path: &str, method: &str, data: &[u8]) -> Result<(), ScenegraphError> {
+		let Some(client) = self.get_client() else {return Err(ScenegraphError::SignalNotFound)};
 		debug_span!("Handle signal", path, method).in_scope(|| {
 			self.get_node(path)
 				.ok_or(ScenegraphError::NodeNotFound)?
-				.send_local_signal(self.get_client(), method, data)
+				.send_local_signal(client, method, data)
 		})
 	}
 	fn execute_method(
@@ -63,10 +64,11 @@ impl scenegraph::Scenegraph for Scenegraph {
 		method: &str,
 		data: &[u8],
 	) -> Result<Vec<u8>, ScenegraphError> {
+		let Some(client) = self.get_client() else {return Err(ScenegraphError::MethodNotFound)};
 		debug_span!("Handle method", path, method).in_scope(|| {
 			self.get_node(path)
 				.ok_or(ScenegraphError::NodeNotFound)?
-				.execute_local_method(self.get_client(), method, data)
+				.execute_local_method(client, method, data)
 		})
 	}
 }

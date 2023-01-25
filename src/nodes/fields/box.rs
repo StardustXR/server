@@ -75,7 +75,7 @@ pub fn create_box_field_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 	let node = Node::create(&calling_client, "/field", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
-	let node = node.add_to_scenegraph();
+	let node = node.add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	BoxField::add_to(&node, info.size)?;
 	Ok(())

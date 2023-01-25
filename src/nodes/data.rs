@@ -69,9 +69,8 @@ impl PulseSender {
 			aliases: LifeLinkedNodeMap::default(),
 		};
 		let sender = PULSE_SENDER_REGISTRY.add(sender);
-		let _ = node.pulse_sender.set(sender);
+		let _ = node.pulse_sender.set(sender.clone());
 		node.add_local_signal("send_data", PulseSender::send_data_flex);
-		let sender = node.pulse_sender.get().unwrap();
 		for receiver in PULSE_RECEIVER_REGISTRY.get_valid_contents() {
 			sender.handle_new_receiver(&receiver);
 		}
@@ -95,7 +94,7 @@ impl PulseSender {
 				..Default::default()
 			},
 		);
-		if let Some(rx_alias) = rx_alias {
+		if let Ok(rx_alias) = rx_alias {
 			self.aliases.add(receiver.uid.clone(), &rx_alias);
 
 			if let Some(rx_field_node) = receiver.field.spatial_ref().node.upgrade() {
@@ -110,7 +109,7 @@ impl PulseSender {
 						..Default::default()
 					},
 				);
-				if let Some(rx_field_alias) = rx_field_alias {
+				if let Ok(rx_field_alias) = rx_field_alias {
 					self.aliases
 						.add(receiver.uid.clone() + "-field", &rx_field_alias);
 				}
@@ -140,15 +139,16 @@ impl PulseSender {
 			rotation: rotation.into(),
 		};
 
-		let _ = tx_node.send_remote_signal("new_receiver", &serialize(info).unwrap());
+		let Ok(data) = serialize(info) else {return};
+		let _ = tx_node.send_remote_signal("new_receiver", &data);
 	}
 
 	fn handle_drop_receiver(&self, uid: String) {
-		if let Some(tx_node) = self.node.upgrade() {
-			let _ = tx_node.send_remote_signal("drop_receiver", &serialize(&uid).unwrap());
-		}
 		self.aliases.remove(&uid);
-		self.aliases.remove(&(uid + "-field"));
+		self.aliases.remove(&(uid.clone() + "-field"));
+		let Some(tx_node) = self.node.upgrade() else {return};
+		let Ok(data) = serialize(&uid) else {return};
+		let _ = tx_node.send_remote_signal("drop_receiver", &data);
 	}
 
 	fn send_data_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
@@ -222,11 +222,11 @@ impl Drop for PulseReceiver {
 	}
 }
 
-pub fn create_interface(client: &Arc<Client>) {
+pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	let node = Node::create(client, "", "data", false);
 	node.add_local_signal("create_pulse_sender", create_pulse_sender_flex);
 	node.add_local_signal("create_pulse_receiver", create_pulse_receiver_flex);
-	node.add_to_scenegraph();
+	node.add_to_scenegraph().map(|_| ())
 }
 
 pub fn create_pulse_sender_flex(
@@ -249,7 +249,7 @@ pub fn create_pulse_sender_flex(
 	let mask = Mask(info.mask);
 	mask.get_mask()?;
 
-	let node = node.add_to_scenegraph();
+	let node = node.add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	PulseSender::add_to(&node, mask)?;
 	Ok(())
@@ -276,7 +276,7 @@ pub fn create_pulse_receiver_flex(
 	let mask = Mask(info.mask);
 	mask.get_mask()?;
 
-	let node = node.add_to_scenegraph();
+	let node = node.add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	PulseReceiver::add_to(&node, field, mask)?;
 	Ok(())

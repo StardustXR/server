@@ -66,7 +66,7 @@ pub struct Client {
 	pub startup_settings: Option<StartupSettings>,
 }
 impl Client {
-	pub fn from_connection(connection: UnixStream) -> Arc<Self> {
+	pub fn from_connection(connection: UnixStream) -> Result<Arc<Self>> {
 		let pid = connection.peer_cred().ok().and_then(|c| c.pid());
 		let env = pid.and_then(|pid| get_env(pid).ok());
 		let exe = pid.and_then(|pid| fs::read_link(format!("/proc/{}/exe", pid)).ok());
@@ -98,15 +98,15 @@ impl Client {
 			startup_settings,
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
-		let _ = client.root.set(Root::create(&client));
-		hmd::make_alias(&client);
-		spatial::create_interface(&client);
-		fields::create_interface(&client);
-		drawable::create_interface(&client);
-		data::create_interface(&client);
-		items::create_interface(&client);
-		input::create_interface(&client);
-		startup::create_interface(&client);
+		let _ = client.root.set(Root::create(&client)?);
+		hmd::make_alias(&client)?;
+		spatial::create_interface(&client)?;
+		fields::create_interface(&client)?;
+		drawable::create_interface(&client)?;
+		data::create_interface(&client)?;
+		items::create_interface(&client)?;
+		input::create_interface(&client)?;
+		startup::create_interface(&client)?;
 
 		let pid_printable = pid
 			.map(|pid| pid.to_string())
@@ -160,7 +160,7 @@ impl Client {
 			)
 		});
 
-		client
+		Ok(client)
 	}
 
 	#[inline]

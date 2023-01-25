@@ -3,6 +3,7 @@ use crate::{
 	core::client::{Client, INTERNAL_CLIENT},
 	nodes::alias::AliasInfo,
 };
+use color_eyre::eyre::Result;
 use glam::{vec3, Mat4};
 use std::sync::Arc;
 use stereokit::input::StereoKitInput;
@@ -14,14 +15,17 @@ lazy_static::lazy_static! {
 
 fn create() -> Arc<Node> {
 	let node = Arc::new(Node::create(&INTERNAL_CLIENT, "", "hmd", false));
-	Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
+	Spatial::add_to(&node, None, Mat4::IDENTITY, false).expect("Unable to make spatial for HMD");
 
 	node
 }
 
 #[instrument(level = "debug", name = "Update HMD Pose", skip(sk))]
 pub fn frame(sk: &impl StereoKitInput) {
-	let spatial = HMD.spatial.get().unwrap();
+	let spatial = HMD
+		.spatial
+		.get()
+		.expect("Unable to get spatial to update HMD");
 	let hmd_pose = sk.input_head();
 	*spatial.transform.lock() = Mat4::from_scale_rotation_translation(
 		vec3(1.0, 1.0, 1.0),
@@ -30,7 +34,7 @@ pub fn frame(sk: &impl StereoKitInput) {
 	);
 }
 
-pub fn make_alias(client: &Arc<Client>) -> Option<Arc<Node>> {
+pub fn make_alias(client: &Arc<Client>) -> Result<Arc<Node>> {
 	Alias::create(
 		client,
 		"",

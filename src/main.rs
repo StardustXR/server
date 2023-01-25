@@ -27,7 +27,7 @@ use stereokit::render::StereoKitRender;
 use stereokit::texture::Texture;
 use stereokit::time::StereoKitTime;
 use tokio::{runtime::Handle, sync::oneshot};
-use tracing::{debug_span, info};
+use tracing::{debug_span, error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 #[derive(Parser)]
@@ -71,7 +71,10 @@ fn main() -> Result<()> {
 		.with_filter(EnvFilter::from_default_env());
 	registry.with(log_layer).init();
 
-	let project_dirs = ProjectDirs::from("", "", "stardust").unwrap();
+	let project_dirs = ProjectDirs::from("", "", "stardust");
+	if project_dirs.is_none() {
+		error!("Unable to get Stardust project directories, default skybox and startup script will not work.");
+	}
 	let cli_args = Arc::new(CliArgs::parse());
 
 	let stereokit = stereokit::Settings::default()
@@ -92,10 +95,14 @@ fn main() -> Result<()> {
 
 	// Skytex/light stuff
 	{
-		let skytex_path = project_dirs.config_dir().join("skytex.hdr");
-		if let Some((tex, light)) = skytex_path
-			.exists()
-			.then(|| Texture::from_cubemap_equirectangular(&stereokit, &skytex_path, true, 100))
+		if let Some((tex, light)) = project_dirs
+			.as_ref()
+			.and_then(|dirs| {
+				let skytex_path = dirs.config_dir().join("skytex.hdr");
+				skytex_path.exists().then(|| {
+					Texture::from_cubemap_equirectangular(&stereokit, &skytex_path, true, 100)
+				})
+			})
 			.flatten()
 		{
 			stereokit.set_skytex(&tex);
@@ -111,7 +118,7 @@ fn main() -> Result<()> {
 		}
 	}
 
-	let mouse_pointer = cli_args.flatscreen.then(MousePointer::new);
+	let mouse_pointer = cli_args.flatscreen.then(MousePointer::new).transpose()?;
 	let mut hands =
 		(!cli_args.flatscreen).then(|| (SkHand::new(Handed::Left), SkHand::new(Handed::Right)));
 	let mut controllers = (!cli_args.flatscreen && !cli_args.disable_controller).then(|| {
@@ -140,13 +147,18 @@ fn main() -> Result<()> {
 	let mut wayland = wayland::Wayland::new()?;
 	info!("Stardust ready!");
 
-	let _startup = Command::new(project_dirs.config_dir().join("startup"))
-		.env("WAYLAND_DISPLAY", &wayland.socket_name)
-		.env(
-			"STARDUST_INSTANCE",
-			event_loop_info.socket_path.file_name().unwrap(),
-		)
-		.spawn();
+	if let Some(project_dirs) = project_dirs.as_ref() {
+		let _startup = Command::new(project_dirs.config_dir().join("startup"))
+			.env("WAYLAND_DISPLAY", &wayland.socket_name)
+			.env(
+				"STARDUST_INSTANCE",
+				event_loop_info
+					.socket_path
+					.file_name()
+					.expect("Stardust socket path not found"),
+			)
+			.spawn();
+	}
 
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
@@ -222,7 +234,8 @@ async fn event_loop(
 	info_sender: oneshot::Sender<EventLoopInfo>,
 	stop_rx: oneshot::Receiver<()>,
 ) -> color_eyre::eyre::Result<()> {
-	let socket_path = server::get_free_socket_path().unwrap();
+	let socket_path =
+		server::get_free_socket_path().expect("Unable to find a free stardust socket path");
 	let _event_loop = EventLoop::new(socket_path.clone()).expect("Couldn't create server socket");
 	info!("Init event loop");
 	info!(
