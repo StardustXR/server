@@ -310,12 +310,7 @@ impl Drop for Spatial {
 	}
 }
 
-pub fn parse_transform(
-	transform: Transform,
-	position: bool,
-	rotation: bool,
-	scale: bool,
-) -> Result<Mat4> {
+pub fn parse_transform(transform: Transform, position: bool, rotation: bool, scale: bool) -> Mat4 {
 	let position = position
 		.then_some(transform.position)
 		.flatten()
@@ -329,11 +324,7 @@ pub fn parse_transform(
 		.flatten()
 		.unwrap_or_else(|| Vector3::from([1.0; 3]));
 
-	Ok(Mat4::from_scale_rotation_translation(
-		scale.into(),
-		rotation.into(),
-		position.into(),
-	))
+	Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
 }
 
 pub fn find_spatial(
@@ -377,7 +368,7 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8
 	let info: CreateSpatialInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/spatial/spatial", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, true)?;
+	let transform = parse_transform(info.transform, true, true, true);
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform, info.zoneable)?;
 	Ok(())

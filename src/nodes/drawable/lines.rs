@@ -122,7 +122,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 	let mut info: CreateTextInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/drawable/lines", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, true)?;
+	let transform = parse_transform(info.transform, true, true, true);
 
 	for p in &mut info.points {
 		p.color[0] = p.color[0].powf(2.2);

@@ -247,7 +247,7 @@ pub fn create_input_handler_flex(
 	}
 	let info: CreateInputHandlerInfo = deserialize(data)?;
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, true)?;
+	let transform = parse_transform(info.transform, true, true, true);
 	let field = find_field(&calling_client, info.field_path)?;
 
 	let node = Node::create(&calling_client, "/input/handler", info.name, true).add_to_scenegraph();

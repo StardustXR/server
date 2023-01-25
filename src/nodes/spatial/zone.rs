@@ -157,7 +157,7 @@ pub fn create_zone_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) 
 	}
 	let info: CreateZoneInfo = deserialize(data)?;
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, false)?;
+	let transform = parse_transform(info.transform, true, true, false);
 	let field = find_field(&calling_client, info.field_path)?;
 
 	let node = Node::create(&calling_client, "/spatial/zone", info.name, true).add_to_scenegraph();

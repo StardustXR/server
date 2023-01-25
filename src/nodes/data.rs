@@ -244,7 +244,7 @@ pub fn create_pulse_sender_flex(
 	let info: CreatePulseSenderInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/data/sender", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, false)?;
+	let transform = parse_transform(info.transform, true, true, false);
 
 	let mask = Mask(info.mask);
 	mask.get_mask()?;
@@ -271,7 +271,7 @@ pub fn create_pulse_receiver_flex(
 	let info: CreatePulseReceiverInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/data/receiver", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, false)?;
+	let transform = parse_transform(info.transform, true, true, false);
 	let field = find_field(&calling_client, info.field_path)?;
 	let mask = Mask(info.mask);
 	mask.get_mask()?;
