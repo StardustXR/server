@@ -118,7 +118,7 @@ pub struct Model {
 	space: Arc<Spatial>,
 	resource_id: ResourceID,
 	pending_model_path: OnceCell<PathBuf>,
-	pending_material_parameters: Mutex<FxHashMap<(u32, String), MaterialParameter>>,
+	pending_material_parameters: Mutex<FxHashMap<(i32, String), MaterialParameter>>,
 	pub pending_material_replacements: Mutex<FxHashMap<u32, Arc<SendWrapper<Material>>>>,
 	sk_model: OnceCell<SendWrapper<SKModel>>,
 }
@@ -179,7 +179,7 @@ impl Model {
 			.unwrap()
 			.pending_material_parameters
 			.lock()
-			.insert((info.idx, info.name), info.value);
+			.insert((info.idx as i32, info.name), info.value);
 
 		Ok(())
 	}
@@ -204,22 +204,20 @@ impl Model {
 				material_replacements.clear();
 			}
 
-			{
+			if let Some(client) = self.space.node.upgrade().and_then(|n| n.client.upgrade()) {
 				let mut material_parameters = self.pending_material_parameters.lock();
-				for ((material_idx, parameter_name), parameter_value) in material_parameters.iter()
+				for ((material_idx, parameter_name), parameter_value) in material_parameters.drain()
 				{
-					if let Some(material) = sk_model.get_material(sk, *material_idx as i32) {
-						let new_material = material.clone();
-						parameter_value.apply_to_material(
-							&self.space.node.upgrade().unwrap().client.upgrade().unwrap(), // TODO: don't unwrap
-							sk,
-							&new_material,
-							parameter_name.as_str(),
-						);
-						sk_model.set_material(sk, *material_idx as i32, &new_material);
-					}
+					let Some(material) = sk_model.get_material(sk, material_idx) else {continue};
+					let new_material = material.clone();
+					parameter_value.apply_to_material(
+						&client,
+						sk,
+						&new_material,
+						parameter_name.as_str(),
+					);
+					sk_model.set_material(sk, material_idx, &new_material);
 				}
-				material_parameters.clear();
 			}
 
 			let global_transform = self.space.global_transform().into();
@@ -254,7 +252,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 	let node = Node::create(&calling_client, "/drawable/model", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);
-	let node = node.add_to_scenegraph();
+	let node = node.add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	Model::add_to(&node, info.resource)?;
 	Ok(())

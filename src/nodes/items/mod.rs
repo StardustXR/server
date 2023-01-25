@@ -18,7 +18,6 @@ use parking_lot::Mutex;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use stardust_xr::values::Transform;
-
 use std::hash::Hash;
 use std::ops::Deref;
 use std::sync::{Arc, Weak};
@@ -123,7 +122,7 @@ impl Item {
 		client: &Arc<Client>,
 		parent: &str,
 		name: &str,
-	) -> Option<Arc<Node>> {
+	) -> Result<Arc<Node>> {
 		Alias::create(
 			client,
 			parent,
@@ -148,7 +147,7 @@ impl Item {
 			},
 		)
 	}
-	fn make_alias(&self, client: &Arc<Client>, parent: &str) -> Option<Arc<Node>> {
+	fn make_alias(&self, client: &Arc<Client>, parent: &str) -> Result<Arc<Node>> {
 		self.make_alias_named(client, parent, &self.uid)
 	}
 
@@ -230,8 +229,7 @@ impl ItemUI {
 		let Some(node) = self.node.upgrade() else { return };
 		let Some(client) = node.get_client() else { return };
 
-		if let Some(alias_node) = item.make_alias(&client, &(node.get_path().to_string() + "/item"))
-		{
+		if let Ok(alias_node) = item.make_alias(&client, &(node.get_path().to_string() + "/item")) {
 			self.item_aliases.add(item.uid.clone(), &alias_node);
 		}
 
@@ -268,10 +266,10 @@ impl ItemUI {
 			&client,
 			&format!("/item/{}/acceptor", self.type_info.type_name),
 		);
-		if let Some(alias) = alias {
+		if let Ok(alias) = alias {
 			self.acceptor_aliases.add(acceptor.uid.clone(), &alias);
 		}
-		if let Some(field_alias) = field_alias {
+		if let Some(Ok(field_alias)) = field_alias {
 			self.acceptor_field_aliases
 				.add(acceptor.uid.clone(), &field_alias);
 		}
@@ -326,7 +324,7 @@ impl ItemAcceptor {
 		&self,
 		client: &Arc<Client>,
 		parent: &str,
-	) -> (Option<Arc<Node>>, Option<Arc<Node>>) {
+	) -> (Result<Arc<Node>>, Option<Result<Arc<Node>>>) {
 		let acceptor_node = &self.node.upgrade().unwrap();
 		let acceptor_alias = Alias::create(
 			client,
@@ -339,7 +337,7 @@ impl ItemAcceptor {
 			},
 		);
 
-		let acceptor_field_alias = acceptor_alias.as_ref().and_then(|acceptor_alias| {
+		let acceptor_field_alias = acceptor_alias.as_ref().ok().map(|acceptor_alias| {
 			Alias::create(
 				client,
 				acceptor_alias.get_path(),
@@ -355,7 +353,7 @@ impl ItemAcceptor {
 		let Some(node) = self.node.upgrade() else { return };
 		let Some(client) = node.get_client() else { return };
 
-		if let Some(alias_node) = item.make_alias(&client, &node.path) {
+		if let Ok(alias_node) = item.make_alias(&client, &node.path) {
 			self.accepted.add(item.uid.clone(), &alias_node);
 		}
 		let _ = node.send_remote_signal(
@@ -379,7 +377,7 @@ impl Drop for ItemAcceptor {
 	}
 }
 
-pub fn create_interface(client: &Arc<Client>) {
+pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	let node = Node::create(client, "", "item", false);
 	node.add_local_signal(
 		"create_environment_item",
@@ -387,7 +385,7 @@ pub fn create_interface(client: &Arc<Client>) {
 	);
 	node.add_local_signal("register_item_ui", register_item_ui_flex);
 	node.add_local_signal("create_item_acceptor", create_item_acceptor_flex);
-	node.add_to_scenegraph();
+	node.add_to_scenegraph().map(|_| ())
 }
 
 fn type_info(name: &str) -> Result<&'static TypeInfo> {
@@ -406,7 +404,8 @@ pub fn register_item_ui_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 	}
 	let info: RegisterItemUIInfo = deserialize(data)?;
 	let type_info = type_info(info.item_type)?;
-	let ui = Node::create(&calling_client, "/item", type_info.type_name, true).add_to_scenegraph();
+	let ui =
+		Node::create(&calling_client, "/item", type_info.type_name, true).add_to_scenegraph()?;
 	ItemUI::add_to(&ui, type_info)?;
 	Ok(())
 }
@@ -432,7 +431,7 @@ fn create_item_acceptor_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 		info.name,
 		true,
 	)
-	.add_to_scenegraph();
+	.add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(space), transform, false)?;
 	ItemAcceptor::add_to(&node, type_info, field);
 	Ok(())

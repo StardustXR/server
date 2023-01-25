@@ -26,9 +26,9 @@ pub struct StartupSettings {
 }
 impl StartupSettings {
 	pub fn add_to(node: &Arc<Node>) {
-		node.startup_settings
-			.set(Mutex::new(StartupSettings::default()))
-			.unwrap();
+		let _ = node
+			.startup_settings
+			.set(Mutex::new(StartupSettings::default()));
 	}
 
 	fn set_root_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
@@ -83,10 +83,10 @@ impl Debug for StartupSettings {
 	}
 }
 
-pub fn create_interface(client: &Arc<Client>) {
+pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	let node = Node::create(client, "", "startup", false);
 	node.add_local_signal("create_startup_settings", create_startup_settings_flex);
-	node.add_to_scenegraph();
+	node.add_to_scenegraph().map(|_| ())
 }
 
 pub fn create_startup_settings_flex(
@@ -95,7 +95,8 @@ pub fn create_startup_settings_flex(
 	data: &[u8],
 ) -> Result<()> {
 	let name = flexbuffers::Reader::get_root(data)?.get_str()?;
-	let node = Node::create(&calling_client, "/startup/settings", name, true).add_to_scenegraph();
+	let node =
+		Node::create(&calling_client, "/startup/settings", name, true).add_to_scenegraph()?;
 	StartupSettings::add_to(&node);
 
 	node.add_local_signal("set_root", StartupSettings::set_root_flex);

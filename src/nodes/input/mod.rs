@@ -190,7 +190,7 @@ impl InputHandler {
 	#[instrument(level = "debug", skip(self, distance_link))]
 	fn send_input(&self, frame: u64, distance_link: &DistanceLink, datamap: Datamap) {
 		let data = distance_link.serialize(datamap);
-		let node = self.node.upgrade().unwrap();
+		let Some(node) = self.node.upgrade() else {return};
 		let method = Arc::downgrade(&distance_link.method);
 		let handler = Arc::downgrade(&distance_link.handler);
 
@@ -226,11 +226,11 @@ impl Drop for InputHandler {
 	}
 }
 
-pub fn create_interface(client: &Arc<Client>) {
+pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	let node = Node::create(client, "", "input", false);
 	node.add_local_signal("create_input_handler", create_input_handler_flex);
 	node.add_local_signal("create_input_method_tip", tip::create_tip_flex);
-	node.add_to_scenegraph();
+	node.add_to_scenegraph().map(|_| ())
 }
 
 pub fn create_input_handler_flex(
@@ -250,7 +250,8 @@ pub fn create_input_handler_flex(
 	let transform = parse_transform(info.transform, true, true, true);
 	let field = find_field(&calling_client, info.field_path)?;
 
-	let node = Node::create(&calling_client, "/input/handler", info.name, true).add_to_scenegraph();
+	let node =
+		Node::create(&calling_client, "/input/handler", info.name, true).add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	InputHandler::add_to(&node, &field)?;
 	Ok(())

@@ -8,6 +8,7 @@ use crate::{
 		Node,
 	},
 };
+use color_eyre::eyre::Result;
 use glam::{vec3, Mat4};
 use nanoid::nanoid;
 use stardust_xr::{schemas::flat::Datamap, values::Transform};
@@ -24,8 +25,8 @@ pub struct MousePointer {
 	keyboard_sender: Arc<PulseSender>,
 }
 impl MousePointer {
-	pub fn new() -> Self {
-		let node = Node::create(&INTERNAL_CLIENT, "", &nanoid!(), false).add_to_scenegraph();
+	pub fn new() -> Result<Self> {
+		let node = Node::create(&INTERNAL_CLIENT, "", &nanoid!(), false).add_to_scenegraph()?;
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
 		let pointer =
 			InputMethod::add_to(&node, InputType::Pointer(Pointer::default()), None).unwrap();
@@ -39,12 +40,12 @@ impl MousePointer {
 		};
 		let keyboard_sender = PulseSender::add_to(&node, keyboard_mask).unwrap();
 
-		MousePointer {
+		Ok(MousePointer {
 			node,
 			spatial,
 			pointer,
 			keyboard_sender,
-		}
+		})
 	}
 	#[instrument(level = "debug", name = "Update Flatscreen Pointer Ray", skip_all)]
 	pub fn update(&self, sk: &impl StereoKitInput) {

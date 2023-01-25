@@ -12,13 +12,13 @@ use std::{path::PathBuf, sync::Arc};
 use stereokit::{lifecycle::StereoKitDraw, render::StereoKitRender, texture::Texture};
 use tracing::instrument;
 
-pub fn create_interface(client: &Arc<Client>) {
+pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	let node = Node::create(client, "", "drawable", false);
 	node.add_local_signal("create_lines", lines::create_flex);
 	node.add_local_signal("create_model", model::create_flex);
 	node.add_local_signal("create_text", text::create_flex);
 	node.add_local_signal("set_sky_file", set_sky_file_flex);
-	node.add_to_scenegraph();
+	node.add_to_scenegraph().map(|_| ())
 }
 
 #[instrument(level = "debug", skip(sk))]

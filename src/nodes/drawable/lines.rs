@@ -130,7 +130,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 		p.color[2] = p.color[2].powf(2.2);
 	}
 
-	let node = node.add_to_scenegraph();
+	let node = node.add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	Lines::add_to(&node, info.points, info.cyclic)?;
 	Ok(())

@@ -133,8 +133,12 @@ impl Node {
 		node.add_local_signal("destroy", Node::destroy_flex);
 		node
 	}
-	pub fn add_to_scenegraph(self) -> Arc<Node> {
-		self.get_client().unwrap().scenegraph.add_node(self)
+	pub fn add_to_scenegraph(self) -> Result<Arc<Node>> {
+		Ok(self
+			.get_client()
+			.ok_or_else(|| eyre!("Internal: Unable to get client"))?
+			.scenegraph
+			.add_node(self))
 	}
 	pub fn destroy(&self) {
 		if let Some(client) = self.get_client() {

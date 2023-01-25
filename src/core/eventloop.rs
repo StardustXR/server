@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use tokio::net::UnixListener;
 use tokio::task::JoinHandle;
+use tracing::error;
 
 pub static FRAME: AtomicU64 = AtomicU64::new(0);
 
@@ -20,7 +21,9 @@ impl EventLoop {
 		let join_handle = task::new(|| "event loop", async move {
 			loop {
 				let Ok((socket, _)) = socket.accept().await else { continue };
-				Client::from_connection(socket);
+				if let Err(e) = Client::from_connection(socket) {
+					error!(?e, "Unable to create client from connection");
+				}
 			}
 		})?;
 		let event_loop = Arc::new(EventLoop { join_handle });
