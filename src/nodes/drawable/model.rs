@@ -251,7 +251,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 	let info: CreateModelInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/drawable/model", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, true)?;
+	let transform = parse_transform(info.transform, true, true, true);
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	Model::add_to(&node, info.resource)?;

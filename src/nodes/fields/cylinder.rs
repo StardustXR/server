@@ -80,7 +80,7 @@ pub fn create_cylinder_field_flex(
 	let info: CreateFieldInfo = deserialize(data)?;
 	let node = Node::create(&calling_client, "/field", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, false)?;
+	let transform = parse_transform(info.transform, true, true, false);
 	let node = node.add_to_scenegraph();
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	CylinderField::add_to(&node, info.length, info.radius)?;

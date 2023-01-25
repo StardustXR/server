@@ -422,7 +422,7 @@ fn create_item_acceptor_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 	}
 	let info: CreateItemAcceptorInfo = deserialize(data)?;
 	let space = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, false)?;
+	let transform = parse_transform(info.transform, true, true, false);
 	let field = find_field(&calling_client, info.field_path)?;
 	let type_info = type_info(info.item_type)?;
 
