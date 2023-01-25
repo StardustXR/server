@@ -209,12 +209,14 @@ impl Model {
 				for ((material_idx, parameter_name), parameter_value) in material_parameters.iter()
 				{
 					if let Some(material) = sk_model.get_material(sk, *material_idx as i32) {
+						let new_material = material.clone();
 						parameter_value.apply_to_material(
 							&self.space.node.upgrade().unwrap().client.upgrade().unwrap(), // TODO: don't unwrap
 							sk,
-							&material,
+							&new_material,
 							parameter_name.as_str(),
 						);
+						sk_model.set_material(sk, *material_idx as i32, &new_material);
 					}
 				}
 				material_parameters.clear();
