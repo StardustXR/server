@@ -98,12 +98,7 @@ impl Spatial {
 	) {
 		if reference_space == Some(self) {
 			self.set_local_transform(
-				self.local_transform()
-					* Mat4::from_scale_rotation_translation(
-						transform.scale.map(|s| s.into()).unwrap_or_default(),
-						transform.rotation.map(|r| r.into()).unwrap_or_default(),
-						transform.position.map(|t| t.into()).unwrap_or_default(),
-					),
+				parse_transform(transform, true, true, true) * self.local_transform(),
 			);
 			return;
 		}
