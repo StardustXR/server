@@ -185,7 +185,7 @@ fn main() -> Result<()> {
 					right_controller.update(sk);
 				}
 				input::process_input();
-				nodes::root::Root::logic_step(sk.time_elapsed());
+				nodes::root::Root::send_frame_events(sk.time_elapsed());
 				{
 					let frame_delta = Duration::from_secs_f64(sk.time_elapsed_unscaled());
 					if last_frame_delta < frame_delta {
