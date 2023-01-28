@@ -262,17 +262,13 @@ impl ItemUI {
 		let Some(node) = self.node.upgrade() else { return };
 		let Some(client) = node.get_client() else { return };
 
-		let (alias, field_alias) = acceptor.make_aliases(
+		let Ok((alias, field_alias)) = acceptor.make_aliases(
 			&client,
 			&format!("/item/{}/acceptor", self.type_info.type_name),
-		);
-		if let Ok(alias) = alias {
-			self.acceptor_aliases.add(acceptor.uid.clone(), &alias);
-		}
-		if let Some(Ok(field_alias)) = field_alias {
-			self.acceptor_field_aliases
-				.add(acceptor.uid.clone(), &field_alias);
-		}
+		) else {return};
+		self.acceptor_aliases.add(acceptor.uid.clone(), &alias);
+		self.acceptor_field_aliases
+			.add(acceptor.uid.clone(), &field_alias);
 		let _ = node.send_remote_signal("create_acceptor", &serialize(&acceptor.uid).unwrap());
 	}
 	fn handle_destroy_acceptor(&self, acceptor: &ItemAcceptor) {
@@ -320,11 +316,7 @@ impl ItemAcceptor {
 		Ok(())
 	}
 
-	fn make_aliases(
-		&self,
-		client: &Arc<Client>,
-		parent: &str,
-	) -> (Result<Arc<Node>>, Option<Result<Arc<Node>>>) {
+	fn make_aliases(&self, client: &Arc<Client>, parent: &str) -> Result<(Arc<Node>, Arc<Node>)> {
 		let acceptor_node = &self.node.upgrade().unwrap();
 		let acceptor_alias = Alias::create(
 			client,
@@ -335,19 +327,17 @@ impl ItemAcceptor {
 				local_signals: vec!["capture"],
 				..Default::default()
 			},
-		);
+		)?;
 
-		let acceptor_field_alias = acceptor_alias.as_ref().ok().map(|acceptor_alias| {
-			Alias::create(
-				client,
-				acceptor_alias.get_path(),
-				"field",
-				&self.field.spatial_ref().node.upgrade().unwrap(),
-				AliasInfo::default(),
-			)
-		});
+		let acceptor_field_alias = Alias::create(
+			client,
+			acceptor_alias.get_path(),
+			"field",
+			&self.field.spatial_ref().node.upgrade().unwrap(),
+			AliasInfo::default(),
+		)?;
 
-		(acceptor_alias, acceptor_field_alias)
+		Ok((acceptor_alias, acceptor_field_alias))
 	}
 	fn handle_capture(&self, item: &Arc<Item>) {
 		let Some(node) = self.node.upgrade() else { return };
