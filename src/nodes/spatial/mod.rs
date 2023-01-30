@@ -61,7 +61,10 @@ impl Spatial {
 			"set_spatial_parent_in_place",
 			Spatial::set_spatial_parent_in_place_flex,
 		);
-		node.add_local_signal("set_zoneable", Spatial::set_zoneable);
+		node.add_local_signal("set_zoneable", Spatial::set_zoneable_flex);
+		node.add_local_method("field_distance", Spatial::field_distance_flex);
+		node.add_local_method("field_normal", Spatial::field_normal_flex);
+		node.add_local_method("field_closest_point", Spatial::field_closest_point_flex);
 		if zoneable {
 			ZONEABLE_REGISTRY.add_raw(&spatial);
 		}
@@ -261,7 +264,7 @@ impl Spatial {
 			.set_spatial_parent_in_place(Some(parent))?;
 		Ok(())
 	}
-	pub fn set_zoneable(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_zoneable_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
 		let zoneable: bool = deserialize(data)?;
 		let spatial = node.spatial.get().unwrap();
 		if zoneable {
@@ -271,6 +274,76 @@ impl Spatial {
 			zone::release(spatial);
 		}
 		Ok(())
+	}
+
+	pub fn field_distance_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<Vec<u8>> {
+		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(data)?;
+		let spatial = node.spatial.get().unwrap();
+
+		let output = fields
+			.into_iter()
+			.map(|f| {
+				calling_client
+					.get_node("Field", f?)
+					.ok()?
+					.get_aspect("Field", "field", |n| &n.field)
+					.ok()
+					.cloned()
+			})
+			.map(|f| f.map(|f| f.distance(spatial, point.into())))
+			.collect::<Vec<Option<f32>>>();
+
+		Ok(serialize(output)?)
+	}
+	pub fn field_normal_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<Vec<u8>> {
+		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(data)?;
+		let spatial = node.spatial.get().unwrap();
+
+		let output = fields
+			.into_iter()
+			.map(|f| {
+				calling_client
+					.get_node("Field", f?)
+					.ok()?
+					.get_aspect("Field", "field", |n| &n.field)
+					.ok()
+					.cloned()
+			})
+			.map(|f| f.map(|f| Vector3::from(f.normal(spatial, point.into(), 0.001))))
+			.collect::<Vec<_>>();
+
+		Ok(serialize(output)?)
+	}
+	pub fn field_closest_point_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<Vec<u8>> {
+		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(data)?;
+		let spatial = node.spatial.get().unwrap();
+
+		let output = fields
+			.into_iter()
+			.map(|f| {
+				calling_client
+					.get_node("Field", f?)
+					.ok()?
+					.get_aspect("Field", "field", |n| &n.field)
+					.ok()
+					.cloned()
+			})
+			.map(|f| f.map(|f| Vector3::from(f.closest_point(spatial, point.into(), 0.001))))
+			.collect::<Vec<_>>();
+
+		Ok(serialize(output)?)
 	}
 
 	#[instrument]
