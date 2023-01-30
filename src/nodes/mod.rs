@@ -8,6 +8,7 @@ pub mod items;
 pub mod root;
 pub mod spatial;
 pub mod startup;
+pub mod sound;
 
 use color_eyre::eyre::{eyre, Result};
 use nanoid::nanoid;
@@ -38,6 +39,7 @@ use self::drawable::text::Text;
 use self::fields::Field;
 use self::input::{InputHandler, InputMethod};
 use self::items::{Item, ItemAcceptor, ItemUI};
+use self::sound::Sound;
 use self::spatial::zone::Zone;
 use self::spatial::Spatial;
 use self::startup::StartupSettings;
@@ -79,6 +81,9 @@ pub struct Node {
 	pub item: OnceCell<Arc<Item>>,
 	pub item_acceptor: OnceCell<Arc<ItemAcceptor>>,
 	pub item_ui: OnceCell<Arc<ItemUI>>,
+
+	// Sound
+	pub sound: OnceCell<Arc<Sound>>,
 
 	// Startup
 	pub startup_settings: OnceCell<Mutex<StartupSettings>>,
@@ -128,6 +133,7 @@ impl Node {
 			item: OnceCell::new(),
 			item_acceptor: OnceCell::new(),
 			item_ui: OnceCell::new(),
+			sound: OnceCell::new(),
 			startup_settings: OnceCell::new(),
 		};
 		node.add_local_signal("destroy", Node::destroy_flex);
