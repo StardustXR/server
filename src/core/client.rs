@@ -2,7 +2,7 @@ use super::scenegraph::Scenegraph;
 use crate::{
 	core::{registry::OwnedRegistry, task},
 	nodes::{
-		data, drawable, fields, hmd, input, items,
+		data, drawable, fields, hmd, input, items, sound,
 		root::Root,
 		spatial,
 		startup::{self, StartupSettings, STARTUP_SETTINGS},
@@ -103,6 +103,7 @@ impl Client {
 		spatial::create_interface(&client)?;
 		fields::create_interface(&client)?;
 		drawable::create_interface(&client)?;
+		sound::create_interface(&client)?;
 		data::create_interface(&client)?;
 		items::create_interface(&client)?;
 		input::create_interface(&client)?;
