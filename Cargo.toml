@@ -62,6 +62,14 @@ wayland = ["dep:smithay", "dep:xkbcommon"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-chrome"]
 
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3
+[profile.release]
+strip = true
+lto = true
+
 # [patch.crates-io.stereokit]
 # path = "../stereokit-rs"
 # [patch.crates-io.stereokit-sys]
