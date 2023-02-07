@@ -8,7 +8,7 @@ pub mod items;
 pub mod root;
 pub mod spatial;
 pub mod startup;
-pub mod sound;
+pub mod audio;
 
 use color_eyre::eyre::{eyre, Result};
 use nanoid::nanoid;
@@ -39,7 +39,7 @@ use self::drawable::text::Text;
 use self::fields::Field;
 use self::input::{InputHandler, InputMethod};
 use self::items::{Item, ItemAcceptor, ItemUI};
-use self::sound::Sound;
+use self::audio::Sound;
 use self::spatial::zone::Zone;
 use self::spatial::Spatial;
 use self::startup::StartupSettings;
