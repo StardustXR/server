@@ -1,4 +1,5 @@
 pub mod alias;
+pub mod audio;
 pub mod data;
 pub mod drawable;
 pub mod fields;
@@ -8,7 +9,6 @@ pub mod items;
 pub mod root;
 pub mod spatial;
 pub mod startup;
-pub mod audio;
 
 use color_eyre::eyre::{eyre, Result};
 use nanoid::nanoid;
@@ -33,13 +33,13 @@ use crate::core::registry::Registry;
 use self::alias::Alias;
 use self::data::{PulseReceiver, PulseSender};
 
+use self::audio::Sound;
 use self::drawable::lines::Lines;
 use self::drawable::model::Model;
 use self::drawable::text::Text;
 use self::fields::Field;
 use self::input::{InputHandler, InputMethod};
 use self::items::{Item, ItemAcceptor, ItemUI};
-use self::audio::Sound;
 use self::spatial::zone::Zone;
 use self::spatial::Spatial;
 use self::startup::StartupSettings;

@@ -2,7 +2,7 @@ use super::scenegraph::Scenegraph;
 use crate::{
 	core::{registry::OwnedRegistry, task},
 	nodes::{
-		data, drawable, fields, hmd, input, items, audio,
+		audio, data, drawable, fields, hmd, input, items,
 		root::Root,
 		spatial,
 		startup::{self, StartupSettings, STARTUP_SETTINGS},
