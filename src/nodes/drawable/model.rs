@@ -22,6 +22,7 @@ use stereokit::lifecycle::{StereoKitContext, StereoKitDraw};
 use stereokit::material::Material;
 use stereokit::model::Model as SKModel;
 use stereokit::render::RenderLayer;
+use stereokit::shader::Shader;
 use stereokit::texture::Texture;
 use stereokit::values::Color128;
 
@@ -189,7 +190,13 @@ impl Model {
 			.sk_model
 			.get_or_try_init(|| -> color_eyre::eyre::Result<SendWrapper<SKModel>> {
 				let pending_model_path = self.pending_model_path.get().ok_or(Error)?;
-				let model = SKModel::from_file(sk, pending_model_path.as_path(), None)?;
+				let model = SKModel::from_file(
+					sk,
+					pending_model_path.as_path(),
+					Shader::from_file(sk, "default/shader_pbr_clip")
+						.ok()
+						.as_ref(),
+				)?;
 
 				Ok(SendWrapper::new(model.clone()))
 			})
