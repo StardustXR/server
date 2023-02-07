@@ -117,7 +117,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
         resource: ResourceID,
     }
     let info: CreateSoundInfo = deserialize(data)?;
-    let node = Node::create(&calling_client, "/audio/sounds", info.name, true);
+    let node = Node::create(&calling_client, "/audio/sound", info.name, true);
     let parent = find_spatial_parent(&calling_client, info.parent_path)?;
     let transform = parse_transform(info.transform, true, true, true);
     let node = node.add_to_scenegraph()?;

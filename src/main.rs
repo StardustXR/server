@@ -5,7 +5,7 @@ mod objects;
 mod wayland;
 
 use crate::core::destroy_queue;
-use crate::nodes::{drawable, hmd, input, sound};
+use crate::nodes::{drawable, hmd, input, audio};
 use crate::objects::input::mouse_pointer::MousePointer;
 use crate::objects::input::sk_controller::SkController;
 use crate::objects::input::sk_hand::SkHand;
@@ -207,7 +207,7 @@ fn main() -> Result<()> {
 						});
 				}
 				drawable::draw(sk);
-				sound::update();
+				audio::update();
 				#[cfg(feature = "wayland")]
 				wayland.make_context_current();
 			},
