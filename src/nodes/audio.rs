@@ -42,9 +42,9 @@ impl Sound {
             pending_audio_path: OnceCell::new(),
             sk_sound: OnceCell::new(),
         };
+        let sound_arc = SOUND_REGISTRY.add(sound);
         node.add_local_signal("play", Sound::play_flex);
         node.add_local_signal("stop", Sound::stop_flex);
-        let sound_arc = SOUND_REGISTRY.add(sound);
         let _ = sound_arc.pending_audio_path.set(
             sound_arc
                 .resource_id
@@ -81,7 +81,7 @@ impl Sound {
             })
             .ok();
         if let Some(sk_sound) = sk_sound {
-            sk_sound.play_sound(sound.space.global_transform().to_scale_rotation_translation().2, sound.volume);
+            sound.instance.lock().replace(sk_sound.play_sound(sound.space.global_transform().to_scale_rotation_translation().2, sound.volume));
         }
 
         Ok(())
