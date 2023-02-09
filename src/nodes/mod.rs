@@ -31,9 +31,8 @@ use crate::core::client::Client;
 use crate::core::registry::Registry;
 
 use self::alias::Alias;
-use self::data::{PulseReceiver, PulseSender};
-
 use self::audio::Sound;
+use self::data::{PulseReceiver, PulseSender};
 use self::drawable::Drawable;
 use self::fields::Field;
 use self::input::{InputHandler, InputMethod};
