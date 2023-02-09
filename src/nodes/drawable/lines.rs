@@ -5,7 +5,7 @@ use crate::{
 		Node,
 	},
 };
-use color_eyre::eyre::{ensure, Result};
+use color_eyre::eyre::{bail, ensure, Result};
 use glam::Vec3A;
 use mint::Vector3;
 use parking_lot::Mutex;
@@ -14,6 +14,8 @@ use serde::Deserialize;
 use stardust_xr::{schemas::flex::deserialize, values::Transform};
 use std::{collections::VecDeque, sync::Arc};
 use stereokit::{lifecycle::StereoKitDraw, lines::LinePoint as SkLinePoint, values::Color128};
+
+use super::Drawable;
 
 static LINES_REGISTRY: Registry<Lines> = Registry::new();
 
@@ -37,8 +39,8 @@ pub struct Lines {
 impl Lines {
 	fn add_to(node: &Arc<Node>, points: Vec<LinePointRaw>, cyclic: bool) -> Result<Arc<Lines>> {
 		ensure!(
-			node.model.get().is_none(),
-			"Internal: Node already has lines attached!"
+			node.drawable.get().is_none(),
+			"Internal: Node already has a drawable attached!"
 		);
 
 		let lines = LINES_REGISTRY.add(Lines {
@@ -47,7 +49,7 @@ impl Lines {
 		});
 		node.add_local_signal("set_points", Lines::set_points_flex);
 		node.add_local_signal("set_cyclic", Lines::set_cyclic_flex);
-		let _ = node.lines.set(lines.clone());
+		let _ = node.drawable.set(Drawable::Lines(lines.clone()));
 
 		Ok(lines)
 	}
@@ -84,17 +86,21 @@ impl Lines {
 	}
 
 	pub fn set_points_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		let Some(Drawable::Lines(lines)) = node.drawable.get() else {bail!("Not a drawable??")};
+
 		let mut points: Vec<LinePointRaw> = deserialize(data)?;
 		for p in &mut points {
 			p.color[0] = p.color[0].powf(2.2);
 			p.color[1] = p.color[1].powf(2.2);
 			p.color[2] = p.color[2].powf(2.2);
 		}
-		node.lines.get().unwrap().data.lock().points = points;
+		lines.data.lock().points = points;
 		Ok(())
 	}
 	pub fn set_cyclic_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		node.lines.get().unwrap().data.lock().cyclic = deserialize(data)?;
+		let Some(Drawable::Lines(lines)) = node.drawable.get() else {bail!("Not a drawable??")};
+
+		lines.data.lock().cyclic = deserialize(data)?;
 		Ok(())
 	}
 }

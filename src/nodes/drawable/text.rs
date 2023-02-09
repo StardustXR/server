@@ -1,11 +1,12 @@
 use crate::{
 	core::{client::Client, destroy_queue, registry::Registry, resource::ResourceID},
 	nodes::{
+		drawable::Drawable,
 		spatial::{find_spatial_parent, parse_transform, Spatial},
 		Node,
 	},
 };
-use color_eyre::eyre::{ensure, eyre, Result};
+use color_eyre::eyre::{bail, ensure, eyre, Result};
 use glam::{vec3, Mat4, Vec2};
 use mint::Vector2;
 use once_cell::sync::OnceCell;
@@ -60,8 +61,8 @@ impl Text {
 			"Internal: Node does not have a spatial attached!"
 		);
 		ensure!(
-			node.model.get().is_none(),
-			"Internal: Node already has text attached!"
+			node.drawable.get().is_none(),
+			"Internal: Node already has a drawable attached!"
 		);
 
 		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
@@ -87,7 +88,7 @@ impl Text {
 		});
 		node.add_local_signal("set_character_height", Text::set_character_height_flex);
 		node.add_local_signal("set_text", Text::set_text_flex);
-		let _ = node.text.set(text.clone());
+		let _ = node.drawable.set(Drawable::Text(text.clone()));
 
 		Ok(text)
 	}
@@ -145,14 +146,16 @@ impl Text {
 		_calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
-		let height = flexbuffers::Reader::get_root(data)?.get_f64()? as f32;
-		node.text.get().unwrap().data.lock().character_height = height;
+		let Some(Drawable::Text(text)) = node.drawable.get() else {bail!("Not a drawable??")};
+
+		text.data.lock().character_height = deserialize(data)?;
 		Ok(())
 	}
 
 	pub fn set_text_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let text = flexbuffers::Reader::get_root(data)?.get_str()?.to_string();
-		node.text.get().unwrap().data.lock().text = text;
+		let Some(Drawable::Text(text)) = node.drawable.get() else {bail!("Not a drawable??")};
+
+		text.data.lock().text = deserialize(data)?;
 		Ok(())
 	}
 }

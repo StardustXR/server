@@ -3,8 +3,9 @@ use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
+use crate::nodes::drawable::Drawable;
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
-use color_eyre::eyre::{ensure, eyre, Result};
+use color_eyre::eyre::{bail, ensure, eyre, Result};
 use mint::{ColumnMatrix4, Vector2, Vector3, Vector4};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -131,8 +132,8 @@ impl Model {
 			"Internal: Node does not have a spatial attached!"
 		);
 		ensure!(
-			node.model.get().is_none(),
-			"Internal: Node already has a model attached!"
+			node.drawable.get().is_none(),
+			"Internal: Node already has a drawable attached!"
 		);
 		let model = Model {
 			space: node.spatial.get().unwrap().clone(),
@@ -158,7 +159,7 @@ impl Model {
 				)
 				.ok_or_else(|| eyre!("Resource not found"))?,
 		);
-		let _ = node.model.set(model_arc.clone());
+		let _ = node.drawable.set(Drawable::Model(model_arc.clone()));
 		Ok(model_arc)
 	}
 
@@ -167,6 +168,8 @@ impl Model {
 		_calling_client: Arc<Client>,
 		data: &[u8],
 	) -> Result<()> {
+		let Some(Drawable::Model(model)) = node.drawable.get() else {bail!("Not a drawable??")};
+
 		#[derive(Deserialize)]
 		struct MaterialParameterInfo {
 			idx: u32,
@@ -175,9 +178,7 @@ impl Model {
 		}
 		let info: MaterialParameterInfo = deserialize(data)?;
 
-		node.model
-			.get()
-			.unwrap()
+		model
 			.pending_material_parameters
 			.lock()
 			.insert((info.idx as i32, info.name), info.value);
