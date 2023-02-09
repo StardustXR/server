@@ -10,13 +10,14 @@ use crate::{
 		registry::Registry,
 	},
 	nodes::{
+		drawable::Drawable,
 		items::{self, Item, ItemSpecialization, ItemType, TypeInfo},
 		spatial::Spatial,
 		Node,
 	},
 	wayland::seat::{KeyboardEvent, PointerEvent},
 };
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{bail, eyre, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::Vector2;
@@ -250,10 +251,7 @@ impl PanelItem {
 			.scenegraph
 			.get_node(info.model_path)
 			.ok_or_else(|| eyre!("Model node not found"))?;
-		let model = model_node
-			.model
-			.get()
-			.ok_or_else(|| eyre!("Node is not a model"))?;
+		let Some(Drawable::Model(model)) = model_node.drawable.get() else {bail!("Node is not a model")};
 		debug!(?info, "Apply toplevel material");
 
 		if let ItemType::Panel(panel_item) = &node.item.get().unwrap().specialization {
@@ -285,11 +283,7 @@ impl PanelItem {
 			.scenegraph
 			.get_node(info.model_path)
 			.ok_or_else(|| eyre!("Model node not found"))?;
-		let model = model_node
-			.model
-			.get()
-			.ok_or_else(|| eyre!("Node is not a model"))?;
-
+		let Some(Drawable::Model(model)) = model_node.drawable.get() else {bail!("Node is not a model")};
 		core_surface.apply_material(model.clone(), info.idx);
 
 		Ok(())

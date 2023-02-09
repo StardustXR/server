@@ -34,9 +34,7 @@ use self::alias::Alias;
 use self::data::{PulseReceiver, PulseSender};
 
 use self::audio::Sound;
-use self::drawable::lines::Lines;
-use self::drawable::model::Model;
-use self::drawable::text::Text;
+use self::drawable::Drawable;
 use self::fields::Field;
 use self::input::{InputHandler, InputMethod};
 use self::items::{Item, ItemAcceptor, ItemUI};
@@ -69,9 +67,7 @@ pub struct Node {
 	pub pulse_receiver: OnceCell<Arc<PulseReceiver>>,
 
 	// Drawable
-	pub lines: OnceCell<Arc<Lines>>,
-	pub model: OnceCell<Arc<Model>>,
-	pub text: OnceCell<Arc<Text>>,
+	pub drawable: OnceCell<Drawable>,
 
 	// Input
 	pub input_method: OnceCell<Arc<InputMethod>>,
@@ -125,9 +121,7 @@ impl Node {
 			zone: OnceCell::new(),
 			pulse_sender: OnceCell::new(),
 			pulse_receiver: OnceCell::new(),
-			lines: OnceCell::new(),
-			model: OnceCell::new(),
-			text: OnceCell::new(),
+			drawable: OnceCell::new(),
 			input_method: OnceCell::new(),
 			input_handler: OnceCell::new(),
 			item: OnceCell::new(),
