@@ -170,7 +170,7 @@ fn main() -> Result<()> {
 
 				hmd::frame(sk);
 				#[cfg(feature = "wayland")]
-				wayland.frame(sk);
+				wayland.frame_event(sk);
 				destroy_queue::clear();
 
 				if let Some(mouse_pointer) = &mouse_pointer {
@@ -206,6 +206,8 @@ fn main() -> Result<()> {
 							std::thread::sleep(sleep_duration); // to give clients a chance to even update anything before drawing
 						});
 				}
+				#[cfg(feature = "wayland")]
+				wayland.update(sk);
 				drawable::draw(sk);
 				audio::update();
 				#[cfg(feature = "wayland")]
