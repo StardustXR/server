@@ -216,6 +216,9 @@ impl ItemUI {
 		for item in type_info.items.get_valid_contents() {
 			ui.handle_create_item(&item);
 		}
+		for acceptor in type_info.acceptors.get_valid_contents() {
+			ui.handle_create_acceptor(&acceptor);
+		}
 		Ok(())
 	}
 	fn send_state(&self, state: &str, name: &str) {
