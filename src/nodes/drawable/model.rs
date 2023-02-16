@@ -9,6 +9,7 @@ use color_eyre::eyre::{bail, ensure, eyre, Result};
 use mint::{ColumnMatrix4, Vector2, Vector3, Vector4};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
 use send_wrapper::SendWrapper;
 use serde::Deserialize;
@@ -117,6 +118,7 @@ impl MaterialParameter {
 }
 
 pub struct Model {
+	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
 	resource_id: ResourceID,
 	pending_model_path: OnceCell<PathBuf>,
@@ -136,6 +138,7 @@ impl Model {
 			"Internal: Node already has a drawable attached!"
 		);
 		let model = Model {
+			enabled: node.enabled.clone(),
 			space: node.spatial.get().unwrap().clone(),
 			resource_id,
 			pending_model_path: OnceCell::new(),
@@ -244,7 +247,9 @@ impl Drop for Model {
 
 pub fn draw_all(sk: &StereoKitDraw) {
 	for model in MODEL_REGISTRY.get_valid_contents() {
-		model.draw(sk);
+		if model.enabled.load(Ordering::Relaxed) {
+			model.draw(sk);
+		}
 	}
 }
 

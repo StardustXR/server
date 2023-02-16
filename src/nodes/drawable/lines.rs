@@ -9,6 +9,7 @@ use color_eyre::eyre::{bail, ensure, Result};
 use glam::Vec3A;
 use mint::Vector3;
 use parking_lot::Mutex;
+use portable_atomic::{AtomicBool, Ordering};
 use prisma::{Flatten, Lerp, Rgba};
 use serde::Deserialize;
 use stardust_xr::{schemas::flex::deserialize, values::Transform};
@@ -33,6 +34,7 @@ struct LineData {
 }
 
 pub struct Lines {
+	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
 	data: Mutex<LineData>,
 }
@@ -44,6 +46,7 @@ impl Lines {
 		);
 
 		let lines = LINES_REGISTRY.add(Lines {
+			enabled: node.enabled.clone(),
 			space: node.get_aspect("Lines", "spatial", |n| &n.spatial)?.clone(),
 			data: Mutex::new(LineData { points, cyclic }),
 		});
@@ -112,7 +115,9 @@ impl Drop for Lines {
 
 pub fn draw_all(draw_ctx: &StereoKitDraw) {
 	for lines in LINES_REGISTRY.get_valid_contents() {
-		lines.draw(draw_ctx);
+		if lines.enabled.load(Ordering::Relaxed) {
+			lines.draw(draw_ctx);
+		}
 	}
 }
 

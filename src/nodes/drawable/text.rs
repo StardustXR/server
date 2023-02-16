@@ -11,6 +11,7 @@ use glam::{vec3, Mat4, Vec2};
 use mint::Vector2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use portable_atomic::{AtomicBool, Ordering};
 use prisma::{Flatten, Rgba};
 use send_wrapper::SendWrapper;
 use serde::Deserialize;
@@ -37,6 +38,7 @@ struct TextData {
 }
 
 pub struct Text {
+	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
 	font_path: Option<PathBuf>,
 	style: OnceCell<SendWrapper<TextStyle>>,
@@ -67,6 +69,7 @@ impl Text {
 
 		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
 		let text = TEXT_REGISTRY.add(Text {
+			enabled: node.enabled.clone(),
 			space: node.spatial.get().unwrap().clone(),
 			font_path: font_resource_id.and_then(|res| {
 				res.get_file(
@@ -170,7 +173,9 @@ impl Drop for Text {
 
 pub fn draw_all(sk: &StereoKitDraw) {
 	for text in TEXT_REGISTRY.get_valid_contents() {
-		text.draw(sk);
+		if text.enabled.load(Ordering::Relaxed) {
+			text.draw(sk);
+		}
 	}
 }
 
