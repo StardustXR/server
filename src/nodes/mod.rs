@@ -11,21 +11,21 @@ pub mod spatial;
 pub mod startup;
 
 use color_eyre::eyre::{eyre, Result};
+use core::hash::BuildHasherDefault;
+use dashmap::DashMap;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use portable_atomic::{AtomicBool, Ordering};
+use rustc_hash::FxHasher;
 use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
+use stardust_xr::schemas::flex::deserialize;
 use std::fmt::Debug;
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
 use tracing::{debug_span, instrument};
-
-use core::hash::BuildHasherDefault;
-use dashmap::DashMap;
-use rustc_hash::FxHasher;
 
 use crate::core::client::Client;
 use crate::core::registry::Registry;
@@ -45,6 +45,7 @@ pub type Signal = fn(&Node, Arc<Client>, &[u8]) -> Result<()>;
 pub type Method = fn(&Node, Arc<Client>, &[u8]) -> Result<Vec<u8>>;
 
 pub struct Node {
+	pub enabled: Arc<AtomicBool>,
 	pub(super) uid: String,
 	path: String,
 	client: Weak<Client>,
@@ -52,7 +53,7 @@ pub struct Node {
 	// trailing_slash_pos: usize,
 	local_signals: DashMap<String, Signal, BuildHasherDefault<FxHasher>>,
 	local_methods: DashMap<String, Method, BuildHasherDefault<FxHasher>>,
-	destroyable: AtomicBool,
+	destroyable: bool,
 
 	pub alias: OnceCell<Arc<Alias>>,
 	aliases: Registry<Alias>,
@@ -94,15 +95,13 @@ impl Node {
 	pub fn get_path(&self) -> &str {
 		self.path.as_str()
 	}
-	pub fn is_destroyable(&self) -> bool {
-		self.destroyable.load(Ordering::Relaxed)
-	}
 
 	pub fn create(client: &Arc<Client>, parent: &str, name: &str, destroyable: bool) -> Self {
 		let mut path = parent.to_string();
 		path.push('/');
 		path.push_str(name);
 		let node = Node {
+			enabled: Arc::new(AtomicBool::new(true)),
 			uid: nanoid!(),
 			client: Arc::downgrade(client),
 			message_sender_handle: client.message_sender_handle.clone(),
@@ -110,7 +109,7 @@ impl Node {
 			// trailing_slash_pos: parent.len(),
 			local_signals: Default::default(),
 			local_methods: Default::default(),
-			destroyable: AtomicBool::from(destroyable),
+			destroyable,
 
 			alias: OnceCell::new(),
 			aliases: Registry::new(),
@@ -129,6 +128,7 @@ impl Node {
 			sound: OnceCell::new(),
 			startup_settings: OnceCell::new(),
 		};
+		node.add_local_signal("set_enabled", Node::set_enabled_flex);
 		node.add_local_signal("destroy", Node::destroy_flex);
 		node
 	}
@@ -145,8 +145,12 @@ impl Node {
 		}
 	}
 
+	pub fn set_enabled_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		node.enabled.store(deserialize(data)?, Ordering::Relaxed);
+		Ok(())
+	}
 	pub fn destroy_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
-		if node.is_destroyable() {
+		if node.destroyable {
 			node.destroy();
 		}
 		Ok(())

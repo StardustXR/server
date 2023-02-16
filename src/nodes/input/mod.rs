@@ -18,6 +18,7 @@ use color_eyre::eyre::{ensure, Result};
 use glam::Mat4;
 use nanoid::nanoid;
 use parking_lot::Mutex;
+use portable_atomic::AtomicBool;
 use serde::Deserialize;
 use stardust_xr::schemas::flat::{Datamap, InputDataType};
 use stardust_xr::schemas::{flat::InputData, flex::deserialize};
@@ -166,6 +167,7 @@ impl DistanceLink {
 }
 
 pub struct InputHandler {
+	enabled: Arc<AtomicBool>,
 	node: Weak<Node>,
 	spatial: Arc<Spatial>,
 	pub field: Weak<Field>,
@@ -178,6 +180,7 @@ impl InputHandler {
 		);
 
 		let handler = InputHandler {
+			enabled: node.enabled.clone(),
 			node: Arc::downgrade(node),
 			spatial: node.spatial.get().unwrap().clone(),
 			field: Arc::downgrade(field),
@@ -266,15 +269,18 @@ pub fn process_input() {
 			.filter(|method| *method.enabled.lock())
 			.filter(|method| method.datamap.lock().is_some())
 	});
+	let handlers = INPUT_HANDLER_REGISTRY
+		.get_valid_contents()
+		.into_iter()
+		.filter(|handler| handler.enabled.load(Ordering::Relaxed))
+		.filter(|handler| handler.field.upgrade().is_some());
 	for method in methods {
 		debug_span!("Process input method").in_scope(|| {
 			// Get all valid input handlers and convert them to DistanceLink objects
 			let mut distance_links: Vec<DistanceLink> = debug_span!("Generate distance links")
 				.in_scope(|| {
-					INPUT_HANDLER_REGISTRY
-						.get_valid_contents()
-						.into_iter()
-						.filter(|handler| handler.field.upgrade().is_some())
+					handlers
+						.clone()
 						.filter_map(|handler| DistanceLink::from(method.clone(), handler))
 						.collect()
 				});

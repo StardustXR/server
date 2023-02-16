@@ -15,6 +15,7 @@ use color_eyre::eyre::{ensure, eyre, Result};
 use lazy_static::lazy_static;
 use nanoid::nanoid;
 use parking_lot::Mutex;
+use portable_atomic::Ordering;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use stardust_xr::values::Transform;
@@ -307,6 +308,10 @@ impl ItemAcceptor {
 	}
 
 	fn capture_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		if !node.enabled.load(Ordering::Relaxed) {
+			return Ok(());
+		}
+
 		let acceptor = node.item_acceptor.get().unwrap();
 		let item_path: &str = deserialize(data)?;
 		let item_node = calling_client.get_node("Item", item_path)?;
