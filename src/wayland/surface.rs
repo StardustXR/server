@@ -103,13 +103,7 @@ impl CoreSurface {
 		})
 	}
 
-	pub fn process(
-		&self,
-		sk: &StereoKitDraw,
-		renderer: &mut Gles2Renderer,
-		output: Output,
-		log: &Logger,
-	) {
+	pub fn process(&self, sk: &StereoKitDraw, renderer: &mut Gles2Renderer, log: &Logger) {
 		let Some(wl_surface) = self.wl_surface() else { return };
 
 		let sk_tex = self.sk_tex.get_or_init(|| {
@@ -183,6 +177,10 @@ impl CoreSurface {
 			*mapped_data = Some(new_mapped_data);
 		});
 		self.apply_surface_materials();
+	}
+
+	pub fn frame(&self, sk: &StereoKitDraw, output: Output) {
+		let Some(wl_surface) = self.wl_surface() else { return };
 
 		send_frames_surface_tree(
 			&wl_surface,

@@ -155,14 +155,20 @@ impl Wayland {
 	}
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self, sk))]
-	pub fn frame(&mut self, sk: &StereoKitDraw) {
+	pub fn update(&mut self, sk: &StereoKitDraw) {
 		for core_surface in CORE_SURFACES.get_valid_contents() {
-			let state = self.state.lock();
-			let output = state.output.clone();
-			core_surface.process(sk, &mut self.renderer, output, &self.log);
+			core_surface.process(sk, &mut self.renderer, &self.log);
 		}
 
 		self.display.lock().flush_clients().unwrap();
+	}
+
+	pub fn frame_event(&self, sk: &StereoKitDraw) {
+		let state = self.state.lock();
+
+		for core_surface in CORE_SURFACES.get_valid_contents() {
+			core_surface.frame(sk, state.output.clone());
+		}
 	}
 
 	pub fn make_context_current(&self) {
