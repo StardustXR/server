@@ -9,14 +9,23 @@ use crate::{
 	},
 };
 use color_eyre::eyre::Result;
-use glam::{vec3, Mat4};
+use glam::{vec3, Mat4, Vec3};
 use nanoid::nanoid;
-use stardust_xr::{schemas::flat::Datamap, values::Transform};
+use serde::Serialize;
+use stardust_xr::schemas::flat::Datamap;
 use std::{convert::TryFrom, sync::Arc};
 use stereokit::input::{ButtonState, Key, Ray as SkRay, StereoKitInput};
 use tracing::instrument;
 
 const SK_KEYMAP: &str = include_str!("sk.kmp");
+
+#[derive(Debug, Clone, Serialize)]
+pub struct KeyboardEvent {
+	pub keyboard: String,
+	pub keymap: Option<String>,
+	pub keys_up: Option<Vec<u32>>,
+	pub keys_down: Option<Vec<u32>>,
+}
 
 pub struct MousePointer {
 	node: Arc<Node>,
@@ -51,14 +60,11 @@ impl MousePointer {
 	pub fn update(&self, sk: &impl StereoKitInput) {
 		let mouse = sk.input_mouse();
 
-		if let Some(ray) = SkRay::from_mouse(mouse) {
-			self.spatial.set_local_transform_components(
-				None,
-				Transform::from_position_rotation(
-					ray.pos,
-					glam::Quat::from_rotation_arc(vec3(0.0, 0.0, 1.0), ray.dir.into()),
-				),
-			);
+		if let Some(ray) = SkRay::from_mouse(&mouse) {
+			self.spatial.set_local_transform(
+				Mat4::look_to_rh(ray.pos.into(), -Vec3::from(ray.dir), vec3(0.0, 1.0, 0.0))
+					.inverse(),
+			)
 		}
 		{
 			// Set pointer input datamap
@@ -118,11 +124,13 @@ impl MousePointer {
 		if let Some(rx) = rx {
 			let mut keys_up = vec![];
 			let mut keys_down = vec![];
-			for (key, state) in (1_u32..254)
+			let keys = (8_u32..254)
 				.filter_map(|i| Some((i, Key::try_from(i).ok()?)))
-				.map(|(i, k)| (i, sk.input_key(k)))
-				.filter(|(_, k)| k.contains(ButtonState::Changed))
-			{
+				.map(|(i, k)| (i, sk.input_key(k)));
+			for (key, state) in keys.clone() {
+				println!("Key {key} is {state:?}");
+			}
+			for (key, state) in keys.filter(|(_, k)| k.contains(ButtonState::Changed)) {
 				if state.contains(ButtonState::Active) {
 					keys_down.push(key);
 				} else {
@@ -130,25 +138,16 @@ impl MousePointer {
 				}
 			}
 
-			let mut fbb = flexbuffers::Builder::default();
-			{
-				let mut map = fbb.start_map();
-				map.push("keyboard", "xkbv1");
-				map.push("keymap", SK_KEYMAP);
-				{
-					let mut keys_up_flex = map.start_vector("keys_up");
-					for key in keys_up {
-						keys_up_flex.push(key);
-					}
-				}
-				{
-					let mut keys_down_flex = map.start_vector("keys_down");
-					for key in keys_down {
-						keys_down_flex.push(key);
-					}
-				}
-			}
-			rx.send_data(&self.node.uid, fbb.take_buffer()).unwrap();
+			let key_event = KeyboardEvent {
+				keyboard: "xkbv1".to_string(),
+				keymap: Some(SK_KEYMAP.to_string()),
+				keys_up: Some(keys_up),
+				keys_down: Some(keys_down),
+			};
+			let mut serializer = flexbuffers::FlexbufferSerializer::new();
+			let _ = key_event.serialize(&mut serializer);
+			rx.send_data(&self.node.uid, serializer.take_buffer())
+				.unwrap();
 		}
 	}
 }
