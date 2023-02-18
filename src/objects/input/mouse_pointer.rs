@@ -126,14 +126,11 @@ impl MousePointer {
 			let mut keys_down = vec![];
 			let keys = (8_u32..254)
 				.filter_map(|i| Some((i, Key::try_from(i).ok()?)))
-				.map(|(i, k)| (i, sk.input_key(k)));
-			for (key, state) in keys.clone() {
-				println!("Key {key} is {state:?}");
-			}
-			for (key, state) in keys.filter(|(_, k)| k.contains(ButtonState::Changed)) {
-				if state.contains(ButtonState::Active) {
+				.map(|(i, k)| (i - 8, sk.input_key(k)));
+			for (key, state) in keys {
+				if state.contains(ButtonState::JustActive) {
 					keys_down.push(key);
-				} else {
+				} else if state.contains(ButtonState::JustInactive) {
 					keys_up.push(key);
 				}
 			}
