@@ -22,8 +22,10 @@ use std::time::Duration;
 use stereokit::input::Handed;
 use stereokit::lifecycle::DisplayMode;
 use stereokit::lifecycle::{DepthMode, LogFilter};
+use stereokit::material::Material;
 use stereokit::render::SphericalHarmonics;
 use stereokit::render::StereoKitRender;
+use stereokit::shader::Shader;
 use stereokit::texture::Texture;
 use stereokit::time::StereoKitTime;
 use tokio::{runtime::Handle, sync::oneshot};
@@ -92,6 +94,9 @@ fn main() -> Result<()> {
 		.init()
 		.expect("StereoKit failed to initialize");
 	info!("Init StereoKit");
+
+	Material::find(&stereokit, "default/material_pbr")?
+		.set_shader(Shader::from_name(&stereokit, "default/shader_pbr_clip")?);
 
 	// Skytex/light stuff
 	{

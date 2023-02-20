@@ -194,13 +194,7 @@ impl Model {
 			.sk_model
 			.get_or_try_init(|| -> color_eyre::eyre::Result<SendWrapper<SKModel>> {
 				let pending_model_path = self.pending_model_path.get().ok_or(Error)?;
-				let model = SKModel::from_file(
-					sk,
-					pending_model_path.as_path(),
-					Shader::from_file(sk, "default/shader_pbr_clip")
-						.ok()
-						.as_ref(),
-				)?;
+				let model = SKModel::from_file(sk, pending_model_path.as_path(), None)?;
 
 				Ok(SendWrapper::new(model.clone()))
 			})
@@ -210,7 +204,9 @@ impl Model {
 			{
 				let mut material_replacements = self.pending_material_replacements.lock();
 				for (material_idx, replacement_material) in material_replacements.iter() {
-					sk_model.set_material(sk, *material_idx as i32, replacement_material);
+					if sk_model.get_material(sk, *material_idx as i32).is_some() {
+						sk_model.set_material(sk, *material_idx as i32, replacement_material);
+					}
 				}
 				material_replacements.clear();
 			}
