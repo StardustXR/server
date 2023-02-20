@@ -37,8 +37,8 @@ lazy_static! {
 }
 
 pub fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
-	if item.captured_acceptor.lock().upgrade().is_some() {
-		release(item);
+	if let Some(acceptor) = item.captured_acceptor.lock().upgrade() {
+		release(item, Some(&acceptor));
 	}
 	*item.captured_acceptor.lock() = Arc::downgrade(acceptor);
 	acceptor.handle_capture(item);
@@ -46,9 +46,9 @@ pub fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
 		ui.handle_capture_item(item, acceptor);
 	}
 }
-fn release(item: &Arc<Item>) {
+fn release(item: &Item, acceptor: Option<&ItemAcceptor>) {
 	let mut captured_acceptor = item.captured_acceptor.lock();
-	if let Some(acceptor) = captured_acceptor.upgrade() {
+	if let Some(acceptor) = captured_acceptor.upgrade().as_deref().or(acceptor) {
 		*captured_acceptor = Weak::default();
 		acceptor.handle_release(item);
 		if let Some(ui) = item.type_info.ui.lock().upgrade() {
@@ -154,7 +154,7 @@ impl Item {
 
 	fn release_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
 		let item = node.get_aspect("Item", "item", |n| &n.item)?;
-		release(item);
+		release(item, None);
 
 		Ok(())
 	}
@@ -162,6 +162,7 @@ impl Item {
 impl Drop for Item {
 	fn drop(&mut self) {
 		self.type_info.items.remove(self);
+		release(self, None);
 		if let Some(ui) = self.type_info.ui.lock().upgrade() {
 			ui.handle_destroy_item(self);
 		}
@@ -292,7 +293,8 @@ pub struct ItemAcceptor {
 	node: Weak<Node>,
 	pub type_info: &'static TypeInfo,
 	field: Arc<Field>,
-	accepted: LifeLinkedNodeMap<String>,
+	accepted_aliases: LifeLinkedNodeMap<String>,
+	accepted_registry: Registry<Item>,
 }
 impl ItemAcceptor {
 	fn add_to(node: &Arc<Node>, type_info: &'static TypeInfo, field: Arc<Field>) {
@@ -301,7 +303,8 @@ impl ItemAcceptor {
 			node: Arc::downgrade(node),
 			type_info,
 			field,
-			accepted: Default::default(),
+			accepted_aliases: Default::default(),
+			accepted_registry: Registry::new(),
 		});
 		node.add_local_signal("capture", ItemAcceptor::capture_flex);
 		if let Some(ui) = type_info.ui.lock().upgrade() {
@@ -351,8 +354,9 @@ impl ItemAcceptor {
 		let Some(node) = self.node.upgrade() else { return };
 		let Some(client) = node.get_client() else { return };
 
+		self.accepted_registry.add_raw(item);
 		if let Ok(alias_node) = item.make_alias(&client, &node.path) {
-			self.accepted.add(item.uid.clone(), &alias_node);
+			self.accepted_aliases.add(item.uid.clone(), &alias_node);
 		}
 		let _ = node.send_remote_signal(
 			"capture",
@@ -362,13 +366,17 @@ impl ItemAcceptor {
 	fn handle_release(&self, item: &Item) {
 		let Some(node) = self.node.upgrade() else { return };
 
-		self.accepted.remove(&item.uid);
+		self.accepted_registry.remove(item);
+		self.accepted_aliases.remove(&item.uid);
 		let _ = node.send_remote_signal("release", &serialize(&item.uid).unwrap());
 	}
 }
 impl Drop for ItemAcceptor {
 	fn drop(&mut self) {
 		self.type_info.acceptors.remove(self);
+		for item in self.accepted_registry.get_valid_contents() {
+			release(&item, Some(self));
+		}
 		if let Some(ui) = self.type_info.ui.lock().upgrade() {
 			ui.handle_destroy_acceptor(self);
 		}
