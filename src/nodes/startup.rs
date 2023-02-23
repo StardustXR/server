@@ -9,7 +9,7 @@ use color_eyre::eyre::Result;
 use glam::Mat4;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use stardust_xr::schemas::flex::{deserialize, serialize};
+use stardust_xr::schemas::flex::{deserialize, flexbuffers, serialize};
 use std::{
 	fmt::Debug,
 	sync::{Arc, Weak},

@@ -17,7 +17,7 @@ use nanoid::nanoid;
 use parking_lot::Mutex;
 use portable_atomic::Ordering;
 use serde::Deserialize;
-use stardust_xr::schemas::flex::{deserialize, serialize};
+use stardust_xr::schemas::flex::{deserialize, flexbuffers, serialize};
 use stardust_xr::values::Transform;
 use std::hash::Hash;
 use std::ops::Deref;

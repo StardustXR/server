@@ -14,8 +14,8 @@ use stardust_xr::schemas::flex::deserialize;
 use stardust_xr::values::Transform;
 use std::ops::DerefMut;
 use std::{ffi::OsStr, fmt::Error, path::PathBuf, sync::Arc};
-use stereokit::sound::Sound as SKSound;
 use stereokit::sound::SoundInstance;
+use stereokit::sound::{Sound as SKSound, SoundT};
 
 static SOUND_REGISTRY: Registry<Sound> = Registry::new();
 

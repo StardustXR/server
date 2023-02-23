@@ -3,7 +3,10 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use glam::Mat4;
-use stardust_xr::{schemas::flat::Datamap, values::Transform};
+use stardust_xr::{
+	schemas::{flat::Datamap, flex::flexbuffers},
+	values::Transform,
+};
 use std::sync::{Arc, Weak};
 use stereokit::input::{ButtonState, Handed, StereoKitInput};
 use tracing::instrument;

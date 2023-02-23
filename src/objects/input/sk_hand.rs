@@ -3,7 +3,10 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use glam::Mat4;
-use stardust_xr::schemas::flat::{Datamap, Hand as FlatHand, Joint};
+use stardust_xr::schemas::{
+	flat::{Datamap, Hand as FlatHand, Joint},
+	flex::flexbuffers,
+};
 use std::sync::{Arc, Weak};
 use stereokit::{
 	input::{ButtonState, Handed, Joint as SkJoint, StereoKitInput},

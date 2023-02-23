@@ -14,7 +14,7 @@ use color_eyre::eyre::{eyre, Result};
 use lazy_static::lazy_static;
 use serde::Deserialize;
 use stardust_xr::{
-	schemas::flex::{deserialize, serialize},
+	schemas::flex::{deserialize, flexbuffers, serialize},
 	values::Transform,
 };
 use std::sync::Arc;

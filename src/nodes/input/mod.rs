@@ -20,8 +20,11 @@ use nanoid::nanoid;
 use parking_lot::Mutex;
 use portable_atomic::AtomicBool;
 use serde::Deserialize;
-use stardust_xr::schemas::flat::{Datamap, InputDataType};
 use stardust_xr::schemas::{flat::InputData, flex::deserialize};
+use stardust_xr::schemas::{
+	flat::{Datamap, InputDataType},
+	flex::flexbuffers,
+};
 use stardust_xr::values::Transform;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
