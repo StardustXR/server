@@ -12,7 +12,7 @@ use color_eyre::eyre::Result;
 use glam::{vec3, Mat4, Vec3};
 use nanoid::nanoid;
 use serde::Serialize;
-use stardust_xr::schemas::flat::Datamap;
+use stardust_xr::schemas::{flat::Datamap, flex::flexbuffers};
 use std::{convert::TryFrom, sync::Arc};
 use stereokit::input::{ButtonState, Key, Ray as SkRay, StereoKitInput};
 use tracing::instrument;

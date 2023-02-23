@@ -12,7 +12,7 @@ use glam::vec3a;
 use mint::{Quaternion, Vector3};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
-use stardust_xr::schemas::flex::{deserialize, serialize};
+use stardust_xr::schemas::flex::{deserialize, flexbuffers, serialize};
 use stardust_xr::values::Transform;
 use std::sync::{Arc, Weak};
 
