@@ -24,7 +24,6 @@ use stereokit::lifecycle::{StereoKitContext, StereoKitDraw};
 use stereokit::material::Material;
 use stereokit::model::Model as SKModel;
 use stereokit::render::RenderLayer;
-use stereokit::shader::Shader;
 use stereokit::texture::Texture;
 use stereokit::values::Color128;
 
