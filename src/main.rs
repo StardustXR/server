@@ -124,14 +124,20 @@ fn main() -> Result<()> {
 	}
 
 	let mouse_pointer = cli_args.flatscreen.then(MousePointer::new).transpose()?;
-	let mut hands =
-		(!cli_args.flatscreen).then(|| (SkHand::new(Handed::Left), SkHand::new(Handed::Right)));
-	let mut controllers = (!cli_args.flatscreen && !cli_args.disable_controller).then(|| {
-		(
-			SkController::new(Handed::Left),
-			SkController::new(Handed::Right),
-		)
-	});
+	let mut hands = (!cli_args.flatscreen)
+		.then(|| {
+			let left = SkHand::new(Handed::Left).ok();
+			let right = SkHand::new(Handed::Right).ok();
+			left.zip(right)
+		})
+		.flatten();
+	let mut controllers = (!cli_args.flatscreen && !cli_args.disable_controller)
+		.then(|| {
+			let left = SkController::new(Handed::Left).ok();
+			let right = SkController::new(Handed::Right).ok();
+			left.zip(right)
+		})
+		.flatten();
 
 	if hands.is_none() {
 		unsafe {

@@ -1,13 +1,19 @@
-use crate::nodes::{
-	input::{hand::Hand, InputMethod, InputType},
-	spatial::Spatial,
+use crate::{
+	core::client::INTERNAL_CLIENT,
+	nodes::{
+		input::{hand::Hand, InputMethod, InputType},
+		spatial::Spatial,
+		Node,
+	},
 };
+use color_eyre::eyre::Result;
 use glam::Mat4;
+use nanoid::nanoid;
 use stardust_xr::schemas::{
 	flat::{Datamap, Hand as FlatHand, Joint},
 	flex::flexbuffers,
 };
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use stereokit::{
 	input::{ButtonState, Handed, Joint as SkJoint, StereoKitInput},
 	lifecycle::StereoKitDraw,
@@ -23,32 +29,35 @@ fn convert_joint(joint: SkJoint) -> Joint {
 }
 
 pub struct SkHand {
-	hand: Arc<InputMethod>,
+	_node: Arc<Node>,
+	input: Arc<InputMethod>,
 	handed: Handed,
 }
 impl SkHand {
-	pub fn new(handed: Handed) -> Self {
-		SkHand {
-			hand: InputMethod::new(
-				Spatial::new(Weak::new(), None, Mat4::IDENTITY),
-				InputType::Hand(Box::new(Hand {
-					base: FlatHand {
-						right: handed == Handed::Right,
-						..Default::default()
-					},
-				})),
-			),
+	pub fn new(handed: Handed) -> Result<Self> {
+		let _node = Node::create(&INTERNAL_CLIENT, "", &nanoid!(), false).add_to_scenegraph()?;
+		Spatial::add_to(&_node, None, Mat4::IDENTITY, false)?;
+		let hand = InputType::Hand(Box::new(Hand {
+			base: FlatHand {
+				right: handed == Handed::Right,
+				..Default::default()
+			},
+		}));
+		let input = InputMethod::add_to(&_node, hand, None)?;
+		Ok(SkHand {
+			_node,
+			input,
 			handed,
-		}
+		})
 	}
 	#[instrument(level = "debug", name = "Update Hand Input Method", skip_all)]
 	pub fn update(&mut self, sk: &StereoKitDraw) {
 		let sk_hand = sk.input_hand(self.handed);
-		if let InputType::Hand(hand) = &mut *self.hand.specialization.lock() {
+		if let InputType::Hand(hand) = &mut *self.input.specialization.lock() {
 			let controller = sk.input_controller(self.handed);
-			*self.hand.enabled.lock() = controller.tracked.contains(ButtonState::Inactive)
+			*self.input.enabled.lock() = controller.tracked.contains(ButtonState::Inactive)
 				&& sk_hand.tracked_state.contains(ButtonState::Active);
-			if *self.hand.enabled.lock() {
+			if *self.input.enabled.lock() {
 				hand.base.thumb.tip = convert_joint(sk_hand.fingers[0][4]);
 				hand.base.thumb.distal = convert_joint(sk_hand.fingers[0][3]);
 				hand.base.thumb.proximal = convert_joint(sk_hand.fingers[0][2]);
@@ -85,6 +94,6 @@ impl SkHand {
 		map.push("grab_strength", sk_hand.grip_activation);
 		map.push("pinch_strength", sk_hand.pinch_activation);
 		map.end_map();
-		*self.hand.datamap.lock() = Datamap::new(fbb.take_buffer()).ok();
+		*self.input.datamap.lock() = Datamap::new(fbb.take_buffer()).ok();
 	}
 }

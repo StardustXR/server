@@ -41,10 +41,7 @@ impl InputSpecialization for Pointer {
 	) -> InputDataType {
 		let (_, orientation, origin) = local_to_handler_matrix.to_scale_rotation_translation();
 		let direction = local_to_handler_matrix.transform_vector3(vec3(0_f32, 0_f32, 1_f32));
-		let ray_march = self.ray_march(
-			&distance_link.method.spatial,
-			&distance_link.handler.field.upgrade().unwrap(),
-		);
+		let ray_march = self.ray_march(&distance_link.method.spatial, &distance_link.handler.field);
 		let deepest_point = (direction * ray_march.deepest_point_distance) + origin;
 
 		InputDataType::Pointer(FlatPointer {
