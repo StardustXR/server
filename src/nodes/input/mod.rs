@@ -11,12 +11,11 @@ use super::{
 	spatial::{find_spatial_parent, parse_transform, Spatial},
 	Node,
 };
-use crate::core::eventloop::FRAME;
 use crate::core::registry::Registry;
 use crate::core::{client::Client, task};
+use crate::core::{eventloop::FRAME, node_collections::LifeLinkedNodeMap};
 use color_eyre::eyre::{ensure, Result};
 use glam::Mat4;
-use nanoid::nanoid;
 use parking_lot::Mutex;
 use portable_atomic::AtomicBool;
 use serde::Deserialize;
@@ -60,6 +59,7 @@ impl Deref for InputType {
 }
 
 pub struct InputMethod {
+	node: Weak<Node>,
 	pub uid: String,
 	pub enabled: Mutex<bool>,
 	pub spatial: Arc<Spatial>,
@@ -68,17 +68,6 @@ pub struct InputMethod {
 	pub datamap: Mutex<Option<Datamap>>,
 }
 impl InputMethod {
-	pub fn new(spatial: Arc<Spatial>, specialization: InputType) -> Arc<InputMethod> {
-		let method = InputMethod {
-			uid: nanoid!(),
-			enabled: Mutex::new(true),
-			spatial,
-			specialization: Mutex::new(specialization),
-			captures: Registry::new(),
-			datamap: Mutex::new(None),
-		};
-		INPUT_METHOD_REGISTRY.add(method)
-	}
 	#[allow(dead_code)]
 	pub fn add_to(
 		node: &Arc<Node>,
@@ -93,6 +82,7 @@ impl InputMethod {
 		node.add_local_signal("set_datamap", InputMethod::set_datamap);
 
 		let method = InputMethod {
+			node: Arc::downgrade(node),
 			uid: node.uid.clone(),
 			enabled: Mutex::new(true),
 			spatial: node.spatial.get().unwrap().clone(),
@@ -134,17 +124,14 @@ pub struct DistanceLink {
 	pub distance: f32,
 	pub method: Arc<InputMethod>,
 	pub handler: Arc<InputHandler>,
-	pub handler_field: Arc<Field>,
 }
 impl DistanceLink {
-	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Option<Self> {
-		let handler_field = handler.field.upgrade()?;
-		Some(DistanceLink {
-			distance: method.compare_distance(&handler_field),
+	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Self {
+		DistanceLink {
+			distance: method.compare_distance(&handler.field),
 			method,
 			handler,
-			handler_field,
-		})
+		}
 	}
 
 	fn send_input(&self, frame: u64, datamap: Datamap) {
@@ -160,9 +147,7 @@ impl DistanceLink {
 		let root = InputData {
 			uid: self.method.uid.clone(),
 			input,
-			distance: self
-				.method
-				.true_distance(&self.handler.field.upgrade().unwrap()),
+			distance: self.method.true_distance(&self.handler.field),
 			datamap,
 		};
 		root.serialize()
@@ -173,7 +158,8 @@ pub struct InputHandler {
 	enabled: Arc<AtomicBool>,
 	node: Weak<Node>,
 	spatial: Arc<Spatial>,
-	pub field: Weak<Field>,
+	pub field: Arc<Field>,
+	method_aliases: LifeLinkedNodeMap<String>,
 }
 impl InputHandler {
 	pub fn add_to(node: &Arc<Node>, field: &Arc<Field>) -> Result<()> {
@@ -186,7 +172,8 @@ impl InputHandler {
 			enabled: node.enabled.clone(),
 			node: Arc::downgrade(node),
 			spatial: node.spatial.get().unwrap().clone(),
-			field: Arc::downgrade(field),
+			field: field.clone(),
+			method_aliases: LifeLinkedNodeMap::default(),
 		};
 		let handler = INPUT_HANDLER_REGISTRY.add(handler);
 		let _ = node.input_handler.set(handler);
@@ -275,8 +262,7 @@ pub fn process_input() {
 	let handlers = INPUT_HANDLER_REGISTRY
 		.get_valid_contents()
 		.into_iter()
-		.filter(|handler| handler.enabled.load(Ordering::Relaxed))
-		.filter(|handler| handler.field.upgrade().is_some());
+		.filter(|handler| handler.enabled.load(Ordering::Relaxed));
 	for method in methods {
 		debug_span!("Process input method").in_scope(|| {
 			// Get all valid input handlers and convert them to DistanceLink objects
@@ -284,7 +270,7 @@ pub fn process_input() {
 				.in_scope(|| {
 					handlers
 						.clone()
-						.filter_map(|handler| DistanceLink::from(method.clone(), handler))
+						.map(|handler| DistanceLink::from(method.clone(), handler))
 						.collect()
 				});
 
