@@ -22,7 +22,6 @@ use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::deserialize;
 use std::fmt::Debug;
-use std::future::Future;
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
 use tracing::{debug_span, instrument};
@@ -249,21 +248,21 @@ impl Node {
 			.transpose()?;
 		Ok(())
 	}
-	#[instrument(level = "debug", skip_all)]
-	pub fn execute_remote_method(
-		&self,
-		method: &str,
-		data: Vec<u8>,
-	) -> Result<impl Future<Output = Result<Vec<u8>>>> {
-		let message_sender_handle = self
-			.message_sender_handle
-			.as_ref()
-			.ok_or(eyre!("Messenger does not exist for this node"))?;
+	// #[instrument(level = "debug", skip_all)]
+	// pub fn execute_remote_method(
+	// 	&self,
+	// 	method: &str,
+	// 	data: Vec<u8>,
+	// ) -> Result<impl Future<Output = Result<Vec<u8>>>> {
+	// 	let message_sender_handle = self
+	// 		.message_sender_handle
+	// 		.as_ref()
+	// 		.ok_or(eyre!("Messenger does not exist for this node"))?;
 
-		let future = message_sender_handle.method(self.path.as_str(), method, &data)?;
+	// 	let future = message_sender_handle.method(self.path.as_str(), method, &data)?;
 
-		Ok(async { future.await.map_err(|e| eyre!(e)) })
-	}
+	// 	Ok(async { future.await.map_err(|e| eyre!(e)) })
+	// }
 }
 impl Debug for Node {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

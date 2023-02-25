@@ -7,23 +7,21 @@ use self::pointer::Pointer;
 use self::tip::Tip;
 
 use super::{
+	alias::{Alias, AliasInfo},
 	fields::{find_field, Field},
 	spatial::{find_spatial_parent, parse_transform, Spatial},
 	Node,
 };
-use crate::core::registry::Registry;
-use crate::core::{client::Client, task};
-use crate::core::{eventloop::FRAME, node_collections::LifeLinkedNodeMap};
+use crate::core::client::Client;
+use crate::core::eventloop::FRAME;
+use crate::core::{node_collections::LifeLinkedNodeList, registry::Registry};
 use color_eyre::eyre::{ensure, Result};
 use glam::Mat4;
 use parking_lot::Mutex;
 use portable_atomic::AtomicBool;
 use serde::Deserialize;
+use stardust_xr::schemas::flat::{Datamap, InputDataType};
 use stardust_xr::schemas::{flat::InputData, flex::deserialize};
-use stardust_xr::schemas::{
-	flat::{Datamap, InputDataType},
-	flex::flexbuffers,
-};
 use stardust_xr::values::Transform;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
@@ -60,11 +58,11 @@ impl Deref for InputType {
 
 pub struct InputMethod {
 	node: Weak<Node>,
-	pub uid: String,
+	uid: String,
 	pub enabled: Mutex<bool>,
 	pub spatial: Arc<Spatial>,
 	pub specialization: Mutex<InputType>,
-	pub captures: Registry<InputHandler>,
+	captures: Registry<InputHandler>,
 	pub datamap: Mutex<Option<Datamap>>,
 }
 impl InputMethod {
@@ -79,7 +77,8 @@ impl InputMethod {
 			"Internal: Node does not have a spatial attached!"
 		);
 
-		node.add_local_signal("set_datamap", InputMethod::set_datamap);
+		node.add_local_signal("capture", InputMethod::capture_flex);
+		node.add_local_signal("set_datamap", InputMethod::set_datamap_flex);
 
 		let method = InputMethod {
 			node: Arc::downgrade(node),
@@ -95,13 +94,18 @@ impl InputMethod {
 		Ok(method)
 	}
 
-	fn set_datamap(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		node.input_method
-			.get()
-			.unwrap()
-			.datamap
-			.lock()
-			.replace(Datamap::new(data.to_vec())?);
+	fn capture_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		let method = node.get_aspect("Input Method", "input method", |n| &n.input_method)?;
+		let handler_node = calling_client.get_node("Input Handler", deserialize(data)?)?;
+		let handler =
+			handler_node.get_aspect("Input Handler", "input handler", |n| &n.input_handler)?;
+
+		method.captures.add_raw(&handler);
+		Ok(())
+	}
+	fn set_datamap_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+		let method = node.get_aspect("Input Method", "input method", |n| &n.input_method)?;
+		method.datamap.lock().replace(Datamap::new(data.to_vec())?);
 		Ok(())
 	}
 
@@ -121,17 +125,30 @@ impl Drop for InputMethod {
 }
 
 pub struct DistanceLink {
-	pub distance: f32,
-	pub method: Arc<InputMethod>,
-	pub handler: Arc<InputHandler>,
+	distance: f32,
+	method: Arc<InputMethod>,
+	handler: Arc<InputHandler>,
 }
 impl DistanceLink {
-	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Self {
-		DistanceLink {
+	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Option<Self> {
+		let handler_node = handler.node.upgrade()?;
+		let method_alias = Alias::create(
+			&handler_node.get_client()?,
+			handler_node.get_path(),
+			&method.uid,
+			&method.node.upgrade()?,
+			AliasInfo {
+				local_signals: vec!["capture"],
+				..Default::default()
+			},
+		)
+		.ok()?;
+		handler.method_aliases.add(Arc::downgrade(&method_alias));
+		Some(DistanceLink {
 			distance: method.compare_distance(&handler.field),
 			method,
 			handler,
-		}
+		})
 	}
 
 	fn send_input(&self, frame: u64, datamap: Datamap) {
@@ -158,8 +175,8 @@ pub struct InputHandler {
 	enabled: Arc<AtomicBool>,
 	node: Weak<Node>,
 	spatial: Arc<Spatial>,
-	pub field: Arc<Field>,
-	method_aliases: LifeLinkedNodeMap<String>,
+	field: Arc<Field>,
+	method_aliases: LifeLinkedNodeList,
 }
 impl InputHandler {
 	pub fn add_to(node: &Arc<Node>, field: &Arc<Field>) -> Result<()> {
@@ -173,7 +190,7 @@ impl InputHandler {
 			node: Arc::downgrade(node),
 			spatial: node.spatial.get().unwrap().clone(),
 			field: field.clone(),
-			method_aliases: LifeLinkedNodeMap::default(),
+			method_aliases: LifeLinkedNodeList::default(),
 		};
 		let handler = INPUT_HANDLER_REGISTRY.add(handler);
 		let _ = node.input_handler.set(handler);
@@ -182,30 +199,8 @@ impl InputHandler {
 
 	#[instrument(level = "debug", skip(self, distance_link))]
 	fn send_input(&self, frame: u64, distance_link: &DistanceLink, datamap: Datamap) {
-		let data = distance_link.serialize(datamap);
 		let Some(node) = self.node.upgrade() else {return};
-		let method = Arc::downgrade(&distance_link.method);
-		let handler = Arc::downgrade(&distance_link.handler);
-
-		if let Ok(data) = node.execute_remote_method("input", data) {
-			let _ = task::new(|| "input capture", async move {
-				if let Ok(data) = data.await {
-					if frame == FRAME.load(Ordering::Relaxed) {
-						let capture = flexbuffers::Reader::get_root(data.as_slice())
-							.and_then(|data| data.get_bool())
-							.unwrap_or(false);
-
-						if capture {
-							if let Some(method) = method.upgrade() {
-								if let Some(handler) = handler.upgrade() {
-									method.captures.add_raw(&handler);
-								}
-							}
-						}
-					}
-				}
-			});
-		}
+		let _ = node.send_remote_signal("input", &distance_link.serialize(datamap));
 	}
 }
 impl PartialEq for InputHandler {
@@ -259,18 +254,19 @@ pub fn process_input() {
 			.filter(|method| *method.enabled.lock())
 			.filter(|method| method.datamap.lock().is_some())
 	});
-	let handlers = INPUT_HANDLER_REGISTRY
-		.get_valid_contents()
-		.into_iter()
-		.filter(|handler| handler.enabled.load(Ordering::Relaxed));
+	let handlers = INPUT_HANDLER_REGISTRY.get_valid_contents();
+	for handler in &handlers {
+		handler.method_aliases.clear();
+	}
 	for method in methods {
 		debug_span!("Process input method").in_scope(|| {
 			// Get all valid input handlers and convert them to DistanceLink objects
 			let mut distance_links: Vec<DistanceLink> = debug_span!("Generate distance links")
 				.in_scope(|| {
 					handlers
-						.clone()
-						.map(|handler| DistanceLink::from(method.clone(), handler))
+						.iter()
+						.filter(|handler| handler.enabled.load(Ordering::Relaxed))
+						.filter_map(|handler| DistanceLink::from(method.clone(), handler.clone()))
 						.collect()
 				});
 
