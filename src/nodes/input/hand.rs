@@ -63,9 +63,8 @@ impl InputSpecialization for Hand {
 		]);
 
 		for joint in joints {
-			let joint_matrix =
-				Mat4::from_rotation_translation(joint.rotation.into(), joint.position.into())
-					* local_to_handler_matrix;
+			let joint_matrix = local_to_handler_matrix
+				* Mat4::from_rotation_translation(joint.rotation.into(), joint.position.into());
 			let (_, rotation, position) = joint_matrix.to_scale_rotation_translation();
 			joint.position = position.into();
 			joint.rotation = rotation.into();
