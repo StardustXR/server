@@ -10,6 +10,8 @@
     flake-utils.lib.simpleFlake {
       inherit self nixpkgs;
       name = "stardust-xr";
+      systems = [ "x86_64-linux" "aarch64-linux" ];
+
       overlay = pkgs: prev:
         let
           toolchain = fenix.packages.${pkgs.system}.minimal.toolchain;
