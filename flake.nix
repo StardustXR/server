@@ -4,20 +4,24 @@
   inputs.fenix.url = github:nix-community/fenix;
   inputs.fenix.inputs.nixpkgs.follows = "nixpkgs";
 
-  inputs.flake-utils.url = github:numtide/flake-utils;
-
   outputs = { self, nixpkgs, fenix, flake-utils }:
-    flake-utils.lib.simpleFlake {
-      inherit self nixpkgs;
-      name = "stardust-xr";
-      systems = [ "x86_64-linux" "aarch64-linux" ];
+    let
+      name = "server";
+      pkgs = system: import nixpkgs {
+        inherit system;
+      };
+      shell = pkgs: pkgs.mkShell {
+        inputsFrom = [ self.packages.${pkgs.system}.default ];
 
-      overlay = pkgs: prev:
+        # ---- START package specific dev settings ----
+        LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+        # ---- END package specific dev settings ----
+      };
+      package = pkgs:
         let
           toolchain = fenix.packages.${pkgs.system}.minimal.toolchain;
-
-          name = "server";
-          pkg = (pkgs.makeRustPlatform {
+        in
+          (pkgs.makeRustPlatform {
             cargo = toolchain;
             rustc = toolchain;
           }).buildRustPackage rec {
@@ -50,17 +54,16 @@
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
             # ---- END package specific settings ----
           };
-        in
-        {
-          stardust-xr.${name} = pkg;
-          stardust-xr.defaultPackage = pkg;
-        };
-      shell = { pkgs }: pkgs.mkShell {
-        inputsFrom = [ pkgs.stardust-xr.defaultPackage ];
-
-        # ---- START package specific dev settings ----
-        LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
-        # ---- END package specific dev settings ----
+    in
+    {
+      overlays.default = final: prev: {
+        stardust-xr.${name} = package final;
       };
+
+      packages."x86_64-linux".default = package (pkgs "x86_64-linux");
+      packages."aarch64-linux".default = package (pkgs "aarch64-linux");
+
+      devShells."x86_64-linux".default = shell (pkgs "x86_64-linux");
+      devShells."aarch64-linux".default = shell (pkgs "aarch64-linux");
     };
 }
