@@ -46,6 +46,10 @@ struct CliArgs {
 	/// Don't create a tip input for controller because SOME RUNTIMES will lie
 	#[clap(long, action)]
 	disable_controller: bool,
+
+	/// Run a script when ready for clients to connect. If this is not set the script at $HOME/.config/stardust/startup will be ran if it exists.
+	#[clap(id = "PATH", short = 'e', long = "execute-startup-script", action)]
+	startup_script: Option<PathBuf>,
 }
 
 struct EventLoopInfo {
@@ -159,7 +163,12 @@ fn main() -> Result<()> {
 	info!("Stardust ready!");
 
 	if let Some(project_dirs) = project_dirs.as_ref() {
-		let _startup = Command::new(project_dirs.config_dir().join("startup"))
+		let startup_script_path = cli_args
+			.startup_script
+			.clone()
+			.and_then(|p| p.canonicalize().ok())
+			.unwrap_or_else(|| project_dirs.config_dir().join("startup"));
+		let _startup = Command::new(startup_script_path)
 			.env("WAYLAND_DISPLAY", &wayland.socket_name)
 			.env(
 				"STARDUST_INSTANCE",
