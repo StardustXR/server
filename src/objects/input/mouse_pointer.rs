@@ -14,7 +14,8 @@ use nanoid::nanoid;
 use serde::Serialize;
 use stardust_xr::schemas::{flat::Datamap, flex::flexbuffers};
 use std::{convert::TryFrom, sync::Arc};
-use stereokit::input::{ButtonState, Key, Ray as SkRay, StereoKitInput};
+use stereokit::input::{ButtonState, Key, StereoKitInput};
+use stereokit::values::Ray as SkRay;
 use tracing::instrument;
 
 const SK_KEYMAP: &str = include_str!("sk.kmp");
@@ -60,12 +61,10 @@ impl MousePointer {
 	pub fn update(&self, sk: &impl StereoKitInput) {
 		let mouse = sk.input_mouse();
 
-		if let Some(ray) = SkRay::from_mouse(&mouse) {
-			self.spatial.set_local_transform(
-				Mat4::look_to_rh(ray.pos.into(), -Vec3::from(ray.dir), vec3(0.0, 1.0, 0.0))
-					.inverse(),
-			)
-		}
+		let ray = SkRay::from_mouse(&mouse);
+		self.spatial.set_local_transform(
+			Mat4::look_to_rh(ray.pos.into(), -Vec3::from(ray.dir), vec3(0.0, 1.0, 0.0)).inverse(),
+		);
 		{
 			// Set pointer input datamap
 			let mut fbb = flexbuffers::Builder::default();

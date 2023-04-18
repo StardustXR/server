@@ -37,7 +37,7 @@ rand = "0.8.5"
 [dependencies.stereokit]
 default-features = false
 features = ["linux-egl", "color_named", "prisma"]
-version = "0.15.2"
+version = "0.15.3"
 
 [dependencies.smithay]
 git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures

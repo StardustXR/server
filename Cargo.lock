@@ -782,7 +782,7 @@ checksum = "15d14128f06405808ce75bfebe11e9b0f9da18719ede6d7bdb1702d6bfe0f7e8"
 dependencies = [
  "bitflags 1.3.2",
  "byteorder",
- "num_enum",
+ "num_enum 0.5.11",
  "serde",
  "serde_derive",
 ]
@@ -1434,7 +1434,16 @@ version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f646caf906c20226733ed5b1374287eb97e3c2a5c227ce668c1f2ce20ae57c9"
 dependencies = [
- "num_enum_derive",
+ "num_enum_derive 0.5.11",
+]
+
+[[package]]
+name = "num_enum"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a015b430d3c108a207fd776d2e2196aaf8b1cf8cf93253e3a097ff3085076a1"
+dependencies = [
+ "num_enum_derive 0.6.1",
 ]
 
 [[package]]
@@ -1447,6 +1456,18 @@ dependencies = [
  "proc-macro2",
  "quote 1.0.26",
  "syn 1.0.109",
+]
+
+[[package]]
+name = "num_enum_derive"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96667db765a921f7b295ffee8b60472b686a51d4f21c2ee4ffdb94c7013b65a6"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote 1.0.26",
+ "syn 2.0.8",
 ]
 
 [[package]]
@@ -2095,9 +2116,9 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stereokit"
-version = "0.15.2"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "edaf47ad239e02872ee35b5bf4ebc4169ddc9f85ea22a5aac340325f3a70ccbf"
+checksum = "5e1a6491c921ee4bb53bc41f08345d621769ea6802cd020cd308975a790487cb"
 dependencies = [
  "bitflags 1.3.2",
  "bitflags_serde_shim",
@@ -2107,7 +2128,7 @@ dependencies = [
  "mint",
  "ndk-context",
  "num-derive",
- "num_enum",
+ "num_enum 0.6.1",
  "once_cell",
  "serde",
  "serde_repr",
