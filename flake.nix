@@ -31,7 +31,7 @@
 
             # ---- START package specific settings ----
             version = "20230420";
-            cargoSha256 = "sha256-sIs8EKGPTCs+1aOACNB0oHoX/jomjIUBlMeBD0dTJdM=";
+            cargoSha256 = "sha256-Vk/5LRPcKjUcug4jwWqLBSHD3arLSE74bH21+4sPyLY=";
 
             postPatch = ''
               sk=/build/${pname}-vendor.tar.gz/stereokit-sys/StereoKit
