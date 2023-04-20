@@ -4,7 +4,7 @@
   inputs.fenix.url = github:nix-community/fenix;
   inputs.fenix.inputs.nixpkgs.follows = "nixpkgs";
 
-  outputs = { self, nixpkgs, fenix, flake-utils }:
+  outputs = { self, nixpkgs, fenix }:
     let
       name = "server";
       pkgs = system: import nixpkgs {
@@ -27,13 +27,14 @@
           }).buildRustPackage rec {
             pname = "stardust-xr-${name}";
             src = ./.;
+            cargoDepsName = pname;
 
             # ---- START package specific settings ----
-            version = "20230314";
-            cargoSha256 = "sha256-H6qhpvm6Dqn6EETCtgAcT/iof9ZZHm0ahTkX9cChows=";
+            version = "20230420";
+            cargoSha256 = "sha256-sIs8EKGPTCs+1aOACNB0oHoX/jomjIUBlMeBD0dTJdM=";
 
             postPatch = ''
-              sk=/build/${pname}-${version}-vendor.tar.gz/stereokit-sys/StereoKit
+              sk=/build/${pname}-vendor.tar.gz/stereokit-sys/StereoKit
               mkdir -p $sk/build/cpm
               cp ${pkgs.fetchurl {
                 url = "https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.32.2/CPM.cmake";
