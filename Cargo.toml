@@ -26,7 +26,7 @@ prisma = "0.1.1"
 slog = "2.7.0"
 xkbcommon = { version = "0.5.0", default-features = false, optional = true }
 stardust-xr = "0.11.0"
-directories = "4.0.1"
+directories = "5.0.0"
 serde = { version = "1.0.152", features = ["derive"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
@@ -37,7 +37,7 @@ rand = "0.8.5"
 [dependencies.stereokit]
 default-features = false
 features = ["linux-egl", "color_named", "prisma"]
-version = "0.15.1"
+version = "0.15.2"
 
 [dependencies.smithay]
 git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures
