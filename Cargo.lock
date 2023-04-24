@@ -2088,6 +2088,8 @@ dependencies = [
 [[package]]
 name = "stardust-xr"
 version = "0.11.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "52ce36e7f3285a6b1391a298c01bbbb92c9f3d77967a78d1beaac21c0043d23b"
 dependencies = [
  "chrono",
  "cluFlock",
@@ -2105,7 +2107,9 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr-schemas"
-version = "1.4.1"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bebfbddbcba7db7ce8180bb373c9ad5a7d58ff60ee213ca07562820d7e8aab0"
 dependencies = [
  "flatbuffers",
  "flexbuffers",
