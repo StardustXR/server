@@ -31,6 +31,8 @@ use tokio::{
 };
 use tracing::{debug, debug_span, info, instrument};
 
+pub static WAYLAND_DISPLAY: OnceCell<String> = OnceCell::new();
+
 pub static SERIAL_COUNTER: CounterU32 = CounterU32::new(0);
 
 struct EGLRawHandles {
@@ -85,6 +87,9 @@ impl Wayland {
 
 		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
 		let socket_name = socket.socket_name().unwrap().to_str().unwrap().to_string();
+		WAYLAND_DISPLAY
+			.set(socket_name.clone())
+			.expect("seriously message nova this time they screwed up big time");
 		info!(socket_name, "Wayland active");
 
 		let join_handle =

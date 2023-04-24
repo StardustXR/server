@@ -14,6 +14,7 @@ use self::core::eventloop::EventLoop;
 use clap::Parser;
 use color_eyre::eyre::Result;
 use directories::ProjectDirs;
+use once_cell::sync::OnceCell;
 use stardust_xr::server;
 use std::path::PathBuf;
 use std::process::Command;
@@ -51,6 +52,8 @@ struct CliArgs {
 	#[clap(id = "PATH", short = 'e', long = "execute-startup-script", action)]
 	startup_script: Option<PathBuf>,
 }
+
+static STARDUST_INSTANCE: OnceCell<String> = OnceCell::new();
 
 struct EventLoopInfo {
 	tokio_handle: Handle,
@@ -259,6 +262,7 @@ async fn event_loop(
 ) -> color_eyre::eyre::Result<()> {
 	let socket_path =
 		server::get_free_socket_path().expect("Unable to find a free stardust socket path");
+	STARDUST_INSTANCE.set(socket_path.file_name().unwrap().to_string_lossy().into_owned()).expect("Someone hasn't done their job, yell at Nova because how is this set multiple times what the hell");
 	let _event_loop = EventLoop::new(socket_path.clone()).expect("Couldn't create server socket");
 	info!("Init event loop");
 	info!(
