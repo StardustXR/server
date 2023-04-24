@@ -88,12 +88,13 @@ pub struct Item {
 impl Item {
 	pub fn add_to(
 		node: &Arc<Node>,
+		uid: String,
 		type_info: &'static TypeInfo,
 		specialization: ItemType,
 	) -> Arc<Self> {
 		let item = Item {
 			node: Arc::downgrade(node),
-			uid: node.uid.clone(),
+			uid,
 			type_info,
 			captured_acceptor: Default::default(),
 			specialization,

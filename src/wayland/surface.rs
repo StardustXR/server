@@ -7,10 +7,9 @@ use mint::Vector2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
-use slog::Logger;
 use smithay::{
 	backend::renderer::{
-		gles2::{Gles2Renderer, Gles2Texture},
+		gles::{GlesRenderer, GlesTexture},
 		utils::{import_surface_tree, on_commit_buffer_handler, RendererSurfaceStateUserData},
 		Renderer, Texture,
 	},
@@ -35,22 +34,8 @@ use stereokit::{
 
 pub static CORE_SURFACES: Registry<CoreSurface> = Registry::new();
 
-#[derive(Debug, Clone, Copy)]
-pub struct SurfaceGeometry {
-	pub origin: Vector2<u32>,
-	pub size: Vector2<u32>,
-}
-impl Default for SurfaceGeometry {
-	fn default() -> Self {
-		Self {
-			origin: [0; 2].into(),
-			size: [0; 2].into(),
-		}
-	}
-}
-
 pub struct CoreSurfaceData {
-	wl_tex: Option<SendWrapper<Gles2Texture>>,
+	wl_tex: Option<SendWrapper<GlesTexture>>,
 	pub size: Vector2<u32>,
 }
 impl Drop for CoreSurfaceData {
@@ -67,7 +52,7 @@ pub struct CoreSurface {
 	sk_tex: OnceCell<SendWrapper<SKTexture>>,
 	sk_mat: OnceCell<Arc<SendWrapper<Material>>>,
 	material_offset: Mutex<Delta<u32>>,
-	// geometry: Mutex<Delta<Option<SurfaceGeometry>>>,
+	on_commit: Box<dyn Fn(u32) + Send + Sync>,
 	pub pending_material_applications: Mutex<Vec<(Arc<Model>, u32)>>,
 }
 
@@ -76,11 +61,9 @@ impl CoreSurface {
 		display: &Arc<Mutex<Display<WaylandState>>>,
 		dh: DisplayHandle,
 		surface: &WlSurface,
+		on_commit: impl Fn(u32) + Send + Sync + 'static,
 	) {
 		compositor::with_states(surface, |data| {
-			// let mut geometry: Delta<Option<SurfaceGeometry>> =
-			// 	Delta::new(data.data_map.get::<SurfaceGeometry>().cloned());
-			// geometry.mark_changed();
 			data.data_map.insert_if_missing_threadsafe(|| {
 				CORE_SURFACES.add(CoreSurface {
 					display: Arc::downgrade(display),
@@ -90,11 +73,15 @@ impl CoreSurface {
 					sk_tex: OnceCell::new(),
 					sk_mat: OnceCell::new(),
 					material_offset: Mutex::new(Delta::new(0)),
-					// geometry: Mutex::new(geometry),
+					on_commit: Box::new(on_commit) as Box<dyn Fn(u32) + Send + Sync>,
 					pending_material_applications: Mutex::new(Vec::new()),
 				})
 			});
 		});
+	}
+
+	pub fn commit(&self, count: u32) {
+		(self.on_commit)(count);
 	}
 
 	pub fn from_wl_surface(surf: &WlSurface) -> Option<Arc<CoreSurface>> {
@@ -103,7 +90,7 @@ impl CoreSurface {
 		})
 	}
 
-	pub fn process(&self, sk: &StereoKitDraw, renderer: &mut Gles2Renderer, log: &Logger) {
+	pub fn process(&self, sk: &StereoKitDraw, renderer: &mut GlesRenderer) {
 		let Some(wl_surface) = self.wl_surface() else { return };
 
 		let sk_tex = self.sk_tex.get_or_init(|| {
@@ -122,14 +109,14 @@ impl CoreSurface {
 		// Let smithay handle buffer management (has to be done here as RendererSurfaceStates is not thread safe)
 		on_commit_buffer_handler(&wl_surface);
 		// Import all surface buffers into textures
-		if import_surface_tree(renderer, &wl_surface, log).is_err() {
+		if import_surface_tree(renderer, &wl_surface).is_err() {
 			return;
 		}
 
 		let mapped = compositor::with_states(&wl_surface, |data| {
 			data.data_map
 				.get::<RendererSurfaceStateUserData>()
-				.map(|surface_states| surface_states.borrow().wl_buffer().is_some())
+				.map(|surface_states| surface_states.borrow().buffer().is_some())
 				.unwrap_or(false)
 		});
 
@@ -147,7 +134,7 @@ impl CoreSurface {
 				.unwrap()
 				.borrow();
 			let smithay_tex = renderer_surface_state
-				.texture::<Gles2Renderer>(renderer.id())
+				.texture::<GlesRenderer>(renderer.id())
 				.unwrap()
 				.clone();
 
@@ -156,7 +143,7 @@ impl CoreSurface {
 			unsafe {
 				sk_tex.set_native(
 					smithay_tex.tex_id() as usize,
-					smithay::backend::renderer::gles2::ffi::RGBA8.into(),
+					smithay::backend::renderer::gles::ffi::RGBA8.into(),
 					TextureType::ImageNoMips,
 					smithay_tex.width(),
 					smithay_tex.height(),
@@ -194,10 +181,6 @@ impl CoreSurface {
 	pub fn set_material_offset(&self, material_offset: u32) {
 		*self.material_offset.lock().value_mut() = material_offset;
 	}
-
-	// pub fn set_geometry(&self, geometry: SurfaceGeometry) {
-	// *self.geometry.lock().value_mut() = Some(geometry);
-	// }
 
 	pub fn apply_material(&self, model: Arc<Model>, material_idx: u32) {
 		self.pending_material_applications

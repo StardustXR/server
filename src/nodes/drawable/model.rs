@@ -107,7 +107,7 @@ impl MaterialParameter {
 				let Some(texture_path) = resource.get_file(
 					&client.base_resource_prefixes.lock().clone(),
 					&[OsStr::new("png"), OsStr::new("jpg")],
-				) else { return; };
+				) else {return};
 				if let Some(tex) = Texture::from_file(sk, texture_path, true, 0) {
 					material.set_parameter(sk, parameter_name, &tex);
 				}

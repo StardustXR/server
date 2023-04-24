@@ -74,6 +74,7 @@ fn main() -> Result<()> {
 	let log_layer = fmt::Layer::new()
 		.with_thread_names(true)
 		.with_ansi(true)
+		.with_line_number(true)
 		.with_filter(EnvFilter::from_default_env());
 	registry.with(log_layer).init();
 
@@ -250,8 +251,8 @@ fn main() -> Result<()> {
 	Ok(())
 }
 
-// #[tokio::main]
 #[tokio::main]
+// #[tokio::main(flavor = "current_thread")]
 async fn event_loop(
 	info_sender: oneshot::Sender<EventLoopInfo>,
 	stop_rx: oneshot::Receiver<()>,

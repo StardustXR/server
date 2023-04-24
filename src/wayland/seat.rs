@@ -1,9 +1,8 @@
-use crate::core::task;
-
 use super::{
 	panel_item::PanelItem, state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE,
 	SERIAL_COUNTER,
 };
+use crate::core::task;
 use color_eyre::eyre::Result;
 use mint::Vector2;
 use nanoid::nanoid;
@@ -13,20 +12,16 @@ use rand::{seq::IteratorRandom, thread_rng};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smithay::{
 	input::keyboard::{KeymapFile, ModifiersState},
-	reexports::{
-		wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel,
-		wayland_server::{
-			backend::{ClientId, GlobalId, ObjectId},
-			protocol::{
-				wl_keyboard::{self, KeyState, WlKeyboard},
-				wl_pointer::{self, Axis, ButtonState, WlPointer},
-				wl_seat::{self, Capability, WlSeat, EVT_NAME_SINCE},
-				wl_surface::WlSurface,
-				wl_touch::{self, WlTouch},
-			},
-			Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
-			Weak as WlWeak,
+	reexports::wayland_server::{
+		backend::{ClientId, GlobalId, ObjectId},
+		protocol::{
+			wl_keyboard::{self, KeyState, WlKeyboard},
+			wl_pointer::{self, Axis, ButtonState, WlPointer},
+			wl_seat::{self, Capability, WlSeat, EVT_NAME_SINCE},
+			wl_surface::WlSurface,
+			wl_touch::{self, WlTouch},
 		},
+		Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, Weak as WlWeak,
 	},
 	wayland::compositor,
 };
@@ -48,7 +43,7 @@ impl KeyboardInfo {
 	pub fn new(keymap: &Keymap) -> Self {
 		KeyboardInfo {
 			state: xkb::State::new(keymap),
-			keymap: KeymapFile::new(keymap, None),
+			keymap: KeymapFile::new(keymap),
 			mods: ModifiersState::default(),
 			keys: FxHashSet::default(),
 		}
@@ -109,51 +104,34 @@ pub enum KeyboardEvent {
 }
 
 const POINTER_EVENT_TIMEOUT: Duration = Duration::from_secs(1);
-struct PanelInfo {
+struct SurfaceInfo {
+	wl_surface: WlWeak<WlSurface>,
 	panel_item: Weak<PanelItem>,
-	toplevel: WlWeak<XdgToplevel>,
-	focus: WlWeak<WlSurface>,
-	pointer_queue: Option<VecDeque<PointerEvent>>,
+	pointer_queue: VecDeque<PointerEvent>,
 	pointer_latest_event: Instant,
-	keyboard_queue: Option<VecDeque<KeyboardEvent>>,
+	keyboard_queue: VecDeque<KeyboardEvent>,
 	keyboard_info: Option<KeyboardInfo>,
 }
-impl PanelInfo {
-	fn new(panel_item: &Arc<PanelItem>, toplevel: &XdgToplevel, focus: &WlSurface) -> Self {
-		PanelInfo {
-			toplevel: toplevel.downgrade(),
-			panel_item: Arc::downgrade(panel_item),
-			focus: focus.downgrade(),
-			pointer_queue: None,
+impl SurfaceInfo {
+	fn new(wl_surface: &WlSurface, panel_item: Weak<PanelItem>) -> Self {
+		SurfaceInfo {
+			wl_surface: wl_surface.downgrade(),
+			panel_item,
+			pointer_queue: VecDeque::new(),
 			pointer_latest_event: Instant::now(),
-			keyboard_queue: None,
+			keyboard_queue: VecDeque::new(),
 			keyboard_info: None,
 		}
 	}
-	pub fn set_pointer_active(&mut self, seat_data: &SeatData, active: bool) {
-		if active && self.pointer_queue.is_none() {
-			self.pointer_queue.replace(Default::default());
-		}
-
-		if !active && self.pointer_queue.is_some() {
-			self.pointer_queue.take();
-			let Ok(focus) = self.focus.upgrade() else {return};
-			let Some((pointer, pointer_focus)) = seat_data.pointer.get() else {return};
-			if &*pointer_focus.lock() == &Some(self.toplevel.id()) {
-				pointer.leave(SERIAL_COUNTER.inc(), &focus);
-			}
-		}
-	}
 	fn handle_pointer_events(&mut self, pointer: &WlPointer, mut locked: bool) -> bool {
-		let Ok(focus) = self.focus.upgrade() else { return false; };
-		let Some(pointer_queue) = self.pointer_queue.as_mut() else { return false; };
+		let Ok(focus) = self.wl_surface.upgrade() else { return false; };
 		let Some(core_surface) = CoreSurface::from_wl_surface(&focus) else { return false; };
 		let Some(focus_size) = core_surface.size() else { return false; };
 
-		if !pointer_queue.is_empty() {
+		if !self.pointer_queue.is_empty() {
 			self.pointer_latest_event = Instant::now();
 		}
-		while let Some(event) = pointer_queue.pop_front() {
+		while let Some(event) = self.pointer_queue.pop_front() {
 			match (locked, event) {
 				(false, PointerEvent::Motion(pos)) => {
 					pointer.enter(
@@ -218,22 +196,8 @@ impl PanelInfo {
 
 		locked
 	}
-	pub fn set_keyboard_active(&mut self, seat_data: &SeatData, active: bool) {
-		if active && self.keyboard_queue.is_none() {
-			self.keyboard_queue.replace(Default::default());
-		}
-		if !active && self.keyboard_queue.is_some() {
-			self.keyboard_queue.take();
-			let Ok(focus) = self.focus.upgrade() else {return};
-			let Some((keyboard, keyboard_focus)) = seat_data.keyboard.get() else {return};
-			if &*keyboard_focus.lock() == &Some(self.toplevel.id()) {
-				keyboard.leave(SERIAL_COUNTER.inc(), &focus);
-			}
-		}
-	}
 	fn handle_keyboard_events(&mut self, keyboard: &WlKeyboard, mut locked: bool) -> bool {
-		let Ok(focus) = self.focus.upgrade() else { return false; };
-		let Some(keyboard_queue) = self.keyboard_queue.as_mut() else { return false; };
+		let Ok(focus) = self.wl_surface.upgrade() else { return false; };
 		let Some(info) = self.keyboard_info.as_mut() else { return true; };
 
 		if !locked {
@@ -241,7 +205,7 @@ impl PanelInfo {
 			keyboard.repeat_info(0, 0);
 			locked = info.keymap.send(keyboard).is_ok();
 		}
-		while let Some(event) = keyboard_queue.pop_front() {
+		while let Some(event) = self.keyboard_queue.pop_front() {
 			debug!(locked, ?event, "Process keyboard event");
 			match (locked, event) {
 				(true, KeyboardEvent::Keymap) => {
@@ -267,9 +231,9 @@ impl PanelInfo {
 pub struct SeatData {
 	client: ClientId,
 	global_id: OnceCell<GlobalId>,
-	panels: Mutex<FxHashMap<ObjectId, PanelInfo>>,
-	pointer: OnceCell<(WlPointer, Mutex<Option<ObjectId>>)>,
-	keyboard: OnceCell<(WlKeyboard, Mutex<Option<ObjectId>>)>,
+	surfaces: Mutex<FxHashMap<ObjectId, SurfaceInfo>>,
+	pointer: OnceCell<(WlPointer, Mutex<ObjectId>)>,
+	keyboard: OnceCell<(WlKeyboard, Mutex<ObjectId>)>,
 	touch: OnceCell<WlTouch>,
 }
 impl SeatData {
@@ -277,7 +241,7 @@ impl SeatData {
 		let seat_data = Arc::new(SeatData {
 			client,
 			global_id: OnceCell::new(),
-			panels: Mutex::new(FxHashMap::default()),
+			surfaces: Mutex::new(FxHashMap::default()),
 			pointer: OnceCell::new(),
 			keyboard: OnceCell::new(),
 			touch: OnceCell::new(),
@@ -291,144 +255,111 @@ impl SeatData {
 		seat_data
 	}
 
-	// pub fn set_focus(&self, toplevel: &WlSurface, focus: &WlSurface) {
-	// 	if let Some(panel_info) = self.panels.lock().get_mut(&toplevel.id()) {
-	// 		panel_info.focus = focus.downgrade();
-	// 		match panel_info.pointer_queue.back() {
-	// 			None => (),
-	// 			Some(&PointerEvent::Leave) => (),
-	// 			_ => panel_info.pointer_queue.push_back(PointerEvent::Leave),
-	// 		};
-	// 		match panel_info.keyboard_queue.back() {
-	// 			None => (),
-	// 			Some(&KeyboardEvent::Leave) => (),
-	// 			_ => panel_info.keyboard_queue.push_back(KeyboardEvent::Leave),
-	// 		};
-	// 	}
-	// }
-	pub fn set_pointer_active(&self, toplevel: &XdgToplevel, active: bool) {
-		let mut panels = self.panels.lock();
-		let Some(panel_info) = panels.get_mut(&toplevel.id()) else {return};
-		panel_info.set_pointer_active(self, active);
-	}
-	pub fn set_keyboard_active(&self, toplevel: &XdgToplevel, active: bool) {
-		let mut panels = self.panels.lock();
-		let Some(panel_info) = panels.get_mut(&toplevel.id()) else {return};
-		panel_info.set_keyboard_active(self, active);
-	}
-	pub fn set_keymap(&self, toplevel: &XdgToplevel, keymap: &Keymap) {
-		let mut panels = self.panels.lock();
-		let Some(panel_info) = panels.get_mut(&toplevel.id()) else {return};
-		panel_info.keyboard_info.replace(KeyboardInfo::new(keymap));
-
-		let Some(keyboard_queue) = panel_info.keyboard_queue.as_mut() else {return};
+	pub fn set_keymap(&self, keymap: &Keymap, surfaces: Vec<WlSurface>) {
+		let mut panels = self.surfaces.lock();
 		let Some((_, focus)) = self.keyboard.get() else {return};
-		let Some(id) = &*focus.lock() else {return};
-		if id == &toplevel.id() {
-			keyboard_queue.push_back(KeyboardEvent::Keymap);
+		for surface in surfaces {
+			let Some(surface_info) = panels.get_mut(&surface.id()) else {continue};
+			surface_info
+				.keyboard_info
+				.replace(KeyboardInfo::new(keymap));
+
+			if *focus.lock() == surface.id() {
+				surface_info.keyboard_queue.push_back(KeyboardEvent::Keymap);
+			}
 		}
 	}
 
-	pub fn pointer_event(&self, toplevel: &XdgToplevel, event: PointerEvent) {
-		let mut panels = self.panels.lock();
-		let Some(panel_info) = panels.get_mut(&toplevel.id()) else {return};
-		let Some(pointer_queue) = panel_info.pointer_queue.as_mut() else {return};
-		pointer_queue.push_back(event);
-		drop(panels);
+	pub fn pointer_event(&self, surface: &WlSurface, event: PointerEvent) {
+		let mut surfaces = self.surfaces.lock();
+		let Some(surface_info) = surfaces.get_mut(&surface.id()) else {return};
+		surface_info.pointer_queue.push_back(event);
+		drop(surfaces);
 		self.handle_pointer_events();
 	}
-	pub fn keyboard_event(&self, toplevel: &XdgToplevel, event: KeyboardEvent) {
-		let mut panels = self.panels.lock();
-		let Some(panel_info) = panels.get_mut(&toplevel.id()) else {return};
-		let Some(keyboard_queue) = panel_info.keyboard_queue.as_mut() else {return};
-		keyboard_queue.push_back(event);
-		drop(panels);
+	pub fn keyboard_event(&self, surface: &WlSurface, event: KeyboardEvent) {
+		let mut surfaces = self.surfaces.lock();
+		let Some(surface_info) = surfaces.get_mut(&surface.id()) else {return};
+		surface_info.keyboard_queue.push_back(event);
+		drop(surfaces);
 		self.handle_keyboard_events();
 	}
 
 	fn handle_pointer_events(&self) {
-		let mut panels = self.panels.lock();
+		let mut surfaces = self.surfaces.lock();
 		let Some((pointer, pointer_focus)) = self.pointer.get() else {return};
 		let mut pointer_focus = pointer_focus.lock();
 
 		loop {
-			let locked = pointer_focus.is_some();
+			let locked = !pointer_focus.is_null();
 			// Pick a pointer to focus on if there is none
-			if pointer_focus.is_none() {
-				*pointer_focus = panels
+			if pointer_focus.is_null() {
+				*pointer_focus = surfaces
 					.iter()
-					.filter(|(_k, v)| v.pointer_queue.is_some())
-					.filter(|(_k, v)| !v.pointer_queue.as_ref().unwrap().is_empty())
+					.filter(|(_k, v)| !v.pointer_queue.is_empty())
 					.map(|(k, _v)| k)
 					.choose(&mut thread_rng())
-					.cloned();
+					.cloned()
+					.unwrap_or(ObjectId::null());
 			}
-			if pointer_focus.is_none() {
+			if pointer_focus.is_null() {
 				// If there's still none, guess we're done with pointer events for the time being
 				break;
 			}
-			let Some(panel_info) = panels.get_mut(pointer_focus.as_ref().unwrap()) else {break};
-			if panel_info.handle_pointer_events(pointer, locked) {
+			let Some(surface_info) = surfaces.get_mut(&pointer_focus) else {break};
+			if surface_info.handle_pointer_events(pointer, locked) {
 				// We haven't gotten to a point where we can switch the focus
 				break;
 			} else {
-				pointer_focus.take();
+				*pointer_focus = ObjectId::null();
 			}
 		}
 	}
 	fn handle_keyboard_events(&self) {
-		let mut panels = self.panels.lock();
+		let mut surfaces = self.surfaces.lock();
 		let Some((keyboard, keyboard_focus)) = self.keyboard.get() else {return};
 		let mut keyboard_focus = keyboard_focus.lock();
 		loop {
-			let locked = keyboard_focus.is_some();
+			let locked = !keyboard_focus.is_null();
 			// Pick a keyboard to focus on if there is none
-			if keyboard_focus.is_none() {
-				*keyboard_focus = panels
+			if keyboard_focus.is_null() {
+				*keyboard_focus = surfaces
 					.iter()
 					.filter(|(_k, v)| v.keyboard_info.is_some())
-					.filter(|(_k, v)| v.keyboard_queue.is_some())
-					.filter(|(_k, v)| !v.keyboard_queue.as_ref().unwrap().is_empty())
+					.filter(|(_k, v)| !v.keyboard_queue.is_empty())
 					.map(|(k, _v)| k)
 					.choose(&mut thread_rng())
-					.cloned();
+					.cloned()
+					.unwrap_or(ObjectId::null());
 			}
-			if keyboard_focus.is_none() {
-				// If there's still none, guess we're done with keyboard events for the time being
-				break;
-			}
-			let Some(panel_info) = panels.get_mut(keyboard_focus.as_ref().unwrap()) else {break};
-			if panel_info.handle_keyboard_events(keyboard, locked) {
+			// If there's still none, guess we're done with keyboard events for the time being
+			let Some(surface_info) = surfaces.get_mut(&keyboard_focus) else {break};
+			if surface_info.handle_keyboard_events(keyboard, locked) {
 				// We haven't gotten to a point where we can switch the focus
 				break;
 			} else {
-				keyboard_focus.take();
+				*keyboard_focus = ObjectId::null();
 			}
 		}
 	}
 
-	pub fn new_panel_item(
-		&self,
-		panel_item: &Arc<PanelItem>,
-		toplevel: &XdgToplevel,
-		focus: &WlSurface,
-	) {
-		self.panels
+	pub fn new_surface(&self, surface: &WlSurface, panel_item: Weak<PanelItem>) {
+		self.surfaces
 			.lock()
-			.insert(toplevel.id(), PanelInfo::new(panel_item, toplevel, focus));
+			.insert(surface.id(), SurfaceInfo::new(surface, panel_item));
 	}
-	pub fn drop_panel_item(&self, toplevel: &XdgToplevel) {
-		self.panels.lock().remove(&toplevel.id());
+	pub fn drop_surface(&self, surface: &WlSurface) {
+		self.surfaces.lock().remove(&surface.id());
 		if let Some((_, pointer_focus)) = self.pointer.get() {
 			let mut pointer_focus = pointer_focus.lock();
-			if *pointer_focus == Some(toplevel.id()) {
-				pointer_focus.take();
+			if *pointer_focus == surface.id() {
+				*pointer_focus = ObjectId::null();
 			}
 		}
 		if let Some((_, keyboard_focus)) = self.keyboard.get() {
 			let mut keyboard_focus = keyboard_focus.lock();
-			if *keyboard_focus == Some(toplevel.id()) {
-				keyboard_focus.take();
+			if *keyboard_focus == surface.id() {
+				*keyboard_focus = ObjectId::null();
 			}
 		}
 	}
@@ -478,12 +409,12 @@ impl Dispatch<WlSeat, Arc<SeatData>, WaylandState> for WaylandState {
 		match request {
 			wl_seat::Request::GetPointer { id } => {
 				let pointer = data_init.init(id, data.clone());
-				let _ = data.pointer.set((pointer, Mutex::new(None)));
+				let _ = data.pointer.set((pointer, Mutex::new(ObjectId::null())));
 			}
 			wl_seat::Request::GetKeyboard { id } => {
 				let keyboard = data_init.init(id, data.clone());
 				keyboard.repeat_info(0, 0);
-				let _ = data.keyboard.set((keyboard, Mutex::new(None)));
+				let _ = data.keyboard.set((keyboard, Mutex::new(ObjectId::null())));
 			}
 			wl_seat::Request::GetTouch { id } => {
 				let _ = data.touch.set(data_init.init(id, data.clone()));
@@ -515,7 +446,7 @@ impl Dispatch<WlPointer, Arc<SeatData>, WaylandState> for WaylandState {
 				hotspot_y,
 			} => {
 				if let Some(surface) = surface.as_ref() {
-					CoreSurface::add_to(&state.display, dh.clone(), surface);
+					CoreSurface::add_to(&state.display, dh.clone(), surface, |_| ());
 					compositor::with_states(surface, |data| {
 						data.data_map.insert_if_missing_threadsafe(|| {
 							Arc::new(Mutex::new(Cursor {
@@ -533,10 +464,9 @@ impl Dispatch<WlPointer, Arc<SeatData>, WaylandState> for WaylandState {
 
 				let Some((_, focus)) = seat_data.pointer.get() else {return};
 				let focus = focus.lock();
-				let Some(id) = &*focus else {return};
-				let panels = seat_data.panels.lock();
-				let Some(panel_info) = panels.get(&id) else {return};
-				let Some(panel_item) = panel_info.panel_item.upgrade() else {return};
+				let surfaces = seat_data.surfaces.lock();
+				let Some(surface_info) = surfaces.get(&focus) else {return};
+				let Some(panel_item) = surface_info.panel_item.upgrade() else {return};
 				panel_item.set_cursor(surface.as_ref(), hotspot_x, hotspot_y);
 			}
 			wl_pointer::Request::Release => (),
