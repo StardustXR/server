@@ -12,7 +12,7 @@ homepage = "https://stardustxr.org"
 color-eyre = { version = "0.6.2", default-features = false }
 clap = { version = "4.2.4", features = ["derive"] }
 dashmap = "5.4.0"
-glam = {version = "0.23.0", features = ["mint"]}
+glam = {version = "0.24.0", features = ["mint"]}
 lazy_static = "1.4.0"
 mint = "0.5.9"
 nanoid = "0.4.0"
@@ -24,7 +24,7 @@ tokio = { version = "1.27.0", features = ["rt-multi-thread", "signal"] }
 send_wrapper = "0.6.0"
 prisma = "0.1.1"
 xkbcommon = { version = "0.5.0", default-features = false, optional = true }
-stardust-xr = "0.11.1"
+stardust-xr = "0.11.3"
 directories = "5.0.0"
 serde = { version = "1.0.160", features = ["derive"] }
 tracing = "0.1.37"
