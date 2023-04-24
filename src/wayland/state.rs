@@ -1,11 +1,10 @@
 use crate::wayland::seat::SeatData;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use slog::Logger;
 use smithay::{
 	backend::{
 		allocator::dmabuf::Dmabuf,
-		renderer::{gles2::Gles2Renderer, ImportDma},
+		renderer::{gles::GlesRenderer, ImportDma},
 	},
 	delegate_dmabuf, delegate_output, delegate_shm,
 	output::{Mode, Output, Scale, Subpixel},
@@ -49,7 +48,6 @@ impl ClientData for ClientState {
 
 pub struct WaylandState {
 	pub weak_ref: Weak<Mutex<WaylandState>>,
-	pub log: Logger,
 	pub display: Arc<Mutex<Display<WaylandState>>>,
 	pub display_handle: DisplayHandle,
 
@@ -66,24 +64,19 @@ pub struct WaylandState {
 
 impl WaylandState {
 	pub fn new(
-		log: Logger,
 		display: Arc<Mutex<Display<WaylandState>>>,
 		display_handle: DisplayHandle,
-		renderer: &Gles2Renderer,
+		renderer: &GlesRenderer,
 	) -> Arc<Mutex<Self>> {
-		let compositor_state = CompositorState::new::<Self, _>(&display_handle, log.clone());
-		// let xdg_activation_state = XdgActivationState::new::<Self, _>(&display_handle, log.clone());
-		let kde_decoration_state = KdeDecorationState::new::<Self, _>(
-			&display_handle,
-			DecorationMode::Server,
-			log.clone(),
-		);
-		let shm_state = ShmState::new::<Self, _>(&display_handle, vec![], log.clone());
+		let compositor_state = CompositorState::new::<Self>(&display_handle);
+		// let xdg_activation_state = XdgActivationState::new::<Self, _>(&display_handle);
+		let kde_decoration_state =
+			KdeDecorationState::new::<Self>(&display_handle, DecorationMode::Server);
+		let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
 		let mut dmabuf_state = DmabufState::new();
-		let dmabuf_global = dmabuf_state.create_global::<Self, _>(
+		let dmabuf_global = dmabuf_state.create_global::<Self>(
 			&display_handle,
-			renderer.dmabuf_formats().cloned().collect::<Vec<_>>(),
-			log.clone(),
+			renderer.dmabuf_formats().collect::<Vec<_>>(),
 		);
 		let output = Output::new(
 			"1x".to_owned(),
@@ -93,18 +86,19 @@ impl WaylandState {
 				make: "Virtual XR Display".to_owned(),
 				model: "Your Headset Name Here".to_owned(),
 			},
-			log.clone(),
 		);
 		let _output_global = output.create_global::<Self>(&display_handle);
+		let mode = Mode {
+			size: (4096, 4096).into(),
+			refresh: 60000,
+		};
 		output.change_current_state(
-			Some(Mode {
-				size: (4096, 4096).into(),
-				refresh: 60000,
-			}),
+			Some(mode),
 			Some(Transform::Normal),
 			Some(Scale::Integer(2)),
 			None,
 		);
+		output.set_preferred(mode);
 		display_handle.create_global::<Self, WlDataDeviceManager, _>(3, ());
 		display_handle.create_global::<Self, XdgWmBase, _>(5, ());
 		display_handle.create_global::<Self, ZxdgDecorationManagerV1, _>(1, ());
@@ -114,7 +108,6 @@ impl WaylandState {
 		Arc::new_cyclic(|weak| {
 			Mutex::new(WaylandState {
 				weak_ref: weak.clone(),
-				log,
 				display,
 				display_handle,
 

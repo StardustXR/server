@@ -272,3 +272,8 @@ impl Debug for Node {
 			.finish()
 	}
 }
+impl Drop for Node {
+	fn drop(&mut self) {
+		// Debug breakpoint
+	}
+}
