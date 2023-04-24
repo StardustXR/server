@@ -202,7 +202,6 @@ impl Default for Geometry {
 	}
 }
 
-#[derive(Debug)]
 pub struct XdgSurfaceData {
 	wl_surface: WlWeak<WlSurface>,
 	surface_id: SurfaceID,
