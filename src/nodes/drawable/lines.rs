@@ -14,7 +14,7 @@ use prisma::{Flatten, Lerp, Rgba};
 use serde::Deserialize;
 use stardust_xr::{schemas::flex::deserialize, values::Transform};
 use std::{collections::VecDeque, sync::Arc};
-use stereokit::{lifecycle::StereoKitDraw, lines::LinePoint as SkLinePoint, values::Color128};
+use stereokit::{Color128, LinePoint as SkLinePoint, StereoKitDraw};
 
 use super::Drawable;
 
@@ -57,14 +57,14 @@ impl Lines {
 		Ok(lines)
 	}
 
-	fn draw(&self, draw_ctx: &StereoKitDraw) {
+	fn draw(&self, draw_ctx: &impl StereoKitDraw) {
 		let transform_mat = self.space.global_transform();
 		let data = self.data.lock().clone();
 		let mut points: VecDeque<SkLinePoint> = data
 			.points
 			.iter()
 			.map(|p| SkLinePoint {
-				point: transform_mat.transform_point3a(Vec3A::from(p.point)).into(),
+				pt: transform_mat.transform_point3a(Vec3A::from(p.point)).into(),
 				thickness: p.thickness,
 				color: p.color.map(|c| (c * 255.0) as u8).into(),
 			})
@@ -72,20 +72,19 @@ impl Lines {
 		if data.cyclic && !points.is_empty() {
 			let first = data.points.first().unwrap();
 			let last = data.points.last().unwrap();
+			let color = Rgba::from_slice(&first.color).lerp(&Rgba::from_slice(&last.color), 0.5);
 			let connect_point = SkLinePoint {
-				point: transform_mat
+				pt: transform_mat
 					.transform_point3a(Vec3A::from(first.point).lerp(Vec3A::from(last.point), 0.5))
 					.into(),
 				thickness: (first.thickness + last.thickness) * 0.5,
-				color: Color128::from(
-					Rgba::from_slice(&first.color).lerp(&Rgba::from_slice(&last.color), 0.5),
-				)
-				.into(),
+				color: Color128::from([color.red(), color.green(), color.blue(), color.alpha()])
+					.into(),
 			};
 			points.push_front(connect_point.clone());
 			points.push_back(connect_point);
 		}
-		stereokit::lines::line_add_listv(draw_ctx, points.make_contiguous());
+		draw_ctx.line_add_listv(points.make_contiguous());
 	}
 
 	pub fn set_points_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
@@ -113,7 +112,7 @@ impl Drop for Lines {
 	}
 }
 
-pub fn draw_all(draw_ctx: &StereoKitDraw) {
+pub fn draw_all(draw_ctx: &impl StereoKitDraw) {
 	for lines in LINES_REGISTRY.get_valid_contents() {
 		if lines.enabled.load(Ordering::Relaxed) {
 			lines.draw(draw_ctx);

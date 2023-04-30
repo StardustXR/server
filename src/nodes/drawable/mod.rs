@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
 use std::{path::PathBuf, sync::Arc};
-use stereokit::{lifecycle::StereoKitDraw, render::StereoKitRender, texture::Texture};
+use stereokit::StereoKitDraw;
 use tracing::instrument;
 
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
@@ -30,31 +30,19 @@ pub enum Drawable {
 }
 
 #[instrument(level = "debug", skip(sk))]
-pub fn draw(sk: &StereoKitDraw) {
+pub fn draw(sk: &impl StereoKitDraw) {
 	lines::draw_all(sk);
 	model::draw_all(sk);
 	text::draw_all(sk);
 
-	let new_skytex = QUEUED_SKYTEX.lock().take();
-	let mut new_skylight = QUEUED_SKYLIGHT.lock().take();
-	let same_file = new_skytex == new_skylight;
-
-	if let Some(skytex) = new_skytex {
-		if let Some((skytex, skylight)) =
-			Texture::from_cubemap_equirectangular(sk, &skytex, true, i32::MAX)
-		{
-			sk.set_skytex(&skytex);
-			if same_file {
-				sk.set_skylight(&skylight);
-				new_skylight = None;
-			}
+	if let Some(skytex) = QUEUED_SKYTEX.lock().take() {
+		if let Ok((_skylight, skytex)) = sk.tex_create_cubemap_file(&skytex, true, i32::MAX) {
+			sk.render_set_skytex(&skytex);
 		}
 	}
-	if let Some(skylight) = new_skylight {
-		if let Some((_, skylight)) =
-			Texture::from_cubemap_equirectangular(sk, &skylight, true, i32::MAX)
-		{
-			sk.set_skylight(&skylight);
+	if let Some(skylight) = QUEUED_SKYLIGHT.lock().take() {
+		if let Ok((skylight, _)) = sk.tex_create_cubemap_file(&skylight, true, i32::MAX) {
+			sk.render_set_skylight(skylight);
 		}
 	}
 }

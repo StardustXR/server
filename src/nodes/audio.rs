@@ -5,7 +5,7 @@ use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
 use color_eyre::eyre::{ensure, eyre, Result};
-use glam::{vec3a, Vec4Swizzles};
+use glam::{vec3, Vec4Swizzles};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
@@ -13,19 +13,20 @@ use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
 use stardust_xr::values::Transform;
 use std::ops::DerefMut;
-use std::{ffi::OsStr, fmt::Error, path::PathBuf, sync::Arc};
-use stereokit::sound::SoundInstance;
-use stereokit::sound::{Sound as SKSound, SoundT};
+use std::{ffi::OsStr, path::PathBuf, sync::Arc};
+use stereokit::{Sound as SkSound, SoundInstance, StereoKitDraw};
 
 static SOUND_REGISTRY: Registry<Sound> = Registry::new();
 
 pub struct Sound {
 	space: Arc<Spatial>,
-	resource_id: ResourceID,
-	pending_audio_path: OnceCell<PathBuf>,
-	instance: Mutex<Option<SoundInstance>>,
+
 	volume: f32,
-	sk_sound: OnceCell<SendWrapper<SKSound>>,
+	pending_audio_path: PathBuf,
+	sk_sound: OnceCell<SendWrapper<SkSound>>,
+	instance: Mutex<Option<SoundInstance>>,
+	stop: Mutex<Option<()>>,
+	play: Mutex<Option<()>>,
 }
 
 impl Sound {
@@ -34,78 +35,70 @@ impl Sound {
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
 		);
+		let pending_audio_path = resource_id
+			.get_file(
+				&node
+					.get_client()
+					.ok_or_else(|| eyre!("Client not found"))?
+					.base_resource_prefixes
+					.lock()
+					.clone(),
+				&[OsStr::new("wav"), OsStr::new("mp3")],
+			)
+			.ok_or_else(|| eyre!("Resource not found"))?;
 		let sound = Sound {
 			space: node.spatial.get().unwrap().clone(),
-			resource_id,
 			volume: 1.0,
-			instance: Mutex::new(None),
-			pending_audio_path: OnceCell::new(),
+			pending_audio_path,
 			sk_sound: OnceCell::new(),
+			instance: Mutex::new(None),
+			stop: Mutex::new(None),
+			play: Mutex::new(None),
 		};
 		let sound_arc = SOUND_REGISTRY.add(sound);
 		node.add_local_signal("play", Sound::play_flex);
 		node.add_local_signal("stop", Sound::stop_flex);
-		let _ = sound_arc.pending_audio_path.set(
-			sound_arc
-				.resource_id
-				.get_file(
-					&node
-						.get_client()
-						.ok_or_else(|| eyre!("Client not found"))?
-						.base_resource_prefixes
-						.lock()
-						.clone(),
-					&[OsStr::new("wav"), OsStr::new("mp3")],
-				)
-				.ok_or_else(|| eyre!("Resource not found"))?,
-		);
 		let _ = node.sound.set(sound_arc.clone());
 		Ok(sound_arc)
 	}
 
-	fn update(&self) {
+	fn update(&self, sk: &impl StereoKitDraw) {
+		let sound = self.sk_sound.get_or_init(|| {
+			SendWrapper::new(sk.sound_create(self.pending_audio_path.clone()).unwrap())
+		});
+		if self.stop.lock().take().is_some() {
+			if let Some(instance) = self.instance.lock().take() {
+				sk.sound_inst_stop(instance);
+			}
+		}
+		if self.play.lock().is_some() && self.instance.lock().is_none() {
+			self.instance.lock().replace(sk.sound_play(
+				sound.as_ref(),
+				vec3(0.0, 0.0, 0.0),
+				self.volume,
+			));
+		}
 		if let Some(instance) = self.instance.lock().deref_mut() {
-			instance.set_position(self.space.global_transform().w_axis.xyz())
+			sk.sound_inst_set_pos(*instance, self.space.global_transform().w_axis.xyz());
 		}
 	}
 
 	fn play_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
 		let sound = node.sound.get().unwrap();
-		let sk_sound = sound
-			.sk_sound
-			.get_or_try_init(|| -> color_eyre::eyre::Result<SendWrapper<SKSound>> {
-				let pending_audio_path = sound.pending_audio_path.get().ok_or(Error)?;
-				let sound = SKSound::from_file(pending_audio_path.as_path()).ok_or(Error)?;
-
-				Ok(SendWrapper::new(sound))
-			})
-			.ok();
-		if let Some(sk_sound) = sk_sound {
-			let position = sound
-				.space
-				.global_transform()
-				.transform_point3a(vec3a(0.0, 0.0, 0.0));
-			sound
-				.instance
-				.lock()
-				.replace(sk_sound.play_sound(position, sound.volume));
-		}
-
+		sound.play.lock().replace(());
 		Ok(())
 	}
 
 	pub fn stop_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
 		let sound = node.sound.get().unwrap();
-		if let Some(instance) = sound.instance.lock().take() {
-			instance.stop();
-		}
+		sound.stop.lock().replace(());
 		Ok(())
 	}
 }
 
-pub fn update() {
+pub fn update(sk: &impl StereoKitDraw) {
 	for sound in SOUND_REGISTRY.get_valid_contents() {
-		sound.update()
+		sound.update(sk)
 	}
 }
 

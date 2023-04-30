@@ -14,7 +14,7 @@ use stardust_xr::{
 	values::Transform,
 };
 use std::sync::Arc;
-use stereokit::input::{ButtonState, Handed, StereoKitInput};
+use stereokit::{ButtonState, Handed, StereoKitMultiThread};
 use tracing::instrument;
 
 pub struct SkController {
@@ -35,9 +35,9 @@ impl SkController {
 		})
 	}
 	#[instrument(level = "debug", name = "Update StereoKit Tip Input Method", skip_all)]
-	pub fn update(&mut self, sk: &impl StereoKitInput) {
+	pub fn update(&mut self, sk: &impl StereoKitMultiThread) {
 		let controller = sk.input_controller(self.handed);
-		*self.input.enabled.lock() = controller.tracked.contains(ButtonState::Active);
+		*self.input.enabled.lock() = controller.tracked.contains(ButtonState::ACTIVE);
 		if *self.input.enabled.lock() {
 			self.input.spatial.set_local_transform_components(
 				None,

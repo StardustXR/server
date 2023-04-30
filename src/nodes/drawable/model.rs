@@ -6,6 +6,7 @@ use crate::core::resource::ResourceID;
 use crate::nodes::drawable::Drawable;
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
 use color_eyre::eyre::{bail, ensure, eyre, Result};
+use glam::Mat4;
 use mint::{ColumnMatrix4, Vector2, Vector3, Vector4};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -19,13 +20,10 @@ use std::ffi::OsStr;
 use std::fmt::Error;
 use std::path::PathBuf;
 use std::sync::Arc;
-use stereokit::color_named::WHITE;
-use stereokit::lifecycle::{StereoKitContext, StereoKitDraw};
-use stereokit::material::Material;
-use stereokit::model::Model as SKModel;
-use stereokit::render::RenderLayer;
-use stereokit::texture::Texture;
-use stereokit::values::Color128;
+use stereokit::named_colors::WHITE;
+use stereokit::{
+	Color128, Material, Model as SKModel, RenderLayer, Shader, StereoKitDraw, StereoKitMultiThread,
+};
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
 
@@ -53,63 +51,63 @@ impl MaterialParameter {
 	fn apply_to_material(
 		&self,
 		client: &Client,
-		sk: &impl StereoKitContext,
+		sk: &impl StereoKitMultiThread,
 		material: &Material,
 		parameter_name: &str,
 	) {
 		match self {
 			MaterialParameter::Float(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_float(material, parameter_name, *val);
 			}
 			MaterialParameter::Vector2(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_vector2(material, parameter_name, *val);
 			}
 			MaterialParameter::Vector3(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_vector3(material, parameter_name, *val);
 			}
 			MaterialParameter::Vector4(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_vector4(material, parameter_name, *val);
 			}
 			MaterialParameter::Color(val) => {
-				material.set_parameter(sk, parameter_name, &Color128::from(val.clone()));
+				sk.material_set_color(material, parameter_name, Color128::from(val.clone()));
 			}
 			MaterialParameter::Int(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_int(material, parameter_name, *val);
 			}
 			MaterialParameter::Int2(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_int2(material, parameter_name, val.x, val.y);
 			}
 			MaterialParameter::Int3(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_int3(material, parameter_name, val.x, val.y, val.z);
 			}
 			MaterialParameter::Int4(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_int4(material, parameter_name, val.w, val.x, val.y, val.z);
 			}
 			MaterialParameter::Bool(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_bool(material, parameter_name, *val);
 			}
 			MaterialParameter::UInt(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_uint(material, parameter_name, *val);
 			}
 			MaterialParameter::UInt2(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_uint2(material, parameter_name, val.x, val.y);
 			}
 			MaterialParameter::UInt3(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_uint3(material, parameter_name, val.x, val.y, val.z);
 			}
 			MaterialParameter::UInt4(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_uint4(material, parameter_name, val.w, val.x, val.y, val.z);
 			}
 			MaterialParameter::Matrix(val) => {
-				material.set_parameter(sk, parameter_name, val);
+				sk.material_set_matrix(material, parameter_name, Mat4::from(*val));
 			}
 			MaterialParameter::Texture(resource) => {
 				let Some(texture_path) = resource.get_file(
 					&client.base_resource_prefixes.lock().clone(),
 					&[OsStr::new("png"), OsStr::new("jpg")],
 				) else {return};
-				if let Some(tex) = Texture::from_file(sk, texture_path, true, 0) {
-					material.set_parameter(sk, parameter_name, &tex);
+				if let Ok(tex) = sk.tex_create_file(texture_path, true, 0) {
+					sk.material_set_texture(material, parameter_name, &tex);
 				}
 			}
 		}
@@ -188,14 +186,15 @@ impl Model {
 		Ok(())
 	}
 
-	fn draw(&self, sk: &StereoKitDraw) {
+	fn draw(&self, sk: &impl StereoKitDraw) {
 		let sk_model = self
 			.sk_model
 			.get_or_try_init(|| -> color_eyre::eyre::Result<SendWrapper<SKModel>> {
 				let pending_model_path = self.pending_model_path.get().ok_or(Error)?;
-				let model = SKModel::from_file(sk, pending_model_path.as_path(), None)?;
+				let model =
+					sk.model_create_file(pending_model_path.to_str().unwrap(), None::<Shader>)?;
 
-				Ok(SendWrapper::new(model.clone()))
+				Ok(SendWrapper::new(sk.model_copy(model)))
 			})
 			.ok();
 
@@ -203,8 +202,15 @@ impl Model {
 			{
 				let mut material_replacements = self.pending_material_replacements.lock();
 				for (material_idx, replacement_material) in material_replacements.iter() {
-					if sk_model.get_material(sk, *material_idx as i32).is_some() {
-						sk_model.set_material(sk, *material_idx as i32, replacement_material);
+					if sk
+						.model_get_material(sk_model.as_ref(), *material_idx as i32)
+						.is_some()
+					{
+						sk.model_set_material(
+							sk_model.as_ref(),
+							*material_idx as i32,
+							replacement_material.as_ref().as_ref(),
+						);
 					}
 				}
 				material_replacements.clear();
@@ -214,20 +220,24 @@ impl Model {
 				let mut material_parameters = self.pending_material_parameters.lock();
 				for ((material_idx, parameter_name), parameter_value) in material_parameters.drain()
 				{
-					let Some(material) = sk_model.get_material(sk, material_idx) else {continue};
-					let new_material = material.clone();
+					let Some(material) = sk.model_get_material(sk_model.as_ref(), material_idx) else {continue};
+					let new_material = sk.material_copy(material);
 					parameter_value.apply_to_material(
 						&client,
 						sk,
 						&new_material,
 						parameter_name.as_str(),
 					);
-					sk_model.set_material(sk, material_idx, &new_material);
+					sk.model_set_material(sk_model.as_ref(), material_idx, &new_material);
 				}
 			}
 
-			let global_transform = self.space.global_transform().into();
-			sk_model.draw(sk, global_transform, WHITE, RenderLayer::Layer0);
+			sk.model_draw(
+				sk_model.as_ref(),
+				self.space.global_transform(),
+				WHITE,
+				RenderLayer::LAYER0,
+			);
 		}
 	}
 }
@@ -240,7 +250,7 @@ impl Drop for Model {
 	}
 }
 
-pub fn draw_all(sk: &StereoKitDraw) {
+pub fn draw_all(sk: &impl StereoKitDraw) {
 	for model in MODEL_REGISTRY.get_valid_contents() {
 		if model.enabled.load(Ordering::Relaxed) {
 			model.draw(sk);
