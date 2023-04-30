@@ -149,10 +149,8 @@ fn main() -> Result<()> {
 		.flatten();
 
 	if hands.is_none() {
-		// unsafe {
-		// 	stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_left, false as i32);
-		// 	stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_right, false as i32);
-		// }
+		sk.input_hand_visible(Handed::Left, false);
+		sk.input_hand_visible(Handed::Right, false);
 	}
 
 	let (event_stop_tx, event_stop_rx) = oneshot::channel::<()>();

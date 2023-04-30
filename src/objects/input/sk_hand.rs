@@ -52,7 +52,7 @@ impl SkHand {
 		let sk_hand = sk.input_hand(self.handed);
 		if let InputType::Hand(hand) = &mut *self.input.specialization.lock() {
 			let controller = sk.input_controller(self.handed);
-			*self.input.enabled.lock() = controller.tracked.contains(ButtonState::ACTIVE)
+			*self.input.enabled.lock() = controller.tracked.contains(ButtonState::INACTIVE)
 				&& sk_hand.tracked_state.contains(ButtonState::ACTIVE);
 			if *self.input.enabled.lock() {
 				hand.base.thumb.tip = convert_joint(sk_hand.fingers[0][4]);
