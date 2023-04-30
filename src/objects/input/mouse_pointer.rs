@@ -14,8 +14,7 @@ use nanoid::nanoid;
 use serde::Serialize;
 use stardust_xr::schemas::{flat::Datamap, flex::flexbuffers};
 use std::{convert::TryFrom, sync::Arc};
-use stereokit::input::{ButtonState, Key, StereoKitInput};
-use stereokit::values::Ray as SkRay;
+use stereokit::{ray_from_mouse, ButtonState, Key, StereoKitMultiThread};
 use tracing::instrument;
 
 const SK_KEYMAP: &str = include_str!("sk.kmp");
@@ -58,10 +57,10 @@ impl MousePointer {
 		})
 	}
 	#[instrument(level = "debug", name = "Update Flatscreen Pointer Ray", skip_all)]
-	pub fn update(&self, sk: &impl StereoKitInput) {
+	pub fn update(&self, sk: &impl StereoKitMultiThread) {
 		let mouse = sk.input_mouse();
 
-		let ray = SkRay::from_mouse(&mouse);
+		let ray = ray_from_mouse(mouse.pos).unwrap();
 		self.spatial.set_local_transform(
 			Mat4::look_to_rh(ray.pos.into(), -Vec3::from(ray.dir), vec3(0.0, 1.0, 0.0)).inverse(),
 		);
@@ -71,7 +70,7 @@ impl MousePointer {
 			let mut map = fbb.start_map();
 			map.push(
 				"select",
-				if sk.input_key(Key::MouseLeft).contains(ButtonState::Active) {
+				if sk.input_key(Key::MouseLeft).contains(ButtonState::ACTIVE) {
 					1.0f32
 				} else {
 					0.0f32
@@ -79,7 +78,7 @@ impl MousePointer {
 			);
 			map.push(
 				"grab",
-				if sk.input_key(Key::MouseRight).contains(ButtonState::Active) {
+				if sk.input_key(Key::MouseRight).contains(ButtonState::ACTIVE) {
 					1.0f32
 				} else {
 					0.0f32
@@ -95,7 +94,7 @@ impl MousePointer {
 		self.send_keyboard_input(sk);
 	}
 
-	fn send_keyboard_input(&self, sk: &impl StereoKitInput) {
+	fn send_keyboard_input(&self, sk: &impl StereoKitMultiThread) {
 		let rx = PULSE_RECEIVER_REGISTRY
 			.get_valid_contents()
 			.into_iter()
@@ -127,9 +126,9 @@ impl MousePointer {
 				.filter_map(|i| Some((i, Key::try_from(i).ok()?)))
 				.map(|(i, k)| (i - 8, sk.input_key(k)));
 			for (key, state) in keys {
-				if state.contains(ButtonState::JustActive) {
+				if state.contains(ButtonState::JUST_ACTIVE) {
 					keys_down.push(key);
-				} else if state.contains(ButtonState::JustInactive) {
+				} else if state.contains(ButtonState::JUST_INACTIVE) {
 					keys_up.push(key);
 				}
 			}

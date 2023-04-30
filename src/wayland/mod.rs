@@ -15,7 +15,7 @@ use color_eyre::eyre::{ensure, Result};
 use global_counter::primitive::exact::CounterU32;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use sk::lifecycle::StereoKitDraw;
+use sk::StereoKitDraw;
 use smithay::backend::egl::EGLContext;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket};
@@ -149,7 +149,7 @@ impl Wayland {
 	}
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self, sk))]
-	pub fn update(&mut self, sk: &StereoKitDraw) {
+	pub fn update(&mut self, sk: &impl StereoKitDraw) {
 		for core_surface in CORE_SURFACES.get_valid_contents() {
 			core_surface.process(sk, &mut self.renderer);
 		}
@@ -157,7 +157,7 @@ impl Wayland {
 		self.display.lock().flush_clients().unwrap();
 	}
 
-	pub fn frame_event(&self, sk: &StereoKitDraw) {
+	pub fn frame_event(&self, sk: &impl StereoKitDraw) {
 		let state = self.state.lock();
 
 		for core_surface in CORE_SURFACES.get_valid_contents() {

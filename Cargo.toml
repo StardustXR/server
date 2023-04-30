@@ -12,7 +12,7 @@ homepage = "https://stardustxr.org"
 color-eyre = { version = "0.6.2", default-features = false }
 clap = { version = "4.2.4", features = ["derive"] }
 dashmap = "5.4.0"
-glam = {version = "0.24.0", features = ["mint"]}
+glam = {version = "0.23.0", features = ["mint"]}
 lazy_static = "1.4.0"
 mint = "0.5.9"
 nanoid = "0.4.0"
@@ -34,8 +34,8 @@ rand = "0.8.5"
 
 [dependencies.stereokit]
 default-features = false
-features = ["linux-egl", "color_named", "prisma"]
-version = "0.15.3"
+features = ["linux-egl"]
+version = "0.16.7"
 
 [dependencies.smithay]
 # git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures

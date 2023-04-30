@@ -186,7 +186,7 @@ impl Deref for ItemType {
 		match self {
 			ItemType::Environment(item) => item,
 			#[cfg(feature = "wayland")]
-			ItemType::Panel(item) => &**item,
+			ItemType::Panel(item) => item.as_ref(),
 		}
 	}
 }

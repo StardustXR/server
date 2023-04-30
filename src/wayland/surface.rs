@@ -21,15 +21,13 @@ use smithay::{
 	wayland::compositor::{self, SurfaceData},
 };
 use std::{
+	ffi::c_void,
 	sync::{Arc, Weak},
 	time::Duration,
 };
 use stereokit::{
-	lifecycle::StereoKitDraw,
-	material::{Material, Transparency},
-	shader::Shader,
-	texture::{Texture as SKTexture, TextureAddress, TextureFormat, TextureSample, TextureType},
-	time::StereoKitTime,
+	Material, StereoKitDraw, Tex, TextureAddress, TextureFormat, TextureSample, TextureType,
+	Transparency,
 };
 
 pub static CORE_SURFACES: Registry<CoreSurface> = Registry::new();
@@ -49,7 +47,7 @@ pub struct CoreSurface {
 	pub dh: DisplayHandle,
 	pub weak_surface: wayland_server::Weak<WlSurface>,
 	mapped_data: Mutex<Option<CoreSurfaceData>>,
-	sk_tex: OnceCell<SendWrapper<SKTexture>>,
+	sk_tex: OnceCell<SendWrapper<Tex>>,
 	sk_mat: OnceCell<Arc<SendWrapper<Material>>>,
 	material_offset: Mutex<Delta<u32>>,
 	on_commit: Box<dyn Fn(u32) + Send + Sync>,
@@ -90,19 +88,17 @@ impl CoreSurface {
 		})
 	}
 
-	pub fn process(&self, sk: &StereoKitDraw, renderer: &mut GlesRenderer) {
+	pub fn process(&self, sk: &impl StereoKitDraw, renderer: &mut GlesRenderer) {
 		let Some(wl_surface) = self.wl_surface() else { return };
 
 		let sk_tex = self.sk_tex.get_or_init(|| {
-			SendWrapper::new(
-				SKTexture::create(sk, TextureType::ImageNoMips, TextureFormat::RGBA32).unwrap(),
-			)
+			SendWrapper::new(sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32))
 		});
 		self.sk_mat.get_or_init(|| {
-			let shader = Shader::from_mem(sk, PANEL_SHADER_BYTES).unwrap();
-			let mat = Material::create(sk, &shader).unwrap();
-			mat.set_parameter(sk, "diffuse", &**sk_tex);
-			mat.set_transparency(sk, Transparency::Blend);
+			let shader = sk.shader_create_mem(&PANEL_SHADER_BYTES).unwrap();
+			let mat = sk.material_create(&shader);
+			sk.material_set_texture(&mat, "diffuse", sk_tex.as_ref());
+			sk.material_set_transparency(&mat, Transparency::Blend);
 			Arc::new(SendWrapper::new(mat))
 		});
 
@@ -141,19 +137,21 @@ impl CoreSurface {
 			let sk_tex = self.sk_tex.get().unwrap();
 			let sk_mat = self.sk_mat.get().unwrap();
 			unsafe {
-				sk_tex.set_native(
-					smithay_tex.tex_id() as usize,
+				sk.tex_set_surface(
+					sk_tex.as_ref(),
+					smithay_tex.tex_id() as usize as *mut c_void,
+					TextureType::IMAGE_NO_MIPS,
 					smithay::backend::renderer::gles::ffi::RGBA8.into(),
-					TextureType::ImageNoMips,
-					smithay_tex.width(),
-					smithay_tex.height(),
+					smithay_tex.width() as i32,
+					smithay_tex.height() as i32,
+					1,
 					false,
 				);
-				sk_tex.set_sample(TextureSample::Point);
-				sk_tex.set_address_mode(TextureAddress::Clamp);
+				sk.tex_set_sample(sk_tex.as_ref(), TextureSample::Point);
+				sk.tex_set_address(sk_tex.as_ref(), TextureAddress::Clamp);
 			}
 			if let Some(material_offset) = self.material_offset.lock().delta() {
-				sk_mat.set_queue_offset(sk, *material_offset as i32);
+				sk.material_set_queue_offset(sk_mat.as_ref().as_ref(), *material_offset as i32);
 			}
 
 			let surface_size = renderer_surface_state.surface_size().unwrap();
@@ -166,7 +164,7 @@ impl CoreSurface {
 		self.apply_surface_materials();
 	}
 
-	pub fn frame(&self, sk: &StereoKitDraw, output: Output) {
+	pub fn frame(&self, sk: &impl StereoKitDraw, output: Output) {
 		let Some(wl_surface) = self.wl_surface() else { return };
 
 		send_frames_surface_tree(

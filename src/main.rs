@@ -20,15 +20,11 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
-use stereokit::input::Handed;
-use stereokit::lifecycle::DisplayMode;
-use stereokit::lifecycle::{DepthMode, LogFilter};
-use stereokit::material::Material;
-use stereokit::render::SphericalHarmonics;
-use stereokit::render::StereoKitRender;
-use stereokit::shader::Shader;
-use stereokit::texture::Texture;
-use stereokit::time::StereoKitTime;
+use stereokit::DisplayBlend;
+use stereokit::{
+	named_colors::BLACK, DepthMode, DisplayMode, Handed, LogLevel, StereoKitMultiThread,
+	TextureFormat, TextureType,
+};
 use tokio::{runtime::Handle, sync::oneshot};
 use tracing::{debug_span, error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -87,47 +83,52 @@ fn main() -> Result<()> {
 	}
 	let cli_args = Arc::new(CliArgs::parse());
 
-	let stereokit = stereokit::Settings::default()
-		.app_name("Stardust XR")
-		.log_filter(LogFilter::None)
-		.overlay_app(cli_args.overlay_priority.is_some())
-		.overlay_priority(cli_args.overlay_priority.unwrap_or(u32::MAX))
-		.disable_desktop_input_window(true)
-		.display_preference(if cli_args.flatscreen {
+	let sk = stereokit::Settings {
+		app_name: "Stardust XR".to_string(),
+		display_preference: if cli_args.flatscreen {
 			DisplayMode::Flatscreen
 		} else {
 			DisplayMode::MixedReality
-		})
-		.depth_mode(DepthMode::D32)
-		.init()
-		.expect("StereoKit failed to initialize");
+		},
+		blend_preference: DisplayBlend::AnyTransparent,
+		depth_mode: DepthMode::D32,
+		log_filter: LogLevel::None,
+		overlay_app: cli_args.overlay_priority.is_some(),
+		overlay_priority: cli_args.overlay_priority.unwrap_or(u32::MAX),
+		disable_desktop_input_window: true,
+		..Default::default()
+	}
+	.init()
+	.expect("StereoKit failed to initialize");
 	info!("Init StereoKit");
 
-	Material::find(&stereokit, "default/material_pbr")?
-		.set_shader(Shader::from_name(&stereokit, "default/shader_pbr_clip")?);
+	sk.material_set_shader(
+		sk.material_find("default/material_pbr")?,
+		sk.shader_find("default/shader_pbr_clip")?,
+	);
 
 	// Skytex/light stuff
 	{
-		if let Some((tex, light)) = project_dirs
+		if let Some((light, tex)) = project_dirs
 			.as_ref()
 			.and_then(|dirs| {
 				let skytex_path = dirs.config_dir().join("skytex.hdr");
-				skytex_path.exists().then(|| {
-					Texture::from_cubemap_equirectangular(&stereokit, &skytex_path, true, 100)
-				})
+				skytex_path
+					.exists()
+					.then(|| sk.tex_create_cubemap_file(&skytex_path, true, 100).ok())
 			})
 			.flatten()
 		{
-			stereokit.set_skytex(&tex);
-			stereokit.set_skylight(&light);
-		} else if let Some(tex) = Texture::cubemap_from_spherical_harmonics(
-			&stereokit,
-			&SphericalHarmonics::default(),
-			16,
-			0.0,
-			0.0,
-		) {
-			stereokit.set_skytex(&tex);
+			sk.render_set_skytex(&tex);
+			sk.render_set_skylight(light);
+		} else {
+			sk.render_set_skytex(sk.tex_gen_color(
+				BLACK,
+				1,
+				1,
+				TextureType::CUBEMAP,
+				TextureFormat::RGBA32,
+			));
 		}
 	}
 
@@ -148,10 +149,10 @@ fn main() -> Result<()> {
 		.flatten();
 
 	if hands.is_none() {
-		unsafe {
-			stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_left, false as i32);
-			stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_right, false as i32);
-		}
+		// unsafe {
+		// 	stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_left, false as i32);
+		// 	stereokit::sys::input_hand_visible(stereokit::sys::handed__handed_right, false as i32);
+		// }
 	}
 
 	let (event_stop_tx, event_stop_rx) = oneshot::channel::<()>();
@@ -187,7 +188,7 @@ fn main() -> Result<()> {
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
 	debug_span!("StereoKit").in_scope(|| {
-		stereokit.run(
+		sk.run(
 			|sk| {
 				let _span = debug_span!("StereoKit step");
 				let _span = _span.enter();
@@ -209,7 +210,7 @@ fn main() -> Result<()> {
 					right_controller.update(sk);
 				}
 				input::process_input();
-				nodes::root::Root::send_frame_events(sk.time_elapsed());
+				nodes::root::Root::send_frame_events(sk.time_elapsed_unscaled());
 				{
 					let frame_delta = Duration::from_secs_f64(sk.time_elapsed_unscaled());
 					if last_frame_delta < frame_delta {
@@ -233,7 +234,7 @@ fn main() -> Result<()> {
 				#[cfg(feature = "wayland")]
 				wayland.update(sk);
 				drawable::draw(sk);
-				audio::update();
+				audio::update(sk);
 				#[cfg(feature = "wayland")]
 				wayland.make_context_current();
 			},
