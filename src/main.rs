@@ -180,6 +180,11 @@ fn main() -> Result<()> {
 					.file_name()
 					.expect("Stardust socket path not found"),
 			)
+			.env("GDK_BACKEND", "wayland")
+			.env("QT_QPA_PLATFORM", "wayland")
+			.env("MOZ_ENABLE_WAYLAND", "1")
+			.env("CLUTTER_BACKEND", "wayland")
+			.env("SDL_VIDEODRIVER", "wayland")
 			.spawn();
 	}
 
