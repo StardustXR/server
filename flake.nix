@@ -64,7 +64,9 @@
     in
     {
       overlays.default = final: prev: {
-        stardust-xr.${name} = package final;
+        stardust-xr = (prev.stardust-xr or {}) // {
+          ${name} = package final;
+        };
       };
 
       packages."x86_64-linux".default = package (pkgs "x86_64-linux");
