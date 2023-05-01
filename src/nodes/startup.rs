@@ -120,7 +120,7 @@ pub fn create_startup_settings_flex(
 	Ok(())
 }
 
-macro_rules! env_insert {
+macro_rules! var_env_insert {
 	($env:ident, $name:ident) => {
 		$env.insert(stringify!($name).to_string(), $name.get().unwrap().clone());
 	};
@@ -131,9 +131,16 @@ pub fn get_connection_environment_flex(
 	_data: &[u8],
 ) -> Result<Vec<u8>> {
 	let mut env: FxHashMap<String, String> = FxHashMap::default();
-	env_insert!(env, STARDUST_INSTANCE);
+	var_env_insert!(env, STARDUST_INSTANCE);
 	#[cfg(feature = "wayland")]
-	env_insert!(env, WAYLAND_DISPLAY);
+	{
+		var_env_insert!(env, WAYLAND_DISPLAY);
+		env.insert("GDK_BACKEND".to_string(), "wayland".to_string());
+		env.insert("QT_QPA_PLATFORM".to_string(), "wayland".to_string());
+		env.insert("MOZ_ENABLE_WAYLAND".to_string(), "1".to_string());
+		env.insert("CLUTTER_BACKEND".to_string(), "wayland".to_string());
+		env.insert("SDL_VIDEODRIVER".to_string(), "wayland".to_string());
+	}
 
 	Ok(serialize(env)?)
 }
