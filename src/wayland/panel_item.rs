@@ -154,7 +154,6 @@ pub enum RecommendedState {
 pub struct PanelItem {
 	pub uid: String,
 	node: Weak<Node>,
-	client_credentials: Option<Credentials>,
 	cursor: Mutex<Option<WlWeak<WlSurface>>>,
 	pub seat_data: Arc<SeatData>,
 	toplevel: WlWeak<XdgToplevel>,
@@ -170,6 +169,11 @@ impl PanelItem {
 		seat_data: Arc<SeatData>,
 	) -> (Arc<Node>, Arc<PanelItem>) {
 		debug!(?toplevel, ?client_credentials, "Create panel item");
+
+		let startup_settings = client_credentials
+			.and_then(|cred| get_env(cred.pid).ok())
+			.and_then(|env| startup_settings(&env));
+
 		let uid = nanoid!();
 		let node = Arc::new(Node::create(
 			&INTERNAL_CLIENT,
@@ -181,7 +185,6 @@ impl PanelItem {
 		let panel_item = Arc::new(PanelItem {
 			uid: uid.clone(),
 			node: Arc::downgrade(&node),
-			client_credentials,
 			cursor: Mutex::new(None),
 			seat_data,
 			toplevel: toplevel.downgrade(),
@@ -189,6 +192,12 @@ impl PanelItem {
 			pointer_grab: Mutex::new(None),
 			keyboard_grab: Mutex::new(None),
 		});
+
+		if let Some(startup_settings) = &startup_settings {
+			spatial.set_local_transform(
+				spatial.global_transform().inverse() * startup_settings.transform,
+			);
+		}
 
 		panel_item
 			.seat_data
@@ -200,6 +209,16 @@ impl PanelItem {
 			&ITEM_TYPE_INFO_PANEL,
 			ItemType::Panel(panel_item.clone()),
 		);
+
+		if let Some(startup_settings) = &startup_settings {
+			if let Some(acceptor) = startup_settings
+				.acceptors
+				.get(&*ITEM_TYPE_INFO_PANEL)
+				.and_then(|acc| acc.upgrade())
+			{
+				items::capture(&item, &acceptor);
+			}
+		}
 		node.add_local_signal(
 			"apply_surface_material",
 			PanelItem::apply_surface_material_flex,
@@ -222,21 +241,6 @@ impl PanelItem {
 			PanelItem::keyboard_set_keymap_names_flex,
 		);
 		node.add_local_signal("keyboard_key", PanelItem::keyboard_key_flex);
-
-		if let Some(startup_settings) = panel_item
-			.client_credentials
-			.and_then(|cred| get_env(cred.pid).ok())
-			.and_then(|env| startup_settings(&env))
-		{
-			spatial.set_local_transform(startup_settings.transform);
-			if let Some(acceptor) = startup_settings
-				.acceptors
-				.get(&*ITEM_TYPE_INFO_PANEL)
-				.and_then(|acc| acc.upgrade())
-			{
-				items::capture(&item, &acceptor);
-			}
-		}
 
 		(node, panel_item)
 	}
