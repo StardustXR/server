@@ -17,13 +17,7 @@ use send_wrapper::SendWrapper;
 use serde::Deserialize;
 use stardust_xr::{schemas::flex::deserialize, values::Transform};
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
-use stereokit::{
-	color_named::WHITE,
-	font::Font,
-	lifecycle::StereoKitDraw,
-	text::{self, TextAlign, TextFit, TextStyle},
-	values::Color128,
-};
+use stereokit::{named_colors::WHITE, Color128, StereoKitDraw, TextAlign, TextFit, TextStyle};
 
 static TEXT_REGISTRY: Registry<Text> = Registry::new();
 
@@ -96,15 +90,17 @@ impl Text {
 		Ok(text)
 	}
 
-	fn draw(&self, sk: &StereoKitDraw) {
+	fn draw(&self, sk: &impl StereoKitDraw) {
 		let style = self.style.get_or_try_init(
 			|| -> Result<SendWrapper<TextStyle>, color_eyre::eyre::Error> {
 				let font = self
 					.font_path
 					.as_deref()
-					.and_then(|path| Font::from_file(sk, path))
-					.unwrap_or_else(|| Font::default(sk));
-				Ok(SendWrapper::new(TextStyle::new(sk, font, 1.0, WHITE)))
+					.and_then(|path| sk.font_create(path).ok())
+					.unwrap_or_else(|| sk.font_find("default/font").unwrap());
+				Ok(SendWrapper::new(unsafe {
+					sk.text_make_style(font, 1.0, WHITE)
+				}))
 			},
 		);
 
@@ -117,28 +113,36 @@ impl Text {
 					data.character_height,
 				));
 			if let Some(bounds) = data.bounds {
-				text::draw_in(
-					sk,
+				sk.text_add_in(
 					&data.text,
 					transform,
 					bounds / data.character_height,
 					data.fit,
-					style,
+					**style,
 					data.bounds_align,
 					data.text_align,
 					vec3(0.0, 0.0, 0.0),
-					Color128::from(data.color),
+					Color128::from([
+						data.color.red(),
+						data.color.green(),
+						data.color.blue(),
+						data.color.alpha(),
+					]),
 				);
 			} else {
-				text::draw_at(
-					sk,
+				sk.text_add_at(
 					&data.text,
 					transform,
-					style,
+					**style,
 					data.bounds_align,
 					data.text_align,
 					vec3(0.0, 0.0, 0.0),
-					data.color,
+					Color128::from([
+						data.color.red(),
+						data.color.green(),
+						data.color.blue(),
+						data.color.alpha(),
+					]),
 				);
 			}
 		}
@@ -171,7 +175,7 @@ impl Drop for Text {
 	}
 }
 
-pub fn draw_all(sk: &StereoKitDraw) {
+pub fn draw_all(sk: &impl StereoKitDraw) {
 	for text in TEXT_REGISTRY.get_valid_contents() {
 		if text.enabled.load(Ordering::Relaxed) {
 			text.draw(sk);

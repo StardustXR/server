@@ -1,4 +1,4 @@
-use crate::core::client::Client;
+use crate::{core::client::Client, wayland::WAYLAND_DISPLAY, STARDUST_INSTANCE};
 
 use super::{
 	items::{ItemAcceptor, TypeInfo},
@@ -9,7 +9,7 @@ use color_eyre::eyre::Result;
 use glam::Mat4;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use stardust_xr::schemas::flex::{deserialize, flexbuffers, serialize};
+use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::{
 	fmt::Debug,
 	sync::{Arc, Weak},
@@ -86,6 +86,10 @@ impl Debug for StartupSettings {
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	let node = Node::create(client, "", "startup", false);
 	node.add_local_signal("create_startup_settings", create_startup_settings_flex);
+	node.add_local_method(
+		"get_connection_environment",
+		get_connection_environment_flex,
+	);
 	node.add_to_scenegraph().map(|_| ())
 }
 
@@ -94,9 +98,13 @@ pub fn create_startup_settings_flex(
 	calling_client: Arc<Client>,
 	data: &[u8],
 ) -> Result<()> {
-	let name = flexbuffers::Reader::get_root(data)?.get_str()?;
-	let node =
-		Node::create(&calling_client, "/startup/settings", name, true).add_to_scenegraph()?;
+	let node = Node::create(
+		&calling_client,
+		"/startup/settings",
+		deserialize(data)?,
+		true,
+	)
+	.add_to_scenegraph()?;
 	StartupSettings::add_to(&node);
 
 	node.add_local_signal("set_root", StartupSettings::set_root_flex);
@@ -110,4 +118,29 @@ pub fn create_startup_settings_flex(
 	);
 
 	Ok(())
+}
+
+macro_rules! var_env_insert {
+	($env:ident, $name:ident) => {
+		$env.insert(stringify!($name).to_string(), $name.get().unwrap().clone());
+	};
+}
+pub fn get_connection_environment_flex(
+	_node: &Node,
+	_calling_client: Arc<Client>,
+	_data: &[u8],
+) -> Result<Vec<u8>> {
+	let mut env: FxHashMap<String, String> = FxHashMap::default();
+	var_env_insert!(env, STARDUST_INSTANCE);
+	#[cfg(feature = "wayland")]
+	{
+		var_env_insert!(env, WAYLAND_DISPLAY);
+		env.insert("GDK_BACKEND".to_string(), "wayland".to_string());
+		env.insert("QT_QPA_PLATFORM".to_string(), "wayland".to_string());
+		env.insert("MOZ_ENABLE_WAYLAND".to_string(), "1".to_string());
+		env.insert("CLUTTER_BACKEND".to_string(), "wayland".to_string());
+		env.insert("SDL_VIDEODRIVER".to_string(), "wayland".to_string());
+	}
+
+	Ok(serialize(env)?)
 }

@@ -1,4 +1,7 @@
-use super::{panel_item::PanelItem, state::WaylandState, surface::CoreSurface};
+use crate::wayland::surface::CoreSurface;
+
+use super::state::WaylandState;
+use portable_atomic::{AtomicU32, Ordering};
 use smithay::{
 	delegate_compositor,
 	reexports::wayland_server::protocol::wl_surface::WlSurface,
@@ -14,12 +17,24 @@ impl CompositorHandler for WaylandState {
 
 	fn commit(&mut self, surface: &WlSurface) {
 		debug!(?surface, "Surface commit");
-		CoreSurface::add_to(&self.display, self.display_handle.clone(), surface);
-		if let Some(panel_item) = compositor::with_states(surface, |data| {
-			data.data_map.get::<Arc<PanelItem>>().cloned()
-		}) {
-			panel_item.commit_toplevel();
-		};
+		let mut count = 0;
+		let core_surface = compositor::with_states(surface, |data| {
+			let count_new = data
+				.data_map
+				.insert_if_missing_threadsafe(|| AtomicU32::new(0));
+			if !count_new {
+				count = data
+					.data_map
+					.get::<AtomicU32>()
+					.unwrap()
+					.fetch_add(1, Ordering::Relaxed);
+			}
+
+			data.data_map.get::<Arc<CoreSurface>>().cloned()
+		});
+		if let Some(core_surface) = core_surface {
+			core_surface.commit(count);
+		}
 	}
 }
 

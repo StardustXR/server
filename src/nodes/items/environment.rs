@@ -12,6 +12,7 @@ use crate::{
 };
 use color_eyre::eyre::{eyre, Result};
 use lazy_static::lazy_static;
+use nanoid::nanoid;
 use serde::Deserialize;
 use stardust_xr::{
 	schemas::flex::{deserialize, flexbuffers, serialize},
@@ -38,6 +39,7 @@ impl EnvironmentItem {
 	pub fn add_to(node: &Arc<Node>, path: String) {
 		Item::add_to(
 			node,
+			nanoid!(),
 			&ITEM_TYPE_INFO_ENVIRONMENT,
 			ItemType::Environment(EnvironmentItem { path }),
 		);

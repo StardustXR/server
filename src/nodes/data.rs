@@ -125,8 +125,8 @@ impl PulseSender {
 		}
 
 		let (_, rotation, position) = Spatial::space_to_space_matrix(
-			rx_node.spatial.get().map(|s| &**s),
-			tx_node.spatial.get().map(|s| &**s),
+			rx_node.spatial.get().map(|s| s.as_ref()),
+			tx_node.spatial.get().map(|s| s.as_ref()),
 		)
 		.to_scale_rotation_translation();
 

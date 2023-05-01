@@ -15,12 +15,10 @@ use color_eyre::eyre::{ensure, Result};
 use global_counter::primitive::exact::CounterU32;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use sk::lifecycle::StereoKitDraw;
-use slog::Drain;
-use smithay::{
-	backend::{egl::EGLContext, renderer::gles2::Gles2Renderer},
-	reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket},
-};
+use sk::StereoKitDraw;
+use smithay::backend::egl::EGLContext;
+use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket};
 use std::os::unix::prelude::AsRawFd;
 use std::{
 	ffi::c_void,
@@ -32,6 +30,8 @@ use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
 };
 use tracing::{debug, debug_span, info, instrument};
+
+pub static WAYLAND_DISPLAY: OnceCell<String> = OnceCell::new();
 
 pub static SERIAL_COUNTER: CounterU32 = CounterU32::new(0);
 
@@ -59,49 +59,43 @@ fn get_sk_egl() -> Result<EGLRawHandles> {
 static GLOBAL_DESTROY_QUEUE: OnceCell<mpsc::Sender<GlobalId>> = OnceCell::new();
 
 pub struct Wayland {
-	log: slog::Logger,
-
 	display: Arc<Mutex<Display<WaylandState>>>,
 	pub socket_name: String,
 	join_handle: JoinHandle<Result<()>>,
-	renderer: Gles2Renderer,
+	renderer: GlesRenderer,
 	state: Arc<Mutex<WaylandState>>,
 }
 impl Wayland {
 	pub fn new() -> Result<Self> {
-		let log = ::slog::Logger::root(::tracing_slog::TracingSlogDrain.fuse(), slog::o!());
-
 		let egl_raw_handles = get_sk_egl()?;
 		let renderer = unsafe {
-			Gles2Renderer::new(
-				EGLContext::from_raw(
-					egl_raw_handles.display,
-					egl_raw_handles.config,
-					egl_raw_handles.context,
-					log.clone(),
-				)?,
-				log.clone(),
-			)?
+			GlesRenderer::new(EGLContext::from_raw(
+				egl_raw_handles.display,
+				egl_raw_handles.config,
+				egl_raw_handles.context,
+			)?)?
 		};
 
 		let display: Display<WaylandState> = Display::new()?;
 		let display_handle = display.handle();
 
 		let display = Arc::new(Mutex::new(display));
-		let state = WaylandState::new(log.clone(), display.clone(), display_handle, &renderer);
+		let state = WaylandState::new(display.clone(), display_handle, &renderer);
 
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
 		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();
 
 		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
 		let socket_name = socket.socket_name().unwrap().to_str().unwrap().to_string();
+		WAYLAND_DISPLAY
+			.set(socket_name.clone())
+			.expect("seriously message nova this time they screwed up big time");
 		info!(socket_name, "Wayland active");
 
 		let join_handle =
 			Wayland::start_loop(display.clone(), socket, state.clone(), global_destroy_queue)?;
 
 		Ok(Wayland {
-			log,
 			display,
 			socket_name,
 			join_handle,
@@ -155,15 +149,15 @@ impl Wayland {
 	}
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self, sk))]
-	pub fn update(&mut self, sk: &StereoKitDraw) {
+	pub fn update(&mut self, sk: &impl StereoKitDraw) {
 		for core_surface in CORE_SURFACES.get_valid_contents() {
-			core_surface.process(sk, &mut self.renderer, &self.log);
+			core_surface.process(sk, &mut self.renderer);
 		}
 
 		self.display.lock().flush_clients().unwrap();
 	}
 
-	pub fn frame_event(&self, sk: &StereoKitDraw) {
+	pub fn frame_event(&self, sk: &impl StereoKitDraw) {
 		let state = self.state.lock();
 
 		for core_surface in CORE_SURFACES.get_valid_contents() {

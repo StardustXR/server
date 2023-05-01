@@ -80,7 +80,7 @@ impl Client {
 
 		let (mut messenger_tx, mut messenger_rx) = messenger::create(connection);
 		let scenegraph = Arc::new(Scenegraph::default());
-		let startup_settings = env.as_ref().and_then(|env| startup_settings(env));
+		let startup_settings = env.as_ref().and_then(startup_settings);
 
 		let client = CLIENTS.add(Client {
 			pid,
