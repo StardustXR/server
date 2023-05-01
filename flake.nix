@@ -1,5 +1,6 @@
 {
-  inputs.nixpkgs.url = github:NixOS/nixpkgs/nixos-22.11;
+  # 22.11 does not include PR #218472, hence we use the unstable version
+  inputs.nixpkgs.url = github:NixOS/nixpkgs/nixos-unstable;
 
   inputs.fenix.url = github:nix-community/fenix;
   inputs.fenix.inputs.nixpkgs.follows = "nixpkgs";
@@ -27,14 +28,19 @@
           }).buildRustPackage rec {
             pname = "stardust-xr-${name}";
             src = ./.;
-            cargoDepsName = pname;
 
             # ---- START package specific settings ----
-            version = "20230420";
-            cargoSha256 = "sha256-Vk/5LRPcKjUcug4jwWqLBSHD3arLSE74bH21+4sPyLY=";
+            version = "0.10.2";
+
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+              outputHashes = {
+                "smithay-0.3.0" = "sha256-meEbYmSGQbaSbP5t55R1C/c9KNKvk20wDhPBCsT7kOY=";
+              };
+            };
 
             postPatch = ''
-              sk=/build/${pname}-vendor.tar.gz/stereokit-sys/StereoKit
+              sk=$(echo $cargoDepsCopy/stereokit-sys-*/StereoKit)
               mkdir -p $sk/build/cpm
               cp ${pkgs.fetchurl {
                 url = "https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.32.2/CPM.cmake";
