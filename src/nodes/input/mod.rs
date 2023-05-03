@@ -13,7 +13,6 @@ use super::{
 	Node,
 };
 use crate::core::client::Client;
-use crate::core::eventloop::FRAME;
 use crate::core::{node_collections::LifeLinkedNodeList, registry::Registry};
 use color_eyre::eyre::{ensure, Result};
 use glam::Mat4;
@@ -151,11 +150,11 @@ impl DistanceLink {
 		})
 	}
 
-	fn send_input(&self, frame: u64, datamap: Datamap) {
-		self.handler.send_input(frame, self, datamap);
+	fn send_input(&self, order: u32, datamap: Datamap) {
+		self.handler.send_input(order, self, datamap);
 	}
 	#[instrument(level = "debug", skip(self))]
-	fn serialize(&self, datamap: Datamap) -> Vec<u8> {
+	fn serialize(&self, order: u32, datamap: Datamap) -> Vec<u8> {
 		let input = self.method.specialization.lock().serialize(
 			self,
 			Spatial::space_to_space_matrix(Some(&self.method.spatial), Some(&self.handler.spatial)),
@@ -166,6 +165,7 @@ impl DistanceLink {
 			input,
 			distance: self.method.true_distance(&self.handler.field),
 			datamap,
+			order,
 		};
 		root.serialize()
 	}
@@ -198,9 +198,9 @@ impl InputHandler {
 	}
 
 	#[instrument(level = "debug", skip(self, distance_link))]
-	fn send_input(&self, frame: u64, distance_link: &DistanceLink, datamap: Datamap) {
+	fn send_input(&self, order: u32, distance_link: &DistanceLink, datamap: Datamap) {
 		let Some(node) = self.node.upgrade() else {return};
-		let _ = node.send_remote_signal("input", &distance_link.serialize(datamap));
+		let _ = node.send_remote_signal("input", &distance_link.serialize(order, datamap));
 	}
 }
 impl PartialEq for InputHandler {
@@ -277,13 +277,10 @@ pub fn process_input() {
 				});
 			});
 
-			// Get the current frame
-			let frame = FRAME.load(Ordering::Relaxed);
-
 			let captures = method.captures.take_valid_contents();
 			// Iterate over the distance links and send input to them
-			for distance_link in distance_links {
-				distance_link.send_input(frame, method.datamap.lock().clone().unwrap());
+			for (i, distance_link) in distance_links.iter().enumerate() {
+				distance_link.send_input(i as u32, method.datamap.lock().clone().unwrap());
 
 				// If the current distance link is in the list of captured input handlers,
 				// break out of the loop to avoid sending input to the remaining distance links
