@@ -6,3 +6,6 @@
 **/*.rs.bk
 
 .vscode/
+
+# Ignore build results from Nix
+*result*
