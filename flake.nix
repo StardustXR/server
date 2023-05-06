@@ -34,9 +34,7 @@
 
             cargoLock = {
               lockFile = ./Cargo.lock;
-              outputHashes = {
-                "smithay-0.3.0" = "sha256-meEbYmSGQbaSbP5t55R1C/c9KNKvk20wDhPBCsT7kOY=";
-              };
+              allowBuiltinFetchGit = true;
             };
 
             postPatch = ''
