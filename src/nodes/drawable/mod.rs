@@ -2,7 +2,11 @@ pub mod lines;
 pub mod model;
 pub mod text;
 
-use self::{lines::Lines, model::Model, text::Text};
+use self::{
+	lines::Lines,
+	model::{Model, ModelPart},
+	text::Text,
+};
 
 use super::Node;
 use crate::core::client::Client;
@@ -26,6 +30,7 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 pub enum Drawable {
 	Lines(Arc<Lines>),
 	Model(Arc<Model>),
+	ModelPart(Arc<ModelPart>),
 	Text(Arc<Text>),
 }
 

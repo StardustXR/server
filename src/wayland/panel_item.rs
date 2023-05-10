@@ -300,8 +300,7 @@ impl PanelItem {
 		#[derive(Debug, Deserialize)]
 		struct SurfaceMaterialInfo<'a> {
 			surface: SurfaceID,
-			model_path: &'a str,
-			idx: u32,
+			model_node_path: &'a str,
 		}
 
 		let info: SurfaceMaterialInfo = deserialize(data)?;
@@ -311,12 +310,12 @@ impl PanelItem {
 
 		let model_node = calling_client
 			.scenegraph
-			.get_node(info.model_path)
+			.get_node(info.model_node_path)
 			.ok_or_else(|| eyre!("Model node not found"))?;
-		let Some(Drawable::Model(model)) = model_node.drawable.get() else {bail!("Node is not a model")};
+		let Some(Drawable::ModelPart(model_node)) = model_node.drawable.get() else {bail!("Node is not a model")};
 		debug!(?info, "Apply surface material");
 
-		core_surface.apply_material(model.clone(), info.idx);
+		core_surface.apply_material(model_node);
 
 		Ok(())
 	}

@@ -1,7 +1,7 @@
 use super::{shaders::PANEL_SHADER_BYTES, state::WaylandState};
 use crate::{
 	core::{delta::Delta, destroy_queue, registry::Registry},
-	nodes::drawable::model::Model,
+	nodes::drawable::model::ModelPart,
 };
 use mint::Vector2;
 use once_cell::sync::OnceCell;
@@ -51,7 +51,7 @@ pub struct CoreSurface {
 	sk_mat: OnceCell<Arc<SendWrapper<Material>>>,
 	material_offset: Mutex<Delta<u32>>,
 	on_commit: Box<dyn Fn(u32) + Send + Sync>,
-	pub pending_material_applications: Mutex<Vec<(Arc<Model>, u32)>>,
+	pub pending_material_applications: Registry<ModelPart>,
 }
 
 impl CoreSurface {
@@ -72,7 +72,7 @@ impl CoreSurface {
 					sk_mat: OnceCell::new(),
 					material_offset: Mutex::new(Delta::new(0)),
 					on_commit: Box::new(on_commit) as Box<dyn Fn(u32) + Send + Sync>,
-					pending_material_applications: Mutex::new(Vec::new()),
+					pending_material_applications: Registry::new(),
 				})
 			});
 		});
@@ -180,19 +180,15 @@ impl CoreSurface {
 		*self.material_offset.lock().value_mut() = material_offset;
 	}
 
-	pub fn apply_material(&self, model: Arc<Model>, material_idx: u32) {
-		self.pending_material_applications
-			.lock()
-			.push((model, material_idx));
+	pub fn apply_material(&self, model_node: &Arc<ModelPart>) {
+		self.pending_material_applications.add_raw(model_node)
 	}
 
 	fn apply_surface_materials(&self) {
-		for (model, material_idx) in self.pending_material_applications.lock().drain(0..) {
-			model
-				.pending_material_replacements
-				.lock()
-				.insert(material_idx, self.sk_mat.get().unwrap().clone());
+		for model_node in self.pending_material_applications.get_valid_contents() {
+			model_node.replace_material(self.sk_mat.clone().get().unwrap().clone());
 		}
+		self.pending_material_applications.clear();
 	}
 
 	pub fn wl_surface(&self) -> Option<WlSurface> {

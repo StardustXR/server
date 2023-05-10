@@ -2,6 +2,7 @@ use crate::nodes::Node;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::{
+	borrow::Borrow,
 	hash::Hash,
 	sync::{Arc, Weak},
 };
@@ -41,10 +42,27 @@ impl<K: Hash + Eq> LifeLinkedNodeMap<K> {
 	pub fn add(&self, key: K, node: &Arc<Node>) {
 		self.nodes.lock().insert(key, Arc::downgrade(node));
 	}
-	pub fn get(&self, key: &K) -> Option<Arc<Node>> {
+	pub fn get<Q>(&self, key: &Q) -> Option<Arc<Node>>
+	where
+		Q: ?Sized,
+		K: Borrow<Q>,
+		Q: Hash + Eq,
+	{
 		self.nodes.lock().get(key).and_then(|n| n.upgrade())
 	}
-	pub fn remove(&self, key: &K) -> Option<Arc<Node>> {
+	pub fn nodes(&self) -> Vec<Arc<Node>> {
+		self.nodes
+			.lock()
+			.values()
+			.filter_map(|v| v.upgrade())
+			.collect()
+	}
+	pub fn remove<Q>(&self, key: &Q) -> Option<Arc<Node>>
+	where
+		Q: ?Sized,
+		K: Borrow<Q>,
+		Q: Hash + Eq,
+	{
 		self.nodes.lock().remove(key).and_then(|n| n.upgrade())
 	}
 
