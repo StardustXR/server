@@ -23,7 +23,7 @@ use smithay::{
 	utils::{Size, Transform},
 	wayland::{
 		buffer::BufferHandler,
-		compositor::CompositorState,
+		compositor::{CompositorClientState, CompositorState},
 		dmabuf::{self, DmabufGlobal, DmabufHandler, DmabufState},
 		shell::kde::decoration::KdeDecorationState,
 		shm::{ShmHandler, ShmState},
@@ -32,7 +32,10 @@ use smithay::{
 use std::sync::{Arc, Weak};
 use tracing::info;
 
-pub struct ClientState;
+#[derive(Default)]
+pub struct ClientState {
+	pub compositor_state: CompositorClientState,
+}
 impl ClientData for ClientState {
 	fn initialized(&self, client_id: ClientId) {
 		info!("Wayland client {:?} connected", client_id);

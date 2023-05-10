@@ -129,7 +129,7 @@ impl Wayland {
 					}
 					acc = listen_async.accept() => { // New client connected
 						let (stream, _) = acc?;
-						let client = dh2.insert_client(stream.into_std()?, Arc::new(ClientState))?;
+						let client = dh2.insert_client(stream.into_std()?, Arc::new(ClientState::default()))?;
 
 						state.lock().new_client(client.id(), &dh2);
 					}

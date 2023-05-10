@@ -1,11 +1,11 @@
 use crate::wayland::surface::CoreSurface;
 
-use super::state::WaylandState;
+use super::state::{ClientState, WaylandState};
 use portable_atomic::{AtomicU32, Ordering};
 use smithay::{
 	delegate_compositor,
-	reexports::wayland_server::protocol::wl_surface::WlSurface,
-	wayland::compositor::{self, CompositorHandler, CompositorState},
+	reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
+	wayland::compositor::{self, CompositorClientState, CompositorHandler, CompositorState},
 };
 use std::sync::Arc;
 use tracing::debug;
@@ -35,6 +35,10 @@ impl CompositorHandler for WaylandState {
 		if let Some(core_surface) = core_surface {
 			core_surface.commit(count);
 		}
+	}
+
+	fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
+		&client.get_data::<ClientState>().unwrap().compositor_state
 	}
 }
 
