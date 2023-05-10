@@ -103,7 +103,7 @@ impl CoreSurface {
 		});
 
 		// Let smithay handle buffer management (has to be done here as RendererSurfaceStates is not thread safe)
-		on_commit_buffer_handler::<()>(&wl_surface);
+		on_commit_buffer_handler::<WaylandState>(&wl_surface);
 		// Import all surface buffers into textures
 		if import_surface_tree(renderer, &wl_surface).is_err() {
 			return;
