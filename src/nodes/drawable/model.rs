@@ -244,15 +244,10 @@ impl ModelPart {
 			sk.model_node_set_material(sk_model.as_ref(), self.id, &new_material);
 		}
 
-		// sk.model_node_set_transform_model(
-		// 	sk_model.as_ref(),
-		// 	self.id,
-		// 	self.space.global_transform(), //Spatial::space_to_space_matrix(Some(&self.space), Some(&model.space)),
-		// );
-		sk.model_node_set_transform_local(
+		sk.model_node_set_transform_model(
 			sk_model.as_ref(),
 			self.id,
-			sk.model_node_get_transform_local(sk_model.as_ref(), self.id),
+			Spatial::space_to_space_matrix(Some(&self.space), Some(&model.space)),
 		);
 	}
 }
