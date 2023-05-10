@@ -170,7 +170,7 @@ impl ModelPart {
 		let node = client.scenegraph.add_node(Node::create(
 			&client,
 			stardust_model_part.get_path(),
-			dbg!(part_path.to_str()?),
+			part_path.to_str()?,
 			false,
 		));
 		let spatial_parent = parent_node
