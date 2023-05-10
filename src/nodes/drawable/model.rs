@@ -1,6 +1,7 @@
 use super::Node;
 use crate::core::client::Client;
 use crate::core::destroy_queue;
+use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
 use crate::nodes::drawable::Drawable;
@@ -19,7 +20,7 @@ use stardust_xr::values::Transform;
 use std::ffi::OsStr;
 use std::fmt::Error;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use stereokit::named_colors::WHITE;
 use stereokit::{
 	Color128, Material, Model as SKModel, RenderLayer, Shader, StereoKitDraw, StereoKitMultiThread,
@@ -114,14 +115,156 @@ impl MaterialParameter {
 	}
 }
 
+pub struct ModelPart {
+	id: i32,
+	path: PathBuf,
+	space: Arc<Spatial>,
+	model: Weak<Model>,
+	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
+	pending_material_replacement: Mutex<Option<Arc<SendWrapper<Material>>>>,
+}
+impl ModelPart {
+	fn create_for_model(sk: &impl StereoKitDraw, model: &Arc<Model>, sk_model: &SKModel) {
+		let first_root_part = sk.model_node_get_root(sk_model);
+		let mut current_option_part = Some(first_root_part);
+
+		while let Some(current_part) = &mut current_option_part {
+			ModelPart::create(sk, model, sk_model, *current_part);
+
+			if let Some(child) = sk.model_node_child(sk_model, *current_part) {
+				*current_part = child;
+			} else if let Some(sibling) = sk.model_node_sibling(sk_model, *current_part) {
+				*current_part = sibling;
+			} else {
+				while let Some(current_part) = &mut current_option_part {
+					if let Some(sibling) = sk.model_node_sibling(sk_model, *current_part) {
+						*current_part = sibling;
+						break;
+					}
+					current_option_part = sk.model_node_parent(sk_model, *current_part);
+				}
+			}
+		}
+	}
+
+	fn create(
+		sk: &impl StereoKitDraw,
+		model: &Arc<Model>,
+		sk_model: &SKModel,
+		id: i32,
+	) -> Option<Arc<Self>> {
+		let parent_node = sk
+			.model_node_parent(sk_model, id)
+			.and_then(|id| model.parts.get(&id));
+		let parent_part = parent_node
+			.as_ref()
+			.and_then(|node| match node.drawable.get() {
+				Some(Drawable::ModelPart(model_part)) => Some(model_part),
+				_ => None,
+			});
+
+		let stardust_model_part = model.space.node()?;
+		let client = stardust_model_part.get_client()?;
+		let mut part_path = parent_part.map(|n| n.path.clone()).unwrap_or_default();
+		part_path.push(sk.model_node_get_name(sk_model, id)?);
+		let node = client.scenegraph.add_node(Node::create(
+			&client,
+			stardust_model_part.get_path(),
+			dbg!(part_path.to_str()?),
+			false,
+		));
+		let spatial_parent = parent_node
+			.and_then(|n| n.spatial.get().cloned())
+			.unwrap_or_else(|| model.space.clone());
+		let space = Spatial::add_to(
+			&node,
+			Some(spatial_parent),
+			sk.model_node_get_transform_local(sk_model, id),
+			false,
+		)
+		.ok()?;
+		let model_part = Arc::new(ModelPart {
+			id,
+			path: part_path,
+			space,
+			model: Arc::downgrade(model),
+			pending_material_parameters: Mutex::new(FxHashMap::default()),
+			pending_material_replacement: Mutex::new(None),
+		});
+		node.add_local_signal(
+			"set_material_parameter",
+			ModelPart::set_material_parameter_flex,
+		);
+		let _ = node.drawable.set(Drawable::ModelPart(model_part.clone()));
+		model.parts.add(id, &node);
+		Some(model_part)
+	}
+
+	fn set_material_parameter_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<()> {
+		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {bail!("Not a drawable??")};
+
+		let (name, value): (String, MaterialParameter) = deserialize(data)?;
+
+		model_part
+			.pending_material_parameters
+			.lock()
+			.insert(name, value);
+
+		Ok(())
+	}
+
+	pub fn replace_material(&self, replacement: Arc<SendWrapper<Material>>) {
+		self.pending_material_replacement
+			.lock()
+			.replace(replacement);
+	}
+
+	fn update(&self, sk: &impl StereoKitDraw) {
+		let Some(model) = self.model.upgrade() else {return};
+		let Some(node) = model.space.node() else {return};
+		let Some(client) = node.get_client() else {return};
+		let Some(sk_model) = model.sk_model.get() else {return};
+		if let Some(material_replacement) = self.pending_material_replacement.lock().take() {
+			sk.model_node_set_material(
+				sk_model.as_ref(),
+				self.id,
+				material_replacement.as_ref().as_ref(),
+			);
+		}
+
+		let mut material_parameters = self.pending_material_parameters.lock();
+		for (parameter_name, parameter_value) in material_parameters.drain() {
+			let Some(material) = sk.model_node_get_material(sk_model.as_ref(), self.id) else {continue};
+			let new_material = sk.material_copy(material);
+			parameter_value.apply_to_material(&client, sk, &new_material, parameter_name.as_str());
+			sk.model_node_set_material(sk_model.as_ref(), self.id, &new_material);
+		}
+
+		// sk.model_node_set_transform_model(
+		// 	sk_model.as_ref(),
+		// 	self.id,
+		// 	self.space.global_transform(), //Spatial::space_to_space_matrix(Some(&self.space), Some(&model.space)),
+		// );
+		sk.model_node_set_transform_local(
+			sk_model.as_ref(),
+			self.id,
+			sk.model_node_get_transform_local(sk_model.as_ref(), self.id),
+		);
+	}
+}
+
 pub struct Model {
+	self_ref: Weak<Model>,
 	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
 	resource_id: ResourceID,
 	pending_model_path: OnceCell<PathBuf>,
-	pending_material_parameters: Mutex<FxHashMap<(i32, String), MaterialParameter>>,
-	pub pending_material_replacements: Mutex<FxHashMap<u32, Arc<SendWrapper<Material>>>>,
 	sk_model: OnceCell<SendWrapper<SKModel>>,
+	parts: LifeLinkedNodeMap<i32>,
 }
 
 impl Model {
@@ -134,19 +277,18 @@ impl Model {
 			node.drawable.get().is_none(),
 			"Internal: Node already has a drawable attached!"
 		);
-		let model = Model {
+		let model = Arc::new_cyclic(|self_ref| Model {
+			self_ref: self_ref.clone(),
 			enabled: node.enabled.clone(),
 			space: node.spatial.get().unwrap().clone(),
 			resource_id,
 			pending_model_path: OnceCell::new(),
-			pending_material_parameters: Mutex::new(FxHashMap::default()),
-			pending_material_replacements: Mutex::new(FxHashMap::default()),
 			sk_model: OnceCell::new(),
-		};
-		node.add_local_signal("set_material_parameter", Model::set_material_parameter_flex);
-		let model_arc = MODEL_REGISTRY.add(model);
-		let _ = model_arc.pending_model_path.set(
-			model_arc
+			parts: LifeLinkedNodeMap::default(),
+		});
+		MODEL_REGISTRY.add_raw(&model);
+		let _ = model.pending_model_path.set(
+			model
 				.resource_id
 				.get_file(
 					&node
@@ -159,88 +301,37 @@ impl Model {
 				)
 				.ok_or_else(|| eyre!("Resource not found"))?,
 		);
-		let _ = node.drawable.set(Drawable::Model(model_arc.clone()));
-		Ok(model_arc)
-	}
-
-	fn set_material_parameter_flex(
-		node: &Node,
-		_calling_client: Arc<Client>,
-		data: &[u8],
-	) -> Result<()> {
-		let Some(Drawable::Model(model)) = node.drawable.get() else {bail!("Not a drawable??")};
-
-		#[derive(Deserialize)]
-		struct MaterialParameterInfo {
-			idx: u32,
-			name: String,
-			value: MaterialParameter,
-		}
-		let info: MaterialParameterInfo = deserialize(data)?;
-
-		model
-			.pending_material_parameters
-			.lock()
-			.insert((info.idx as i32, info.name), info.value);
-
-		Ok(())
+		let _ = node.drawable.set(Drawable::Model(model.clone()));
+		Ok(model)
 	}
 
 	fn draw(&self, sk: &impl StereoKitDraw) {
-		let sk_model = self
+		let Ok(sk_model) = self
 			.sk_model
 			.get_or_try_init(|| -> color_eyre::eyre::Result<SendWrapper<SKModel>> {
 				let pending_model_path = self.pending_model_path.get().ok_or(Error)?;
 				let model =
 					sk.model_create_file(pending_model_path.to_str().unwrap(), None::<Shader>)?;
 
+				ModelPart::create_for_model(sk, &self.self_ref.upgrade().unwrap(), &model);
+
 				Ok(SendWrapper::new(sk.model_copy(model)))
-			})
-			.ok();
+			}) else {return};
 
-		if let Some(sk_model) = sk_model {
-			{
-				let mut material_replacements = self.pending_material_replacements.lock();
-				for (material_idx, replacement_material) in material_replacements.iter() {
-					if sk
-						.model_get_material(sk_model.as_ref(), *material_idx as i32)
-						.is_some()
-					{
-						sk.model_set_material(
-							sk_model.as_ref(),
-							*material_idx as i32,
-							replacement_material.as_ref().as_ref(),
-						);
-					}
-				}
-				material_replacements.clear();
-			}
-
-			if let Some(client) = self.space.node.upgrade().and_then(|n| n.client.upgrade()) {
-				let mut material_parameters = self.pending_material_parameters.lock();
-				for ((material_idx, parameter_name), parameter_value) in material_parameters.drain()
-				{
-					let Some(material) = sk.model_get_material(sk_model.as_ref(), material_idx) else {continue};
-					let new_material = sk.material_copy(material);
-					parameter_value.apply_to_material(
-						&client,
-						sk,
-						&new_material,
-						parameter_name.as_str(),
-					);
-					sk.model_set_material(sk_model.as_ref(), material_idx, &new_material);
-				}
-			}
-
-			sk.model_draw(
-				sk_model.as_ref(),
-				self.space.global_transform(),
-				WHITE,
-				RenderLayer::LAYER0,
-			);
+		for model_node_node in self.parts.nodes() {
+			let Some(Drawable::ModelPart(model_node)) = model_node_node.drawable.get() else {continue};
+			model_node.update(sk);
 		}
+
+		sk.model_draw(
+			sk_model.as_ref(),
+			self.space.global_transform(),
+			WHITE,
+			RenderLayer::LAYER0,
+		);
 	}
 }
+
 impl Drop for Model {
 	fn drop(&mut self) {
 		if let Some(model) = self.sk_model.take() {

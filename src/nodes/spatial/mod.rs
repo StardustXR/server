@@ -72,6 +72,10 @@ impl Spatial {
 		Ok(spatial)
 	}
 
+	pub fn node(&self) -> Option<Arc<Node>> {
+		self.node.upgrade()
+	}
+
 	#[instrument(level = "debug", skip_all)]
 	pub fn space_to_space_matrix(from: Option<&Spatial>, to: Option<&Spatial>) -> Mat4 {
 		let space_to_world_matrix = from.map_or(Mat4::IDENTITY, |from| from.global_transform());
