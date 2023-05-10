@@ -2060,9 +2060,9 @@ dependencies = [
 
 [[package]]
 name = "stereokit-sys"
-version = "2.5.4"
+version = "2.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9fa25848c4eba18fcf4cb9ad5988dbf25a4f6f21fcc5f1a85ee8c93088a3b5a0"
+checksum = "bf7c7aeb720381d3a81d4172bdc6384134dad3db49309396454d5b68ebc9e77f"
 dependencies = [
  "bindgen",
  "cmake",
