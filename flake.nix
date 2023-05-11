@@ -2,10 +2,14 @@
   # 22.11 does not include PR #218472, hence we use the unstable version
   inputs.nixpkgs.url = github:NixOS/nixpkgs/nixos-unstable;
 
+  # Since we do not have a monorepo, we have to fetch Flatland in order to use
+  # it to create VM Tests
+  inputs.flatland.url = "github:StardustXR/flatland";
+
   inputs.fenix.url = github:nix-community/fenix;
   inputs.fenix.inputs.nixpkgs.follows = "nixpkgs";
 
-  outputs = { self, nixpkgs, fenix }:
+  outputs = { self, nixpkgs, fenix, ... }:
     let
       name = "server";
       pkgs = system: import nixpkgs {
@@ -81,6 +85,12 @@
 
       packages."x86_64-linux".default = package (pkgs "x86_64-linux");
       packages."aarch64-linux".default = package (pkgs "aarch64-linux");
+
+      packages."x86_64-linux".gnome-graphical-test = self.checks.x86_64-linux.gnome-graphical-test;
+      packages."aarch64-linux".gnome-graphical-test = self.checks.aarch64-linux.gnome-graphical-test;
+
+      checks."x86_64-linux".gnome-graphical-test = (pkgs "x86_64-linux").nixosTest (import ./nix/gnome-graphical-test.nix { pkgs = (pkgs "x86_64-linux"); inherit self; });
+      checks."aarch64-linux".gnome-graphical-test = (pkgs "aarch64-linux").nixosTest (import ./nix/gnome-graphical-test.nix { pkgs = (pkgs "aarch64-linux"); inherit self; });
 
       devShells."x86_64-linux".default = shell (pkgs "x86_64-linux");
       devShells."aarch64-linux".default = shell (pkgs "aarch64-linux");
