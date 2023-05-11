@@ -20,11 +20,11 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 use std::time::Duration;
-use stereokit::DisplayBlend;
 use stereokit::{
 	named_colors::BLACK, DepthMode, DisplayMode, Handed, LogLevel, StereoKitMultiThread,
 	TextureFormat, TextureType,
 };
+use stereokit::{DisplayBlend, Sk};
 use tokio::{runtime::Handle, sync::oneshot};
 use tracing::{debug_span, error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
@@ -50,6 +50,7 @@ struct CliArgs {
 }
 
 static STARDUST_INSTANCE: OnceCell<String> = OnceCell::new();
+static SK_MULTITHREAD: OnceCell<Sk> = OnceCell::new();
 
 struct EventLoopInfo {
 	tokio_handle: Handle,
@@ -100,6 +101,7 @@ fn main() -> Result<()> {
 	}
 	.init()
 	.expect("StereoKit failed to initialize");
+	let _ = SK_MULTITHREAD.set(sk.multithreaded());
 	info!("Init StereoKit");
 
 	sk.material_set_shader(

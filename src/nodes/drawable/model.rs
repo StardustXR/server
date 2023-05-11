@@ -1,11 +1,11 @@
 use super::Node;
 use crate::core::client::Client;
-use crate::core::destroy_queue;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
 use crate::nodes::drawable::Drawable;
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
+use crate::SK_MULTITHREAD;
 use color_eyre::eyre::{bail, ensure, eyre, Result};
 use glam::Mat4;
 use mint::{ColumnMatrix4, Vector2, Vector3, Vector4};
@@ -18,7 +18,6 @@ use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
 use stardust_xr::values::Transform;
 use std::ffi::OsStr;
-use std::fmt::Error;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use stereokit::named_colors::WHITE;
@@ -124,7 +123,7 @@ pub struct ModelPart {
 	pending_material_replacement: Mutex<Option<Arc<SendWrapper<Material>>>>,
 }
 impl ModelPart {
-	fn create_for_model(sk: &impl StereoKitDraw, model: &Arc<Model>, sk_model: &SKModel) {
+	fn create_for_model(sk: &impl StereoKitMultiThread, model: &Arc<Model>, sk_model: &SKModel) {
 		let first_root_part = sk.model_node_get_root(sk_model);
 		let mut current_option_part = Some(first_root_part);
 
@@ -148,7 +147,7 @@ impl ModelPart {
 	}
 
 	fn create(
-		sk: &impl StereoKitDraw,
+		sk: &impl StereoKitMultiThread,
 		model: &Arc<Model>,
 		sk_model: &SKModel,
 		id: i32,
@@ -225,27 +224,23 @@ impl ModelPart {
 
 	fn update(&self, sk: &impl StereoKitDraw) {
 		let Some(model) = self.model.upgrade() else {return};
+		let Some(sk_model) = model.sk_model.get() else {return};
 		let Some(node) = model.space.node() else {return};
 		let Some(client) = node.get_client() else {return};
-		let Some(sk_model) = model.sk_model.get() else {return};
 		if let Some(material_replacement) = self.pending_material_replacement.lock().take() {
-			sk.model_node_set_material(
-				sk_model.as_ref(),
-				self.id,
-				material_replacement.as_ref().as_ref(),
-			);
+			sk.model_node_set_material(sk_model, self.id, material_replacement.as_ref().as_ref());
 		}
 
 		let mut material_parameters = self.pending_material_parameters.lock();
 		for (parameter_name, parameter_value) in material_parameters.drain() {
-			let Some(material) = sk.model_node_get_material(sk_model.as_ref(), self.id) else {continue};
+			let Some(material) = sk.model_node_get_material(sk_model, self.id) else {continue};
 			let new_material = sk.material_copy(material);
 			parameter_value.apply_to_material(&client, sk, &new_material, parameter_name.as_str());
-			sk.model_node_set_material(sk_model.as_ref(), self.id, &new_material);
+			sk.model_node_set_material(sk_model, self.id, &new_material);
 		}
 
 		sk.model_node_set_transform_model(
-			sk_model.as_ref(),
+			sk_model,
 			self.id,
 			Spatial::space_to_space_matrix(Some(&self.space), Some(&model.space)),
 		);
@@ -256,11 +251,12 @@ pub struct Model {
 	self_ref: Weak<Model>,
 	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
-	resource_id: ResourceID,
-	pending_model_path: OnceCell<PathBuf>,
-	sk_model: OnceCell<SendWrapper<SKModel>>,
+	_resource_id: ResourceID,
+	sk_model: OnceCell<SKModel>,
 	parts: LifeLinkedNodeMap<i32>,
 }
+unsafe impl Send for Model {}
+unsafe impl Sync for Model {}
 
 impl Model {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Model>> {
@@ -272,54 +268,47 @@ impl Model {
 			node.drawable.get().is_none(),
 			"Internal: Node already has a drawable attached!"
 		);
+
+		let pending_model_path = resource_id
+			.get_file(
+				&node
+					.get_client()
+					.ok_or_else(|| eyre!("Client not found"))?
+					.base_resource_prefixes
+					.lock()
+					.clone(),
+				&[OsStr::new("glb"), OsStr::new("gltf")],
+			)
+			.ok_or_else(|| eyre!("Resource not found"))?;
+
 		let model = Arc::new_cyclic(|self_ref| Model {
 			self_ref: self_ref.clone(),
 			enabled: node.enabled.clone(),
 			space: node.spatial.get().unwrap().clone(),
-			resource_id,
-			pending_model_path: OnceCell::new(),
+			_resource_id: resource_id,
 			sk_model: OnceCell::new(),
 			parts: LifeLinkedNodeMap::default(),
 		});
 		MODEL_REGISTRY.add_raw(&model);
-		let _ = model.pending_model_path.set(
-			model
-				.resource_id
-				.get_file(
-					&node
-						.get_client()
-						.ok_or_else(|| eyre!("Client not found"))?
-						.base_resource_prefixes
-						.lock()
-						.clone(),
-					&[OsStr::new("glb"), OsStr::new("gltf")],
-				)
-				.ok_or_else(|| eyre!("Resource not found"))?,
-		);
+
+		let sk = SK_MULTITHREAD.get().unwrap();
+		let sk_model =
+			sk.model_create_file(pending_model_path.to_str().unwrap(), None::<Shader>)?;
+		ModelPart::create_for_model(sk, &model.self_ref.upgrade().unwrap(), &sk_model);
+		let _ = model.sk_model.set(sk_model);
 		let _ = node.drawable.set(Drawable::Model(model.clone()));
 		Ok(model)
 	}
 
 	fn draw(&self, sk: &impl StereoKitDraw) {
-		let Ok(sk_model) = self
-			.sk_model
-			.get_or_try_init(|| -> color_eyre::eyre::Result<SendWrapper<SKModel>> {
-				let pending_model_path = self.pending_model_path.get().ok_or(Error)?;
-				let model =
-					sk.model_create_file(pending_model_path.to_str().unwrap(), None::<Shader>)?;
-
-				ModelPart::create_for_model(sk, &self.self_ref.upgrade().unwrap(), &model);
-
-				Ok(SendWrapper::new(sk.model_copy(model)))
-			}) else {return};
-
+		let Some(sk_model) = self.sk_model.get() else {return};
 		for model_node_node in self.parts.nodes() {
 			let Some(Drawable::ModelPart(model_node)) = model_node_node.drawable.get() else {continue};
 			model_node.update(sk);
 		}
 
 		sk.model_draw(
-			sk_model.as_ref(),
+			sk_model,
 			self.space.global_transform(),
 			WHITE,
 			RenderLayer::LAYER0,
@@ -329,9 +318,6 @@ impl Model {
 
 impl Drop for Model {
 	fn drop(&mut self) {
-		if let Some(model) = self.sk_model.take() {
-			destroy_queue::add(model);
-		}
 		MODEL_REGISTRY.remove(self);
 	}
 }
