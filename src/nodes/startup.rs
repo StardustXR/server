@@ -1,4 +1,8 @@
-use crate::{core::client::Client, wayland::WAYLAND_DISPLAY, STARDUST_INSTANCE};
+use crate::{
+	core::client::Client,
+	wayland::{xwayland::DISPLAY, WAYLAND_DISPLAY},
+	STARDUST_INSTANCE,
+};
 
 use super::{
 	items::{ItemAcceptor, TypeInfo},
@@ -135,6 +139,7 @@ pub fn get_connection_environment_flex(
 	#[cfg(feature = "wayland")]
 	{
 		var_env_insert!(env, WAYLAND_DISPLAY);
+		var_env_insert!(env, DISPLAY);
 		env.insert("GDK_BACKEND".to_string(), "wayland".to_string());
 		env.insert("QT_QPA_PLATFORM".to_string(), "wayland".to_string());
 		env.insert("MOZ_ENABLE_WAYLAND".to_string(), "1".to_string());

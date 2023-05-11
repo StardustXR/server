@@ -8,7 +8,9 @@ mod state;
 mod surface;
 // mod xdg_activation;
 mod xdg_shell;
+pub mod xwayland;
 
+use self::xwayland::XWaylandState;
 use self::{state::WaylandState, surface::CORE_SURFACES};
 use crate::{core::task, wayland::state::ClientState};
 use color_eyre::eyre::{ensure, Result};
@@ -67,7 +69,8 @@ pub struct Wayland {
 	join_handle: JoinHandle<Result<()>>,
 	renderer: GlesRenderer,
 	dmabuf_rx: UnboundedReceiver<Dmabuf>,
-	state: Arc<Mutex<WaylandState>>,
+	wayland_state: Arc<Mutex<WaylandState>>,
+	pub xwayland_state: XWaylandState,
 }
 impl Wayland {
 	pub fn new() -> Result<Self> {
@@ -85,7 +88,8 @@ impl Wayland {
 
 		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
 		let display = Arc::new(Mutex::new(display));
-		let state = WaylandState::new(display.clone(), display_handle, &renderer, dmabuf_tx);
+		let xwayland_state = XWaylandState::create(&display_handle).unwrap();
+		let wayland_state = WaylandState::new(display.clone(), display_handle, &renderer, dmabuf_tx);
 
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
 		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();
@@ -97,8 +101,12 @@ impl Wayland {
 			.expect("seriously message nova this time they screwed up big time");
 		info!(socket_name, "Wayland active");
 
-		let join_handle =
-			Wayland::start_loop(display.clone(), socket, state.clone(), global_destroy_queue)?;
+		let join_handle = Wayland::start_loop(
+			display.clone(),
+			socket,
+			wayland_state.clone(),
+			global_destroy_queue,
+		)?;
 
 		Ok(Wayland {
 			display,
@@ -106,7 +114,8 @@ impl Wayland {
 			join_handle,
 			renderer,
 			dmabuf_rx,
-			state,
+			wayland_state,
+			xwayland_state,
 		})
 	}
 
@@ -167,7 +176,7 @@ impl Wayland {
 	}
 
 	pub fn frame_event(&self, sk: &impl StereoKitDraw) {
-		let state = self.state.lock();
+		let state = self.wayland_state.lock();
 
 		for core_surface in CORE_SURFACES.get_valid_contents() {
 			core_surface.frame(sk, state.output.clone());
