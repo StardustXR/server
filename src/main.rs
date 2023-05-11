@@ -205,6 +205,7 @@ fn main() {
 				std::env::var_os("WAYLAND_DISPLAY").unwrap_or_default(),
 			)
 			.env("WAYLAND_DISPLAY", &wayland.socket_name)
+			.env("DISPLAY", format!(":{}", wayland.xwayland_state.display))
 			.env(
 				"STARDUST_INSTANCE",
 				event_loop_info
