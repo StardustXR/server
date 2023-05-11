@@ -292,8 +292,9 @@ impl Model {
 		MODEL_REGISTRY.add_raw(&model);
 
 		let sk = SK_MULTITHREAD.get().unwrap();
-		let sk_model =
-			sk.model_create_file(pending_model_path.to_str().unwrap(), None::<Shader>)?;
+		let sk_model = sk.model_copy(
+			sk.model_create_file(pending_model_path.to_str().unwrap(), None::<Shader>)?,
+		);
 		ModelPart::create_for_model(sk, &model.self_ref.upgrade().unwrap(), &sk_model);
 		let _ = model.sk_model.set(sk_model);
 		let _ = node.drawable.set(Drawable::Model(model.clone()));
