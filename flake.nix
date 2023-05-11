@@ -27,7 +27,19 @@
             rustc = toolchain;
           }).buildRustPackage rec {
             pname = "stardust-xr-${name}";
-            src = ./.;
+            src = builtins.path {
+                name = "stardust-xr-source";
+                path = toString ./.;
+                filter = path: type:
+                  nixpkgs.lib.all
+                  (n: builtins.baseNameOf path != n)
+                  [
+                    "flake.nix"
+                    "flake.lock"
+                    "nix"
+                    "README.md"
+                  ];
+              };
 
             # ---- START package specific settings ----
             version = "0.10.2";
