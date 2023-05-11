@@ -1,6 +1,8 @@
 use super::{
-	panel_item::PanelItem, state::WaylandState, surface::CoreSurface, GLOBAL_DESTROY_QUEUE,
-	SERIAL_COUNTER,
+	panel_item::{Backend, PanelItem},
+	state::WaylandState,
+	surface::CoreSurface,
+	GLOBAL_DESTROY_QUEUE, SERIAL_COUNTER,
 };
 use crate::core::task;
 use color_eyre::eyre::Result;
@@ -482,7 +484,9 @@ impl Dispatch<WlPointer, Arc<SeatData>, WaylandState> for WaylandState {
 				let surfaces = seat_data.surfaces.lock();
 				let Some(surface_info) = surfaces.get(&focus) else {return};
 				let Some(panel_item) = surface_info.panel_item.upgrade() else {return};
-				panel_item.set_cursor(surface.as_ref(), hotspot_x, hotspot_y);
+				if let Backend::Wayland(w) = &panel_item.backend {
+					w.set_cursor(&panel_item, surface.as_ref(), hotspot_x, hotspot_y);
+				}
 			}
 			wl_pointer::Request::Release => (),
 			_ => unreachable!(),
