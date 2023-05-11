@@ -28,7 +28,9 @@ impl Pointer {
 impl InputSpecialization for Pointer {
 	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		let ray_info = self.ray_march(space, field);
-		ray_info.deepest_point_distance.hypot(ray_info.min_distance)
+		ray_info
+			.deepest_point_distance
+			.hypot(ray_info.min_distance.recip())
 	}
 	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		let ray_info = self.ray_march(space, field);
