@@ -151,24 +151,195 @@ pub enum RecommendedState {
 	Resize(u32),
 }
 
+#[derive(Debug)]
+pub struct WaylandBackend {
+	toplevel: WlWeak<XdgToplevel>,
+	popups: Mutex<FxHashMap<String, WlWeak<XdgPopup>>>,
+	cursor: Mutex<Option<WlWeak<WlSurface>>>,
+}
+impl WaylandBackend {
+	pub fn create(toplevel: XdgToplevel) -> Self {
+		WaylandBackend {
+			toplevel: toplevel.downgrade(),
+			popups: Mutex::new(FxHashMap::default()),
+			cursor: Mutex::new(None),
+		}
+	}
+	fn toplevel(&self) -> XdgToplevel {
+		self.toplevel.upgrade().unwrap()
+	}
+	fn toplevel_xdg_surface(&self) -> XdgSurface {
+		let toplevel = self.toplevel();
+		let data = ToplevelData::get(&toplevel).lock();
+		data.xdg_surface()
+	}
+	fn toplevel_wl_surface(&self) -> WlSurface {
+		XdgSurfaceData::get(&self.toplevel_xdg_surface())
+			.lock()
+			.wl_surface()
+	}
+	fn wl_surface_from_id(&self, id: &SurfaceID) -> Option<WlSurface> {
+		match id {
+			SurfaceID::Cursor => self.cursor.lock().clone()?.upgrade().ok(),
+			SurfaceID::Toplevel => Some(self.toplevel_wl_surface()),
+			SurfaceID::Popup(popup) => {
+				let popups = self.popups.lock();
+				let popup = popups.get(popup)?.upgrade().ok()?;
+				let surf = PopupData::get(&popup).lock().wl_surface();
+				Some(surf)
+			}
+		}
+	}
+	fn input_surfaces(&self) -> Vec<WlSurface> {
+		let mut surfaces = vec![self.toplevel_wl_surface()];
+		surfaces.extend(self.popups.lock().values().filter_map(|p| {
+			let popup = p.upgrade().ok()?;
+			let popup_data = PopupData::get(&popup).lock();
+			let xdg_surface = popup_data.xdg_surface();
+			let xdg_surface_data = XdgSurfaceData::get(&xdg_surface).lock();
+			Some(xdg_surface_data.wl_surface())
+		}));
+		surfaces
+	}
+
+	fn configure_toplevel(
+		&self,
+		size: Option<Vector2<u32>>,
+		states: Vec<u32>,
+		bounds: Option<Vector2<u32>>,
+	) {
+		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
+		let xdg_surface = self.toplevel_xdg_surface();
+		debug!(?size, ?states, ?bounds, "Configure toplevel info");
+		if let Some(bounds) = bounds {
+			if xdg_toplevel.version() > EVT_CONFIGURE_BOUNDS_SINCE {
+				xdg_toplevel.configure_bounds(bounds.x as i32, bounds.y as i32);
+			}
+		}
+		let size = size.unwrap_or(Vector2::from([0; 2]));
+		xdg_toplevel.configure(
+			size.x as i32,
+			size.y as i32,
+			states
+				.into_iter()
+				.flat_map(|state| state.to_ne_bytes())
+				.collect::<Vec<_>>(),
+		);
+		xdg_surface.configure(SERIAL_COUNTER.inc());
+	}
+
+	fn serialize_toplevel(&self) -> Result<Vec<u8>> {
+		let toplevel = self.toplevel();
+		let state = ToplevelData::get(&toplevel);
+		let data = serialize(&state.lock().clone())?;
+		Ok(data)
+	}
+
+	fn set_toplevel_capabilities(&self, capabilities: Vec<u8>) {
+		self.toplevel().wm_capabilities(capabilities);
+		self.toplevel_xdg_surface().configure(SERIAL_COUNTER.inc());
+	}
+
+	pub fn new_popup(&self, panel_item: &PanelItem, popup: &XdgPopup, data: &PopupData) {
+		let uid = data.uid.clone();
+
+		self.popups.lock().insert(uid.clone(), popup.downgrade());
+
+		let Some(node) = panel_item.node.upgrade() else { return };
+		let _ = node.send_remote_signal("new_popup", &serialize(&(&uid, data)).unwrap());
+	}
+	pub fn reposition_popup(&self, panel_item: &PanelItem, popup_state: &PopupData) {
+		let Some(node) = panel_item.node.upgrade() else { return };
+
+		let _ = node.send_remote_signal(
+			"reposition_popup",
+			&serialize(popup_state.positioner_data().unwrap()).unwrap(),
+		);
+	}
+	pub fn drop_popup(&self, panel_item: &PanelItem, uid: &str) {
+		if let Some(popup) = self
+			.popups
+			.lock()
+			.remove(uid)
+			.and_then(|popup| popup.upgrade().ok()?.data::<Arc<PopupData>>().cloned())
+		{
+			panel_item.seat_data.drop_surface(&popup.wl_surface());
+		}
+
+		let Some(node) = panel_item.node.upgrade() else { return };
+		let _ = node.send_remote_signal("drop_popup", &serialize(uid).unwrap());
+	}
+
+	fn popups_data(&self) -> Vec<PopupData> {
+		self.popups
+			.lock()
+			.values()
+			.filter_map(|v| Some(v.upgrade().ok()?.data::<Mutex<PopupData>>()?.lock().clone()))
+			.collect::<Vec<_>>()
+	}
+	fn cursor_data(&self) -> Option<(Vector2<u32>, Vector2<i32>)> {
+		let cursor = self.cursor.lock().as_ref().and_then(|c| c.upgrade().ok());
+		let cursor_size = cursor
+			.as_ref()
+			.and_then(|c| CoreSurface::from_wl_surface(&c))
+			.and_then(|c| c.size());
+		let cursor_hotspot = cursor
+			.and_then(|c| {
+				compositor::with_states(&c, |data| data.data_map.get::<Arc<Cursor>>().cloned())
+			})
+			.map(|cursor| cursor.hotspot);
+
+		cursor_size.zip(cursor_hotspot)
+	}
+
+	pub fn set_cursor(
+		&self,
+		panel_item: &PanelItem,
+		surface: Option<&WlSurface>,
+		hotspot_x: i32,
+		hotspot_y: i32,
+	) {
+		let Some(node) = panel_item.node.upgrade() else { return };
+		debug!(?surface, hotspot_x, hotspot_y, "Set cursor size");
+		let mut data = serialize(()).unwrap();
+
+		let cursor_size = surface
+			.and_then(|c| CoreSurface::from_wl_surface(c))
+			.and_then(|c| c.size());
+
+		if let Some(size) = cursor_size {
+			data = serialize((size, (hotspot_x, hotspot_y))).unwrap();
+		}
+
+		let _ = node.send_remote_signal("set_cursor", &data);
+		*self.cursor.lock() = surface.map(|surf| surf.downgrade());
+	}
+}
+#[derive(Debug)]
+pub struct X11Backend;
+
+#[derive(Debug)]
+pub enum Backend {
+	Wayland(WaylandBackend),
+	X11(X11Backend),
+}
+
 pub struct PanelItem {
 	pub uid: String,
 	node: Weak<Node>,
-	cursor: Mutex<Option<WlWeak<WlSurface>>>,
 	pub seat_data: Arc<SeatData>,
-	toplevel: WlWeak<XdgToplevel>,
-	popups: Mutex<FxHashMap<String, WlWeak<XdgPopup>>>,
+	pub backend: Backend,
 	pointer_grab: Mutex<Option<SurfaceID>>,
 	keyboard_grab: Mutex<Option<SurfaceID>>,
 }
 impl PanelItem {
 	pub fn create(
-		toplevel: XdgToplevel,
 		wl_surface: WlSurface,
+		backend: Backend,
 		client_credentials: Option<Credentials>,
 		seat_data: Arc<SeatData>,
 	) -> (Arc<Node>, Arc<PanelItem>) {
-		debug!(?toplevel, ?client_credentials, "Create panel item");
+		debug!(?backend, ?client_credentials, "Create panel item");
 
 		let startup_settings = client_credentials
 			.and_then(|cred| get_env(cred.pid).ok())
@@ -185,10 +356,8 @@ impl PanelItem {
 		let panel_item = Arc::new(PanelItem {
 			uid: uid.clone(),
 			node: Arc::downgrade(&node),
-			cursor: Mutex::new(None),
 			seat_data,
-			toplevel: toplevel.downgrade(),
-			popups: Mutex::new(FxHashMap::default()),
+			backend,
 			pointer_grab: Mutex::new(None),
 			keyboard_grab: Mutex::new(None),
 		});
@@ -250,18 +419,11 @@ impl PanelItem {
 		Some(panel_item.clone())
 	}
 
-	fn toplevel(&self) -> XdgToplevel {
-		self.toplevel.upgrade().unwrap()
-	}
-	fn toplevel_xdg_surface(&self) -> XdgSurface {
-		let toplevel = self.toplevel();
-		let data = ToplevelData::get(&toplevel).lock();
-		data.xdg_surface()
-	}
 	fn toplevel_wl_surface(&self) -> WlSurface {
-		XdgSurfaceData::get(&self.toplevel_xdg_surface())
-			.lock()
-			.wl_surface()
+		match &self.backend {
+			Backend::Wayland(w) => w.toplevel_wl_surface(),
+			Backend::X11(_) => todo!(),
+		}
 	}
 	fn core_surface(&self) -> Option<Arc<CoreSurface>> {
 		compositor::with_states(&self.toplevel_wl_surface(), |data| {
@@ -274,15 +436,9 @@ impl PanelItem {
 		}
 	}
 	fn wl_surface_from_id(&self, id: &SurfaceID) -> Option<WlSurface> {
-		match id {
-			SurfaceID::Cursor => self.cursor.lock().clone()?.upgrade().ok(),
-			SurfaceID::Toplevel => Some(self.toplevel_wl_surface()),
-			SurfaceID::Popup(popup) => {
-				let popups = self.popups.lock();
-				let popup = popups.get(popup)?.upgrade().ok()?;
-				let surf = PopupData::get(&popup).lock().wl_surface();
-				Some(surf)
-			}
+		match &self.backend {
+			Backend::Wayland(w) => w.wl_surface_from_id(id),
+			Backend::X11(_) => todo!(),
 		}
 	}
 	fn wl_surface_from_id_result(&self, id: &SurfaceID) -> Result<WlSurface> {
@@ -416,19 +572,15 @@ impl PanelItem {
 	}
 	fn keyboard_set_keymap_flex(node: &Node, keymap: &Keymap) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
-		let toplevel = panel_item.toplevel_wl_surface();
-		debug!(?toplevel, "Keyboard set keymap");
+		debug!("Keyboard set keymap");
 
-		let mut surfaces = vec![toplevel];
-		surfaces.extend(panel_item.popups.lock().values().filter_map(|p| {
-			let popup = p.upgrade().ok()?;
-			let popup_data = PopupData::get(&popup).lock();
-			let xdg_surface = popup_data.xdg_surface();
-			let xdg_surface_data = XdgSurfaceData::get(&xdg_surface).lock();
-			Some(xdg_surface_data.wl_surface())
-		}));
-
-		panel_item.seat_data.set_keymap(keymap, surfaces);
+		panel_item.seat_data.set_keymap(
+			keymap,
+			match &panel_item.backend {
+				Backend::Wayland(w) => w.input_surfaces(),
+				Backend::X11(_) => todo!(),
+			},
+		);
 
 		Ok(())
 	}
@@ -453,8 +605,6 @@ impl PanelItem {
 	) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
 		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
-		let Ok(xdg_toplevel) = panel_item.toplevel.upgrade() else { return Ok(()) };
-		let xdg_surface = panel_item.toplevel_xdg_surface();
 
 		#[derive(Debug, Deserialize)]
 		struct ConfigureToplevelInfo {
@@ -462,13 +612,11 @@ impl PanelItem {
 			states: Vec<u32>,
 			bounds: Option<Vector2<u32>>,
 		}
-
 		let info: ConfigureToplevelInfo = deserialize(data)?;
-		debug!(info = ?&info, "Configure toplevel info");
-		if let Some(bounds) = info.bounds {
-			if xdg_toplevel.version() > EVT_CONFIGURE_BOUNDS_SINCE {
-				xdg_toplevel.configure_bounds(bounds.x as i32, bounds.y as i32);
-			}
+
+		match &panel_item.backend {
+			Backend::Wayland(w) => w.configure_toplevel(info.size, info.states, info.bounds),
+			Backend::X11(_) => todo!(),
 		}
 		let zero_size = Vector2::from([0; 2]);
 		let size = info.size.unwrap_or(zero_size);
@@ -500,38 +648,31 @@ impl PanelItem {
 	) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
 		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
-		let Ok(xdg_toplevel) = panel_item.toplevel.upgrade() else { return Ok(()) };
-		if xdg_toplevel.version() < EVT_WM_CAPABILITIES_SINCE {
-			return Ok(());
+		if let Backend::Wayland(w) = &panel_item.backend {
+			if w.toplevel().version() < EVT_WM_CAPABILITIES_SINCE {
+				return Ok(());
+			}
 		}
-		let xdg_surface = panel_item.toplevel_xdg_surface();
 
 		let capabilities: Vec<u8> = deserialize(data)?;
 		debug!("Set toplevel capabilities");
-		xdg_toplevel.wm_capabilities(capabilities);
-		xdg_surface.configure(SERIAL_COUNTER.inc());
+		match &panel_item.backend {
+			Backend::Wayland(w) => w.set_toplevel_capabilities(capabilities),
+			Backend::X11(_) => todo!(),
+		}
 		core_surface.flush_clients();
 
 		Ok(())
 	}
 
 	pub fn commit_toplevel(&self) {
-		// let mapped_size = self.core_surface().and_then(|c| c.size());
-		let toplevel = self.toplevel();
-		let state = ToplevelData::get(&toplevel);
-		let state = state.lock();
-		// let mut queued_state = state.queued_state.take().unwrap();
-		// queued_state.mapped = mapped_size.is_some();
-		// if let Some(size) = mapped_size {
-		// 	queued_state.size = size;
-		// 	queued_state.geometry.update_to_surface_size(size);
-		// }
-		// *state = (*queued_state).clone();
-		// state.queued_state = Some(queued_state);
-
-		debug!(state = ?&*state, "Commit toplevel");
+		debug!("Commit toplevel");
 		let Some(node) = self.node.upgrade() else { return };
-		let _ = node.send_remote_signal("commit_toplevel", &serialize(&*state).unwrap());
+		let Ok(data) = (match &self.backend {
+			Backend::Wayland(w) => w.serialize_toplevel(),
+			Backend::X11(_) => todo!(),
+		}) else {return};
+		let _ = node.send_remote_signal("commit_toplevel", &data);
 	}
 
 	pub fn recommend_toplevel_state(&self, state: RecommendedState) {
@@ -542,71 +683,10 @@ impl PanelItem {
 		let _ = node.send_remote_signal("recommend_toplevel_state", &data);
 	}
 
-	pub fn new_popup(&self, popup: &XdgPopup, data: &PopupData) {
-		let uid = data.uid.clone();
-
-		self.popups.lock().insert(uid.clone(), popup.downgrade());
-
-		let Some(node) = self.node.upgrade() else { return };
-		let _ = node.send_remote_signal("new_popup", &serialize(&(&uid, data)).unwrap());
-	}
-	// pub fn commit_popup(&self, data: &PopupData) {
-	// 	let xdg_surf = data.xdg_surface.upgrade().unwrap();
-	// 	let surf = xdg_surf
-	// 		.data::<XdgSurfaceData>()
-	// 		.unwrap()
-	// 		.wl_surface
-	// 		.upgrade()
-	// 		.unwrap();
-
-	// let core_surface =
-	// 	compositor::with_states(&surf, |s| s.data_map.get::<Arc<CoreSurface>>().cloned())
-	// 		.unwrap();
-	// let mut popup_state = data.state.lock();
-	// popup_state.mapped = core_surface.size().is_some();
-	// }
-	pub fn reposition_popup(&self, popup_state: &PopupData) {
-		let Some(node) = self.node.upgrade() else { return };
-
-		let _ = node.send_remote_signal(
-			"reposition_popup",
-			&serialize(popup_state.positioner_data().unwrap()).unwrap(),
-		);
-	}
-	pub fn drop_popup(&self, uid: &str) {
-		if let Some(popup) = self
-			.popups
-			.lock()
-			.remove(uid)
-			.and_then(|popup| popup.upgrade().ok()?.data::<Arc<PopupData>>().cloned())
-		{
-			self.seat_data.drop_surface(&popup.wl_surface());
-		}
-
-		let Some(node) = self.node.upgrade() else { return };
-		let _ = node.send_remote_signal("drop_popup", &serialize(uid).unwrap());
-	}
-
 	pub fn grab_keyboard(&self, sid: Option<SurfaceID>) {
 		let Some(node) = self.node.upgrade() else { return };
 
 		let _ = node.send_remote_signal("grab_keyboard", &serialize(sid).unwrap());
-	}
-	pub fn set_cursor(&self, surface: Option<&WlSurface>, hotspot_x: i32, hotspot_y: i32) {
-		let Some(node) = self.node.upgrade() else { return };
-		debug!(?surface, hotspot_x, hotspot_y, "Set cursor size");
-		let mut data = serialize(()).unwrap();
-
-		let cursor_size = surface
-			.and_then(|c| CoreSurface::from_wl_surface(c))
-			.and_then(|c| c.size());
-
-		if let Some(size) = cursor_size {
-			data = serialize((size, (hotspot_x, hotspot_y))).unwrap();
-		}
-
-		let _ = node.send_remote_signal("set_cursor", &data);
-		*self.cursor.lock() = surface.map(|surf| surf.downgrade());
 	}
 
 	pub fn on_drop(&self) {
@@ -618,42 +698,29 @@ impl PanelItem {
 }
 impl ItemSpecialization for PanelItem {
 	fn serialize_start_data(&self, id: &str) -> Vec<u8> {
-		let cursor = self.cursor.lock().as_ref().and_then(|c| c.upgrade().ok());
-		let cursor_size = cursor
-			.as_ref()
-			.and_then(|c| CoreSurface::from_wl_surface(&c))
-			.and_then(|c| c.size());
-		let cursor_hotspot = cursor
-			.and_then(|c| {
-				compositor::with_states(&c, |data| data.data_map.get::<Arc<Cursor>>().cloned())
-			})
-			.map(|cursor| cursor.hotspot);
+		match &self.backend {
+			Backend::Wayland(w) => {
+				let toplevel = w.toplevel();
+				let toplevel_state = ToplevelData::get(&toplevel);
+				let toplevel_state = toplevel_state.lock().clone();
 
-		let toplevel = self.toplevel();
-		let toplevel_state = ToplevelData::get(&toplevel);
-		let toplevel_state = toplevel_state.lock().clone();
+				let pointer_grab = self.pointer_grab.lock().clone();
+				let keyboard_grab = self.keyboard_grab.lock().clone();
 
-		let popups = self
-			.popups
-			.lock()
-			.values()
-			.filter_map(|v| Some(v.upgrade().ok()?.data::<Mutex<PopupData>>()?.lock().clone()))
-			.collect::<Vec<_>>();
-
-		let pointer_grab = self.pointer_grab.lock().clone();
-		let keyboard_grab = self.keyboard_grab.lock().clone();
-
-		serialize((
-			id,
-			(
-				cursor_size.zip(cursor_hotspot),
-				toplevel_state,
-				popups,
-				pointer_grab,
-				keyboard_grab,
-			),
-		))
-		.unwrap()
+				serialize((
+					id,
+					(
+						w.cursor_data(),
+						toplevel_state,
+						w.popups_data(),
+						pointer_grab,
+						keyboard_grab,
+					),
+				))
+				.unwrap()
+			}
+			Backend::X11(_) => todo!(),
+		}
 	}
 }
 impl Drop for PanelItem {

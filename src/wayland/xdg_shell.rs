@@ -1,4 +1,7 @@
-use crate::nodes::Node;
+use crate::{
+	nodes::Node,
+	wayland::panel_item::{Backend, WaylandBackend},
+};
 
 use super::{
 	panel_item::{PanelItem, RecommendedState, SurfaceID},
@@ -285,9 +288,10 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 							let wl_surface = xdg_surface_data.lock().wl_surface();
 
 							xdg_surface_data.lock().surface_id = SurfaceID::Toplevel;
+							let toplevel = toplevel_weak.upgrade().unwrap();
 							let (node, panel_item) = PanelItem::create(
-								toplevel.clone(),
 								wl_surface.clone(),
+								Backend::Wayland(WaylandBackend::create(toplevel)),
 								client_credentials,
 								seat_data.clone(),
 							);
@@ -669,8 +673,10 @@ impl Dispatch<XdgPopup, Mutex<PopupData>, WaylandState> for WaylandState {
 				debug!(?xdg_popup, ?positioner, token, "XDG popup reposition");
 				data.positioner = positioner;
 				let Some(panel_item) = data.panel_item() else {return};
-				panel_item.reposition_popup(&*data);
-				// xdg_popup.popup_done(); // temporary hack to avoid apps locking up before popups are implemented
+
+				if let Backend::Wayland(w) = &panel_item.backend {
+					w.reposition_popup(&panel_item, &*data)
+				}
 			}
 			xdg_popup::Request::Destroy => {
 				let data = data.lock();
@@ -692,6 +698,9 @@ impl Dispatch<XdgPopup, Mutex<PopupData>, WaylandState> for WaylandState {
 	) {
 		let data = data.lock();
 		let Some(panel_item) = data.panel_item() else {return};
-		panel_item.drop_popup(&data.uid);
+
+		if let Backend::Wayland(w) = &panel_item.backend {
+			w.drop_popup(&panel_item, &data.uid);
+		}
 	}
 }
