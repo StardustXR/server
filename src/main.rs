@@ -174,6 +174,10 @@ fn main() -> Result<()> {
 			.and_then(|p| p.canonicalize().ok())
 			.unwrap_or_else(|| project_dirs.config_dir().join("startup"));
 		let _startup = Command::new(startup_script_path)
+			.env(
+				"FLAT_WAYLAND_DISPLAY",
+				std::env::var_os("WAYLAND_DISPLAY").unwrap_or_default(),
+			)
 			.env("WAYLAND_DISPLAY", &wayland.socket_name)
 			.env(
 				"STARDUST_INSTANCE",
