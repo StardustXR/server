@@ -220,26 +220,13 @@ fn main() -> Result<()> {
 				}
 				input::process_input();
 				nodes::root::Root::send_frame_events(sk.time_elapsed_unscaled());
-				{
-					let frame_delta = Duration::from_secs_f64(sk.time_elapsed_unscaled());
-					if last_frame_delta < frame_delta {
-						if let Some(frame_delta_delta) = frame_delta.checked_sub(last_frame_delta) {
-							if let Some(new_sleep_duration) =
-								sleep_duration.checked_sub(frame_delta_delta)
-							{
-								sleep_duration = new_sleep_duration;
-							}
-						}
-					} else {
-						sleep_duration += Duration::from_micros(250);
-					}
+				adaptive_sleep(
+					sk,
+					&mut last_frame_delta,
+					&mut sleep_duration,
+					Duration::from_micros(250),
+				);
 
-					debug_span!("Sleep", ?sleep_duration, ?frame_delta, ?last_frame_delta)
-						.in_scope(|| {
-							last_frame_delta = frame_delta;
-							std::thread::sleep(sleep_duration); // to give clients a chance to even update anything before drawing
-						});
-				}
 				#[cfg(feature = "wayland")]
 				wayland.update(sk);
 				drawable::draw(sk);
@@ -262,6 +249,29 @@ fn main() -> Result<()> {
 		.expect("Failed to cleanly shut down event loop")?;
 	info!("Cleanly shut down Stardust");
 	Ok(())
+}
+
+fn adaptive_sleep(
+	sk: &impl StereoKitMultiThread,
+	last_frame_delta: &mut Duration,
+	sleep_duration: &mut Duration,
+	sleep_duration_increase: Duration,
+) {
+	let frame_delta = Duration::from_secs_f64(sk.time_elapsed_unscaled());
+	if *last_frame_delta < frame_delta {
+		if let Some(frame_delta_delta) = frame_delta.checked_sub(*last_frame_delta) {
+			if let Some(new_sleep_duration) = sleep_duration.checked_sub(frame_delta_delta) {
+				*sleep_duration = new_sleep_duration;
+			}
+		}
+	} else {
+		*sleep_duration += sleep_duration_increase;
+	}
+
+	debug_span!("Sleep", ?sleep_duration, ?frame_delta, ?last_frame_delta).in_scope(|| {
+		*last_frame_delta = frame_delta;
+		std::thread::sleep(*sleep_duration); // to give clients a chance to even update anything before drawing
+	});
 }
 
 #[tokio::main]
