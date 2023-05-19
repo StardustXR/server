@@ -8,6 +8,33 @@ license = "GPLv2"
 repository = "https://github.com/StardustXR/stardust-xr-server/"
 homepage = "https://stardustxr.org"
 
+[[bin]]
+name = "stardust-xr-server"
+path = "src/main.rs"
+
+[features]
+default = ["wayland"]
+wayland = ["dep:smithay", "dep:xkbcommon"]
+profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
+profile_app = ["dep:tracing-chrome"]
+
+[package.metadata.appimage]
+auto_link = true
+auto_link_exclude_list = [
+    "libc*",
+    "libdl*",
+    "libpthread*",
+    "ld-linux*",
+    "libGL*",
+    "libEGL*"
+]
+
+[profile.dev.package."*"]
+opt-level = 3
+[profile.release]
+strip = true
+lto = true
+
 [dependencies]
 color-eyre = { version = "0.6.2", default-features = false }
 clap = { version = "4.2.4", features = ["derive"] }
@@ -52,18 +79,6 @@ optional = true
 [dependencies.tracing-chrome]
 version = "0.7.1"
 optional = true
-
-[features]
-default = ["wayland"]
-wayland = ["dep:smithay", "dep:xkbcommon"]
-profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
-profile_app = ["dep:tracing-chrome"]
-
-[profile.dev.package."*"]
-opt-level = 3
-[profile.release]
-strip = true
-lto = true
 
 # [patch.crates-io.stereokit]
 # path = "../stereokit-rs"
