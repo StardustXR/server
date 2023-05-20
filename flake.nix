@@ -16,7 +16,7 @@
 
   inputs.hercules-ci-effects.url = "github:hercules-ci/hercules-ci-effects";
 
-  outputs = { self, nixpkgs, fenix, hercules-ci-effects, ... }:
+  outputs = { self, nixpkgs, fenix, hercules-ci-effects, flatland, ... }:
     let
       name = "server";
       pkgs = system: import nixpkgs {
@@ -120,9 +120,10 @@
             set +x
             export ADDRESS="https://ipfs.stardustxr.org/ipfs/$CID"
             ${pkgs.discord-sh}/bin/discord.sh \
-              --description "\`stardustxr/server\` has been modified, here's how it renders inside of the \`gnome-graphical-test\`" \
+              --description "\`stardustxr/server\` has been modified, here's how it renders \`weston-cliptest\` on \`flatland\` via \`monado-service\` inside of the \`gnome-graphical-test\`" \
               --field "Branch;${branch}" \
               --field "Commit ID;${rev}" \
+              --field "Flatland Revision;${flatland.rev}" \
               --field "Reproducer;\`nix build github:stardustxr/server/${rev}#gnome-graphical-test\`" \
               --image "$ADDRESS"
           '';
