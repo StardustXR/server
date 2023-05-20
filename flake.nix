@@ -1,4 +1,9 @@
 {
+  nixConfig = {
+    extra-substituters = [ "https://stardustxr.cachix.org" ];
+    extra-trusted-public-keys = [ "stardustxr.cachix.org-1:mWSn8Ap2RLsIWT/8gsj+VfbJB6xoOkPaZpbjO+r9HBo=" ];
+  };
+
   # 22.11 does not include PR #218472, hence we use the unstable version
   inputs.nixpkgs.url = github:NixOS/nixpkgs/nixos-unstable;
 
@@ -9,7 +14,9 @@
   inputs.fenix.url = github:nix-community/fenix;
   inputs.fenix.inputs.nixpkgs.follows = "nixpkgs";
 
-  outputs = { self, nixpkgs, fenix, ... }:
+  inputs.hercules-ci-effects.url = "github:hercules-ci/hercules-ci-effects";
+
+  outputs = { self, nixpkgs, fenix, hercules-ci-effects, ... }:
     let
       name = "server";
       pkgs = system: import nixpkgs {
@@ -94,5 +101,32 @@
 
       devShells."x86_64-linux".default = shell (pkgs "x86_64-linux");
       devShells."aarch64-linux".default = shell (pkgs "aarch64-linux");
+
+      herculesCI.ciSystems = [ "x86_64-linux" ];
+
+      effects = let
+        pkgs = nixpkgs.legacyPackages.x86_64-linux;
+        hci-effects = hercules-ci-effects.lib.withPkgs pkgs;
+      in { branch, rev, ... }: {
+        gnome-graphical-test = hci-effects.mkEffect {
+          secretsMap."stardustxrDiscord" = "stardustxrDiscord";
+          secretsMap."stardustxrIpfs" = "stardustxrIpfs";
+          effectScript = ''
+            readSecretString stardustxrDiscord .webhook > .webhook
+            readSecretString stardustxrIpfs .basicauth > .basicauth
+            set -x
+            export RESPONSE=$(curl -H @.basicauth -F file=@${self.packages."x86_64-linux".gnome-graphical-test}/screen.png https://ipfs-api.stardustxr.org/api/v0/add)
+            export CID=$(echo "$RESPONSE" | ${pkgs.jq}/bin/jq -r .Hash)
+            set +x
+            export ADDRESS="https://ipfs.stardustxr.org/ipfs/$CID"
+            ${pkgs.discord-sh}/bin/discord.sh \
+              --description "\`stardustxr/server\` has been modified, here's how it renders inside of the \`gnome-graphical-test\`" \
+              --field "Branch;${branch}" \
+              --field "Commit ID;${rev}" \
+              --field "Reproducer;\`nix build github:stardustxr/server/${rev}#gnome-graphical-test\`" \
+              --image "$ADDRESS"
+          '';
+        };
+      };
     };
 }
