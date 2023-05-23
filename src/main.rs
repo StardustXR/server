@@ -6,6 +6,7 @@ mod wayland;
 
 use crate::core::destroy_queue;
 use crate::nodes::{audio, drawable, hmd, input};
+use crate::objects::input::eye_pointer::EyePointer;
 use crate::objects::input::mouse_pointer::MousePointer;
 use crate::objects::input::sk_controller::SkController;
 use crate::objects::input::sk_hand::SkHand;
@@ -149,6 +150,7 @@ fn main() -> Result<()> {
 			left.zip(right)
 		})
 		.flatten();
+	let eye_pointer = sk.device_has_eye_gaze().then(EyePointer::new).transpose()?;
 
 	if hands.is_none() {
 		sk.input_hand_visible(Handed::Left, false);
@@ -217,6 +219,9 @@ fn main() -> Result<()> {
 				if let Some((left_controller, right_controller)) = &mut controllers {
 					left_controller.update(sk);
 					right_controller.update(sk);
+				}
+				if let Some(eye_pointer) = &eye_pointer {
+					eye_pointer.update(sk);
 				}
 				input::process_input();
 				nodes::root::Root::send_frame_events(sk.time_elapsed_unscaled());
