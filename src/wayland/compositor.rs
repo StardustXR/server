@@ -6,6 +6,7 @@ use smithay::{
 	delegate_compositor,
 	reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
 	wayland::compositor::{self, CompositorClientState, CompositorHandler, CompositorState},
+	xwayland::XWaylandClientData,
 };
 use std::sync::Arc;
 use tracing::debug;
@@ -38,7 +39,13 @@ impl CompositorHandler for WaylandState {
 	}
 
 	fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
-		&client.get_data::<ClientState>().unwrap().compositor_state
+		if let Some(client_state) = client.get_data::<ClientState>() {
+			&client_state.compositor_state
+		} else if let Some(xwayland_client_data) = client.get_data::<XWaylandClientData>() {
+			&xwayland_client_data.compositor_state
+		} else {
+			unimplemented!()
+		}
 	}
 }
 

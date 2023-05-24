@@ -88,7 +88,7 @@ impl Wayland {
 
 		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
 		let display = Arc::new(Mutex::new(display));
-		let xwayland_state = XWaylandState::create(&display_handle).unwrap();
+		let xwayland_state = XWaylandState::create(display.clone(), &display_handle).unwrap();
 		let wayland_state = WaylandState::new(display.clone(), display_handle, &renderer, dmabuf_tx);
 
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
