@@ -1,13 +1,20 @@
-use super::seat::SeatData;
+use super::{panel_item::RecommendedState, seat::SeatData, state::WaylandState};
+use crate::wayland::{
+	panel_item::{Backend, PanelItem, X11Backend},
+	surface::CoreSurface,
+};
 use color_eyre::eyre::Result;
 use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
 use smithay::{
 	reexports::{
 		calloop::{self, EventLoop, LoopSignal},
-		wayland_server::DisplayHandle,
+		wayland_protocols::xdg::shell::server::xdg_toplevel,
+		wayland_server::{Display, DisplayHandle, Resource, WEnum},
 		x11rb::protocol::xproto::Window,
 	},
 	utils::{Logical, Rectangle},
+	wayland::compositor,
 	xwayland::{
 		xwm::{Reorder, ResizeEdge, XwmId},
 		X11Surface, X11Wm, XWayland, XWaylandEvent, XwmHandler,
@@ -26,7 +33,10 @@ pub struct XWaylandState {
 	event_loop_join: Option<JoinHandle<Result<(), calloop::Error>>>,
 }
 impl XWaylandState {
-	pub fn create(dh: &DisplayHandle) -> Result<Self> {
+	pub fn create(
+		wayland_display: Arc<Mutex<Display<WaylandState>>>,
+		dh: &DisplayHandle,
+	) -> Result<Self> {
 		let dh = dh.clone();
 
 		let (tx, rx) = oneshot::channel();
@@ -57,7 +67,7 @@ impl XWaylandState {
 				None,
 				empty::<(&OsStr, &OsStr)>(),
 				true,
-				move |_| (),
+				|_| (),
 			)?;
 			let _ = tx.send(XWaylandState {
 				display,
@@ -65,7 +75,13 @@ impl XWaylandState {
 				event_loop_signal: event_loop.get_signal(),
 				event_loop_join: None,
 			});
-			let mut handler = XWaylandHandler::default();
+			let wayland_display_handle = wayland_display.lock().handle();
+			let mut handler = XWaylandHandler {
+				wayland_display,
+				wayland_display_handle,
+				wm: None,
+				seat: None,
+			};
 			event_loop.run(Duration::from_secs(60 * 60), &mut handler, |_| ())
 		});
 
@@ -83,10 +99,18 @@ impl Drop for XWaylandState {
 	}
 }
 
-#[derive(Default)]
 struct XWaylandHandler {
+	wayland_display: Arc<Mutex<Display<WaylandState>>>,
+	wayland_display_handle: DisplayHandle,
 	wm: Option<X11Wm>,
 	seat: Option<Arc<SeatData>>,
+}
+impl XWaylandHandler {
+	fn panel_item(&self, window: &X11Surface) -> Option<Arc<PanelItem>> {
+		compositor::with_states(&window.wl_surface()?, |s| {
+			s.data_map.get::<Arc<PanelItem>>().cloned()
+		})
+	}
 }
 
 impl XwmHandler for XWaylandHandler {
@@ -104,6 +128,44 @@ impl XwmHandler for XWaylandHandler {
 
 	fn map_window_request(&mut self, _xwm: XwmId, window: X11Surface) {
 		debug!(?window, "X map window request");
+		window.set_mapped(true).unwrap();
+	}
+	fn map_window_notify(&mut self, _xwm: XwmId, window: X11Surface) {
+		debug!(?window, "X map window notify");
+
+		let dh = self.wayland_display_handle.clone();
+		let seat = self.seat.clone().unwrap();
+		CoreSurface::add_to(
+			&self.wayland_display,
+			self.wayland_display.lock().handle(),
+			&window.wl_surface().unwrap(),
+			move |c| {
+				let Some(wl_surface) = window.wl_surface() else {return};
+				match c {
+					0 => {
+						let seat = seat.clone();
+						window.user_data().insert_if_missing_threadsafe(|| {
+							let (_node, panel_item) = PanelItem::create(
+								wl_surface.clone(),
+								Backend::X11(X11Backend {
+									toplevel_parent: None,
+									toplevel: window.clone(),
+								}),
+								wl_surface
+									.client()
+									.and_then(|c| c.get_credentials(&dh).ok()),
+								seat,
+							);
+							panel_item
+						});
+					}
+					_ => {
+						let Some(panel_item) = window.user_data().get::<Arc<PanelItem>>() else {return};
+						panel_item.commit_toplevel();
+					}
+				}
+			},
+		);
 	}
 
 	fn mapped_override_redirect_window(&mut self, _xwm: XwmId, window: X11Surface) {
@@ -141,6 +203,11 @@ impl XwmHandler for XWaylandHandler {
 		debug!(?window, ?geometry, above, "Configure X window");
 	}
 
+	fn move_request(&mut self, _xwm: XwmId, window: X11Surface, button: u32) {
+		let Some(panel_item) = self.panel_item(&window) else {return};
+		debug!(?window, button, "X window requests move");
+		panel_item.recommend_toplevel_state(RecommendedState::Move);
+	}
 	fn resize_request(
 		&mut self,
 		_xwm: XwmId,
@@ -148,10 +215,41 @@ impl XwmHandler for XWaylandHandler {
 		button: u32,
 		resize_edge: ResizeEdge,
 	) {
+		let Some(panel_item) = self.panel_item(&window) else {return};
 		debug!(?window, button, ?resize_edge, "X window requests resize");
+		panel_item.recommend_toplevel_state(RecommendedState::Resize(
+			WEnum::Value(match resize_edge {
+				ResizeEdge::Top => xdg_toplevel::ResizeEdge::Top,
+				ResizeEdge::Bottom => xdg_toplevel::ResizeEdge::Bottom,
+				ResizeEdge::Left => xdg_toplevel::ResizeEdge::Left,
+				ResizeEdge::TopLeft => xdg_toplevel::ResizeEdge::TopLeft,
+				ResizeEdge::BottomLeft => xdg_toplevel::ResizeEdge::BottomLeft,
+				ResizeEdge::Right => xdg_toplevel::ResizeEdge::Right,
+				ResizeEdge::TopRight => xdg_toplevel::ResizeEdge::TopRight,
+				ResizeEdge::BottomRight => xdg_toplevel::ResizeEdge::BottomRight,
+			})
+			.into(),
+		));
 	}
 
-	fn move_request(&mut self, _xwm: XwmId, window: X11Surface, button: u32) {
-		debug!(?window, button, "X window requests move");
+	fn maximize_request(&mut self, _xwm: XwmId, window: X11Surface) {
+		let Some(panel_item) = self.panel_item(&window) else {return};
+		panel_item.recommend_toplevel_state(RecommendedState::Maximize(true));
+	}
+	fn unmaximize_request(&mut self, _xwm: XwmId, window: X11Surface) {
+		let Some(panel_item) = self.panel_item(&window) else {return};
+		panel_item.recommend_toplevel_state(RecommendedState::Maximize(false));
+	}
+	fn fullscreen_request(&mut self, _xwm: XwmId, window: X11Surface) {
+		let Some(panel_item) = self.panel_item(&window) else {return};
+		panel_item.recommend_toplevel_state(RecommendedState::Fullscreen(true));
+	}
+	fn unfullscreen_request(&mut self, _xwm: XwmId, window: X11Surface) {
+		let Some(panel_item) = self.panel_item(&window) else {return};
+		panel_item.recommend_toplevel_state(RecommendedState::Fullscreen(true));
+	}
+	fn minimize_request(&mut self, _xwm: XwmId, window: X11Surface) {
+		let Some(panel_item) = self.panel_item(&window) else {return};
+		panel_item.recommend_toplevel_state(RecommendedState::Minimize);
 	}
 }

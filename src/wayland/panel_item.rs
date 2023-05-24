@@ -41,6 +41,7 @@ use smithay::{
 		},
 	},
 	wayland::compositor,
+	xwayland::X11Surface,
 };
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::{Arc, Weak};
@@ -316,7 +317,10 @@ impl WaylandBackend {
 	}
 }
 #[derive(Debug)]
-pub struct X11Backend;
+pub struct X11Backend {
+	pub toplevel_parent: Option<X11Surface>,
+	pub toplevel: X11Surface,
+}
 
 #[derive(Debug)]
 pub enum Backend {
@@ -719,7 +723,24 @@ impl ItemSpecialization for PanelItem {
 				))
 				.unwrap()
 			}
-			Backend::X11(_) => todo!(),
+			Backend::X11(x) => {
+				let toplevel_state = (
+					None::<String>,
+					x.toplevel.title(),
+					None::<String>,
+					(x.toplevel.geometry().size.w, x.toplevel.geometry().size.h),
+					x.toplevel.min_size().map(|s| (s.w, s.h)),
+					x.toplevel.max_size().map(|s| (s.w, s.w)),
+				);
+				let info = (
+					None::<String>,
+					toplevel_state,
+					Vec::<PopupData>::new(),
+					None::<SurfaceID>,
+					None::<SurfaceID>,
+				);
+				serialize((id, info)).unwrap()
+			}
 		}
 	}
 }
