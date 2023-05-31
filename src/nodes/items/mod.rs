@@ -131,17 +131,17 @@ impl Item {
 			name,
 			&self.node.upgrade().unwrap(),
 			AliasInfo {
-				local_signals: [
+				server_signals: [
 					&self.type_info.aliased_local_signals,
 					ITEM_ALIAS_LOCAL_SIGNALS.as_slice(),
 				]
 				.concat(),
-				local_methods: [
+				server_methods: [
 					&self.type_info.aliased_local_methods,
 					ITEM_ALIAS_LOCAL_METHODS.as_slice(),
 				]
 				.concat(),
-				remote_signals: [
+				client_signals: [
 					&self.type_info.aliased_remote_signals,
 					ITEM_ALIAS_REMOTE_SIGNALS.as_slice(),
 				]
@@ -336,7 +336,7 @@ impl ItemAcceptor {
 			&self.uid,
 			acceptor_node,
 			AliasInfo {
-				local_signals: vec!["capture"],
+				server_signals: vec!["capture"],
 				..Default::default()
 			},
 		)?;

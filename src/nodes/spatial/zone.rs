@@ -114,12 +114,12 @@ impl Zone {
 					&zoneable.uid,
 					&zoneable.node.upgrade().unwrap(),
 					AliasInfo {
-						local_signals: vec![
+						server_signals: vec![
 							"set_transform",
 							"set_spatial_parent",
 							"set_spatial_parent_in_place",
 						],
-						local_methods: vec!["get_transform"],
+						server_methods: vec!["get_transform"],
 						..Default::default()
 					},
 				)
