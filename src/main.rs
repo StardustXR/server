@@ -150,7 +150,9 @@ fn main() -> Result<()> {
 			left.zip(right)
 		})
 		.flatten();
-	let eye_pointer = sk.device_has_eye_gaze().then(EyePointer::new).transpose()?;
+	let eye_pointer = (!cli_args.flatscreen && sk.device_has_eye_gaze())
+		.then(EyePointer::new)
+		.transpose()?;
 
 	if hands.is_none() {
 		sk.input_hand_visible(Handed::Left, false);
