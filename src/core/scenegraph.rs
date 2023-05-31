@@ -36,7 +36,7 @@ impl Scenegraph {
 	#[instrument(level = "debug", skip(self))]
 	pub fn get_node(&self, path: &str) -> Option<Arc<Node>> {
 		let mut node = self.nodes.get(path)?.clone();
-		if let Some(alias) = node.alias.get() {
+		while let Some(alias) = node.alias.get() {
 			node = alias.original.upgrade()?;
 		}
 		Some(node)
