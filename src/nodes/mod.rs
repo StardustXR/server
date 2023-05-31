@@ -242,10 +242,9 @@ impl Node {
 		let path = self.path.clone();
 		let method = method.to_string();
 		let data = data.to_vec();
-		self.message_sender_handle
-			.as_ref()
-			.map(|handle| handle.signal(path.as_str(), method.as_str(), data.as_slice()))
-			.transpose()?;
+		if let Some(handle) = self.message_sender_handle.as_ref() {
+			handle.signal(path.as_str(), method.as_str(), data.as_slice())?;
+		}
 		Ok(())
 	}
 	// #[instrument(level = "debug", skip_all)]
