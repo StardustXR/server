@@ -5,7 +5,7 @@ use super::{Alias, Node};
 use crate::core::client::Client;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
-use crate::nodes::fields::find_field;
+use crate::nodes::fields::{find_field, FIELD_ALIAS_INFO};
 use crate::nodes::spatial::find_spatial_parent;
 use color_eyre::eyre::{ensure, eyre, Result};
 use glam::vec3a;
@@ -90,7 +90,7 @@ impl PulseSender {
 			receiver.uid.as_str(),
 			&rx_node,
 			AliasInfo {
-				local_methods: vec!["sendData", "getTransform"],
+				server_methods: vec!["sendData", "getTransform"],
 				..Default::default()
 			},
 		);
@@ -104,10 +104,7 @@ impl PulseSender {
 					rx_alias.get_path(),
 					"field",
 					&rx_field_node,
-					AliasInfo {
-						local_methods: vec!["sendData", "getTransform"],
-						..Default::default()
-					},
+					FIELD_ALIAS_INFO.clone(),
 				);
 				if let Ok(rx_field_alias) = rx_field_alias {
 					self.aliases
@@ -143,9 +140,10 @@ impl PulseSender {
 		let _ = tx_node.send_remote_signal("new_receiver", &data);
 	}
 
-	fn handle_drop_receiver(&self, uid: String) {
-		self.aliases.remove(&uid);
-		self.aliases.remove(&(uid.clone() + "-field"));
+	fn handle_drop_receiver(&self, receiver: &PulseReceiver) {
+		let uid = receiver.uid.as_str();
+		self.aliases.remove(uid);
+		self.aliases.remove(&(uid.to_string() + "-field"));
 		let Some(tx_node) = self.node.upgrade() else {return};
 		let Ok(data) = serialize(&uid) else {return};
 		let _ = tx_node.send_remote_signal("drop_receiver", &data);
@@ -217,7 +215,7 @@ impl Drop for PulseReceiver {
 	fn drop(&mut self) {
 		PULSE_RECEIVER_REGISTRY.remove(self);
 		for sender in PULSE_SENDER_REGISTRY.get_valid_contents() {
-			sender.handle_drop_receiver(self.uid.clone());
+			sender.handle_drop_receiver(self);
 		}
 	}
 }

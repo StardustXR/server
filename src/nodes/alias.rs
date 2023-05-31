@@ -5,9 +5,9 @@ use std::sync::{Arc, Weak};
 
 #[derive(Debug, Default, Clone)]
 pub struct AliasInfo {
-	pub(super) local_signals: Vec<&'static str>,
-	pub(super) local_methods: Vec<&'static str>,
-	pub(super) remote_signals: Vec<&'static str>,
+	pub(super) server_signals: Vec<&'static str>,
+	pub(super) server_methods: Vec<&'static str>,
+	pub(super) client_signals: Vec<&'static str>,
 }
 
 #[allow(dead_code)]

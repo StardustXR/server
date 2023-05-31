@@ -1,12 +1,18 @@
 use super::{DistanceLink, InputSpecialization};
+use crate::core::client::Client;
 use crate::nodes::fields::{Field, Ray, RayMarchResult};
-use crate::nodes::spatial::Spatial;
+use crate::nodes::input::{InputMethod, InputType};
+use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
+use crate::nodes::Node;
 use glam::{vec3, Mat4};
-use stardust_xr::schemas::flat::{InputDataType, Pointer as FlatPointer};
+use serde::Deserialize;
+use stardust_xr::schemas::flat::{Datamap, InputDataType, Pointer as FlatPointer};
+use stardust_xr::schemas::flex::deserialize;
+use stardust_xr::values::Transform;
 use std::sync::Arc;
 
 #[derive(Default)]
-pub struct Pointer {}
+pub struct Pointer;
 // impl Default for Pointer {
 // 	fn default() -> Self {
 // 		Pointer {
@@ -52,4 +58,31 @@ impl InputSpecialization for Pointer {
 			deepest_point: deepest_point.into(),
 		})
 	}
+}
+
+pub fn create_pointer_flex(
+	_node: &Node,
+	calling_client: Arc<Client>,
+	data: &[u8],
+) -> color_eyre::eyre::Result<()> {
+	#[derive(Deserialize)]
+	struct CreatePointerInfo<'a> {
+		name: &'a str,
+		parent_path: &'a str,
+		transform: Transform,
+		datamap: Option<Vec<u8>>,
+	}
+	let info: CreatePointerInfo = deserialize(data)?;
+	let node = Node::create(&calling_client, "/input/method/pointer", info.name, true);
+	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
+	let transform = parse_transform(info.transform, true, true, false);
+
+	let node = node.add_to_scenegraph()?;
+	Spatial::add_to(&node, Some(parent), transform, false)?;
+	InputMethod::add_to(
+		&node,
+		InputType::Pointer(Pointer),
+		info.datamap.and_then(|datamap| Datamap::new(datamap).ok()),
+	)?;
+	Ok(())
 }

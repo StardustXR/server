@@ -8,6 +8,7 @@ use self::r#box::{create_box_field_flex, BoxField};
 use self::sphere::{create_sphere_field_flex, SphereField};
 use self::torus::{create_torus_field_flex, TorusField};
 
+use super::alias::AliasInfo;
 use super::spatial::Spatial;
 use super::Node;
 use crate::core::client::Client;
@@ -15,11 +16,17 @@ use crate::nodes::spatial::find_reference_space;
 use color_eyre::eyre::Result;
 use glam::{vec2, vec3a, Vec3, Vec3A};
 use mint::Vector3;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use stardust_xr::schemas::flex::{deserialize, serialize};
 
 use std::ops::Deref;
 use std::sync::Arc;
+
+pub static FIELD_ALIAS_INFO: Lazy<AliasInfo> = Lazy::new(|| AliasInfo {
+	server_methods: vec!["distance", "normal", "closest_point", "ray_march"],
+	..Default::default()
+});
 
 pub trait FieldTrait {
 	fn add_field_methods(&self, node: &Arc<Node>) {
