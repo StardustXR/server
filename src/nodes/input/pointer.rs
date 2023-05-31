@@ -18,8 +18,8 @@ pub struct Pointer {}
 impl Pointer {
 	fn ray_march(&self, space: &Arc<Spatial>, field: &Field) -> RayMarchResult {
 		field.ray_march(Ray {
-			origin: vec3(0_f32, 0_f32, 0_f32),
-			direction: vec3(0_f32, 0_f32, 1_f32),
+			origin: vec3(0.0, 0.0, 0.0),
+			direction: vec3(0.0, 0.0, -1.0),
 			space: space.clone(),
 		})
 	}
@@ -42,7 +42,7 @@ impl InputSpecialization for Pointer {
 		local_to_handler_matrix: Mat4,
 	) -> InputDataType {
 		let (_, orientation, origin) = local_to_handler_matrix.to_scale_rotation_translation();
-		let direction = local_to_handler_matrix.transform_vector3(vec3(0_f32, 0_f32, 1_f32));
+		let direction = local_to_handler_matrix.transform_vector3(vec3(0.0, 0.0, -1.0));
 		let ray_march = self.ray_march(&distance_link.method.spatial, &distance_link.handler.field);
 		let deepest_point = (direction * ray_march.deepest_point_distance) + origin;
 

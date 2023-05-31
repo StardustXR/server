@@ -62,7 +62,12 @@ impl MousePointer {
 
 		let ray = ray_from_mouse(mouse.pos).unwrap();
 		self.spatial.set_local_transform(
-			Mat4::look_to_rh(ray.pos.into(), -Vec3::from(ray.dir), vec3(0.0, 1.0, 0.0)).inverse(),
+			Mat4::look_to_rh(
+				Vec3::from(ray.pos),
+				Vec3::from(ray.dir),
+				vec3(0.0, 1.0, 0.0),
+			)
+			.inverse(),
 		);
 		{
 			// Set pointer input datamap
