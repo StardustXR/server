@@ -14,7 +14,8 @@ use stardust_xr::schemas::flex::{deserialize, serialize};
 use stardust_xr::values::Transform;
 use std::fmt::Debug;
 use std::ptr;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
+use stereokit::{bounds_grow_to_fit_box, Bounds};
 use tracing::instrument;
 
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
@@ -28,6 +29,7 @@ pub struct Spatial {
 	pub(super) transform: Mutex<Mat4>,
 	zone: Mutex<Weak<Zone>>,
 	children: Registry<Spatial>,
+	pub(super) bounding_box_calc: OnceLock<fn(&Node) -> Bounds>,
 }
 
 impl Spatial {
@@ -41,6 +43,7 @@ impl Spatial {
 			transform: Mutex::new(transform),
 			zone: Mutex::new(Weak::new()),
 			children: Registry::new(),
+			bounding_box_calc: OnceLock::default(),
 		})
 	}
 	pub fn add_to(
@@ -54,6 +57,7 @@ impl Spatial {
 			"Internal: Node already has a Spatial aspect!"
 		);
 		let spatial = Spatial::new(Arc::downgrade(node), parent, transform);
+		node.add_local_method("get_bounding_box", Spatial::get_bounding_box_flex);
 		node.add_local_method("get_transform", Spatial::get_transform_flex);
 		node.add_local_signal("set_transform", Spatial::set_transform_flex);
 		node.add_local_signal("set_spatial_parent", Spatial::set_spatial_parent_flex);
@@ -81,6 +85,25 @@ impl Spatial {
 		let space_to_world_matrix = from.map_or(Mat4::IDENTITY, |from| from.global_transform());
 		let world_to_space_matrix = to.map_or(Mat4::IDENTITY, |to| to.global_transform().inverse());
 		world_to_space_matrix * space_to_world_matrix
+	}
+
+	// the output bounds are probably way bigger than they need to be
+	#[instrument(level = "debug")]
+	pub fn get_bounding_box(&self) -> Bounds {
+		let Some(node) = self.node() else {return Bounds::default()};
+		let mut bounds = self
+			.bounding_box_calc
+			.get()
+			.map(|b| (b)(&node))
+			.unwrap_or_default();
+		for child in self.children.get_valid_contents() {
+			bounds = bounds_grow_to_fit_box(
+				bounds,
+				child.get_bounding_box(),
+				Some(child.local_transform()),
+			);
+		}
+		bounds
 	}
 
 	#[instrument(level = "debug", skip_all)]
@@ -204,6 +227,44 @@ impl Spatial {
 		self.set_parent(parent);
 
 		Ok(())
+	}
+
+	pub fn get_bounding_box_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		data: &[u8],
+	) -> Result<Vec<u8>> {
+		let this_spatial = node
+			.spatial
+			.get()
+			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+		let relative_spatial_path: Option<&str> = deserialize(data)?;
+		let bounds = if let Some(relative_spatial_path) = relative_spatial_path {
+			let relative_spatial = find_reference_space(&calling_client, relative_spatial_path)?;
+			let center =
+				Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
+					.transform_point3([0.0; 3].into());
+			let bounds: Bounds = Bounds {
+				center,
+				dimensions: [0.0; 3].into(),
+			};
+			bounds_grow_to_fit_box(
+				bounds,
+				this_spatial.get_bounding_box(),
+				Some(Spatial::space_to_space_matrix(
+					Some(&this_spatial),
+					Some(&relative_spatial),
+				)),
+			)
+		} else {
+			this_spatial.get_bounding_box()
+		};
+
+		serialize((
+			mint::Vector3::from(bounds.center),
+			mint::Vector3::from(bounds.dimensions),
+		))
+		.map_err(|e| e.into())
 	}
 
 	pub fn get_transform_flex(

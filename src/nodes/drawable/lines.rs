@@ -14,7 +14,7 @@ use prisma::{Flatten, Lerp, Rgba};
 use serde::Deserialize;
 use stardust_xr::{schemas::flex::deserialize, values::Transform};
 use std::{collections::VecDeque, sync::Arc};
-use stereokit::{Color128, LinePoint as SkLinePoint, StereoKitDraw};
+use stereokit::{bounds_grow_to_fit_pt, Bounds, Color128, LinePoint as SkLinePoint, StereoKitDraw};
 
 use super::Drawable;
 
@@ -44,6 +44,16 @@ impl Lines {
 			node.drawable.get().is_none(),
 			"Internal: Node already has a drawable attached!"
 		);
+
+		let _ = node.spatial.get().unwrap().bounding_box_calc.set(|node| {
+			let mut bounds = Bounds::default();
+			let Some(Drawable::Lines(lines)) = node.drawable.get() else {return bounds};
+			for point in &lines.data.lock().points {
+				bounds = bounds_grow_to_fit_pt(bounds, point.point);
+			}
+
+			bounds
+		});
 
 		let lines = LINES_REGISTRY.add(Lines {
 			enabled: node.enabled.clone(),

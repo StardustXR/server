@@ -119,7 +119,7 @@ impl Zone {
 							"set_spatial_parent",
 							"set_spatial_parent_in_place",
 						],
-						server_methods: vec!["get_transform"],
+						server_methods: vec!["get_bounds", "get_transform"],
 						..Default::default()
 					},
 				)
