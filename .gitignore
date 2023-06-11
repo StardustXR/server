@@ -9,3 +9,6 @@
 
 # Ignore build results from Nix
 *result*
+
+/libs/
+*.AppImage
