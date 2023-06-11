@@ -25,6 +25,7 @@ use std::sync::{Arc, Weak};
 
 lazy_static! {
 	static ref ITEM_ALIAS_LOCAL_SIGNALS: Vec<&'static str> = vec![
+		"get_bounds",
 		"get_transform",
 		"set_transform",
 		"set_spatial_parent",

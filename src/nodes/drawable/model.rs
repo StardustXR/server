@@ -22,7 +22,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 use stereokit::named_colors::WHITE;
 use stereokit::{
-	Color128, Material, Model as SKModel, RenderLayer, Shader, StereoKitDraw, StereoKitMultiThread,
+	Bounds, Color128, Material, Model as SKModel, RenderLayer, Shader, StereoKitDraw,
+	StereoKitMultiThread,
 };
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
@@ -182,6 +183,16 @@ impl ModelPart {
 			false,
 		)
 		.ok()?;
+
+		let _ = node.spatial.get().unwrap().bounding_box_calc.set(|node| {
+			let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {return Bounds::default()};
+			let Some(sk) = SK_MULTITHREAD.get() else {return Bounds::default()};
+			let Some(model) = model_part.model.upgrade() else {return Bounds::default()};
+			let Some(sk_model) = model.sk_model.get() else {return Bounds::default()};
+			let Some(sk_mesh) = sk.model_node_get_mesh(sk_model, model_part.id) else {return Bounds::default()};
+			sk.mesh_get_bounds(sk_mesh)
+		});
+
 		let model_part = Arc::new(ModelPart {
 			id,
 			path: part_path,
