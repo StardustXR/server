@@ -2005,7 +2005,7 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr-server"
-version = "0.10.2"
+version = "0.42.0"
 dependencies = [
  "clap",
  "color-eyre",
