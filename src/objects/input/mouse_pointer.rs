@@ -107,7 +107,7 @@ impl MousePointer {
 			.map(|rx| {
 				let result = rx.field.ray_march(Ray {
 					origin: vec3(0.0, 0.0, 0.0),
-					direction: vec3(0.0, 0.0, 1.0),
+					direction: vec3(0.0, 0.0, -1.0),
 					space: self.spatial.clone(),
 				});
 				(rx, result)
