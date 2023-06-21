@@ -18,7 +18,7 @@ use directories::ProjectDirs;
 use once_cell::sync::OnceCell;
 use stardust_xr::server;
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 use stereokit::{
@@ -178,6 +178,7 @@ fn main() -> Result<()> {
 			.and_then(|p| p.canonicalize().ok())
 			.unwrap_or_else(|| project_dirs.config_dir().join("startup"));
 		let _startup = Command::new(startup_script_path)
+			.stdin(Stdio::null())
 			.env(
 				"FLAT_WAYLAND_DISPLAY",
 				std::env::var_os("WAYLAND_DISPLAY").unwrap_or_default(),
@@ -301,11 +302,15 @@ async fn event_loop(
 		socket_path,
 	});
 
-	let result = tokio::select! {
-		biased;
-		_ = tokio::signal::ctrl_c() => Ok(()),
-		_ = stop_rx => Ok(()),
-	};
+	if atty::is(atty::Stream::Stdin) {
+		stop_rx.await?;
+	} else {
+		tokio::select! {
+			biased;
+			_ = tokio::signal::ctrl_c() => (),
+			_ = stop_rx => (),
+		};
+	}
 
 	info!("Cleanly shut down event loop");
 
@@ -313,5 +318,5 @@ async fn event_loop(
 		stereokit::sys::sk_quit();
 	}
 
-	result
+	Ok(())
 }
