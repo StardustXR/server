@@ -1,7 +1,10 @@
-use super::{shaders::PANEL_SHADER_BYTES, state::WaylandState};
+use super::{
+	shaders::{PANEL_SHADER_BYTES, SIMULA_FRAG_STR, SIMULA_VERT_STR},
+	state::WaylandState,
+};
 use crate::{
 	core::{delta::Delta, destroy_queue, registry::Registry},
-	nodes::drawable::model::ModelPart,
+	nodes::drawable::{model::ModelPart, shaders::shader_inject},
 };
 use mint::Vector2;
 use once_cell::sync::OnceCell;
@@ -95,7 +98,11 @@ impl CoreSurface {
 			SendWrapper::new(sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32))
 		});
 		self.sk_mat.get_or_init(|| {
-			let shader = sk.shader_create_mem(&PANEL_SHADER_BYTES).unwrap();
+			let mut shader = sk.shader_create_mem(&PANEL_SHADER_BYTES).unwrap();
+			let _ = renderer.with_context(|c| unsafe {
+				shader_inject(c, &mut shader, SIMULA_VERT_STR, SIMULA_FRAG_STR)
+			});
+
 			let mat = sk.material_create(&shader);
 			sk.material_set_texture(&mat, "diffuse", sk_tex.as_ref());
 			sk.material_set_transparency(&mat, Transparency::Blend);

@@ -66,8 +66,8 @@ features = ["linux-egl"]
 version = "0.16.7"
 
 [dependencies.smithay]
-git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures
-# git = "https://github.com/smithay/smithay.git" # Until we get stereokit to understand OES samplers and external textures
+# git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures
+git = "https://github.com/smithay/smithay.git" # Until we get stereokit to understand OES samplers and external textures
 # path = "../smithay"
 default-features = false
 features = ["desktop", "renderer_gl", "wayland_frontend"]

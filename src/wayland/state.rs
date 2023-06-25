@@ -60,7 +60,6 @@ pub struct WaylandState {
 	pub shm_state: ShmState,
 	pub dmabuf_state: DmabufState,
 	pub dmabuf_global: DmabufGlobal,
-	pub pending_dmabufs: Vec<Dmabuf>,
 	pub output: Output,
 	pub seats: FxHashMap<ClientId, Arc<SeatData>>,
 }
@@ -120,7 +119,6 @@ impl WaylandState {
 				shm_state,
 				dmabuf_state,
 				dmabuf_global,
-				pending_dmabufs: Vec::new(),
 				output,
 				seats: FxHashMap::default(),
 			})
