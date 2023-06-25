@@ -1,5 +1,6 @@
 pub mod lines;
 pub mod model;
+pub mod shaders;
 pub mod text;
 
 use self::{
