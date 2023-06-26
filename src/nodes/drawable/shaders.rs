@@ -1,7 +1,12 @@
-use std::{ffi::CString, mem::transmute};
+#![allow(dead_code)]
 
-use smithay::backend::renderer::gles::ffi::{Gles2, FRAGMENT_SHADER, VERTEX_SHADER};
+use smithay::backend::renderer::gles::{
+	ffi::{self, Gles2, FRAGMENT_SHADER, VERTEX_SHADER},
+	GlesError,
+};
+use std::mem::transmute;
 use stereokit::Shader;
+use tracing::error;
 
 struct FfiAssetHeader {
 	asset_type: i32,
@@ -25,26 +30,103 @@ struct FfiShader {
 	shader: FfiSkgShader,
 }
 
-unsafe fn load_shader(c: &Gles2, source: &str, stage: u32) -> u32 {
-	let shader = c.CreateShader(stage);
-	let shader_source = CString::new(source).unwrap();
-	c.ShaderSource(shader, 1, &shader_source.as_ptr(), std::ptr::null());
-	c.CompileShader(shader);
-	shader
+unsafe fn compile_shader(
+	gl: &ffi::Gles2,
+	variant: ffi::types::GLuint,
+	src: &str,
+) -> Result<ffi::types::GLuint, GlesError> {
+	let shader = gl.CreateShader(variant);
+	if shader == 0 {
+		return Err(GlesError::CreateShaderObject);
+	}
+
+	gl.ShaderSource(
+		shader,
+		1,
+		&src.as_ptr() as *const *const u8 as *const *const ffi::types::GLchar,
+		&(src.len() as i32) as *const _,
+	);
+	gl.CompileShader(shader);
+
+	let mut status = ffi::FALSE as i32;
+	gl.GetShaderiv(shader, ffi::COMPILE_STATUS, &mut status as *mut _);
+	if status == ffi::FALSE as i32 {
+		let mut max_len = 0;
+		gl.GetShaderiv(shader, ffi::INFO_LOG_LENGTH, &mut max_len as *mut _);
+
+		let mut error = Vec::with_capacity(max_len as usize);
+		let mut len = 0;
+		gl.GetShaderInfoLog(
+			shader,
+			max_len as _,
+			&mut len as *mut _,
+			error.as_mut_ptr() as *mut _,
+		);
+		error.set_len(len as usize);
+
+		error!(
+			"[GL] {}",
+			std::str::from_utf8(&error).unwrap_or("<Error Message no utf8>")
+		);
+
+		gl.DeleteShader(shader);
+		return Err(GlesError::ShaderCompileError);
+	}
+
+	Ok(shader)
 }
 
-unsafe fn link_program(c: &Gles2, vert: u32, frag: u32) -> u32 {
-	let program = c.CreateProgram();
-	c.AttachShader(program, vert);
-	c.AttachShader(program, frag);
-	c.LinkProgram(program);
-	program
+unsafe fn link_program(
+	gl: &ffi::Gles2,
+	vert: ffi::types::GLuint,
+	frag: ffi::types::GLuint,
+) -> Result<ffi::types::GLuint, GlesError> {
+	let program = gl.CreateProgram();
+	gl.AttachShader(program, vert);
+	gl.AttachShader(program, frag);
+	gl.LinkProgram(program);
+	// gl.DetachShader(program, vert);
+	// gl.DetachShader(program, frag);
+	// gl.DeleteShader(vert);
+	// gl.DeleteShader(frag);
+
+	let mut status = ffi::FALSE as i32;
+	gl.GetProgramiv(program, ffi::LINK_STATUS, &mut status as *mut _);
+	if status == ffi::FALSE as i32 {
+		let mut max_len = 0;
+		gl.GetProgramiv(program, ffi::INFO_LOG_LENGTH, &mut max_len as *mut _);
+
+		let mut error = Vec::with_capacity(max_len as usize);
+		let mut len = 0;
+		gl.GetProgramInfoLog(
+			program,
+			max_len as _,
+			&mut len as *mut _,
+			error.as_mut_ptr() as *mut _,
+		);
+		error.set_len(len as usize);
+
+		error!(
+			"[GL] {}",
+			std::str::from_utf8(&error).unwrap_or("<Error Message no utf8>")
+		);
+
+		gl.DeleteProgram(program);
+		return Err(GlesError::ProgramLinkError);
+	}
+
+	Ok(program)
 }
 
-pub unsafe fn shader_inject(c: &Gles2, sk_shader: &mut Shader, vert_str: &str, frag_str: &str) {
-	let gl_vert = dbg!(load_shader(c, vert_str, VERTEX_SHADER));
-	let gl_frag = dbg!(load_shader(c, frag_str, FRAGMENT_SHADER));
-	let gl_prog = dbg!(link_program(c, gl_vert, gl_frag));
+pub unsafe fn shader_inject(
+	c: &Gles2,
+	sk_shader: &mut Shader,
+	vert_str: &str,
+	frag_str: &str,
+) -> Result<(), GlesError> {
+	let gl_vert = compile_shader(c, VERTEX_SHADER, vert_str)?;
+	let gl_frag = compile_shader(c, FRAGMENT_SHADER, frag_str)?;
+	let gl_prog = link_program(c, gl_vert, gl_frag)?;
 
 	let shader: *mut FfiShader = transmute(sk_shader.0.as_mut());
 	if let Some(shader) = shader.as_mut() {
@@ -52,4 +134,6 @@ pub unsafe fn shader_inject(c: &Gles2, sk_shader: &mut Shader, vert_str: &str, f
 		shader.shader.pixel = gl_frag;
 		shader.shader.program = gl_prog;
 	}
+
+	Ok(())
 }
