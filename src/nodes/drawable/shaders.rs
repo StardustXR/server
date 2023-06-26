@@ -9,6 +9,7 @@ struct FfiAssetHeader {
 	id: u64,
 	index: u64,
 	refs: i32,
+	debug: *mut u8,
 }
 
 struct FfiSkgShader {
@@ -34,16 +35,16 @@ unsafe fn load_shader(c: &Gles2, source: &str, stage: u32) -> u32 {
 
 unsafe fn link_program(c: &Gles2, vert: u32, frag: u32) -> u32 {
 	let program = c.CreateProgram();
-	c.AttachShader(vert, VERTEX_SHADER);
-	c.AttachShader(frag, FRAGMENT_SHADER);
+	c.AttachShader(program, vert);
+	c.AttachShader(program, frag);
 	c.LinkProgram(program);
 	program
 }
 
 pub unsafe fn shader_inject(c: &Gles2, sk_shader: &mut Shader, vert_str: &str, frag_str: &str) {
-	let gl_vert = load_shader(c, vert_str, VERTEX_SHADER);
-	let gl_frag = load_shader(c, frag_str, FRAGMENT_SHADER);
-	let gl_prog = link_program(c, gl_vert, gl_frag);
+	let gl_vert = dbg!(load_shader(c, vert_str, VERTEX_SHADER));
+	let gl_frag = dbg!(load_shader(c, frag_str, FRAGMENT_SHADER));
+	let gl_prog = dbg!(link_program(c, gl_vert, gl_frag));
 
 	let shader: *mut FfiShader = transmute(sk_shader.0.as_mut());
 	if let Some(shader) = shader.as_mut() {
