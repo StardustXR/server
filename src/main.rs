@@ -27,6 +27,7 @@ use stereokit::{
 };
 use stereokit::{DisplayBlend, Sk};
 use tokio::{runtime::Handle, sync::oneshot};
+use tracing::metadata::LevelFilter;
 use tracing::{debug_span, error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
@@ -94,7 +95,15 @@ fn main() {
 		},
 		blend_preference: DisplayBlend::AnyTransparent,
 		depth_mode: DepthMode::D32,
-		log_filter: LogLevel::None,
+		log_filter: match EnvFilter::from_default_env().max_level_hint() {
+			Some(LevelFilter::ERROR) => LogLevel::Error,
+			Some(LevelFilter::WARN) => LogLevel::Warning,
+			Some(LevelFilter::INFO) => LogLevel::Inform,
+			Some(LevelFilter::DEBUG) => LogLevel::Diagnostic,
+			Some(LevelFilter::TRACE) => LogLevel::Diagnostic,
+			Some(LevelFilter::OFF) => LogLevel::None,
+			None => LogLevel::Warning,
+		},
 		overlay_app: cli_args.overlay_priority.is_some(),
 		overlay_priority: cli_args.overlay_priority.unwrap_or(u32::MAX),
 		disable_desktop_input_window: true,
