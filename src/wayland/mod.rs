@@ -19,7 +19,7 @@ use sk::StereoKitDraw;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::egl::EGLContext;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::{ImportDma, ImportEgl};
+use smithay::backend::renderer::ImportDma;
 use smithay::reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket};
 use std::os::unix::prelude::AsRawFd;
 use std::{
@@ -82,7 +82,6 @@ impl Wayland {
 
 		let display: Display<WaylandState> = Display::new()?;
 		let display_handle = display.handle();
-		renderer.bind_wl_display(&display_handle)?;
 
 		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
 		let display = Arc::new(Mutex::new(display));

@@ -72,9 +72,8 @@ git = "https://github.com/smithay/smithay.git" # Until we get stereokit to under
 default-features = false
 features = [
     "desktop",
-    "backend_egl",
+    "backend_drm",
     "renderer_gl",
-    "use_system_lib",
     "wayland_frontend",
 ]
 version = "*"
