@@ -70,7 +70,13 @@ version = "0.16.7"
 git = "https://github.com/smithay/smithay.git" # Until we get stereokit to understand OES samplers and external textures
 # path = "../smithay"
 default-features = false
-features = ["desktop", "renderer_gl", "wayland_frontend"]
+features = [
+    "desktop",
+    "backend_egl",
+    "renderer_gl",
+    "use_system_lib",
+    "wayland_frontend",
+]
 version = "*"
 optional = true
 
