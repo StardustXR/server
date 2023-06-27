@@ -4,6 +4,7 @@ use rustc_hash::FxHashMap;
 use smithay::{
 	backend::{
 		allocator::dmabuf::Dmabuf,
+		egl::EGLDevice,
 		renderer::{gles::GlesRenderer, ImportDma},
 	},
 	delegate_dmabuf, delegate_output, delegate_shm,
@@ -24,14 +25,17 @@ use smithay::{
 	wayland::{
 		buffer::BufferHandler,
 		compositor::{CompositorClientState, CompositorState},
-		dmabuf::{self, DmabufGlobal, DmabufHandler, DmabufState, ImportError},
+		dmabuf::{
+			self, DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState,
+			ImportError,
+		},
 		shell::kde::decoration::KdeDecorationState,
 		shm::{ShmHandler, ShmState},
 	},
 };
 use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::UnboundedSender;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Default)]
 pub struct ClientState {
@@ -59,8 +63,7 @@ pub struct WaylandState {
 	// pub xdg_activation_state: XdgActivationState,
 	pub kde_decoration_state: KdeDecorationState,
 	pub shm_state: ShmState,
-	dmabuf_state: DmabufState,
-	_dmabuf_global: DmabufGlobal,
+	dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
 	dmabuf_tx: UnboundedSender<Dmabuf>,
 	pub output: Output,
 	pub seats: FxHashMap<ClientId, Arc<SeatData>>,
@@ -78,11 +81,44 @@ impl WaylandState {
 		let kde_decoration_state =
 			KdeDecorationState::new::<Self>(&display_handle, DecorationMode::Server);
 		let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
-		let mut dmabuf_state = DmabufState::new();
-		let dmabuf_global = dmabuf_state.create_global::<Self>(
-			&display_handle,
-			renderer.dmabuf_formats().collect::<Vec<_>>(),
-		);
+		let render_node = EGLDevice::device_for_display(renderer.egl_context().display())
+			.and_then(|device| device.try_get_render_node());
+
+		let dmabuf_default_feedback = match render_node {
+			Ok(Some(node)) => {
+				let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
+				let dmabuf_default_feedback =
+					DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
+						.build()
+						.unwrap();
+				Some(dmabuf_default_feedback)
+			}
+			Ok(None) => {
+				warn!("failed to query render node, dmabuf will use v3");
+				None
+			}
+			Err(err) => {
+				warn!(?err, "failed to egl device for display, dmabuf will use v3");
+				None
+			}
+		};
+		// if we failed to build dmabuf feedback we fall back to dmabuf v3
+		// Note: egl on Mesa requires either v4 or wl_drm (initialized with bind_wl_display)
+		let dmabuf_state = if let Some(default_feedback) = dmabuf_default_feedback {
+			let mut dmabuf_state = DmabufState::new();
+			let dmabuf_global = dmabuf_state.create_global_with_default_feedback::<WaylandState>(
+				&display_handle,
+				&default_feedback,
+			);
+			(dmabuf_state, dmabuf_global, Some(default_feedback))
+		} else {
+			let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
+			let mut dmabuf_state = DmabufState::new();
+			let dmabuf_global =
+				dmabuf_state.create_global::<WaylandState>(&display_handle, dmabuf_formats);
+			(dmabuf_state, dmabuf_global, None)
+		};
+
 		let output = Output::new(
 			"1x".to_owned(),
 			smithay::output::PhysicalProperties {
@@ -121,7 +157,6 @@ impl WaylandState {
 				kde_decoration_state,
 				shm_state,
 				dmabuf_state,
-				_dmabuf_global: dmabuf_global,
 				dmabuf_tx,
 				output,
 				seats: FxHashMap::default(),
@@ -149,7 +184,7 @@ impl ShmHandler for WaylandState {
 }
 impl DmabufHandler for WaylandState {
 	fn dmabuf_state(&mut self) -> &mut DmabufState {
-		&mut self.dmabuf_state
+		&mut self.dmabuf_state.0
 	}
 
 	fn dmabuf_imported(
