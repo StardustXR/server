@@ -24,12 +24,13 @@ use smithay::{
 	wayland::{
 		buffer::BufferHandler,
 		compositor::{CompositorClientState, CompositorState},
-		dmabuf::{self, DmabufGlobal, DmabufHandler, DmabufState},
+		dmabuf::{self, DmabufGlobal, DmabufHandler, DmabufState, ImportError},
 		shell::kde::decoration::KdeDecorationState,
 		shm::{ShmHandler, ShmState},
 	},
 };
 use std::sync::{Arc, Weak};
+use tokio::sync::mpsc::UnboundedSender;
 use tracing::info;
 
 #[derive(Default)]
@@ -58,8 +59,9 @@ pub struct WaylandState {
 	// pub xdg_activation_state: XdgActivationState,
 	pub kde_decoration_state: KdeDecorationState,
 	pub shm_state: ShmState,
-	pub dmabuf_state: DmabufState,
-	pub dmabuf_global: DmabufGlobal,
+	dmabuf_state: DmabufState,
+	_dmabuf_global: DmabufGlobal,
+	dmabuf_tx: UnboundedSender<Dmabuf>,
 	pub output: Output,
 	pub seats: FxHashMap<ClientId, Arc<SeatData>>,
 }
@@ -69,6 +71,7 @@ impl WaylandState {
 		display: Arc<Mutex<Display<WaylandState>>>,
 		display_handle: DisplayHandle,
 		renderer: &GlesRenderer,
+		dmabuf_tx: UnboundedSender<Dmabuf>,
 	) -> Arc<Mutex<Self>> {
 		let compositor_state = CompositorState::new::<Self>(&display_handle);
 		// let xdg_activation_state = XdgActivationState::new::<Self, _>(&display_handle);
@@ -118,7 +121,8 @@ impl WaylandState {
 				kde_decoration_state,
 				shm_state,
 				dmabuf_state,
-				dmabuf_global,
+				_dmabuf_global: dmabuf_global,
+				dmabuf_tx,
 				output,
 				seats: FxHashMap::default(),
 			})
@@ -151,9 +155,9 @@ impl DmabufHandler for WaylandState {
 	fn dmabuf_imported(
 		&mut self,
 		_global: &DmabufGlobal,
-		_dmabuf: Dmabuf,
+		dmabuf: Dmabuf,
 	) -> Result<(), dmabuf::ImportError> {
-		Ok(())
+		self.dmabuf_tx.send(dmabuf).map_err(|_| ImportError::Failed)
 	}
 }
 delegate_dmabuf!(WaylandState);

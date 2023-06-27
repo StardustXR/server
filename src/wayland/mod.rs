@@ -16,8 +16,10 @@ use global_counter::primitive::exact::CounterU32;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use sk::StereoKitDraw;
+use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::egl::EGLContext;
 use smithay::backend::renderer::gles::GlesRenderer;
+use smithay::backend::renderer::ImportDma;
 use smithay::reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket};
 use std::os::unix::prelude::AsRawFd;
 use std::{
@@ -26,6 +28,7 @@ use std::{
 	sync::Arc,
 };
 use stereokit as sk;
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
 };
@@ -63,6 +66,7 @@ pub struct Wayland {
 	pub socket_name: String,
 	join_handle: JoinHandle<Result<()>>,
 	renderer: GlesRenderer,
+	dmabuf_rx: UnboundedReceiver<Dmabuf>,
 	state: Arc<Mutex<WaylandState>>,
 }
 impl Wayland {
@@ -79,8 +83,9 @@ impl Wayland {
 		let display: Display<WaylandState> = Display::new()?;
 		let display_handle = display.handle();
 
+		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
 		let display = Arc::new(Mutex::new(display));
-		let state = WaylandState::new(display.clone(), display_handle, &renderer);
+		let state = WaylandState::new(display.clone(), display_handle, &renderer, dmabuf_tx);
 
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
 		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();
@@ -100,6 +105,7 @@ impl Wayland {
 			socket_name,
 			join_handle,
 			renderer,
+			dmabuf_rx,
 			state,
 		})
 	}
@@ -150,6 +156,9 @@ impl Wayland {
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self, sk))]
 	pub fn update(&mut self, sk: &impl StereoKitDraw) {
+		while let Ok(dmabuf) = self.dmabuf_rx.try_recv() {
+			let _ = self.renderer.import_dmabuf(&dmabuf, None);
+		}
 		for core_surface in CORE_SURFACES.get_valid_contents() {
 			core_surface.process(sk, &mut self.renderer);
 		}
