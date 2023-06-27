@@ -13,7 +13,6 @@ use crate::objects::input::sk_hand::SkHand;
 
 use self::core::eventloop::EventLoop;
 use clap::Parser;
-use color_eyre::eyre::Result;
 use directories::ProjectDirs;
 use once_cell::sync::OnceCell;
 use stardust_xr::server;
@@ -59,7 +58,7 @@ struct EventLoopInfo {
 	socket_path: PathBuf,
 }
 
-fn main() -> Result<()> {
+fn main() {
 	let registry = tracing_subscriber::registry();
 	#[cfg(feature = "profile_app")]
 	let (chrome_layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
@@ -107,8 +106,8 @@ fn main() -> Result<()> {
 	info!("Init StereoKit");
 
 	sk.material_set_shader(
-		sk.material_find("default/material_pbr")?,
-		sk.shader_find("default/shader_pbr_clip")?,
+		sk.material_find("default/material_pbr").unwrap(),
+		sk.shader_find("default/shader_pbr_clip").unwrap(),
 	);
 
 	// Skytex/light stuff
@@ -136,7 +135,11 @@ fn main() -> Result<()> {
 		}
 	}
 
-	let mouse_pointer = cli_args.flatscreen.then(MousePointer::new).transpose()?;
+	let mouse_pointer = cli_args
+		.flatscreen
+		.then(MousePointer::new)
+		.transpose()
+		.unwrap();
 	let mut hands = (!cli_args.flatscreen)
 		.then(|| {
 			let left = SkHand::new(Handed::Left).ok();
@@ -153,7 +156,8 @@ fn main() -> Result<()> {
 		.flatten();
 	let eye_pointer = (!cli_args.flatscreen && sk.device_has_eye_gaze())
 		.then(EyePointer::new)
-		.transpose()?;
+		.transpose()
+		.unwrap();
 
 	if hands.is_none() {
 		sk.input_hand_visible(Handed::Left, false);
@@ -164,12 +168,13 @@ fn main() -> Result<()> {
 	let (info_sender, info_receiver) = oneshot::channel::<EventLoopInfo>();
 	let event_thread = std::thread::Builder::new()
 		.name("event_loop".to_owned())
-		.spawn(move || event_loop(info_sender, event_stop_rx))?;
-	let event_loop_info = info_receiver.blocking_recv()?;
+		.spawn(move || event_loop(info_sender, event_stop_rx))
+		.unwrap();
+	let event_loop_info = info_receiver.blocking_recv().unwrap();
 	let _tokio_handle = event_loop_info.tokio_handle.enter();
 
 	#[cfg(feature = "wayland")]
-	let mut wayland = wayland::Wayland::new()?;
+	let mut wayland = wayland::Wayland::new().unwrap();
 	info!("Stardust ready!");
 
 	if let Some(project_dirs) = project_dirs.as_ref() {
@@ -250,14 +255,14 @@ fn main() -> Result<()> {
 	});
 
 	#[cfg(feature = "wayland")]
-	let wayland = ManuallyDrop::new(wayland);
+	let _wayland = ManuallyDrop::new(wayland);
 
 	let _ = event_stop_tx.send(());
 	event_thread
 		.join()
-		.expect("Failed to cleanly shut down event loop")?;
+		.expect("Failed to cleanly shut down event loop")
+		.unwrap();
 	info!("Cleanly shut down Stardust");
-	Ok(())
 }
 
 fn adaptive_sleep(
