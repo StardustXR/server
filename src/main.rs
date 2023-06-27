@@ -17,6 +17,7 @@ use color_eyre::eyre::Result;
 use directories::ProjectDirs;
 use once_cell::sync::OnceCell;
 use stardust_xr::server;
+use std::mem::ManuallyDrop;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -249,7 +250,7 @@ fn main() -> Result<()> {
 	});
 
 	#[cfg(feature = "wayland")]
-	drop(wayland);
+	let wayland = ManuallyDrop::new(wayland);
 
 	let _ = event_stop_tx.send(());
 	event_thread
