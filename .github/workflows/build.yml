@@ -30,8 +30,8 @@ jobs:
 
       - name: Install appimagetool
         run: |
-            wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$(uname -m).AppImage -O /usr/local/bin/appimagetool \
-            chmod +x /usr/local/bin/appimagetool \
+            wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$(uname -m).AppImage -O /usr/local/bin/appimagetool; \
+            chmod +x /usr/local/bin/appimagetool; \
             sed -i 's|AI\x02|\x00\x00\x00|' /usr/local/bin/appimagetool
       - name: Install cargo-appimage
         run: cargo install cargo-appimage
