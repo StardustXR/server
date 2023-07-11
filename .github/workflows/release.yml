@@ -1,0 +1,37 @@
+name: Build appimage
+
+on:
+  push:
+    tags:
+      - '*'
+
+jobs:
+  build_and_package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install runtime dependencies
+        run: sudo apt install -y --no-install-recommends libxkbcommon-dev libstdc++6 libopenxr-dev libx11-dev libxfixes-dev libgl1-mesa-dev libegl1-mesa-dev libgbm-dev libfontconfig-dev libjsoncpp-dev  libxcb1-dev libglx-dev libdrm-dev libwayland-dev libfreetype-dev libpng-dev
+
+      - name: Install build dependencies
+        run: sudo apt install -y --no-install-recommends cmake ninja
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+
+      - name: Install cargo-appimage
+        run: cargo install cargo-appimage
+
+      - name: Generate AppImage
+        run: cargo appimage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v2
+        with:
+          name: appimage
+          path: ./*.AppImage
