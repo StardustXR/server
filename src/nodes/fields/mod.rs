@@ -1,7 +1,7 @@
-mod r#box;
+pub mod r#box;
 mod cylinder;
 mod sphere;
-pub mod torus;
+mod torus;
 
 use self::cylinder::{create_cylinder_field_flex, CylinderField};
 use self::r#box::{create_box_field_flex, BoxField};
