@@ -10,6 +10,7 @@ use crate::objects::input::eye_pointer::EyePointer;
 use crate::objects::input::mouse_pointer::MousePointer;
 use crate::objects::input::sk_controller::SkController;
 use crate::objects::input::sk_hand::SkHand;
+use crate::objects::play_space::PlaySpace;
 
 use self::core::eventloop::EventLoop;
 use clap::Parser;
@@ -173,6 +174,8 @@ fn main() {
 		sk.input_hand_visible(Handed::Right, false);
 	}
 
+	let play_space = sk.world_has_bounds().then(|| PlaySpace::new().ok()).flatten();
+
 	let (event_stop_tx, event_stop_rx) = oneshot::channel::<()>();
 	let (info_sender, info_receiver) = oneshot::channel::<EventLoopInfo>();
 	let event_thread = std::thread::Builder::new()
@@ -240,6 +243,9 @@ fn main() {
 				}
 				if let Some(eye_pointer) = &eye_pointer {
 					eye_pointer.update(sk);
+				}
+				if let Some(play_space) = &play_space {
+					play_space.update(sk);
 				}
 				input::process_input();
 				nodes::root::Root::send_frame_events(sk.time_elapsed_unscaled());

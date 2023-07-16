@@ -16,7 +16,7 @@ pub struct BoxField {
 }
 
 impl BoxField {
-	pub fn add_to(node: &Arc<Node>, size: Vector3<f32>) -> Result<()> {
+	pub fn add_to(node: &Arc<Node>, size: Vector3<f32>) -> Result<Arc<Field>> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
@@ -31,8 +31,9 @@ impl BoxField {
 		};
 		box_field.add_field_methods(node);
 		node.add_local_signal("set_size", BoxField::set_size_flex);
-		let _ = node.field.set(Arc::new(Field::Box(box_field)));
-		Ok(())
+		let field = Arc::new(Field::Box(box_field));
+		let _ = node.field.set(field.clone());
+		Ok(field)
 	}
 
 	pub fn set_size(&self, size: Vector3<f32>) {

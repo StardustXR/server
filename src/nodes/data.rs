@@ -35,6 +35,11 @@ pub fn mask_matches(mask_map_lesser: &Mask, mask_map_greater: &Mask) -> bool {
 
 pub struct Mask(pub Vec<u8>);
 impl Mask {
+	pub fn from_struct<T: Default + Serialize>() -> Self {
+		let mut serializer = flexbuffers::FlexbufferSerializer::new();
+		T::default().serialize(&mut serializer).unwrap();
+		Mask(serializer.take_buffer())
+	}
 	pub fn get_mask(&self) -> Result<flexbuffers::MapReader<&[u8]>> {
 		flexbuffers::Reader::get_root(self.0.as_slice())
 			.map_err(|_| eyre!("Mask is not a valid flexbuffer"))?
@@ -182,7 +187,7 @@ pub struct PulseReceiver {
 	pub mask: Mask,
 }
 impl PulseReceiver {
-	pub fn add_to(node: &Arc<Node>, field: Arc<Field>, mask: Mask) -> Result<()> {
+	pub fn add_to(node: &Arc<Node>, field: Arc<Field>, mask: Mask) -> Result<Arc<PulseReceiver>> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
@@ -199,8 +204,8 @@ impl PulseReceiver {
 		for sender in PULSE_SENDER_REGISTRY.get_valid_contents() {
 			sender.handle_new_receiver(&receiver);
 		}
-		let _ = node.pulse_receiver.set(receiver);
-		Ok(())
+		let _ = node.pulse_receiver.set(receiver.clone());
+		Ok(receiver)
 	}
 
 	pub fn send_data(&self, uid: &str, data: Vec<u8>) -> Result<()> {
