@@ -174,7 +174,10 @@ fn main() {
 		sk.input_hand_visible(Handed::Right, false);
 	}
 
-	let play_space = sk.world_has_bounds().then(|| PlaySpace::new().ok()).flatten();
+	let play_space = sk
+		.world_has_bounds()
+		.then(|| PlaySpace::new().ok())
+		.flatten();
 
 	let (event_stop_tx, event_stop_rx) = oneshot::channel::<()>();
 	let (info_sender, info_receiver) = oneshot::channel::<EventLoopInfo>();
