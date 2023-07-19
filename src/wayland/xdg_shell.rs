@@ -288,10 +288,9 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 							let wl_surface = xdg_surface_data.lock().wl_surface();
 
 							xdg_surface_data.lock().surface_id = SurfaceID::Toplevel;
-							let toplevel = toplevel_weak.upgrade().unwrap();
 							let (node, panel_item) = PanelItem::create(
 								wl_surface.clone(),
-								Backend::Wayland(WaylandBackend::create(toplevel)),
+								Backend::Wayland(WaylandBackend::create(toplevel.clone())),
 								client_credentials,
 								seat_data.clone(),
 							);
@@ -372,7 +371,8 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 						let popup_data = PopupData::get(&xdg_popup);
 						let popup_data = popup_data.lock();
 						// panel_item.commit_popup(popup_data);
-						panel_item.new_popup(&xdg_popup, &*popup_data);
+						let Backend::Wayland(wayland_backend) = &panel_item.backend else {return};
+						wayland_backend.new_popup(&panel_item, &xdg_popup, &*popup_data);
 					},
 					move |commit_count| {
 						if commit_count == 0 {

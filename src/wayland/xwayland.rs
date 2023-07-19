@@ -139,31 +139,30 @@ impl XwmHandler for XWaylandHandler {
 			&self.wayland_display,
 			self.wayland_display.lock().handle(),
 			&window.wl_surface().unwrap(),
-			move |c| {
-				let Some(wl_surface) = window.wl_surface() else {return};
-				match c {
-					0 => {
-						let seat = seat.clone();
-						window.user_data().insert_if_missing_threadsafe(|| {
-							let (_node, panel_item) = PanelItem::create(
-								wl_surface.clone(),
-								Backend::X11(X11Backend {
-									toplevel_parent: None,
-									toplevel: window.clone(),
-								}),
-								wl_surface
-									.client()
-									.and_then(|c| c.get_credentials(&dh).ok()),
-								seat,
-							);
-							panel_item
-						});
-					}
-					_ => {
-						let Some(panel_item) = window.user_data().get::<Arc<PanelItem>>() else {return};
-						panel_item.commit_toplevel();
-					}
+			{
+				let window = window.clone();
+				move || {
+					let Some(wl_surface) = window.wl_surface() else {return};
+					let seat = seat.clone();
+					window.user_data().insert_if_missing_threadsafe(|| {
+						let (_node, panel_item) = PanelItem::create(
+							wl_surface.clone(),
+							Backend::X11(X11Backend {
+								toplevel_parent: None,
+								toplevel: window.clone(),
+							}),
+							wl_surface
+								.client()
+								.and_then(|c| c.get_credentials(&dh).ok()),
+							seat,
+						);
+						panel_item
+					});
 				}
+			},
+			move |_| {
+				let Some(panel_item) = window.user_data().get::<Arc<PanelItem>>() else {return};
+				panel_item.commit_toplevel();
 			},
 		);
 	}
