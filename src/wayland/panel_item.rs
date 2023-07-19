@@ -470,7 +470,18 @@ impl PanelItem {
 				xdg_toplevel.configure_bounds(bounds.x as i32, bounds.y as i32);
 			}
 		}
-		let size = info.size.unwrap_or(Vector2::from([0; 2]));
+		let zero_size = Vector2::from([0; 2]);
+		let size = info.size.unwrap_or(zero_size);
+		// if size == zero_size && (info.states.contains(1) || info.states.contains(2)) {
+		// 	xdg_toplevel.configure(
+		// 		size.x as i32,
+		// 		size.y as i32,
+		// 		info.states
+		// 			.into_iter()
+		// 			.flat_map(|state| state.to_ne_bytes())
+		// 			.collect::<Vec<_>>(),
+		// 	);
+		// }
 		xdg_toplevel.configure(
 			size.x as i32,
 			size.y as i32,

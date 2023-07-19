@@ -446,7 +446,7 @@ impl Dispatch<WlPointer, Arc<SeatData>, WaylandState> for WaylandState {
 				hotspot_y,
 			} => {
 				if let Some(surface) = surface.as_ref() {
-					CoreSurface::add_to(&state.display, dh.clone(), surface, |_| ());
+					CoreSurface::add_to(&state.display, dh.clone(), surface, || (), |_| ());
 					compositor::with_states(surface, |data| {
 						data.data_map.insert_if_missing_threadsafe(|| {
 							Arc::new(Mutex::new(Cursor {

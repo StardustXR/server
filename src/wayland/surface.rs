@@ -50,6 +50,7 @@ pub struct CoreSurface {
 	sk_tex: OnceCell<SendWrapper<Tex>>,
 	sk_mat: OnceCell<Arc<SendWrapper<Material>>>,
 	material_offset: Mutex<Delta<u32>>,
+	on_mapped: Box<dyn Fn() + Send + Sync>,
 	on_commit: Box<dyn Fn(u32) + Send + Sync>,
 	pub pending_material_applications: Registry<ModelPart>,
 }
@@ -59,6 +60,7 @@ impl CoreSurface {
 		display: &Arc<Mutex<Display<WaylandState>>>,
 		dh: DisplayHandle,
 		surface: &WlSurface,
+		on_mapped: impl Fn() + Send + Sync + 'static,
 		on_commit: impl Fn(u32) + Send + Sync + 'static,
 	) {
 		compositor::with_states(surface, |data| {
@@ -71,6 +73,7 @@ impl CoreSurface {
 					sk_tex: OnceCell::new(),
 					sk_mat: OnceCell::new(),
 					material_offset: Mutex::new(Delta::new(0)),
+					on_mapped: Box::new(on_mapped) as Box<dyn Fn() + Send + Sync>,
 					on_commit: Box::new(on_commit) as Box<dyn Fn(u32) + Send + Sync>,
 					pending_material_applications: Registry::new(),
 				})
@@ -125,9 +128,8 @@ impl CoreSurface {
 		}
 
 		let mut mapped_data = self.mapped_data.lock();
+		let just_mapped = mapped_data.is_none();
 		self.with_states(|data| {
-			// let just_mapped = mapped_data.is_none();
-			// if just_mapped {
 			let renderer_surface_state = data
 				.data_map
 				.get::<RendererSurfaceStateUserData>()
@@ -165,6 +167,10 @@ impl CoreSurface {
 			};
 			*mapped_data = Some(new_mapped_data);
 		});
+		drop(mapped_data);
+		if just_mapped {
+			(self.on_mapped)();
+		}
 		self.apply_surface_materials();
 	}
 

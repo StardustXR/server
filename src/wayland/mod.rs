@@ -72,7 +72,7 @@ pub struct Wayland {
 impl Wayland {
 	pub fn new() -> Result<Self> {
 		let egl_raw_handles = get_sk_egl()?;
-		let mut renderer = unsafe {
+		let renderer = unsafe {
 			GlesRenderer::new(EGLContext::from_raw(
 				egl_raw_handles.display,
 				egl_raw_handles.config,
