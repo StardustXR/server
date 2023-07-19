@@ -253,21 +253,29 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 				debug!(?toplevel, ?xdg_surface, "Create XDG toplevel");
 
 				if toplevel.version() >= EVT_WM_CAPABILITIES_SINCE {
-					toplevel.wm_capabilities(vec![]);
+					toplevel.wm_capabilities(vec![2, 3, 4]);
 				}
-				toplevel.configure(0, 0, vec![]);
+				toplevel.configure(
+					0,
+					0,
+					if toplevel.version() >= 2 {
+						vec![5, 6, 7, 8]
+					} else {
+						vec![]
+					},
+				);
 				xdg_surface.configure(SERIAL_COUNTER.inc());
 
 				let client_credentials = client.get_credentials(&state.display_handle).ok();
 				let seat_data = state.seats.get(&client.id()).unwrap().clone();
-				let toplevel_weak = toplevel.downgrade();
 				CoreSurface::add_to(
 					&state.display,
 					state.display_handle.clone(),
 					&xdg_surface_data.lock().wl_surface(),
-					move |c| match c {
-						0 => {
-							let toplevel = toplevel_weak.upgrade().unwrap();
+					{
+						let toplevel = toplevel.downgrade();
+						move || {
+							let toplevel = toplevel.upgrade().unwrap();
 							let toplevel_data = ToplevelData::get(&toplevel);
 							let xdg_surface = toplevel_data.lock().xdg_surface();
 							let xdg_surface_data = XdgSurfaceData::get(&xdg_surface);
@@ -283,10 +291,27 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 							toplevel_data.lock().panel_item_node.replace(node);
 							xdg_surface_data.lock().panel_item = Arc::downgrade(&panel_item);
 						}
-						_ => {
-							let toplevel = toplevel_weak.upgrade().unwrap();
+					},
+					{
+						let toplevel = toplevel.downgrade();
+						move |_| {
+							let toplevel = toplevel.upgrade().unwrap();
 							let toplevel_data = ToplevelData::get(&toplevel);
-							let panel_item = toplevel_data.lock().panel_item().unwrap();
+							let Some(panel_item) = toplevel_data.lock().panel_item() else {
+								// if the wayland toplevel isn't mapped, hammer it again with a configure until it cooperates
+								toplevel.configure(
+									0,
+									0,
+									if toplevel.version() >= 2 {
+										vec![5, 6, 7, 8]
+									} else {
+										vec![]
+									},
+								);
+								let xdg_surface = toplevel_data.lock().xdg_surface();
+								xdg_surface.configure(SERIAL_COUNTER.inc());
+								return
+							};
 							panel_item.commit_toplevel();
 						}
 					},
@@ -335,19 +360,19 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 					&state.display,
 					state.display_handle.clone(),
 					&xdg_surface_data.lock().wl_surface.upgrade().unwrap(),
-					move |commit_count| match commit_count {
-						0 => xdg_surface
-							.upgrade()
-							.unwrap()
-							.configure(SERIAL_COUNTER.inc()),
-						c => {
-							let xdg_popup = xdg_popup.upgrade().unwrap();
-							let popup_data = PopupData::get(&xdg_popup);
-							let popup_data = popup_data.lock();
-							// panel_item.commit_popup(popup_data);
-							if c == 1 {
-								panel_item.new_popup(&xdg_popup, &*popup_data);
-							}
+					move || {
+						let xdg_popup = xdg_popup.upgrade().unwrap();
+						let popup_data = PopupData::get(&xdg_popup);
+						let popup_data = popup_data.lock();
+						// panel_item.commit_popup(popup_data);
+						panel_item.new_popup(&xdg_popup, &*popup_data);
+					},
+					move |commit_count| {
+						if commit_count == 0 {
+							xdg_surface
+								.upgrade()
+								.unwrap()
+								.configure(SERIAL_COUNTER.inc())
 						}
 					},
 				);
