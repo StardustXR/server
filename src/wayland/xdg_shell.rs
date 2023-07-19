@@ -260,6 +260,9 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 					0,
 					if toplevel.version() >= 2 {
 						vec![5, 6, 7, 8]
+							.into_iter()
+							.flat_map(u32::to_ne_bytes)
+							.collect()
 					} else {
 						vec![]
 					},
@@ -303,7 +306,7 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 									0,
 									0,
 									if toplevel.version() >= 2 {
-										vec![5, 6, 7, 8]
+										vec![5, 6, 7, 8].into_iter().flat_map(u32::to_ne_bytes).collect()
 									} else {
 										vec![]
 									},

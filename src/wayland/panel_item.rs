@@ -479,16 +479,13 @@ impl PanelItem {
 		// 		info.states
 		// 			.into_iter()
 		// 			.flat_map(|state| state.to_ne_bytes())
-		// 			.collect::<Vec<_>>(),
+		// 			.collect(),
 		// 	);
 		// }
 		xdg_toplevel.configure(
 			size.x as i32,
 			size.y as i32,
-			info.states
-				.into_iter()
-				.flat_map(|state| state.to_ne_bytes())
-				.collect::<Vec<_>>(),
+			info.states.into_iter().flat_map(u32::to_ne_bytes).collect(),
 		);
 		xdg_surface.configure(SERIAL_COUNTER.inc());
 		core_surface.flush_clients();
