@@ -40,8 +40,9 @@ use smithay::{
 			backend::Credentials, protocol::wl_surface::WlSurface, Resource, Weak as WlWeak,
 		},
 	},
+	utils::Rectangle,
 	wayland::compositor,
-	xwayland::X11Surface,
+	xwayland::{xwm::X11SurfaceError, X11Surface},
 };
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::{Arc, Weak};
@@ -224,7 +225,7 @@ impl WaylandBackend {
 			states
 				.into_iter()
 				.flat_map(|state| state.to_ne_bytes())
-				.collect::<Vec<_>>(),
+				.collect(),
 		);
 		xdg_surface.configure(SERIAL_COUNTER.inc());
 	}
@@ -321,6 +322,42 @@ pub struct X11Backend {
 	pub toplevel_parent: Option<X11Surface>,
 	pub toplevel: X11Surface,
 }
+impl X11Backend {
+	fn configure_toplevel(
+		&self,
+		size: Option<Vector2<u32>>,
+		states: Vec<u32>,
+	) -> Result<(), X11SurfaceError> {
+		self.toplevel.configure(
+			size.map(|s| Rectangle::from_loc_and_size((0, 0), (s.x as i32, s.y as i32))),
+		)?;
+		self.toplevel.set_maximized(states.contains(&1))?;
+		Ok(())
+	}
+
+	fn serialize_toplevel(&self) -> Result<Vec<u8>> {
+		let toplevel_state = (
+			None::<String>,
+			self.toplevel.title(),
+			None::<String>,
+			(
+				self.toplevel.geometry().size.w,
+				self.toplevel.geometry().size.h,
+			),
+			self.toplevel.min_size().map(|s| (s.w, s.h)),
+			self.toplevel.max_size().map(|s| (s.w, s.w)),
+		);
+		let data = serialize(&toplevel_state)?;
+		Ok(data)
+	}
+	fn wl_surface_from_id(&self, id: &SurfaceID) -> Option<WlSurface> {
+		match id {
+			SurfaceID::Cursor => None,
+			SurfaceID::Toplevel => self.toplevel.wl_surface(),
+			SurfaceID::Popup(_) => None,
+		}
+	}
+}
 
 #[derive(Debug)]
 pub enum Backend {
@@ -350,12 +387,9 @@ impl PanelItem {
 			.and_then(|env| startup_settings(&env));
 
 		let uid = nanoid!();
-		let node = Arc::new(Node::create(
-			&INTERNAL_CLIENT,
-			"/item/panel/item",
-			&uid,
-			true,
-		));
+		let node = Node::create(&INTERNAL_CLIENT, "/item/panel/item", &uid, true)
+			.add_to_scenegraph()
+			.unwrap();
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
 		let panel_item = Arc::new(PanelItem {
 			uid: uid.clone(),
@@ -426,7 +460,7 @@ impl PanelItem {
 	fn toplevel_wl_surface(&self) -> WlSurface {
 		match &self.backend {
 			Backend::Wayland(w) => w.toplevel_wl_surface(),
-			Backend::X11(_) => todo!(),
+			Backend::X11(x) => x.toplevel.wl_surface().unwrap(),
 		}
 	}
 	fn core_surface(&self) -> Option<Arc<CoreSurface>> {
@@ -442,7 +476,7 @@ impl PanelItem {
 	fn wl_surface_from_id(&self, id: &SurfaceID) -> Option<WlSurface> {
 		match &self.backend {
 			Backend::Wayland(w) => w.wl_surface_from_id(id),
-			Backend::X11(_) => todo!(),
+			Backend::X11(x) => x.wl_surface_from_id(id),
 		}
 	}
 	fn wl_surface_from_id_result(&self, id: &SurfaceID) -> Result<WlSurface> {
@@ -582,7 +616,7 @@ impl PanelItem {
 			keymap,
 			match &panel_item.backend {
 				Backend::Wayland(w) => w.input_surfaces(),
-				Backend::X11(_) => todo!(),
+				Backend::X11(_) => vec![panel_item.toplevel_wl_surface()],
 			},
 		);
 
@@ -608,7 +642,6 @@ impl PanelItem {
 		data: &[u8],
 	) -> Result<()> {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
-		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 
 		#[derive(Debug, Deserialize)]
 		struct ConfigureToplevelInfo {
@@ -620,28 +653,8 @@ impl PanelItem {
 
 		match &panel_item.backend {
 			Backend::Wayland(w) => w.configure_toplevel(info.size, info.states, info.bounds),
-			Backend::X11(_) => todo!(),
+			Backend::X11(x) => x.configure_toplevel(info.size, info.states)?,
 		}
-		let zero_size = Vector2::from([0; 2]);
-		let size = info.size.unwrap_or(zero_size);
-		// if size == zero_size && (info.states.contains(1) || info.states.contains(2)) {
-		// 	xdg_toplevel.configure(
-		// 		size.x as i32,
-		// 		size.y as i32,
-		// 		info.states
-		// 			.into_iter()
-		// 			.flat_map(|state| state.to_ne_bytes())
-		// 			.collect(),
-		// 	);
-		// }
-		xdg_toplevel.configure(
-			size.x as i32,
-			size.y as i32,
-			info.states.into_iter().flat_map(u32::to_ne_bytes).collect(),
-		);
-		xdg_surface.configure(SERIAL_COUNTER.inc());
-		core_surface.flush_clients();
-
 		Ok(())
 	}
 
@@ -674,7 +687,7 @@ impl PanelItem {
 		let Some(node) = self.node.upgrade() else { return };
 		let Ok(data) = (match &self.backend {
 			Backend::Wayland(w) => w.serialize_toplevel(),
-			Backend::X11(_) => todo!(),
+			Backend::X11(x) => x.serialize_toplevel(),
 		}) else {return};
 		let _ = node.send_remote_signal("commit_toplevel", &data);
 	}
@@ -724,16 +737,25 @@ impl ItemSpecialization for PanelItem {
 				.unwrap()
 			}
 			Backend::X11(x) => {
+				let size = (
+					x.toplevel.geometry().size.w as u32,
+					x.toplevel.geometry().size.h as u32,
+				);
 				let toplevel_state = (
 					None::<String>,
 					x.toplevel.title(),
 					None::<String>,
-					(x.toplevel.geometry().size.w, x.toplevel.geometry().size.h),
-					x.toplevel.min_size().map(|s| (s.w, s.h)),
-					x.toplevel.max_size().map(|s| (s.w, s.w)),
+					(
+						x.toplevel.geometry().size.w as u32,
+						x.toplevel.geometry().size.h as u32,
+					),
+					x.toplevel.min_size().map(|s| (s.w as u32, s.h as u32)),
+					x.toplevel.max_size().map(|s| (s.w as u32, s.w as u32)),
+					((0_i32, 0_i32), size),
+					vec![0_u32; 0],
 				);
 				let info = (
-					None::<String>,
+					None::<(Vector2<u32>, Vector2<i32>)>,
 					toplevel_state,
 					Vec::<PopupData>::new(),
 					None::<SurfaceID>,
