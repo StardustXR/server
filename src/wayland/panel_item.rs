@@ -675,7 +675,7 @@ impl PanelItem {
 		debug!("Set toplevel capabilities");
 		match &panel_item.backend {
 			Backend::Wayland(w) => w.set_toplevel_capabilities(capabilities),
-			Backend::X11(_) => todo!(),
+			_ => (),
 		}
 		core_surface.flush_clients();
 
