@@ -192,13 +192,13 @@ fn main() {
 	let mut wayland = wayland::Wayland::new().unwrap();
 	info!("Stardust ready!");
 
-	if let Some(project_dirs) = project_dirs.as_ref() {
+	let startup_child = if let Some(project_dirs) = project_dirs.as_ref() {
 		let startup_script_path = cli_args
 			.startup_script
 			.clone()
 			.and_then(|p| p.canonicalize().ok())
 			.unwrap_or_else(|| project_dirs.config_dir().join("startup"));
-		let _startup = Command::new(startup_script_path)
+		Command::new(startup_script_path)
 			.stdin(Stdio::null())
 			.env(
 				"FLAT_WAYLAND_DISPLAY",
@@ -218,8 +218,11 @@ fn main() {
 			.env("MOZ_ENABLE_WAYLAND", "1")
 			.env("CLUTTER_BACKEND", "wayland")
 			.env("SDL_VIDEODRIVER", "wayland")
-			.spawn();
-	}
+			.spawn()
+			.ok()
+	} else {
+		None
+	};
 
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
@@ -273,14 +276,18 @@ fn main() {
 		)
 	});
 
-	#[cfg(feature = "wayland")]
-	let _wayland = ManuallyDrop::new(wayland);
+	if let Some(mut startup_child) = startup_child {
+		let _ = startup_child.kill();
+	}
 
 	let _ = event_stop_tx.send(());
 	event_thread
 		.join()
 		.expect("Failed to cleanly shut down event loop")
 		.unwrap();
+	#[cfg(feature = "wayland")]
+	let _wayland = ManuallyDrop::new(wayland);
+
 	info!("Cleanly shut down Stardust");
 }
 
