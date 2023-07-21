@@ -220,11 +220,11 @@ impl XdgSurfaceData {
 			geometry: None,
 		}
 	}
-	pub fn get(xdg_surface: &XdgSurface) -> &Mutex<Self> {
-		xdg_surface.data::<Mutex<Self>>().unwrap()
+	pub fn get(xdg_surface: &XdgSurface) -> Option<&Mutex<Self>> {
+		xdg_surface.data::<Mutex<Self>>()
 	}
-	pub fn wl_surface(&self) -> WlSurface {
-		self.wl_surface.upgrade().unwrap()
+	pub fn wl_surface(&self) -> Option<WlSurface> {
+		self.wl_surface.upgrade().ok()
 	}
 	pub fn panel_item(&self) -> Option<Arc<PanelItem>> {
 		self.panel_item.upgrade()
@@ -274,23 +274,25 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 
 				let client_credentials = client.get_credentials(&state.display_handle).ok();
 				let seat_data = state.seats.get(&client.id()).unwrap().clone();
+				let Some(wl_surface) = xdg_surface_data.lock().wl_surface() else {return};
 				CoreSurface::add_to(
 					&state.display,
 					state.display_handle.clone(),
-					&xdg_surface_data.lock().wl_surface(),
+					&wl_surface,
 					{
 						let toplevel = toplevel.downgrade();
 						move || {
 							let toplevel = toplevel.upgrade().unwrap();
 							let toplevel_data = ToplevelData::get(&toplevel);
-							let xdg_surface = toplevel_data.lock().xdg_surface();
-							let xdg_surface_data = XdgSurfaceData::get(&xdg_surface);
-							let wl_surface = xdg_surface_data.lock().wl_surface();
+							let Some(xdg_surface) = toplevel_data.lock().xdg_surface() else {return};
+							let Some(xdg_surface_data) = XdgSurfaceData::get(&xdg_surface) else {return};
+							let Some(wl_surface) = xdg_surface_data.lock().wl_surface() else {return};
 
 							xdg_surface_data.lock().surface_id = SurfaceID::Toplevel;
+							let Some(backend) = WaylandBackend::create(toplevel.clone()) else {return};
 							let (node, panel_item) = PanelItem::create(
 								wl_surface.clone(),
-								Backend::Wayland(WaylandBackend::create(toplevel.clone())),
+								Backend::Wayland(backend),
 								client_credentials,
 								seat_data.clone(),
 							);
@@ -304,6 +306,7 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 							let toplevel = toplevel.upgrade().unwrap();
 							let toplevel_data = ToplevelData::get(&toplevel);
 							let Some(panel_item) = toplevel_data.lock().panel_item() else {
+								let Some(xdg_surface) = toplevel_data.lock().xdg_surface() else {return};
 								// if the wayland toplevel isn't mapped, hammer it again with a configure until it cooperates
 								toplevel.configure(
 									0,
@@ -314,7 +317,6 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 										vec![]
 									},
 								);
-								let xdg_surface = toplevel_data.lock().xdg_surface();
 								xdg_surface.configure(SERIAL_COUNTER.inc());
 								return
 							};
@@ -353,11 +355,10 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 				xdg_surface_data.lock().surface_id = SurfaceID::Popup(uid);
 				let panel_item = parent_data.panel_item().unwrap();
 				xdg_surface_data.lock().panel_item = Arc::downgrade(&panel_item);
-
-				panel_item.seat_data.new_surface(
-					&xdg_surface_data.lock().wl_surface(),
-					Arc::downgrade(&panel_item),
-				);
+				let Some(wl_surface) = xdg_surface_data.lock().wl_surface() else {return};
+				panel_item
+					.seat_data
+					.new_surface(&wl_surface, Arc::downgrade(&panel_item));
 				debug!(?xdg_popup, ?xdg_surface, "Create XDG popup");
 
 				let xdg_surface = xdg_surface.downgrade();
@@ -368,7 +369,7 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 					&xdg_surface_data.lock().wl_surface.upgrade().unwrap(),
 					move || {
 						let xdg_popup = xdg_popup.upgrade().unwrap();
-						let popup_data = PopupData::get(&xdg_popup);
+						let Some(popup_data) = PopupData::get(&xdg_popup) else {return};
 						let popup_data = popup_data.lock();
 						// panel_item.commit_popup(popup_data);
 						let Backend::Wayland(wayland_backend) = &panel_item.backend else {return};
@@ -444,21 +445,22 @@ impl ToplevelData {
 		toplevel.data::<Mutex<ToplevelData>>().unwrap()
 	}
 
-	pub fn xdg_surface(&self) -> XdgSurface {
-		self.xdg_surface.upgrade().unwrap()
+	pub fn xdg_surface(&self) -> Option<XdgSurface> {
+		self.xdg_surface.upgrade().ok()
 	}
 	fn panel_item(&self) -> Option<Arc<PanelItem>> {
-		let xdg_surface = self.xdg_surface();
-		let xdg_surface_data = XdgSurfaceData::get(&xdg_surface).lock();
+		let xdg_surface = self.xdg_surface()?;
+		let xdg_surface_data = XdgSurfaceData::get(&xdg_surface)?.lock();
 		xdg_surface_data.panel_item()
 	}
 }
 impl Serialize for ToplevelData {
 	fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-		let xdg_surface = self.xdg_surface();
-		let xdg_surface_data = XdgSurfaceData::get(&xdg_surface).lock();
+		let Some(xdg_surface) = self.xdg_surface() else {return serializer.serialize_none()};
+		let Some(xdg_surface_data) = XdgSurfaceData::get(&xdg_surface) else {return serializer.serialize_none()};
+		let xdg_surface_data = xdg_surface_data.lock();
 		let geometry = xdg_surface_data.geometry.clone();
-		let wl_surface = xdg_surface_data.wl_surface();
+		let Some(wl_surface) = xdg_surface_data.wl_surface() else {return serde_error::<S>("Wayland surface not found")};
 		let Some(core_surface) = CoreSurface::from_wl_surface(&wl_surface) else {return serde_error::<S>("Core surface not found")};
 		let Some(size) = core_surface.size() else {return serializer.serialize_none()};
 		let geometry = geometry.unwrap_or_else(|| Geometry {
@@ -604,21 +606,25 @@ impl PopupData {
 			xdg_surface: xdg_surface.downgrade(),
 		}
 	}
-	pub fn get(popup: &XdgPopup) -> &Mutex<Self> {
-		popup.data::<Mutex<Self>>().unwrap()
+	pub fn get(popup: &XdgPopup) -> Option<&Mutex<Self>> {
+		popup.data::<Mutex<Self>>()
 	}
-	pub fn xdg_surface(&self) -> XdgSurface {
-		self.xdg_surface.upgrade().unwrap()
+	pub fn xdg_surface(&self) -> Option<XdgSurface> {
+		self.xdg_surface.upgrade().ok()
 	}
 
 	fn panel_item(&self) -> Option<Arc<PanelItem>> {
-		XdgSurfaceData::get(&self.xdg_surface()).lock().panel_item()
+		XdgSurfaceData::get(&self.xdg_surface()?)?
+			.lock()
+			.panel_item()
 	}
 	// fn get_parent(&self) -> Option<XdgSurface> {
 	// 	self.parent.as_ref()?.upgrade().ok()
 	// }
-	pub fn wl_surface(&self) -> WlSurface {
-		XdgSurfaceData::get(&self.xdg_surface()).lock().wl_surface()
+	pub fn wl_surface(&self) -> Option<WlSurface> {
+		XdgSurfaceData::get(&self.xdg_surface()?)?
+			.lock()
+			.wl_surface()
 	}
 
 	pub fn positioner_data(&self) -> Option<PositionerData> {

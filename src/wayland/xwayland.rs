@@ -28,8 +28,8 @@ pub static DISPLAY: OnceCell<String> = OnceCell::new();
 
 pub struct XWaylandState {
 	pub display: u32,
-	xwayland: XWayland,
-	event_loop_signal: LoopSignal,
+	_xwayland: XWayland,
+	_event_loop_signal: LoopSignal,
 	event_loop_join: Option<JoinHandle<Result<(), calloop::Error>>>,
 }
 impl XWaylandState {
@@ -71,8 +71,8 @@ impl XWaylandState {
 			)?;
 			let _ = tx.send(XWaylandState {
 				display,
-				xwayland,
-				event_loop_signal: event_loop.get_signal(),
+				_xwayland: xwayland,
+				_event_loop_signal: event_loop.get_signal(),
 				event_loop_join: None,
 			});
 			let wayland_display_handle = wayland_display.lock().handle();
@@ -82,7 +82,7 @@ impl XWaylandState {
 				wm: None,
 				seat: None,
 			};
-			event_loop.run(Duration::from_secs(60 * 60), &mut handler, |_| ())
+			event_loop.run(Duration::from_millis(100), &mut handler, |_| ())
 		});
 
 		let mut state = rx.blocking_recv()?;
@@ -92,12 +92,12 @@ impl XWaylandState {
 		Ok(state)
 	}
 }
-impl Drop for XWaylandState {
-	fn drop(&mut self) {
-		self.xwayland.shutdown();
-		self.event_loop_signal.stop();
-	}
-}
+// impl Drop for XWaylandState {
+// 	fn drop(&mut self) {
+// 		self.xwayland.shutdown();
+// 		self.event_loop_signal.stop();
+// 	}
+// }
 
 struct XWaylandHandler {
 	wayland_display: Arc<Mutex<Display<WaylandState>>>,

@@ -156,50 +156,58 @@ pub enum RecommendedState {
 #[derive(Debug)]
 pub struct WaylandBackend {
 	toplevel: WlWeak<XdgToplevel>,
+	toplevel_wl_surface: WlWeak<WlSurface>,
 	popups: Mutex<FxHashMap<String, WlWeak<XdgPopup>>>,
 	cursor: Mutex<Option<WlWeak<WlSurface>>>,
 }
 impl WaylandBackend {
-	pub fn create(toplevel: XdgToplevel) -> Self {
-		WaylandBackend {
+	pub fn create(toplevel: XdgToplevel) -> Option<Self> {
+		let toplevel_wl_surface =
+			XdgSurfaceData::get(&ToplevelData::get(&toplevel).lock().xdg_surface()?)?
+				.lock()
+				.wl_surface()?
+				.downgrade();
+		Some(WaylandBackend {
 			toplevel: toplevel.downgrade(),
+			toplevel_wl_surface,
 			popups: Mutex::new(FxHashMap::default()),
 			cursor: Mutex::new(None),
-		}
+		})
 	}
-	fn toplevel(&self) -> XdgToplevel {
-		self.toplevel.upgrade().unwrap()
+	fn toplevel(&self) -> Option<XdgToplevel> {
+		self.toplevel.upgrade().ok()
 	}
-	fn toplevel_xdg_surface(&self) -> XdgSurface {
-		let toplevel = self.toplevel();
+	fn toplevel_xdg_surface(&self) -> Option<XdgSurface> {
+		let toplevel = self.toplevel()?;
 		let data = ToplevelData::get(&toplevel).lock();
 		data.xdg_surface()
 	}
-	fn toplevel_wl_surface(&self) -> WlSurface {
-		XdgSurfaceData::get(&self.toplevel_xdg_surface())
-			.lock()
-			.wl_surface()
+	fn toplevel_wl_surface(&self) -> Option<WlSurface> {
+		self.toplevel_wl_surface.upgrade().ok()
 	}
 	fn wl_surface_from_id(&self, id: &SurfaceID) -> Option<WlSurface> {
 		match id {
 			SurfaceID::Cursor => self.cursor.lock().clone()?.upgrade().ok(),
-			SurfaceID::Toplevel => Some(self.toplevel_wl_surface()),
+			SurfaceID::Toplevel => self.toplevel_wl_surface(),
 			SurfaceID::Popup(popup) => {
 				let popups = self.popups.lock();
 				let popup = popups.get(popup)?.upgrade().ok()?;
-				let surf = PopupData::get(&popup).lock().wl_surface();
-				Some(surf)
+				let wl_surface = PopupData::get(&popup)?.lock().wl_surface();
+				wl_surface
 			}
 		}
 	}
 	fn input_surfaces(&self) -> Vec<WlSurface> {
-		let mut surfaces = vec![self.toplevel_wl_surface()];
+		let mut surfaces = self
+			.toplevel_wl_surface()
+			.map(|s| vec![s])
+			.unwrap_or_default();
 		surfaces.extend(self.popups.lock().values().filter_map(|p| {
 			let popup = p.upgrade().ok()?;
-			let popup_data = PopupData::get(&popup).lock();
-			let xdg_surface = popup_data.xdg_surface();
-			let xdg_surface_data = XdgSurfaceData::get(&xdg_surface).lock();
-			Some(xdg_surface_data.wl_surface())
+			let popup_data = PopupData::get(&popup)?.lock();
+			let xdg_surface = popup_data.xdg_surface()?;
+			let xdg_surface_data = XdgSurfaceData::get(&xdg_surface)?.lock();
+			xdg_surface_data.wl_surface()
 		}));
 		surfaces
 	}
@@ -211,7 +219,7 @@ impl WaylandBackend {
 		bounds: Option<Vector2<u32>>,
 	) {
 		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
-		let xdg_surface = self.toplevel_xdg_surface();
+		let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
 		debug!(?size, ?states, ?bounds, "Configure toplevel info");
 		if let Some(bounds) = bounds {
 			if xdg_toplevel.version() > EVT_CONFIGURE_BOUNDS_SINCE {
@@ -231,15 +239,19 @@ impl WaylandBackend {
 	}
 
 	fn serialize_toplevel(&self) -> Result<Vec<u8>> {
-		let toplevel = self.toplevel();
+		let toplevel = self
+			.toplevel()
+			.ok_or_else(|| eyre!("Toplevel does not exist"))?;
 		let state = ToplevelData::get(&toplevel);
 		let data = serialize(&state.lock().clone())?;
 		Ok(data)
 	}
 
 	fn set_toplevel_capabilities(&self, capabilities: Vec<u8>) {
-		self.toplevel().wm_capabilities(capabilities);
-		self.toplevel_xdg_surface().configure(SERIAL_COUNTER.inc());
+		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
+		xdg_toplevel.wm_capabilities(capabilities);
+		let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
+		xdg_surface.configure(SERIAL_COUNTER.inc());
 	}
 
 	pub fn new_popup(&self, panel_item: &PanelItem, popup: &XdgPopup, data: &PopupData) {
@@ -259,13 +271,15 @@ impl WaylandBackend {
 		);
 	}
 	pub fn drop_popup(&self, panel_item: &PanelItem, uid: &str) {
-		if let Some(popup) = self
-			.popups
-			.lock()
-			.remove(uid)
-			.and_then(|popup| popup.upgrade().ok()?.data::<Arc<PopupData>>().cloned())
-		{
-			panel_item.seat_data.drop_surface(&popup.wl_surface());
+		'seat_drop: {
+			let Some(popup) = self
+				.popups
+				.lock()
+				.remove(uid) else {break 'seat_drop};
+			let Some(popup) = popup.upgrade().ok() else {break 'seat_drop};
+			let Some(popup) = popup.data::<Arc<PopupData>>().cloned() else {break 'seat_drop};
+			let Some(wl_surface) = popup.wl_surface() else {break 'seat_drop};
+			panel_item.seat_data.drop_surface(&wl_surface);
 		}
 
 		let Some(node) = panel_item.node.upgrade() else { return };
@@ -457,14 +471,14 @@ impl PanelItem {
 		Some(panel_item.clone())
 	}
 
-	fn toplevel_wl_surface(&self) -> WlSurface {
+	fn toplevel_wl_surface(&self) -> Option<WlSurface> {
 		match &self.backend {
 			Backend::Wayland(w) => w.toplevel_wl_surface(),
-			Backend::X11(x) => x.toplevel.wl_surface().unwrap(),
+			Backend::X11(x) => x.toplevel.wl_surface(),
 		}
 	}
 	fn core_surface(&self) -> Option<Arc<CoreSurface>> {
-		compositor::with_states(&self.toplevel_wl_surface(), |data| {
+		compositor::with_states(&self.toplevel_wl_surface()?, |data| {
 			data.data_map.get::<Arc<CoreSurface>>().cloned()
 		})
 	}
@@ -616,7 +630,10 @@ impl PanelItem {
 			keymap,
 			match &panel_item.backend {
 				Backend::Wayland(w) => w.input_surfaces(),
-				Backend::X11(_) => vec![panel_item.toplevel_wl_surface()],
+				Backend::X11(_) => panel_item
+					.toplevel_wl_surface()
+					.map(|s| vec![s])
+					.unwrap_or_default(),
 			},
 		);
 
@@ -666,7 +683,8 @@ impl PanelItem {
 		let Some(panel_item) = PanelItem::from_node(node) else { return Ok(()) };
 		let Some(core_surface) = panel_item.core_surface() else { return Ok(()) };
 		if let Backend::Wayland(w) = &panel_item.backend {
-			if w.toplevel().version() < EVT_WM_CAPABILITIES_SINCE {
+			let Some(toplevel) = w.toplevel() else {return Ok(())};
+			if toplevel.version() < EVT_WM_CAPABILITIES_SINCE {
 				return Ok(());
 			}
 		}
@@ -707,17 +725,17 @@ impl PanelItem {
 	}
 
 	pub fn on_drop(&self) {
-		let toplevel = self.toplevel_wl_surface();
+		let Some(toplevel) = self.toplevel_wl_surface() else {return};
 		self.seat_data.drop_surface(&toplevel);
 
-		debug!("Drop panel item");
+		debug!("Dropped panel item gracefully");
 	}
 }
 impl ItemSpecialization for PanelItem {
-	fn serialize_start_data(&self, id: &str) -> Vec<u8> {
+	fn serialize_start_data(&self, id: &str) -> Option<Vec<u8>> {
 		match &self.backend {
 			Backend::Wayland(w) => {
-				let toplevel = w.toplevel();
+				let toplevel = w.toplevel()?;
 				let toplevel_state = ToplevelData::get(&toplevel);
 				let toplevel_state = toplevel_state.lock().clone();
 
@@ -734,7 +752,7 @@ impl ItemSpecialization for PanelItem {
 						keyboard_grab,
 					),
 				))
-				.unwrap()
+				.ok()
 			}
 			Backend::X11(x) => {
 				let size = (
@@ -761,7 +779,7 @@ impl ItemSpecialization for PanelItem {
 					None::<SurfaceID>,
 					None::<SurfaceID>,
 				);
-				serialize((id, info)).unwrap()
+				serialize((id, info)).ok()
 			}
 		}
 	}

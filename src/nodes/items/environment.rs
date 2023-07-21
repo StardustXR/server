@@ -54,8 +54,8 @@ impl EnvironmentItem {
 	}
 }
 impl ItemSpecialization for EnvironmentItem {
-	fn serialize_start_data(&self, id: &str) -> Vec<u8> {
-		serialize((id, self.path.as_str())).unwrap()
+	fn serialize_start_data(&self, id: &str) -> Option<Vec<u8>> {
+		serialize((id, self.path.as_str())).ok()
 	}
 }
 

@@ -172,7 +172,7 @@ impl Drop for Item {
 }
 
 pub trait ItemSpecialization {
-	fn serialize_start_data(&self, id: &str) -> Vec<u8>;
+	fn serialize_start_data(&self, id: &str) -> Option<Vec<u8>>;
 }
 
 pub enum ItemType {
@@ -240,10 +240,8 @@ impl ItemUI {
 			self.item_aliases.add(item.uid.clone(), &alias_node);
 		}
 
-		let _ = node.send_remote_signal(
-			"create_item",
-			&item.specialization.serialize_start_data(&item.uid),
-		);
+		let Some(serialized_data) =  item.specialization.serialize_start_data(&item.uid) else {return};
+		let _ = node.send_remote_signal("create_item", &serialized_data);
 	}
 	fn handle_destroy_item(&self, item: &Item) {
 		self.item_aliases.remove(&item.uid);
@@ -360,10 +358,9 @@ impl ItemAcceptor {
 		if let Ok(alias_node) = item.make_alias(&client, &node.path) {
 			self.accepted_aliases.add(item.uid.clone(), &alias_node);
 		}
-		let _ = node.send_remote_signal(
-			"capture",
-			&item.specialization.serialize_start_data(&item.uid),
-		);
+
+		let Some(serialized_data) =  item.specialization.serialize_start_data(&item.uid) else {return};
+		let _ = node.send_remote_signal("capture", &serialized_data);
 	}
 	fn handle_release(&self, item: &Item) {
 		let Some(node) = self.node.upgrade() else { return };
