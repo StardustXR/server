@@ -17,7 +17,6 @@ use clap::Parser;
 use directories::ProjectDirs;
 use once_cell::sync::OnceCell;
 use stardust_xr::server;
-use std::mem::ManuallyDrop;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -189,37 +188,43 @@ fn main() {
 	let _tokio_handle = event_loop_info.tokio_handle.enter();
 
 	#[cfg(feature = "wayland")]
-	let mut wayland = wayland::Wayland::new().unwrap();
+	let mut wayland = Some(wayland::Wayland::new().expect("Could not initialize wayland"));
 	info!("Stardust ready!");
 
-	let startup_child = if let Some(project_dirs) = project_dirs.as_ref() {
+	let mut startup_child = if let Some(project_dirs) = project_dirs.as_ref() {
 		let startup_script_path = cli_args
 			.startup_script
 			.clone()
 			.and_then(|p| p.canonicalize().ok())
 			.unwrap_or_else(|| project_dirs.config_dir().join("startup"));
-		Command::new(startup_script_path)
-			.stdin(Stdio::null())
-			.env(
-				"FLAT_WAYLAND_DISPLAY",
-				std::env::var_os("WAYLAND_DISPLAY").unwrap_or_default(),
-			)
-			.env("WAYLAND_DISPLAY", &wayland.socket_name)
-			.env("DISPLAY", format!(":{}", wayland.xwayland_state.display))
-			.env(
-				"STARDUST_INSTANCE",
-				event_loop_info
-					.socket_path
-					.file_name()
-					.expect("Stardust socket path not found"),
-			)
-			.env("GDK_BACKEND", "wayland")
-			.env("QT_QPA_PLATFORM", "wayland")
-			.env("MOZ_ENABLE_WAYLAND", "1")
-			.env("CLUTTER_BACKEND", "wayland")
-			.env("SDL_VIDEODRIVER", "wayland")
-			.spawn()
-			.ok()
+		let mut startup_command = Command::new(startup_script_path);
+
+		startup_command.stdin(Stdio::null());
+		startup_command.env(
+			"FLAT_WAYLAND_DISPLAY",
+			std::env::var_os("WAYLAND_DISPLAY").unwrap_or_default(),
+		);
+		startup_command.env(
+			"STARDUST_INSTANCE",
+			event_loop_info
+				.socket_path
+				.file_name()
+				.expect("Stardust socket path not found"),
+		);
+		#[cfg(feature = "wayland")]
+		{
+			startup_command.env("WAYLAND_DISPLAY", &wayland.as_ref().unwrap().socket_name);
+			startup_command.env(
+				"DISPLAY",
+				format!(":{}", wayland.as_ref().unwrap().xwayland_state.display),
+			);
+			startup_command.env("GDK_BACKEND", "wayland");
+			startup_command.env("QT_QPA_PLATFORM", "wayland");
+			startup_command.env("MOZ_ENABLE_WAYLAND", "1");
+			startup_command.env("CLUTTER_BACKEND", "wayland");
+			startup_command.env("SDL_VIDEODRIVER", "wayland");
+		}
+		startup_command.spawn().ok()
 	} else {
 		None
 	};
@@ -227,14 +232,15 @@ fn main() {
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
 	debug_span!("StereoKit").in_scope(|| {
-		sk.run(
-			|sk| {
+		sk.run_stateful(
+			&mut wayland,
+			move |wayland, _, sk| {
 				let _span = debug_span!("StereoKit step");
 				let _span = _span.enter();
 
 				hmd::frame(sk);
 				#[cfg(feature = "wayland")]
-				wayland.frame_event(sk);
+				wayland.as_mut().unwrap().frame_event(sk);
 				destroy_queue::clear();
 
 				if let Some(mouse_pointer) = &mouse_pointer {
@@ -264,29 +270,32 @@ fn main() {
 				);
 
 				#[cfg(feature = "wayland")]
-				wayland.update(sk);
+				wayland.as_mut().unwrap().update(sk);
 				drawable::draw(sk);
 				audio::update(sk);
 				#[cfg(feature = "wayland")]
-				wayland.make_context_current();
+				wayland.as_mut().unwrap().make_context_current();
 			},
-			|_| {
+			|wayland, _sk| {
 				info!("Cleanly shut down StereoKit");
+
+				if let Some(mut startup_child) = startup_child.take() {
+					let _ = startup_child.kill();
+				}
+
+				#[cfg(feature = "wayland")]
+				wayland.take();
 			},
 		)
 	});
-
-	if let Some(mut startup_child) = startup_child {
-		let _ = startup_child.kill();
-	}
 
 	let _ = event_stop_tx.send(());
 	event_thread
 		.join()
 		.expect("Failed to cleanly shut down event loop")
 		.unwrap();
-	#[cfg(feature = "wayland")]
-	let _wayland = ManuallyDrop::new(wayland);
+	// #[cfg(feature = "wayland")]
+	// let _wayland = ManuallyDrop::new(wayland);
 
 	info!("Cleanly shut down Stardust");
 }
