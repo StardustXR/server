@@ -373,6 +373,7 @@ impl X11Backend {
 	}
 }
 
+// TODO: abstract this away into a trait so other platforms e.g. arcan/android/windows/xrdesktop can also be 2D backends
 #[derive(Debug)]
 pub enum Backend {
 	Wayland(WaylandBackend),
