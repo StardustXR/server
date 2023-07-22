@@ -1,7 +1,7 @@
 [package]
 edition = "2021"
 name = "stardust-xr-server"
-version = "0.42.0"
+version = "0.42.1"
 authors = ["Nova King <technobaboo@proton.me>"]
 description = "Stardust XR reference display server"
 license = "GPLv2"
@@ -70,12 +70,7 @@ version = "0.16.7"
 git = "https://github.com/smithay/smithay.git" # Until we get stereokit to understand OES samplers and external textures
 # path = "../smithay"
 default-features = false
-features = [
-    "desktop",
-    "backend_drm",
-    "renderer_gl",
-    "wayland_frontend",
-]
+features = ["desktop", "backend_drm", "renderer_gl", "wayland_frontend"]
 version = "*"
 optional = true
 
