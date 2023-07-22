@@ -8,7 +8,7 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::{
 	reexports::{
-		calloop::{self, EventLoop, LoopSignal},
+		calloop::{EventLoop, LoopSignal},
 		wayland_protocols::xdg::shell::server::xdg_toplevel,
 		wayland_server::{Display, DisplayHandle, Resource, WEnum},
 		x11rb::protocol::xproto::Window,
@@ -21,16 +21,14 @@ use smithay::{
 	},
 };
 use std::{ffi::OsStr, iter::empty, sync::Arc, time::Duration};
-use tokio::{sync::oneshot, task::JoinHandle};
+use tokio::sync::oneshot;
 use tracing::debug;
 
 pub static DISPLAY: OnceCell<String> = OnceCell::new();
 
 pub struct XWaylandState {
 	pub display: u32,
-	_xwayland: XWayland,
-	_event_loop_signal: LoopSignal,
-	event_loop_join: Option<JoinHandle<Result<(), calloop::Error>>>,
+	event_loop_signal: LoopSignal,
 }
 impl XWaylandState {
 	pub fn create(
@@ -41,7 +39,7 @@ impl XWaylandState {
 
 		let (tx, rx) = oneshot::channel();
 
-		let event_loop_join = tokio::task::spawn_blocking(move || {
+		tokio::task::spawn_blocking(move || {
 			let mut event_loop: EventLoop<XWaylandHandler> = EventLoop::try_new()?;
 			let (xwayland, connection) = XWayland::new(&dh);
 			let handle = event_loop.handle();
@@ -71,9 +69,7 @@ impl XWaylandState {
 			)?;
 			let _ = tx.send(XWaylandState {
 				display,
-				_xwayland: xwayland,
-				_event_loop_signal: event_loop.get_signal(),
-				event_loop_join: None,
+				event_loop_signal: event_loop.get_signal(),
 			});
 			let wayland_display_handle = wayland_display.lock().handle();
 			let mut handler = XWaylandHandler {
@@ -85,19 +81,17 @@ impl XWaylandState {
 			event_loop.run(Duration::from_millis(100), &mut handler, |_| ())
 		});
 
-		let mut state = rx.blocking_recv()?;
-		state.event_loop_join.replace(event_loop_join);
+		let state = rx.blocking_recv()?;
 		let _ = DISPLAY.set(format!(":{}", state.display));
 
 		Ok(state)
 	}
 }
-// impl Drop for XWaylandState {
-// 	fn drop(&mut self) {
-// 		self.xwayland.shutdown();
-// 		self.event_loop_signal.stop();
-// 	}
-// }
+impl Drop for XWaylandState {
+	fn drop(&mut self) {
+		self.event_loop_signal.stop();
+	}
+}
 
 struct XWaylandHandler {
 	wayland_display: Arc<Mutex<Display<WaylandState>>>,
