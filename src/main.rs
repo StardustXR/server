@@ -214,6 +214,7 @@ fn main() {
 		#[cfg(feature = "wayland")]
 		{
 			startup_command.env("WAYLAND_DISPLAY", &wayland.as_ref().unwrap().socket_name);
+			#[cfg(feature = "xwayland")]
 			startup_command.env(
 				"DISPLAY",
 				format!(":{}", wayland.as_ref().unwrap().xwayland_state.display),

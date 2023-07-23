@@ -40,8 +40,11 @@ use smithay::{
 			backend::Credentials, protocol::wl_surface::WlSurface, Resource, Weak as WlWeak,
 		},
 	},
-	utils::Rectangle,
 	wayland::compositor,
+};
+#[cfg(feature = "xwayland")]
+use smithay::{
+	utils::Rectangle,
 	xwayland::{xwm::X11SurfaceError, X11Surface},
 };
 use stardust_xr::schemas::flex::{deserialize, serialize};
@@ -331,11 +334,14 @@ impl WaylandBackend {
 		*self.cursor.lock() = surface.map(|surf| surf.downgrade());
 	}
 }
+
+#[cfg(feature = "xwayland")]
 #[derive(Debug)]
 pub struct X11Backend {
 	pub toplevel_parent: Option<X11Surface>,
 	pub toplevel: X11Surface,
 }
+#[cfg(feature = "xwayland")]
 impl X11Backend {
 	fn configure_toplevel(
 		&self,
@@ -377,6 +383,7 @@ impl X11Backend {
 #[derive(Debug)]
 pub enum Backend {
 	Wayland(WaylandBackend),
+	#[cfg(feature = "xwayland")]
 	X11(X11Backend),
 }
 
@@ -475,6 +482,7 @@ impl PanelItem {
 	fn toplevel_wl_surface(&self) -> Option<WlSurface> {
 		match &self.backend {
 			Backend::Wayland(w) => w.toplevel_wl_surface(),
+			#[cfg(feature = "xwayland")]
 			Backend::X11(x) => x.toplevel.wl_surface(),
 		}
 	}
@@ -491,6 +499,7 @@ impl PanelItem {
 	fn wl_surface_from_id(&self, id: &SurfaceID) -> Option<WlSurface> {
 		match &self.backend {
 			Backend::Wayland(w) => w.wl_surface_from_id(id),
+			#[cfg(feature = "xwayland")]
 			Backend::X11(x) => x.wl_surface_from_id(id),
 		}
 	}
@@ -631,6 +640,7 @@ impl PanelItem {
 			keymap,
 			match &panel_item.backend {
 				Backend::Wayland(w) => w.input_surfaces(),
+				#[cfg(feature = "xwayland")]
 				Backend::X11(_) => panel_item
 					.toplevel_wl_surface()
 					.map(|s| vec![s])
@@ -671,6 +681,7 @@ impl PanelItem {
 
 		match &panel_item.backend {
 			Backend::Wayland(w) => w.configure_toplevel(info.size, info.states, info.bounds),
+			#[cfg(feature = "xwayland")]
 			Backend::X11(x) => x.configure_toplevel(info.size, info.states)?,
 		}
 		Ok(())
@@ -706,6 +717,7 @@ impl PanelItem {
 		let Some(node) = self.node.upgrade() else { return };
 		let Ok(data) = (match &self.backend {
 			Backend::Wayland(w) => w.serialize_toplevel(),
+			#[cfg(feature = "xwayland")]
 			Backend::X11(x) => x.serialize_toplevel(),
 		}) else {return};
 		let _ = node.send_remote_signal("commit_toplevel", &data);
@@ -755,6 +767,7 @@ impl ItemSpecialization for PanelItem {
 				))
 				.ok()
 			}
+			#[cfg(feature = "xwayland")]
 			Backend::X11(x) => {
 				let size = (
 					x.toplevel.geometry().size.w as u32,
