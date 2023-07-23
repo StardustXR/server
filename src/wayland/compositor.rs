@@ -2,11 +2,12 @@ use crate::wayland::surface::CoreSurface;
 
 use super::state::{ClientState, WaylandState};
 use portable_atomic::{AtomicU32, Ordering};
+#[cfg(feature = "xwayland")]
+use smithay::xwayland::XWaylandClientData;
 use smithay::{
 	delegate_compositor,
 	reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
 	wayland::compositor::{self, CompositorClientState, CompositorHandler, CompositorState},
-	xwayland::XWaylandClientData,
 };
 use std::sync::Arc;
 use tracing::debug;
@@ -41,9 +42,11 @@ impl CompositorHandler for WaylandState {
 	fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
 		if let Some(client_state) = client.get_data::<ClientState>() {
 			&client_state.compositor_state
-		} else if let Some(xwayland_client_data) = client.get_data::<XWaylandClientData>() {
-			&xwayland_client_data.compositor_state
 		} else {
+			#[cfg(feature = "xwayland")]
+			if let Some(xwayland_client_data) = client.get_data::<XWaylandClientData>() {
+				return &xwayland_client_data.compositor_state;
+			}
 			unimplemented!()
 		}
 	}

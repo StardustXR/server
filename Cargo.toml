@@ -13,8 +13,9 @@ name = "stardust-xr-server"
 path = "src/main.rs"
 
 [features]
-default = ["wayland"]
+default = ["wayland", "xwayland"]
 wayland = ["dep:smithay", "dep:xkbcommon"]
+xwayland = ["smithay/xwayland"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-chrome"]
 
@@ -70,13 +71,7 @@ version = "0.16.7"
 git = "https://github.com/smithay/smithay.git" # Until we get stereokit to understand OES samplers and external textures
 # path = "../smithay"
 default-features = false
-features = [
-    "desktop",
-    "backend_drm",
-    "renderer_gl",
-    "wayland_frontend",
-    "xwayland",
-]
+features = ["desktop", "backend_drm", "renderer_gl", "wayland_frontend"]
 version = "*"
 optional = true
 

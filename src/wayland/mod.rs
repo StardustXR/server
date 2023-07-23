@@ -8,9 +8,9 @@ mod state;
 mod surface;
 // mod xdg_activation;
 mod xdg_shell;
+#[cfg(feature = "xwayland")]
 pub mod xwayland;
 
-use self::xwayland::XWaylandState;
 use self::{state::WaylandState, surface::CORE_SURFACES};
 use crate::{core::task, wayland::state::ClientState};
 use color_eyre::eyre::{ensure, Result};
@@ -70,7 +70,8 @@ pub struct Wayland {
 	renderer: GlesRenderer,
 	dmabuf_rx: UnboundedReceiver<Dmabuf>,
 	wayland_state: Arc<Mutex<WaylandState>>,
-	pub xwayland_state: XWaylandState,
+	#[cfg(feature = "xwayland")]
+	pub xwayland_state: xwayland::XWaylandState,
 }
 impl Wayland {
 	pub fn new() -> Result<Self> {
@@ -88,7 +89,8 @@ impl Wayland {
 
 		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
 		let display = Arc::new(Mutex::new(display));
-		let xwayland_state = XWaylandState::create(display.clone(), &display_handle).unwrap();
+		#[cfg(feature = "xwayland")]
+		let xwayland_state = xwayland::XWaylandState::create(display.clone(), &display_handle).unwrap();
 		let wayland_state =
 			WaylandState::new(display.clone(), display_handle, &renderer, dmabuf_tx);
 
@@ -116,6 +118,7 @@ impl Wayland {
 			renderer,
 			dmabuf_rx,
 			wayland_state,
+			#[cfg(feature = "xwayland")]
 			xwayland_state,
 		})
 	}
