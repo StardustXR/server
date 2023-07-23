@@ -1,11 +1,10 @@
 use super::{
-	panel_item::{Backend, PanelItem},
-	state::WaylandState,
+	state::{ClientState, WaylandState},
 	surface::CoreSurface,
 	GLOBAL_DESTROY_QUEUE, SERIAL_COUNTER,
 };
 use crate::core::task;
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use mint::Vector2;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
@@ -29,11 +28,12 @@ use smithay::{
 };
 use std::{
 	collections::VecDeque,
-	sync::{Arc, Weak},
+	sync::Arc,
 	time::{Duration, Instant},
 };
+use tokio::sync::watch;
 use tracing::{debug, warn};
-use xkbcommon::xkb::{self, Keymap};
+use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};
 
 pub struct KeyboardInfo {
 	keymap: KeymapFile,
@@ -89,7 +89,7 @@ unsafe impl Send for KeyboardInfo {}
 
 #[derive(Debug, Clone, Copy)]
 pub enum PointerEvent {
-	Motion(Vector2<f64>),
+	Motion(Vector2<f32>),
 	Button {
 		button: u32,
 		state: u32,
@@ -108,21 +108,28 @@ pub enum KeyboardEvent {
 const POINTER_EVENT_TIMEOUT: Duration = Duration::from_secs(1);
 struct SurfaceInfo {
 	wl_surface: WlWeak<WlSurface>,
-	panel_item: Weak<PanelItem>,
+	cursor_sender: watch::Sender<Option<CursorInfo>>,
 	pointer_queue: VecDeque<PointerEvent>,
 	pointer_latest_event: Instant,
 	keyboard_queue: VecDeque<KeyboardEvent>,
 	keyboard_info: Option<KeyboardInfo>,
 }
 impl SurfaceInfo {
-	fn new(wl_surface: &WlSurface, panel_item: Weak<PanelItem>) -> Self {
+	fn new(wl_surface: &WlSurface, cursor_sender: watch::Sender<Option<CursorInfo>>) -> Self {
 		SurfaceInfo {
 			wl_surface: wl_surface.downgrade(),
-			panel_item,
+			cursor_sender,
 			pointer_queue: VecDeque::new(),
 			pointer_latest_event: Instant::now(),
 			keyboard_queue: VecDeque::new(),
 			keyboard_info: None,
+		}
+	}
+	fn flush(&self) {
+		if let Some(client) = self.wl_surface.upgrade().ok().and_then(|s| s.client()) {
+			if let Some(client_data) = client.get_data::<ClientState>() {
+				client_data.flush();
+			}
 		}
 	}
 	fn handle_pointer_events(&mut self, pointer: &WlPointer, mut locked: bool) -> bool {
@@ -139,16 +146,16 @@ impl SurfaceInfo {
 					pointer.enter(
 						SERIAL_COUNTER.inc(),
 						&focus,
-						pos.x.clamp(0.0, focus_size.x as f64),
-						pos.y.clamp(0.0, focus_size.y as f64),
+						(pos.x as f64).clamp(0.0, focus_size.x as f64),
+						(pos.y as f64).clamp(0.0, focus_size.y as f64),
 					);
 					locked = true;
 				}
 				(true, PointerEvent::Motion(pos)) => {
 					pointer.motion(
 						0,
-						pos.x.clamp(0.0, focus_size.x as f64),
-						pos.y.clamp(0.0, focus_size.y as f64),
+						(pos.x as f64).clamp(0.0, focus_size.x as f64),
+						(pos.y as f64).clamp(0.0, focus_size.y as f64),
 					);
 					if pointer.version() >= wl_pointer::EVT_FRAME_SINCE {
 						pointer.frame();
@@ -206,6 +213,7 @@ impl SurfaceInfo {
 			pointer.leave(SERIAL_COUNTER.inc(), &focus);
 			locked = false;
 		}
+		self.flush();
 
 		locked
 	}
@@ -239,6 +247,7 @@ impl SurfaceInfo {
 				}
 			}
 		}
+		self.flush();
 		locked
 	}
 }
@@ -270,6 +279,14 @@ impl SeatData {
 		seat_data
 	}
 
+	pub fn set_keymap_str(&self, keymap: &str, surfaces: Vec<WlSurface>) -> Result<()> {
+		let context = xkb::Context::new(0);
+		let keymap =
+			Keymap::new_from_string(&context, keymap.to_string(), XKB_KEYMAP_FORMAT_TEXT_V1, 0)
+				.ok_or_else(|| eyre!("Keymap is not valid"))?;
+		self.set_keymap(&keymap, surfaces);
+		Ok(())
+	}
 	pub fn set_keymap(&self, keymap: &Keymap, surfaces: Vec<WlSurface>) {
 		let mut panels = self.surfaces.lock();
 		let Some((_, focus)) = self.keyboard.get() else {return};
@@ -358,10 +375,13 @@ impl SeatData {
 		}
 	}
 
-	pub fn new_surface(&self, surface: &WlSurface, panel_item: Weak<PanelItem>) {
+	pub fn new_surface(&self, surface: &WlSurface) -> watch::Receiver<Option<CursorInfo>> {
+		let (tx, rx) = watch::channel(None);
 		self.surfaces
 			.lock()
-			.insert(surface.id(), SurfaceInfo::new(surface, panel_item));
+			.insert(surface.id(), SurfaceInfo::new(surface, tx));
+
+		rx
 	}
 	pub fn drop_surface(&self, surface: &WlSurface) {
 		self.surfaces.lock().remove(&surface.id());
@@ -385,6 +405,18 @@ impl Drop for SeatData {
 		let _ = task::new(|| "global destroy queue garbage collection", async move {
 			GLOBAL_DESTROY_QUEUE.get().unwrap().send(id).await
 		});
+	}
+}
+
+pub struct CursorInfo {
+	pub surface: WlWeak<WlSurface>,
+	pub hotspot_x: i32,
+	pub hotspot_y: i32,
+}
+impl CursorInfo {
+	pub fn cursor_data(&self) -> Option<(Vector2<u32>, Vector2<i32>)> {
+		let cursor_size = CoreSurface::from_wl_surface(&self.surface.upgrade().ok()?)?.size()?;
+		Some((cursor_size, [self.hotspot_x, self.hotspot_y].into()))
 	}
 }
 
@@ -442,12 +474,9 @@ impl Dispatch<WlSeat, Arc<SeatData>, WaylandState> for WaylandState {
 	}
 }
 
-pub struct Cursor {
-	pub hotspot: Vector2<i32>,
-}
 impl Dispatch<WlPointer, Arc<SeatData>, WaylandState> for WaylandState {
 	fn request(
-		state: &mut WaylandState,
+		_state: &mut WaylandState,
 		_client: &Client,
 		_resource: &WlPointer,
 		request: wl_pointer::Request,
@@ -463,16 +492,8 @@ impl Dispatch<WlPointer, Arc<SeatData>, WaylandState> for WaylandState {
 				hotspot_y,
 			} => {
 				if let Some(surface) = surface.as_ref() {
-					CoreSurface::add_to(&state.display, dh.clone(), surface, || (), |_| ());
+					CoreSurface::add_to(dh.clone(), surface, || (), |_| ());
 					compositor::with_states(surface, |data| {
-						data.data_map.insert_if_missing_threadsafe(|| {
-							Arc::new(Mutex::new(Cursor {
-								hotspot: Vector2::from([hotspot_x, hotspot_y]),
-							}))
-						});
-						let mut cursor = data.data_map.get::<Arc<Mutex<Cursor>>>().unwrap().lock();
-						cursor.hotspot = Vector2::from([hotspot_x, hotspot_y]);
-
 						if let Some(core_surface) = data.data_map.get::<Arc<CoreSurface>>() {
 							core_surface.set_material_offset(1);
 						}
@@ -483,10 +504,12 @@ impl Dispatch<WlPointer, Arc<SeatData>, WaylandState> for WaylandState {
 				let focus = focus.lock();
 				let surfaces = seat_data.surfaces.lock();
 				let Some(surface_info) = surfaces.get(&focus) else {return};
-				let Some(panel_item) = surface_info.panel_item.upgrade() else {return};
-				if let Backend::Wayland(w) = &panel_item.backend {
-					w.set_cursor(&panel_item, surface.as_ref(), hotspot_x, hotspot_y);
-				}
+				let cursor_info = surface.map(|surface| CursorInfo {
+					surface: surface.downgrade(),
+					hotspot_x,
+					hotspot_y,
+				});
+				let _ = surface_info.cursor_sender.send_replace(cursor_info);
 			}
 			wl_pointer::Request::Release => (),
 			_ => unreachable!(),

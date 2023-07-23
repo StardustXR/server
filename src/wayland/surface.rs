@@ -15,16 +15,10 @@ use smithay::{
 	},
 	desktop::utils::send_frames_surface_tree,
 	output::Output,
-	reexports::wayland_server::{
-		self, protocol::wl_surface::WlSurface, Display, DisplayHandle, Resource,
-	},
+	reexports::wayland_server::{self, protocol::wl_surface::WlSurface, DisplayHandle, Resource},
 	wayland::compositor::{self, SurfaceData},
 };
-use std::{
-	ffi::c_void,
-	sync::{Arc, Weak},
-	time::Duration,
-};
+use std::{ffi::c_void, sync::Arc, time::Duration};
 use stereokit::{
 	Material, StereoKitDraw, Tex, TextureAddress, TextureFormat, TextureSample, TextureType,
 	Transparency,
@@ -43,7 +37,6 @@ impl Drop for CoreSurfaceData {
 }
 
 pub struct CoreSurface {
-	display: Weak<Mutex<Display<WaylandState>>>,
 	pub dh: DisplayHandle,
 	pub weak_surface: wayland_server::Weak<WlSurface>,
 	mapped_data: Mutex<Option<CoreSurfaceData>>,
@@ -57,7 +50,6 @@ pub struct CoreSurface {
 
 impl CoreSurface {
 	pub fn add_to(
-		display: &Arc<Mutex<Display<WaylandState>>>,
 		dh: DisplayHandle,
 		surface: &WlSurface,
 		on_mapped: impl Fn() + Send + Sync + 'static,
@@ -66,7 +58,6 @@ impl CoreSurface {
 		compositor::with_states(surface, |data| {
 			data.data_map.insert_if_missing_threadsafe(|| {
 				CORE_SURFACES.add(CoreSurface {
-					display: Arc::downgrade(display),
 					dh,
 					weak_surface: surface.downgrade(),
 					mapped_data: Mutex::new(None),
@@ -190,8 +181,8 @@ impl CoreSurface {
 		*self.material_offset.lock().value_mut() = material_offset;
 	}
 
-	pub fn apply_material(&self, model_node: &Arc<ModelPart>) {
-		self.pending_material_applications.add_raw(model_node)
+	pub fn apply_material(&self, model_part: &Arc<ModelPart>) {
+		self.pending_material_applications.add_raw(model_part)
 	}
 
 	fn apply_surface_materials(&self) {
@@ -215,15 +206,6 @@ impl CoreSurface {
 
 	pub fn size(&self) -> Option<Vector2<u32>> {
 		self.mapped_data.lock().as_ref().map(|d| d.size)
-	}
-
-	pub fn flush_clients(&self) {
-		self.display
-			.upgrade()
-			.unwrap()
-			.lock()
-			.flush_clients()
-			.unwrap();
 	}
 }
 impl Drop for CoreSurface {
