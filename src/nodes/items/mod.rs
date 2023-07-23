@@ -1,6 +1,8 @@
 mod environment;
+pub mod panel;
 
 use self::environment::{EnvironmentItem, ITEM_TYPE_INFO_ENVIRONMENT};
+use self::panel::{PanelItemTrait, ITEM_TYPE_INFO_PANEL};
 use super::fields::Field;
 use super::spatial::{find_spatial_parent, parse_transform, Spatial};
 use super::{Alias, Node};
@@ -9,8 +11,6 @@ use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
 use crate::nodes::fields::find_field;
-#[cfg(feature = "wayland")]
-use crate::wayland::panel_item::{PanelItem, ITEM_TYPE_INFO_PANEL};
 use color_eyre::eyre::{ensure, eyre, Result};
 use lazy_static::lazy_static;
 use nanoid::nanoid;
@@ -20,7 +20,6 @@ use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, flexbuffers, serialize};
 use stardust_xr::values::Transform;
 use std::hash::Hash;
-use std::ops::Deref;
 use std::sync::{Arc, Weak};
 
 lazy_static! {
@@ -171,26 +170,28 @@ impl Drop for Item {
 	}
 }
 
-pub trait ItemSpecialization {
-	fn serialize_start_data(&self, id: &str) -> Option<Vec<u8>>;
-}
-
 pub enum ItemType {
 	Environment(EnvironmentItem),
-	#[cfg(feature = "wayland")]
-	Panel(Arc<PanelItem>),
+	Panel(Arc<dyn PanelItemTrait>),
 }
-impl Deref for ItemType {
-	type Target = dyn ItemSpecialization;
-
-	fn deref(&self) -> &Self::Target {
+impl ItemType {
+	fn serialize_start_data(&self, id: &str) -> Result<Vec<u8>> {
 		match self {
-			ItemType::Environment(item) => item,
-			#[cfg(feature = "wayland")]
-			ItemType::Panel(item) => item.as_ref(),
+			ItemType::Environment(e) => e.serialize_start_data(id),
+			ItemType::Panel(p) => p.serialize_start_data(id),
 		}
 	}
 }
+// impl Deref for ItemType {
+// 	type Target = dyn ItemSpecialization;
+
+// 	fn deref(&self) -> &Self::Target {
+// 		match self {
+// 			ItemType::Environment(item) => item,
+// 			ItemType::Panel(item) => item.as_ref(),
+// 		}
+// 	}
+// }
 
 pub struct ItemUI {
 	node: Weak<Node>,
@@ -240,7 +241,7 @@ impl ItemUI {
 			self.item_aliases.add(item.uid.clone(), &alias_node);
 		}
 
-		let Some(serialized_data) =  item.specialization.serialize_start_data(&item.uid) else {return};
+		let Ok(serialized_data) =  item.specialization.serialize_start_data(&item.uid) else {return};
 		let _ = node.send_remote_signal("create_item", &serialized_data);
 	}
 	fn handle_destroy_item(&self, item: &Item) {
@@ -359,7 +360,7 @@ impl ItemAcceptor {
 			self.accepted_aliases.add(item.uid.clone(), &alias_node);
 		}
 
-		let Some(serialized_data) =  item.specialization.serialize_start_data(&item.uid) else {return};
+		let Ok(serialized_data) =  item.specialization.serialize_start_data(&item.uid) else {return};
 		let _ = node.send_remote_signal("capture", &serialized_data);
 	}
 	fn handle_release(&self, item: &Item) {

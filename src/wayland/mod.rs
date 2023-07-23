@@ -1,7 +1,6 @@
 mod compositor;
 mod data_device;
 mod decoration;
-pub mod panel_item;
 mod seat;
 mod shaders;
 mod state;
@@ -37,7 +36,6 @@ use tokio::{
 use tracing::{debug, debug_span, info, instrument};
 
 pub static WAYLAND_DISPLAY: OnceCell<String> = OnceCell::new();
-
 pub static SERIAL_COUNTER: CounterU32 = CounterU32::new(0);
 
 struct EGLRawHandles {
@@ -90,7 +88,7 @@ impl Wayland {
 		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
 		let display = Arc::new(Mutex::new(display));
 		#[cfg(feature = "xwayland")]
-		let xwayland_state = xwayland::XWaylandState::create(display.clone(), &display_handle).unwrap();
+		let xwayland_state = xwayland::XWaylandState::create(&display_handle).unwrap();
 		let wayland_state =
 			WaylandState::new(display.clone(), display_handle, &renderer, dmabuf_tx);
 

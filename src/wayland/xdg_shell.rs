@@ -1,24 +1,26 @@
-use crate::{
-	nodes::Node,
-	wayland::panel_item::{Backend, WaylandBackend},
-};
-
 use super::{
-	panel_item::{PanelItem, RecommendedState, SurfaceID},
-	state::WaylandState,
+	seat::{CursorInfo, KeyboardEvent, PointerEvent, SeatData},
+	state::{ClientState, WaylandState},
 	surface::CoreSurface,
 	SERIAL_COUNTER,
 };
+use crate::nodes::{
+	drawable::model::ModelPart,
+	items::panel::{Backend, PanelItem, RecommendedState, SurfaceID},
+	Node,
+};
+use color_eyre::eyre::{eyre, Result};
 use mint::Vector2;
 use nanoid::nanoid;
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use serde::{ser::SerializeSeq, Serialize, Serializer};
 use smithay::reexports::{
 	wayland_protocols::xdg::shell::server::{
 		xdg_popup::{self, XdgPopup},
 		xdg_positioner::{self, Anchor, ConstraintAdjustment, Gravity, XdgPositioner},
 		xdg_surface::{self, XdgSurface},
-		xdg_toplevel::{self, XdgToplevel, EVT_WM_CAPABILITIES_SINCE},
+		xdg_toplevel::{self, XdgToplevel, EVT_CONFIGURE_BOUNDS_SINCE, EVT_WM_CAPABILITIES_SINCE},
 		xdg_wm_base::{self, XdgWmBase},
 	},
 	wayland_server::{
@@ -28,11 +30,14 @@ use smithay::reexports::{
 		Weak as WlWeak,
 	},
 };
+use stardust_xr::schemas::flex::serialize;
 use std::{
 	fmt::Debug,
 	sync::{Arc, Weak},
 };
+use tokio::sync::watch;
 use tracing::{debug, warn};
+use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};
 
 impl GlobalDispatch<XdgWmBase, (), WaylandState> for WaylandState {
 	fn bind(
@@ -208,7 +213,7 @@ impl Default for Geometry {
 pub struct XdgSurfaceData {
 	wl_surface: WlWeak<WlSurface>,
 	surface_id: SurfaceID,
-	panel_item: Weak<PanelItem>,
+	panel_item: Weak<PanelItem<XDGBackend>>,
 	geometry: Option<Geometry>,
 }
 impl XdgSurfaceData {
@@ -226,7 +231,7 @@ impl XdgSurfaceData {
 	pub fn wl_surface(&self) -> Option<WlSurface> {
 		self.wl_surface.upgrade().ok()
 	}
-	pub fn panel_item(&self) -> Option<Arc<PanelItem>> {
+	pub fn panel_item(&self) -> Option<Arc<PanelItem<XDGBackend>>> {
 		self.panel_item.upgrade()
 	}
 }
@@ -276,7 +281,6 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 				let seat_data = state.seats.get(&client.id()).unwrap().clone();
 				let Some(wl_surface) = xdg_surface_data.lock().wl_surface() else {return};
 				CoreSurface::add_to(
-					&state.display,
 					state.display_handle.clone(),
 					&wl_surface,
 					{
@@ -286,15 +290,12 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 							let toplevel_data = ToplevelData::get(&toplevel);
 							let Some(xdg_surface) = toplevel_data.lock().xdg_surface() else {return};
 							let Some(xdg_surface_data) = XdgSurfaceData::get(&xdg_surface) else {return};
-							let Some(wl_surface) = xdg_surface_data.lock().wl_surface() else {return};
 
 							xdg_surface_data.lock().surface_id = SurfaceID::Toplevel;
-							let Some(backend) = WaylandBackend::create(toplevel.clone()) else {return};
+							let Some(backend) = XDGBackend::create(toplevel.clone(), seat_data.clone()) else {return};
 							let (node, panel_item) = PanelItem::create(
-								wl_surface.clone(),
-								Backend::Wayland(backend),
-								client_credentials,
-								seat_data.clone(),
+								Box::new(backend),
+								client_credentials.map(|c| c.pid),
 							);
 							toplevel_data.lock().panel_item_node.replace(node);
 							xdg_surface_data.lock().panel_item = Arc::downgrade(&panel_item);
@@ -355,16 +356,11 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 				xdg_surface_data.lock().surface_id = SurfaceID::Popup(uid);
 				let panel_item = parent_data.panel_item().unwrap();
 				xdg_surface_data.lock().panel_item = Arc::downgrade(&panel_item);
-				let Some(wl_surface) = xdg_surface_data.lock().wl_surface() else {return};
-				panel_item
-					.seat_data
-					.new_surface(&wl_surface, Arc::downgrade(&panel_item));
 				debug!(?xdg_popup, ?xdg_surface, "Create XDG popup");
 
 				let xdg_surface = xdg_surface.downgrade();
 				let xdg_popup = xdg_popup.downgrade();
 				CoreSurface::add_to(
-					&state.display,
 					state.display_handle.clone(),
 					&xdg_surface_data.lock().wl_surface.upgrade().unwrap(),
 					move || {
@@ -372,8 +368,9 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 						let Some(popup_data) = PopupData::get(&xdg_popup) else {return};
 						let popup_data = popup_data.lock();
 						// panel_item.commit_popup(popup_data);
-						let Backend::Wayland(wayland_backend) = &panel_item.backend else {return};
-						wayland_backend.new_popup(&panel_item, &xdg_popup, &*popup_data);
+						panel_item
+							.backend
+							.new_popup(&panel_item, &xdg_popup, &*popup_data);
 					},
 					move |commit_count| {
 						if commit_count == 0 {
@@ -448,7 +445,7 @@ impl ToplevelData {
 	pub fn xdg_surface(&self) -> Option<XdgSurface> {
 		self.xdg_surface.upgrade().ok()
 	}
-	fn panel_item(&self) -> Option<Arc<PanelItem>> {
+	fn panel_item(&self) -> Option<Arc<PanelItem<XDGBackend>>> {
 		let xdg_surface = self.xdg_surface()?;
 		let xdg_surface_data = XdgSurfaceData::get(&xdg_surface)?.lock();
 		xdg_surface_data.panel_item()
@@ -576,7 +573,7 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 			xdg_toplevel::Request::Destroy => {
 				debug!(?xdg_toplevel, "Destroy XDG Toplevel");
 				let Some(panel_item) = data.lock().panel_item() else { return };
-				panel_item.on_drop();
+				panel_item.backend.on_drop();
 			}
 			_ => unreachable!(),
 		}
@@ -613,7 +610,7 @@ impl PopupData {
 		self.xdg_surface.upgrade().ok()
 	}
 
-	fn panel_item(&self) -> Option<Arc<PanelItem>> {
+	fn panel_item(&self) -> Option<Arc<PanelItem<XDGBackend>>> {
 		XdgSurfaceData::get(&self.xdg_surface()?)?
 			.lock()
 			.panel_item()
@@ -680,9 +677,7 @@ impl Dispatch<XdgPopup, Mutex<PopupData>, WaylandState> for WaylandState {
 				data.positioner = positioner;
 				let Some(panel_item) = data.panel_item() else {return};
 
-				if let Backend::Wayland(w) = &panel_item.backend {
-					w.reposition_popup(&panel_item, &*data)
-				}
+				panel_item.backend.reposition_popup(&panel_item, &*data)
 			}
 			xdg_popup::Request::Destroy => {
 				let data = data.lock();
@@ -704,9 +699,258 @@ impl Dispatch<XdgPopup, Mutex<PopupData>, WaylandState> for WaylandState {
 	) {
 		let data = data.lock();
 		let Some(panel_item) = data.panel_item() else {return};
+		panel_item.backend.drop_popup(&panel_item, &data.uid);
+	}
+}
 
-		if let Backend::Wayland(w) = &panel_item.backend {
-			w.drop_popup(&panel_item, &data.uid);
+pub struct XDGBackend {
+	toplevel: WlWeak<XdgToplevel>,
+	toplevel_wl_surface: WlWeak<WlSurface>,
+	popups: Mutex<FxHashMap<String, WlWeak<XdgPopup>>>,
+	cursor: watch::Receiver<Option<CursorInfo>>,
+	pub seat: Arc<SeatData>,
+	pointer_grab: Mutex<Option<SurfaceID>>,
+	keyboard_grab: Mutex<Option<SurfaceID>>,
+}
+impl XDGBackend {
+	pub fn create(toplevel: XdgToplevel, seat: Arc<SeatData>) -> Option<Self> {
+		let toplevel_wl_surface =
+			XdgSurfaceData::get(&ToplevelData::get(&toplevel).lock().xdg_surface()?)?
+				.lock()
+				.wl_surface()?
+				.downgrade();
+
+		let cursor = seat.new_surface(&toplevel_wl_surface.upgrade().ok()?);
+		Some(XDGBackend {
+			toplevel: toplevel.downgrade(),
+			toplevel_wl_surface,
+			popups: Mutex::new(FxHashMap::default()),
+			cursor,
+			seat,
+			pointer_grab: Mutex::new(None),
+			keyboard_grab: Mutex::new(None),
+		})
+	}
+	fn wl_surface_from_id(&self, id: &SurfaceID) -> Option<WlSurface> {
+		match id {
+			SurfaceID::Cursor => self.cursor.borrow().as_ref()?.surface.upgrade().ok(),
+			SurfaceID::Toplevel => self.toplevel_wl_surface(),
+			SurfaceID::Popup(popup) => {
+				let popups = self.popups.lock();
+				let popup = popups.get(popup)?.upgrade().ok()?;
+				let wl_surface = PopupData::get(&popup)?.lock().wl_surface();
+				wl_surface
+			}
 		}
+	}
+	fn toplevel(&self) -> Option<XdgToplevel> {
+		self.toplevel.upgrade().ok()
+	}
+	fn toplevel_xdg_surface(&self) -> Option<XdgSurface> {
+		let toplevel = self.toplevel()?;
+		let data = ToplevelData::get(&toplevel).lock();
+		data.xdg_surface()
+	}
+	fn toplevel_wl_surface(&self) -> Option<WlSurface> {
+		self.toplevel_wl_surface.upgrade().ok()
+	}
+	fn input_surfaces(&self) -> Vec<WlSurface> {
+		let mut surfaces = self
+			.toplevel_wl_surface()
+			.map(|s| vec![s])
+			.unwrap_or_default();
+		surfaces.extend(self.popups.lock().values().filter_map(|p| {
+			let popup = p.upgrade().ok()?;
+			let popup_data = PopupData::get(&popup)?.lock();
+			let xdg_surface = popup_data.xdg_surface()?;
+			let xdg_surface_data = XdgSurfaceData::get(&xdg_surface)?.lock();
+			xdg_surface_data.wl_surface()
+		}));
+		surfaces
+	}
+
+	pub fn new_popup(
+		&self,
+		panel_item: &PanelItem<XDGBackend>,
+		popup: &XdgPopup,
+		data: &PopupData,
+	) {
+		let uid = data.uid.clone();
+
+		self.popups.lock().insert(uid.clone(), popup.downgrade());
+
+		let Some(node) = panel_item.node() else { return };
+		let _ = node.send_remote_signal("new_popup", &serialize(&(&uid, data)).unwrap());
+	}
+	pub fn reposition_popup(&self, panel_item: &PanelItem<XDGBackend>, popup_state: &PopupData) {
+		let Some(node) = panel_item.node() else { return };
+
+		let _ = node.send_remote_signal(
+			"reposition_popup",
+			&serialize(popup_state.positioner_data().unwrap()).unwrap(),
+		);
+	}
+	pub fn drop_popup(&self, panel_item: &PanelItem<XDGBackend>, uid: &str) {
+		'seat_drop: {
+			let Some(popup) = self
+				.popups
+				.lock()
+				.remove(uid) else {break 'seat_drop};
+			let Some(popup) = popup.upgrade().ok() else {break 'seat_drop};
+			let Some(popup) = popup.data::<Arc<PopupData>>().cloned() else {break 'seat_drop};
+			let Some(wl_surface) = popup.wl_surface() else {break 'seat_drop};
+			self.seat.drop_surface(&wl_surface);
+		}
+
+		let Some(node) = panel_item.node() else { return };
+		let _ = node.send_remote_signal("drop_popup", &serialize(uid).unwrap());
+	}
+
+	fn popups_data(&self) -> Vec<PopupData> {
+		self.popups
+			.lock()
+			.values()
+			.filter_map(|v| Some(v.upgrade().ok()?.data::<Mutex<PopupData>>()?.lock().clone()))
+			.collect::<Vec<_>>()
+	}
+
+	pub fn on_drop(&self) {
+		let Some(toplevel) = self.toplevel_wl_surface() else {return};
+		self.seat.drop_surface(&toplevel);
+
+		debug!("Dropped panel item gracefully");
+	}
+
+	fn flush_client(&self) {
+		let Some(client) = self.toplevel_wl_surface().and_then(|s| s.client()) else {return};
+		if let Some(client_state) = client.get_data::<ClientState>() {
+			client_state.flush();
+		}
+	}
+}
+impl Backend for XDGBackend {
+	fn serialize_start_data(&self, id: &str) -> Result<Vec<u8>> {
+		let toplevel_state = self
+			.toplevel()
+			.map(|t| ToplevelData::get(&t).lock().clone());
+
+		let pointer_grab = self.pointer_grab.lock().clone();
+		let keyboard_grab = self.keyboard_grab.lock().clone();
+
+		serialize((
+			id,
+			(
+				self.cursor.borrow().as_ref().and_then(|c| c.cursor_data()),
+				toplevel_state,
+				self.popups_data(),
+				pointer_grab,
+				keyboard_grab,
+			),
+		))
+		.map_err(|e| e.into())
+	}
+	fn serialize_toplevel(&self) -> Result<Vec<u8>> {
+		let toplevel = self
+			.toplevel()
+			.ok_or_else(|| eyre!("Toplevel does not exist"))?;
+		let state = ToplevelData::get(&toplevel);
+		let data = serialize(&state.lock().clone())?;
+		Ok(data)
+	}
+
+	fn set_toplevel_capabilities(&self, capabilities: Vec<u8>) {
+		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
+		let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
+
+		if xdg_toplevel.version() < EVT_WM_CAPABILITIES_SINCE {
+			return;
+		}
+		xdg_toplevel.wm_capabilities(capabilities);
+		xdg_surface.configure(SERIAL_COUNTER.inc());
+		self.flush_client();
+	}
+
+	fn configure_toplevel(
+		&self,
+		size: Option<Vector2<u32>>,
+		states: Vec<u32>,
+		bounds: Option<Vector2<u32>>,
+	) {
+		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
+		let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
+		debug!(?size, ?states, ?bounds, "Configure toplevel info");
+		if let Some(bounds) = bounds {
+			if xdg_toplevel.version() > EVT_CONFIGURE_BOUNDS_SINCE {
+				xdg_toplevel.configure_bounds(bounds.x as i32, bounds.y as i32);
+			}
+		}
+		let size = size.unwrap_or(Vector2::from([0; 2]));
+		xdg_toplevel.configure(
+			size.x as i32,
+			size.y as i32,
+			states
+				.into_iter()
+				.flat_map(|state| state.to_ne_bytes())
+				.collect(),
+		);
+		xdg_surface.configure(SERIAL_COUNTER.inc());
+		self.flush_client();
+	}
+
+	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>) {
+		let Some(wl_surface) = self.wl_surface_from_id(&surface) else {return};
+		let Some(core_surface) = CoreSurface::from_wl_surface(&wl_surface) else {return};
+
+		core_surface.apply_material(model_part);
+	}
+
+	fn pointer_motion(&self, surface: &SurfaceID, position: Vector2<f32>) {
+		let Some(surface) = self.wl_surface_from_id(surface) else {return};
+		self.seat
+			.pointer_event(&surface, PointerEvent::Motion(position));
+	}
+	fn pointer_button(&self, surface: &SurfaceID, button: u32, pressed: bool) {
+		let Some(surface) = self.wl_surface_from_id(surface) else {return};
+		self.seat.pointer_event(
+			&surface,
+			PointerEvent::Button {
+				button,
+				state: if pressed { 1 } else { 0 },
+			},
+		)
+	}
+	fn pointer_scroll(
+		&self,
+		surface: &SurfaceID,
+		scroll_distance: Option<Vector2<f32>>,
+		scroll_steps: Option<Vector2<f32>>,
+	) {
+		let Some(surface) = self.wl_surface_from_id(surface) else {return};
+		self.seat.pointer_event(
+			&surface,
+			PointerEvent::Scroll {
+				axis_continuous: scroll_distance,
+				axis_discrete: scroll_steps,
+			},
+		)
+	}
+
+	fn keyboard_set_keymap(&self, keymap: &str) -> Result<()> {
+		let context = xkb::Context::new(0);
+		let keymap =
+			Keymap::new_from_string(&context, keymap.to_string(), XKB_KEYMAP_FORMAT_TEXT_V1, 0)
+				.ok_or_else(|| eyre!("Keymap is not valid"))?;
+		self.seat.set_keymap(&keymap, self.input_surfaces());
+		Ok(())
+	}
+	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool) {
+		let Some(surface) = self.wl_surface_from_id(surface) else {return};
+		self.seat.keyboard_event(
+			&surface,
+			KeyboardEvent::Key {
+				key,
+				state: if state { 1 } else { 0 },
+			},
+		)
 	}
 }

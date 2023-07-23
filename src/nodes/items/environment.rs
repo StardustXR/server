@@ -1,4 +1,4 @@
-use super::{Item, ItemSpecialization, ItemType};
+use super::{Item, ItemType};
 use crate::{
 	core::{
 		client::{Client, INTERNAL_CLIENT},
@@ -52,10 +52,9 @@ impl EnvironmentItem {
 		};
 		Ok(flexbuffers::singleton(environment_item.path.as_str()))
 	}
-}
-impl ItemSpecialization for EnvironmentItem {
-	fn serialize_start_data(&self, id: &str) -> Option<Vec<u8>> {
-		serialize((id, self.path.as_str())).ok()
+
+	pub fn serialize_start_data(&self, id: &str) -> Result<Vec<u8>> {
+		serialize((id, self.path.as_str())).map_err(|e| e.into())
 	}
 }
 
