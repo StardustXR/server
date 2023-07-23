@@ -88,9 +88,9 @@ impl KdeDecorationHandler for WaylandState {
 		&mut self,
 		_surface: &WlSurface,
 		decoration: &OrgKdeKwinServerDecoration,
-		_mode: WEnum<KdeMode>,
+		mode: WEnum<KdeMode>,
 	) {
-		decoration.mode(KdeMode::Server);
+		decoration.mode(mode.into_result().unwrap());
 	}
 }
 delegate_kde_decoration!(WaylandState);
