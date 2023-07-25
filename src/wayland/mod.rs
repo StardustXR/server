@@ -11,6 +11,7 @@ mod xdg_shell;
 pub mod xwayland;
 
 use self::{state::WaylandState, surface::CORE_SURFACES};
+use crate::wayland::seat::SeatData;
 use crate::{core::task, wayland::state::ClientState};
 use color_eyre::eyre::{ensure, Result};
 use global_counter::primitive::exact::CounterU32;
@@ -146,9 +147,13 @@ impl Wayland {
 					}
 					acc = listen_async.accept() => { // New client connected
 						let (stream, _) = acc?;
-						let client = dh2.insert_client(stream.into_std()?, Arc::new(ClientState::default()))?;
-
-						state.lock().new_client(client.id(), &dh2);
+						let client_state = Arc::new(ClientState {
+							compositor_state: Default::default(),
+							display: Arc::downgrade(&display),
+							seat: SeatData::new(&dh1)
+						});
+						let client = dh2.insert_client(stream.into_std()?, client_state.clone())?;
+						client_state.seat.client.set(client.id()).unwrap();
 					}
 					e = dispatch_poll_listener.readable() => { // Dispatch
 						let mut guard = e?;

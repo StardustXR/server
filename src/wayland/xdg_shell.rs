@@ -278,7 +278,7 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 				xdg_surface.configure(SERIAL_COUNTER.inc());
 
 				let client_credentials = client.get_credentials(&state.display_handle).ok();
-				let seat_data = state.seats.get(&client.id()).unwrap().clone();
+				let Some(seat_data) = client.get_data::<ClientState>().map(|s| s.seat.clone()) else {return};
 				let Some(wl_surface) = xdg_surface_data.lock().wl_surface() else {return};
 				CoreSurface::add_to(
 					state.display_handle.clone(),

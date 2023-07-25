@@ -1,5 +1,6 @@
 use super::{
 	seat::{KeyboardEvent, PointerEvent, SeatData},
+	state::ClientState,
 	xdg_shell::PopupData,
 };
 use crate::{
@@ -59,7 +60,7 @@ impl XWaylandState {
 							client_fd: _,
 							display: _,
 						} => {
-							handler.seat = Some(SeatData::new(&dh, client.id()));
+							handler.seat = client.get_data::<ClientState>().map(|s| s.seat.clone());
 							handler.wm =
 								X11Wm::start_wm(handle.clone(), dh.clone(), connection, client)
 									.ok();

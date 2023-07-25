@@ -1,6 +1,5 @@
 use crate::wayland::seat::SeatData;
 use parking_lot::Mutex;
-use rustc_hash::FxHashMap;
 use smithay::{
 	backend::{
 		allocator::dmabuf::Dmabuf,
@@ -37,10 +36,10 @@ use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{info, warn};
 
-#[derive(Default)]
 pub struct ClientState {
 	pub compositor_state: CompositorClientState,
 	pub display: Weak<Mutex<Display<WaylandState>>>,
+	pub seat: Arc<SeatData>,
 }
 impl ClientState {
 	pub fn flush(&self) {
@@ -73,7 +72,6 @@ pub struct WaylandState {
 	dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
 	dmabuf_tx: UnboundedSender<Dmabuf>,
 	pub output: Output,
-	pub seats: FxHashMap<ClientId, Arc<SeatData>>,
 }
 
 impl WaylandState {
@@ -166,14 +164,8 @@ impl WaylandState {
 				dmabuf_state,
 				dmabuf_tx,
 				output,
-				seats: FxHashMap::default(),
 			})
 		})
-	}
-
-	pub fn new_client(&mut self, client: ClientId, dh: &DisplayHandle) {
-		let seat_data = SeatData::new(dh, client.clone());
-		self.seats.insert(client, seat_data);
 	}
 }
 impl Drop for WaylandState {
