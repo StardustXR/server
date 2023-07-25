@@ -253,7 +253,7 @@ impl SurfaceInfo {
 }
 
 pub struct SeatData {
-	client: ClientId,
+	pub client: OnceCell<ClientId>,
 	global_id: OnceCell<GlobalId>,
 	surfaces: Mutex<FxHashMap<ObjectId, SurfaceInfo>>,
 	pointer: OnceCell<(WlPointer, Mutex<ObjectId>)>,
@@ -261,9 +261,9 @@ pub struct SeatData {
 	touch: OnceCell<WlTouch>,
 }
 impl SeatData {
-	pub fn new(dh: &DisplayHandle, client: ClientId) -> Arc<Self> {
+	pub fn new(dh: &DisplayHandle) -> Arc<Self> {
 		let seat_data = Arc::new(SeatData {
-			client,
+			client: OnceCell::new(),
 			global_id: OnceCell::new(),
 			surfaces: Mutex::new(FxHashMap::default()),
 			pointer: OnceCell::new(),
@@ -439,7 +439,8 @@ impl GlobalDispatch<WlSeat, Arc<SeatData>, WaylandState> for WaylandState {
 	}
 
 	fn can_view(client: Client, data: &Arc<SeatData>) -> bool {
-		client.id() == data.client
+		let Some(seat_client) = data.client.get().cloned() else {return false};
+		client.id() == seat_client
 	}
 }
 
