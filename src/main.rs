@@ -144,7 +144,7 @@ fn main() {
 		}
 	}
 
-	let mouse_pointer = cli_args
+	let mut mouse_pointer = cli_args
 		.flatscreen
 		.then(MousePointer::new)
 		.transpose()
@@ -158,8 +158,8 @@ fn main() {
 		.flatten();
 	let mut controllers = (!cli_args.flatscreen && !cli_args.disable_controller)
 		.then(|| {
-			let left = SkController::new(Handed::Left).ok();
-			let right = SkController::new(Handed::Right).ok();
+			let left = SkController::new(&sk, Handed::Left).ok();
+			let right = SkController::new(&sk, Handed::Right).ok();
 			left.zip(right)
 		})
 		.flatten();
@@ -244,7 +244,7 @@ fn main() {
 				wayland.as_mut().unwrap().frame_event(sk);
 				destroy_queue::clear();
 
-				if let Some(mouse_pointer) = &mouse_pointer {
+				if let Some(mouse_pointer) = &mut mouse_pointer {
 					mouse_pointer.update(sk);
 				}
 				if let Some((left_hand, right_hand)) = &mut hands {

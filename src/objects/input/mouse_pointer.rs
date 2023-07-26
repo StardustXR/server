@@ -1,5 +1,5 @@
 use crate::{
-	core::client::INTERNAL_CLIENT,
+	core::{client::INTERNAL_CLIENT, typed_datamap::TypedDatamap},
 	nodes::{
 		data::{mask_matches, Mask, PulseSender, PULSE_RECEIVER_REGISTRY},
 		fields::Ray,
@@ -9,18 +9,25 @@ use crate::{
 	},
 };
 use color_eyre::eyre::Result;
-use glam::{vec3, Mat4, Vec3};
+use glam::{vec2, vec3, Mat4, Vec2, Vec3};
 use nanoid::nanoid;
-use serde::Serialize;
-use stardust_xr::schemas::{flat::Datamap, flex::flexbuffers};
+use serde::{Deserialize, Serialize};
+use stardust_xr::schemas::flex::flexbuffers;
 use std::{convert::TryFrom, sync::Arc};
 use stereokit::{ray_from_mouse, ButtonState, Key, StereoKitMultiThread};
 use tracing::instrument;
 
 const SK_KEYMAP: &str = include_str!("sk.kmp");
 
+#[derive(Default, Deserialize, Serialize)]
+struct MouseDatamap {
+	select: f32,
+	grab: f32,
+	scroll: Vec2,
+}
+
 #[derive(Debug, Clone, Serialize)]
-pub struct KeyboardEvent {
+struct KeyboardEvent {
 	pub keyboard: String,
 	pub keymap: Option<String>,
 	pub keys_up: Option<Vec<u32>>,
@@ -31,6 +38,7 @@ pub struct MousePointer {
 	node: Arc<Node>,
 	spatial: Arc<Spatial>,
 	pointer: Arc<InputMethod>,
+	datamap: TypedDatamap<MouseDatamap>,
 	keyboard_sender: Arc<PulseSender>,
 }
 impl MousePointer {
@@ -53,11 +61,12 @@ impl MousePointer {
 			node,
 			spatial,
 			pointer,
+			datamap: Default::default(),
 			keyboard_sender,
 		})
 	}
 	#[instrument(level = "debug", name = "Update Flatscreen Pointer Ray", skip_all)]
-	pub fn update(&self, sk: &impl StereoKitMultiThread) {
+	pub fn update(&mut self, sk: &impl StereoKitMultiThread) {
 		let mouse = sk.input_mouse();
 
 		let ray = ray_from_mouse(mouse.pos).unwrap();
@@ -71,30 +80,18 @@ impl MousePointer {
 		);
 		{
 			// Set pointer input datamap
-			let mut fbb = flexbuffers::Builder::default();
-			let mut map = fbb.start_map();
-			map.push(
-				"select",
-				if sk.input_key(Key::MouseLeft).contains(ButtonState::ACTIVE) {
-					1.0f32
-				} else {
-					0.0f32
-				},
-			);
-			map.push(
-				"grab",
-				if sk.input_key(Key::MouseRight).contains(ButtonState::ACTIVE) {
-					1.0f32
-				} else {
-					0.0f32
-				},
-			);
-			let mut scroll_vec = map.start_vector("scroll");
-			scroll_vec.push(0_f32);
-			scroll_vec.push(mouse.scroll_change / 120.0);
-			scroll_vec.end_vector();
-			map.end_map();
-			*self.pointer.datamap.lock() = Datamap::new(fbb.take_buffer()).ok();
+			self.datamap.select = if sk.input_key(Key::MouseLeft).contains(ButtonState::ACTIVE) {
+				1.0f32
+			} else {
+				0.0f32
+			};
+			self.datamap.grab = if sk.input_key(Key::MouseRight).contains(ButtonState::ACTIVE) {
+				1.0f32
+			} else {
+				0.0f32
+			};
+			self.datamap.scroll = vec2(0.0, mouse.scroll_change / 120.0);
+			*self.pointer.datamap.lock() = self.datamap.to_datamap().ok();
 		}
 		self.send_keyboard_input(sk);
 	}
