@@ -1,5 +1,5 @@
 use crate::{
-	core::client::INTERNAL_CLIENT,
+	core::{client::INTERNAL_CLIENT, typed_datamap::TypedDatamap},
 	nodes::{
 		input::{hand::Hand, InputMethod, InputType},
 		spatial::Spatial,
@@ -9,10 +9,8 @@ use crate::{
 use color_eyre::eyre::Result;
 use glam::Mat4;
 use nanoid::nanoid;
-use stardust_xr::schemas::{
-	flat::{Datamap, Hand as FlatHand, Joint},
-	flex::flexbuffers,
-};
+use serde::{Deserialize, Serialize};
+use stardust_xr::schemas::flat::{Hand as FlatHand, Joint};
 use std::sync::Arc;
 use stereokit::{ButtonState, HandJoint, Handed, StereoKitMultiThread};
 use tracing::instrument;
@@ -25,10 +23,17 @@ fn convert_joint(joint: HandJoint) -> Joint {
 	}
 }
 
+#[derive(Default, Deserialize, Serialize)]
+struct HandDatamap {
+	pinch_strength: f32,
+	grab_strength: f32,
+}
+
 pub struct SkHand {
 	_node: Arc<Node>,
 	input: Arc<InputMethod>,
 	handed: Handed,
+	datamap: TypedDatamap<HandDatamap>,
 }
 impl SkHand {
 	pub fn new(handed: Handed) -> Result<Self> {
@@ -45,6 +50,7 @@ impl SkHand {
 			_node,
 			input,
 			handed,
+			datamap: Default::default(),
 		})
 	}
 	#[instrument(level = "debug", name = "Update Hand Input Method", skip_all)]
@@ -54,6 +60,7 @@ impl SkHand {
 			let controller = sk.input_controller(self.handed);
 			*self.input.enabled.lock() = controller.tracked.contains(ButtonState::INACTIVE)
 				&& sk_hand.tracked_state.contains(ButtonState::ACTIVE);
+			sk.input_hand_visible(self.handed, *self.input.enabled.lock());
 			if *self.input.enabled.lock() {
 				hand.base.thumb.tip = convert_joint(sk_hand.fingers[0][4]);
 				hand.base.thumb.distal = convert_joint(sk_hand.fingers[0][3]);
@@ -86,11 +93,8 @@ impl SkHand {
 				hand.base.elbow = None;
 			}
 		}
-		let mut fbb = flexbuffers::Builder::default();
-		let mut map = fbb.start_map();
-		map.push("grab_strength", sk_hand.grip_activation);
-		map.push("pinch_strength", sk_hand.pinch_activation);
-		map.end_map();
-		*self.input.datamap.lock() = Datamap::new(fbb.take_buffer()).ok();
+		self.datamap.pinch_strength = sk_hand.pinch_activation;
+		self.datamap.grab_strength = sk_hand.grip_activation;
+		*self.input.datamap.lock() = self.datamap.to_datamap().ok();
 	}
 }
