@@ -10,7 +10,7 @@ use super::{
 	alias::{Alias, AliasInfo},
 	fields::{find_field, Field, FIELD_ALIAS_INFO},
 	spatial::{find_spatial_parent, parse_transform, Spatial},
-	Node,
+	Message, Node,
 };
 use crate::core::{client::Client, node_collections::LifeLinkedNodeMap};
 use crate::core::{node_collections::LifeLinkedNodeList, registry::Registry};
@@ -109,21 +109,21 @@ impl InputMethod {
 			.cloned()
 	}
 
-	fn capture_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn capture_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
 		let method = InputMethod::get(node)?;
-		let handler = InputHandler::find(&calling_client, deserialize(data)?)?;
+		let handler = InputHandler::find(&calling_client, deserialize(message.as_ref())?)?;
 
 		method.captures.add_raw(&handler);
-		node.send_remote_signal("capture", data)
+		node.send_remote_signal("capture", message)
 	}
-	fn set_datamap_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn set_datamap_flex(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
 		let method = InputMethod::get(node)?;
-		method.datamap.lock().replace(Datamap::new(data.to_vec())?);
+		method.datamap.lock().replace(Datamap::new(message.data)?);
 		Ok(())
 	}
-	fn set_handlers_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn set_handlers_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
 		let method = InputMethod::get(node)?;
-		let handler_paths: Vec<&str> = deserialize(data)?;
+		let handler_paths: Vec<&str> = deserialize(message.as_ref())?;
 		let handlers: Vec<Weak<InputHandler>> = handler_paths
 			.into_iter()
 			.filter_map(|p| InputHandler::find(&calling_client, p).ok())
@@ -147,9 +147,9 @@ impl InputMethod {
 	}
 
 	fn handle_new_handler(&self, handler: &InputHandler) {
-		let Some(method_node) = self.node.upgrade() else { return };
-		let Some(method_client) = method_node.get_client() else { return };
-		let Some(handler_node) = handler.node.upgrade() else { return };
+		let Some(method_node) = self.node.upgrade() else {return};
+		let Some(method_client) = method_node.get_client() else {return};
+		let Some(handler_node) = handler.node.upgrade() else {return};
 		// Receiver itself
 		let Ok(handler_alias) = Alias::create(
 			&method_client,
@@ -178,7 +178,7 @@ impl InputMethod {
 		}
 
 		let Ok(data) = serialize(&handler.uid) else {return};
-		let _ = method_node.send_remote_signal("handler_created", &data);
+		let _ = method_node.send_remote_signal("handler_created", data);
 	}
 	fn handle_drop_handler(&self, handler: &InputHandler) {
 		let uid = handler.uid.as_str();
@@ -186,7 +186,7 @@ impl InputMethod {
 		self.handler_aliases.remove(&(uid.to_string() + "-field"));
 		let Some(tx_node) = self.node.upgrade() else {return};
 		let Ok(data) = serialize(&uid) else {return};
-		let _ = tx_node.send_remote_signal("handler_destroyed", &data);
+		let _ = tx_node.send_remote_signal("handler_destroyed", data);
 	}
 }
 impl Drop for InputMethod {
@@ -284,7 +284,7 @@ impl InputHandler {
 	#[instrument(level = "debug", skip(self, distance_link))]
 	fn send_input(&self, order: u32, distance_link: &DistanceLink, datamap: Datamap) {
 		let Some(node) = self.node.upgrade() else {return};
-		let _ = node.send_remote_signal("input", &distance_link.serialize(order, datamap));
+		let _ = node.send_remote_signal("input", distance_link.serialize(order, datamap));
 	}
 }
 impl PartialEq for InputHandler {
@@ -312,7 +312,7 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 pub fn create_input_handler_flex(
 	_node: &Node,
 	calling_client: Arc<Client>,
-	data: &[u8],
+	message: Message,
 ) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateInputHandlerInfo<'a> {
@@ -321,7 +321,7 @@ pub fn create_input_handler_flex(
 		transform: Transform,
 		field_path: &'a str,
 	}
-	let info: CreateInputHandlerInfo = deserialize(data)?;
+	let info: CreateInputHandlerInfo = deserialize(message.as_ref())?;
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);
 	let field = find_field(&calling_client, info.field_path)?;

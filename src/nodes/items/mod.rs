@@ -5,7 +5,7 @@ use self::environment::{EnvironmentItem, ITEM_TYPE_INFO_ENVIRONMENT};
 use self::panel::{PanelItemTrait, ITEM_TYPE_INFO_PANEL};
 use super::fields::Field;
 use super::spatial::{find_spatial_parent, parse_transform, Spatial};
-use super::{Alias, Node};
+use super::{Alias, Message, Node};
 use crate::core::client::Client;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
@@ -17,7 +17,7 @@ use nanoid::nanoid;
 use parking_lot::Mutex;
 use portable_atomic::Ordering;
 use serde::Deserialize;
-use stardust_xr::schemas::flex::{deserialize, flexbuffers, serialize};
+use stardust_xr::schemas::flex::{deserialize, serialize};
 use stardust_xr::values::Transform;
 use std::hash::Hash;
 use std::sync::{Arc, Weak};
@@ -153,7 +153,7 @@ impl Item {
 		self.make_alias_named(client, parent, &self.uid)
 	}
 
-	fn release_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
+	fn release_flex(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
 		let item = node.get_aspect("Item", "item", |n| &n.item)?;
 		release(item, None);
 
@@ -175,7 +175,7 @@ pub enum ItemType {
 	Panel(Arc<dyn PanelItemTrait>),
 }
 impl ItemType {
-	fn serialize_start_data(&self, id: &str) -> Result<Vec<u8>> {
+	fn serialize_start_data(&self, id: &str) -> Result<Message> {
 		match self {
 			ItemType::Environment(e) => e.serialize_start_data(id),
 			ItemType::Panel(p) => p.serialize_start_data(id),
@@ -226,47 +226,44 @@ impl ItemUI {
 		Ok(())
 	}
 	fn send_state(&self, state: &str, name: &str) {
+		let Ok(serialized_data) = serialize(name) else {return};
 		let _ = self
 			.node
 			.upgrade()
 			.unwrap()
-			.send_remote_signal(state, flexbuffers::singleton(name).as_slice());
+			.send_remote_signal(state, serialized_data);
 	}
 
 	fn handle_create_item(&self, item: &Item) {
-		let Some(node) = self.node.upgrade() else { return };
-		let Some(client) = node.get_client() else { return };
+		let Some(node) = self.node.upgrade() else {return};
+		let Some(client) = node.get_client() else {return};
 
 		if let Ok(alias_node) = item.make_alias(&client, &(node.get_path().to_string() + "/item")) {
 			self.item_aliases.add(item.uid.clone(), &alias_node);
 		}
 
 		let Ok(serialized_data) =  item.specialization.serialize_start_data(&item.uid) else {return};
-		let _ = node.send_remote_signal("create_item", &serialized_data);
+		let _ = node.send_remote_signal("create_item", serialized_data);
 	}
 	fn handle_destroy_item(&self, item: &Item) {
 		self.item_aliases.remove(&item.uid);
 		self.send_state("destroy_item", item.uid.as_str());
 	}
 	fn handle_capture_item(&self, item: &Item, acceptor: &ItemAcceptor) {
-		let Some(node) = self.node.upgrade() else { return };
+		let Some(node) = self.node.upgrade() else {return};
 
-		let _ = node.send_remote_signal(
-			"capture_item",
-			&serialize((item.uid.as_str(), acceptor.uid.as_str())).unwrap(),
-		);
+		let Ok(message) = serialize((item.uid.as_str(), acceptor.uid.as_str())) else {return};
+		let _ = node.send_remote_signal("capture_item", message);
 	}
 	fn handle_release_item(&self, item: &Item, acceptor: &ItemAcceptor) {
-		let Some(node) = self.node.upgrade() else { return };
+		let Some(node) = self.node.upgrade() else {return};
 
-		let _ = node.send_remote_signal(
-			"release_item",
-			&serialize((item.uid.as_str(), acceptor.uid.as_str())).unwrap(),
-		);
+		let Ok(message) = serialize((item.uid.as_str(), acceptor.uid.as_str())) else {return};
+		let _ = node.send_remote_signal("release_item", message);
 	}
 	fn handle_create_acceptor(&self, acceptor: &ItemAcceptor) {
-		let Some(node) = self.node.upgrade() else { return };
-		let Some(client) = node.get_client() else { return };
+		let Some(node) = self.node.upgrade() else {return};
+		let Some(client) = node.get_client() else {return};
 
 		let Ok((alias, field_alias)) = acceptor.make_aliases(
 			&client,
@@ -275,7 +272,8 @@ impl ItemUI {
 		self.acceptor_aliases.add(acceptor.uid.clone(), &alias);
 		self.acceptor_field_aliases
 			.add(acceptor.uid.clone(), &field_alias);
-		let _ = node.send_remote_signal("create_acceptor", &serialize(&acceptor.uid).unwrap());
+		let Ok(message) = serialize(&acceptor.uid) else {return};
+		let _ = node.send_remote_signal("create_acceptor", message);
 	}
 	fn handle_destroy_acceptor(&self, acceptor: &ItemAcceptor) {
 		self.send_state("destroy_acceptor", acceptor.uid.as_str());
@@ -314,13 +312,13 @@ impl ItemAcceptor {
 		let _ = node.item_acceptor.set(acceptor);
 	}
 
-	fn capture_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn capture_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
 		if !node.enabled.load(Ordering::Relaxed) {
 			return Ok(());
 		}
 
 		let acceptor = node.item_acceptor.get().unwrap();
-		let item_path: &str = deserialize(data)?;
+		let item_path: &str = deserialize(message.as_ref())?;
 		let item_node = calling_client.get_node("Item", item_path)?;
 		let item = item_node.get_aspect("Item", "item", |n| &n.item)?;
 		capture(item, acceptor);
@@ -352,8 +350,8 @@ impl ItemAcceptor {
 		Ok((acceptor_alias, acceptor_field_alias))
 	}
 	fn handle_capture(&self, item: &Arc<Item>) {
-		let Some(node) = self.node.upgrade() else { return };
-		let Some(client) = node.get_client() else { return };
+		let Some(node) = self.node.upgrade() else {return};
+		let Some(client) = node.get_client() else {return};
 
 		self.accepted_registry.add_raw(item);
 		if let Ok(alias_node) = item.make_alias(&client, &node.path) {
@@ -361,14 +359,15 @@ impl ItemAcceptor {
 		}
 
 		let Ok(serialized_data) =  item.specialization.serialize_start_data(&item.uid) else {return};
-		let _ = node.send_remote_signal("capture", &serialized_data);
+		let _ = node.send_remote_signal("capture", serialized_data);
 	}
 	fn handle_release(&self, item: &Item) {
-		let Some(node) = self.node.upgrade() else { return };
+		let Some(node) = self.node.upgrade() else {return};
 
 		self.accepted_registry.remove(item);
 		self.accepted_aliases.remove(&item.uid);
-		let _ = node.send_remote_signal("release", &serialize(&item.uid).unwrap());
+		let Ok(message) = serialize(&item.uid) else {return};
+		let _ = node.send_remote_signal("release", message);
 	}
 }
 impl Drop for ItemAcceptor {
@@ -403,12 +402,16 @@ fn type_info(name: &str) -> Result<&'static TypeInfo> {
 	}
 }
 
-pub fn register_item_ui_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn register_item_ui_flex(
+	_node: &Node,
+	calling_client: Arc<Client>,
+	message: Message,
+) -> Result<()> {
 	#[derive(Deserialize)]
 	struct RegisterItemUIInfo<'a> {
 		item_type: &'a str,
 	}
-	let info: RegisterItemUIInfo = deserialize(data)?;
+	let info: RegisterItemUIInfo = deserialize(message.as_ref())?;
 	let type_info = type_info(info.item_type)?;
 	let ui =
 		Node::create(&calling_client, "/item", type_info.type_name, true).add_to_scenegraph()?;
@@ -416,7 +419,11 @@ pub fn register_item_ui_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 	Ok(())
 }
 
-fn create_item_acceptor_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+fn create_item_acceptor_flex(
+	_node: &Node,
+	calling_client: Arc<Client>,
+	message: Message,
+) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateItemAcceptorInfo<'a> {
 		name: &'a str,
@@ -425,7 +432,7 @@ fn create_item_acceptor_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 		field_path: &'a str,
 		item_type: &'a str,
 	}
-	let info: CreateItemAcceptorInfo = deserialize(data)?;
+	let info: CreateItemAcceptorInfo = deserialize(message.as_ref())?;
 	let space = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
 	let field = find_field(&calling_client, info.field_path)?;

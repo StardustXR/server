@@ -7,7 +7,7 @@ use crate::{
 		drawable::{model::ModelPart, Drawable},
 		items::{self, Item, ItemType, TypeInfo},
 		spatial::Spatial,
-		Node,
+		Message, Node,
 	},
 };
 use color_eyre::eyre::{bail, eyre, Result};
@@ -129,8 +129,8 @@ pub enum RecommendedState {
 }
 
 pub trait Backend: Send + Sync + 'static {
-	fn serialize_start_data(&self, id: &str) -> Result<Vec<u8>>;
-	fn serialize_toplevel(&self) -> Result<Vec<u8>>;
+	fn serialize_start_data(&self, id: &str) -> Result<Message>;
+	fn serialize_toplevel(&self) -> Result<Message>;
 	fn set_toplevel_capabilities(&self, capabilities: Vec<u8>);
 	fn configure_toplevel(
 		&self,
@@ -244,7 +244,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 	fn apply_surface_material_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
-		data: &[u8],
+		message: Message,
 	) -> Result<()> {
 		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
 
@@ -254,7 +254,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			model_node_path: &'a str,
 		}
 
-		let info: SurfaceMaterialInfo = deserialize(data)?;
+		let info: SurfaceMaterialInfo = deserialize(message.as_ref())?;
 
 		let model_node = calling_client
 			.scenegraph
@@ -268,26 +268,38 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		Ok(())
 	}
 
-	fn pointer_motion_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn pointer_motion_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
 
-		let (surface_id, position): (SurfaceID, Vector2<f32>) = deserialize(data)?;
+		let (surface_id, position): (SurfaceID, Vector2<f32>) = deserialize(message.as_ref())?;
 		debug!(?surface_id, ?position, "Pointer deactivate");
 
 		panel_item.pointer_motion(&surface_id, position);
 
 		Ok(())
 	}
-	fn pointer_button_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn pointer_button_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
 
-		let (surface_id, button, state): (SurfaceID, u32, u32) = deserialize(data)?;
+		let (surface_id, button, state): (SurfaceID, u32, u32) = deserialize(message.as_ref())?;
 		debug!(?surface_id, button, state, "Pointer button");
 
 		panel_item.pointer_button(&surface_id, button, state == 0);
 		Ok(())
 	}
-	fn pointer_scroll_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn pointer_scroll_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
 
 		#[derive(Debug, Deserialize)]
@@ -296,7 +308,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			axis_continuous: Option<Vector2<f32>>,
 			axis_discrete: Option<Vector2<f32>>,
 		}
-		let info: PointerScrollInfo = deserialize(data)?;
+		let info: PointerScrollInfo = deserialize(message.as_ref())?;
 		debug!(?info, "Pointer scroll");
 
 		panel_item.pointer_scroll(&info.surface_id, info.axis_continuous, info.axis_discrete);
@@ -307,9 +319,9 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 	fn keyboard_set_keymap_string_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
-		data: &[u8],
+		message: Message,
 	) -> Result<()> {
-		let keymap_string: &str = deserialize(data)?;
+		let keymap_string: &str = deserialize(message.as_ref())?;
 
 		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
 		debug!("Keyboard set keymap");
@@ -320,7 +332,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 	// fn keyboard_set_keymap_names_flex(
 	// 	node: &Node,
 	// 	_calling_client: Arc<Client>,
-	// 	data: &[u8],
+	// 	message: Message,
 	// ) -> Result<()> {
 	// 	#[derive(Debug, Deserialize)]
 	// 	struct Names<'a> {
@@ -330,7 +342,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 	// 		variant: &'a str,
 	// 		options: Option<String>,
 	// 	}
-	// 	let names: Names = deserialize(data)?;
+	// 	let names: Names = deserialize(message.as_ref())?;
 	// 	let context = xkb::Context::new(0);
 	// 	let keymap = Keymap::new_from_names(
 	// 		&context,
@@ -363,9 +375,13 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 
 	// 	Ok(())
 	// }
-	fn keyboard_key_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn keyboard_key_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
-		let (surface_id, key, state): (SurfaceID, u32, u32) = deserialize(data)?;
+		let (surface_id, key, state): (SurfaceID, u32, u32) = deserialize(message.as_ref())?;
 		debug!(key, state, "Set keyboard key state");
 
 		panel_item.keyboard_key(&surface_id, key, state == 0);
@@ -373,15 +389,16 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		Ok(())
 	}
 	pub fn grab_keyboard(&self, sid: Option<SurfaceID>) {
-		let Some(node) = self.node.upgrade() else { return };
+		let Some(node) = self.node.upgrade() else {return};
 
-		let _ = node.send_remote_signal("grab_keyboard", &serialize(sid).unwrap());
+		let Ok(message) = serialize(sid) else {return};
+		let _ = node.send_remote_signal("grab_keyboard", message);
 	}
 
 	fn configure_toplevel_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
-		data: &[u8],
+		message: Message,
 	) -> Result<()> {
 		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
 
@@ -391,7 +408,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			states: Vec<u32>,
 			bounds: Option<Vector2<u32>>,
 		}
-		let info: ConfigureToplevelInfo = deserialize(data)?;
+		let info: ConfigureToplevelInfo = deserialize(message.as_ref())?;
 
 		panel_item.configure_toplevel(info.size, info.states, info.bounds);
 		Ok(())
@@ -400,11 +417,11 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 	fn set_toplevel_capabilities_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
-		data: &[u8],
+		message: Message,
 	) -> Result<()> {
 		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
 
-		let capabilities: Vec<u8> = deserialize(data)?;
+		let capabilities: Vec<u8> = deserialize(message.as_ref())?;
 		debug!("Set toplevel capabilities");
 		panel_item.set_toplevel_capabilities(capabilities);
 
@@ -413,17 +430,17 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 
 	pub fn commit_toplevel(&self) {
 		debug!("Commit toplevel");
-		let Some(node) = self.node.upgrade() else { return };
+		let Some(node) = self.node.upgrade() else {return};
 		let Ok(data) = self.backend.serialize_toplevel() else {return};
-		let _ = node.send_remote_signal("commit_toplevel", &data);
+		let _ = node.send_remote_signal("commit_toplevel", data);
 	}
 
 	pub fn recommend_toplevel_state(&self, state: RecommendedState) {
-		let Some(node) = self.node.upgrade() else { return };
+		let Some(node) = self.node.upgrade() else {return};
 		let data = serialize(state).unwrap();
 		debug!(?state, "Recommend toplevel state");
 
-		let _ = node.send_remote_signal("recommend_toplevel_state", &data);
+		let _ = node.send_remote_signal("recommend_toplevel_state", data);
 	}
 }
 impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
@@ -432,11 +449,11 @@ impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
 	}
 }
 impl<B: Backend + ?Sized> Backend for PanelItem<B> {
-	fn serialize_start_data(&self, id: &str) -> Result<Vec<u8>> {
+	fn serialize_start_data(&self, id: &str) -> Result<Message> {
 		self.backend.serialize_start_data(id)
 	}
 
-	fn serialize_toplevel(&self) -> Result<Vec<u8>> {
+	fn serialize_toplevel(&self) -> Result<Message> {
 		self.backend.serialize_toplevel()
 	}
 

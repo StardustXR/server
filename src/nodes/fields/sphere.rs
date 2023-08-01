@@ -1,6 +1,7 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
 use crate::nodes::spatial::{find_spatial_parent, Spatial};
+use crate::nodes::Message;
 use color_eyre::eyre::{ensure, Result};
 use glam::{Mat4, Vec3A};
 use mint::Vector3;
@@ -39,9 +40,13 @@ impl SphereField {
 		self.radius.store(radius, Ordering::Relaxed);
 	}
 
-	pub fn set_radius_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_radius_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		let Field::Sphere(sphere_field) = node.field.get().unwrap().as_ref() else { return Ok(()) };
-		sphere_field.set_radius(deserialize(data)?);
+		sphere_field.set_radius(deserialize(message.as_ref())?);
 		Ok(())
 	}
 }
@@ -64,7 +69,7 @@ impl FieldTrait for SphereField {
 pub fn create_sphere_field_flex(
 	_node: &Node,
 	calling_client: Arc<Client>,
-	data: &[u8],
+	message: Message,
 ) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateFieldInfo<'a> {
@@ -73,7 +78,7 @@ pub fn create_sphere_field_flex(
 		origin: Option<Vector3<f32>>,
 		radius: f32,
 	}
-	let info: CreateFieldInfo = deserialize(data)?;
+	let info: CreateFieldInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/field", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = Mat4::from_translation(

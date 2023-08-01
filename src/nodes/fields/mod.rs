@@ -10,7 +10,7 @@ use self::torus::{create_torus_field_flex, TorusField};
 
 use super::alias::AliasInfo;
 use super::spatial::Spatial;
-use super::Node;
+use super::{Message, Node};
 use crate::core::client::Client;
 use crate::nodes::spatial::find_reference_space;
 use color_eyre::eyre::Result;
@@ -133,13 +133,17 @@ const MAX_RAY_MARCH: f32 = f32::MAX;
 // const MIN_RAY_LENGTH: f32 = 0_f32;
 const MAX_RAY_LENGTH: f32 = 1000_f32;
 
-fn field_distance_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<Vec<u8>> {
+fn field_distance_flex(
+	node: &Node,
+	calling_client: Arc<Client>,
+	message: Message,
+) -> Result<Message> {
 	#[derive(Deserialize)]
 	struct FieldInfoArgs<'a> {
 		reference_space_path: &'a str,
 		point: Vector3<f32>,
 	}
-	let args: FieldInfoArgs = deserialize(data)?;
+	let args: FieldInfoArgs = deserialize(message.as_ref())?;
 	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
 	let distance = node
@@ -147,16 +151,20 @@ fn field_distance_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) ->
 		.get()
 		.unwrap()
 		.distance(reference_space.as_ref(), args.point.into());
-	Ok(serialize(distance)?)
+	Ok(serialize(distance)?.into())
 }
-fn field_normal_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<Vec<u8>> {
+fn field_normal_flex(
+	node: &Node,
+	calling_client: Arc<Client>,
+	message: Message,
+) -> Result<Message> {
 	#[derive(Deserialize)]
 	struct FieldInfoArgs<'a> {
 		reference_space_path: &'a str,
 		point: Vector3<f32>,
 		radius: Option<f32>,
 	}
-	let args: FieldInfoArgs = deserialize(data)?;
+	let args: FieldInfoArgs = deserialize(message.as_ref())?;
 	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
 	let normal = node.field.get().as_ref().unwrap().normal(
@@ -164,20 +172,20 @@ fn field_normal_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> R
 		args.point.into(),
 		args.radius.unwrap_or(0.001),
 	);
-	Ok(serialize(mint::Vector3::from(normal))?)
+	Ok(serialize(mint::Vector3::from(normal))?.into())
 }
 fn field_closest_point_flex(
 	node: &Node,
 	calling_client: Arc<Client>,
-	data: &[u8],
-) -> Result<Vec<u8>> {
+	message: Message,
+) -> Result<Message> {
 	#[derive(Deserialize)]
 	struct FieldInfoArgs<'a> {
 		reference_space_path: &'a str,
 		point: Vector3<f32>,
 		radius: Option<f32>,
 	}
-	let args: FieldInfoArgs = deserialize(data)?;
+	let args: FieldInfoArgs = deserialize(message.as_ref())?;
 	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
 	let closest_point = node.field.get().as_ref().unwrap().closest_point(
@@ -185,16 +193,20 @@ fn field_closest_point_flex(
 		args.point.into(),
 		args.radius.unwrap_or(0.001),
 	);
-	Ok(serialize(mint::Vector3::from(closest_point))?)
+	Ok(serialize(mint::Vector3::from(closest_point))?.into())
 }
-fn field_ray_march_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<Vec<u8>> {
+fn field_ray_march_flex(
+	node: &Node,
+	calling_client: Arc<Client>,
+	message: Message,
+) -> Result<Message> {
 	#[derive(Deserialize)]
 	struct FieldInfoArgs<'a> {
 		reference_space_path: &'a str,
 		ray_origin: Vector3<f32>,
 		ray_direction: Vector3<f32>,
 	}
-	let args: FieldInfoArgs = deserialize(data)?;
+	let args: FieldInfoArgs = deserialize(message.as_ref())?;
 	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
 	let ray_march_result = node.field.get().unwrap().ray_march(Ray {
@@ -202,7 +214,7 @@ fn field_ray_march_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -
 		direction: args.ray_direction.into(),
 		space: reference_space,
 	});
-	Ok(serialize(ray_march_result)?)
+	Ok(serialize(ray_march_result)?.into())
 }
 
 pub enum Field {

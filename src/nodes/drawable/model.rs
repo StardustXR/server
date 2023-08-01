@@ -5,6 +5,7 @@ use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
 use crate::nodes::drawable::Drawable;
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
+use crate::nodes::Message;
 use crate::SK_MULTITHREAD;
 use color_eyre::eyre::{bail, ensure, eyre, Result};
 use glam::Mat4;
@@ -213,11 +214,11 @@ impl ModelPart {
 	fn set_material_parameter_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
-		data: &[u8],
+		message: Message,
 	) -> Result<()> {
 		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {bail!("Not a drawable??")};
 
-		let (name, value): (String, MaterialParameter) = deserialize(data)?;
+		let (name, value): (String, MaterialParameter) = deserialize(message.as_ref())?;
 
 		model_part
 			.pending_material_parameters
@@ -342,7 +343,7 @@ pub fn draw_all(sk: &impl StereoKitDraw) {
 	}
 }
 
-pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateModelInfo<'a> {
 		name: &'a str,
@@ -350,7 +351,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 		transform: Transform,
 		resource: ResourceID,
 	}
-	let info: CreateModelInfo = deserialize(data)?;
+	let info: CreateModelInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/drawable/model", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);

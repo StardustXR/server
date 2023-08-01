@@ -83,7 +83,7 @@ impl CoreSurface {
 	}
 
 	pub fn process(&self, sk: &impl StereoKitDraw, renderer: &mut GlesRenderer) {
-		let Some(wl_surface) = self.wl_surface() else { return };
+		let Some(wl_surface) = self.wl_surface() else {return};
 
 		let sk_tex = self.sk_tex.get_or_init(|| {
 			SendWrapper::new(sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32))
@@ -166,7 +166,7 @@ impl CoreSurface {
 	}
 
 	pub fn frame(&self, sk: &impl StereoKitDraw, output: Output) {
-		let Some(wl_surface) = self.wl_surface() else { return };
+		let Some(wl_surface) = self.wl_surface() else {return};
 
 		send_frames_surface_tree(
 			&wl_surface,

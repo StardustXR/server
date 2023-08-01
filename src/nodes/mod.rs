@@ -22,6 +22,7 @@ use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::deserialize;
 use std::fmt::Debug;
+use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
 use tracing::{debug_span, instrument};
@@ -40,8 +41,26 @@ use self::spatial::zone::Zone;
 use self::spatial::Spatial;
 use self::startup::StartupSettings;
 
-pub type Signal = fn(&Node, Arc<Client>, &[u8]) -> Result<()>;
-pub type Method = fn(&Node, Arc<Client>, &[u8]) -> Result<Vec<u8>>;
+pub struct Message {
+	pub data: Vec<u8>,
+	pub fds: Vec<OwnedFd>,
+}
+impl From<Vec<u8>> for Message {
+	fn from(data: Vec<u8>) -> Self {
+		Message {
+			data,
+			fds: Vec::new(),
+		}
+	}
+}
+impl AsRef<[u8]> for Message {
+	fn as_ref(&self) -> &[u8] {
+		&self.data
+	}
+}
+
+pub type Signal = fn(&Node, Arc<Client>, Message) -> Result<()>;
+pub type Method = fn(&Node, Arc<Client>, Message) -> Result<Message>;
 
 pub struct Node {
 	pub enabled: Arc<AtomicBool>,
@@ -144,11 +163,20 @@ impl Node {
 		}
 	}
 
-	pub fn set_enabled_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		node.enabled.store(deserialize(data)?, Ordering::Relaxed);
+	pub fn set_enabled_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
+		node.enabled
+			.store(deserialize(message.as_ref())?, Ordering::Relaxed);
 		Ok(())
 	}
-	pub fn destroy_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
+	pub fn destroy_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		_message: Message,
+	) -> Result<()> {
 		if node.destroyable {
 			node.destroy();
 		}
@@ -180,7 +208,7 @@ impl Node {
 		&self,
 		calling_client: Arc<Client>,
 		method: &str,
-		data: &[u8],
+		message: Message,
 	) -> Result<(), ScenegraphError> {
 		if let Some(alias) = self.alias.get() {
 			if !alias.info.server_signals.iter().any(|e| e == &method) {
@@ -190,13 +218,13 @@ impl Node {
 				.original
 				.upgrade()
 				.ok_or(ScenegraphError::BrokenAlias)?
-				.send_local_signal(calling_client, method, data)
+				.send_local_signal(calling_client, method, message)
 		} else {
 			let signal = self
 				.local_signals
 				.get(method)
 				.ok_or(ScenegraphError::SignalNotFound)?;
-			signal(self, calling_client, data).map_err(|error| ScenegraphError::SignalError {
+			signal(self, calling_client, message).map_err(|error| ScenegraphError::SignalError {
 				error: error.to_string(),
 			})
 		}
@@ -205,8 +233,8 @@ impl Node {
 		&self,
 		calling_client: Arc<Client>,
 		method: &str,
-		data: &[u8],
-	) -> Result<Vec<u8>, ScenegraphError> {
+		message: Message,
+	) -> Result<Message, ScenegraphError> {
 		if let Some(alias) = self.alias.get() {
 			if !alias.info.server_methods.iter().any(|e| e == &method) {
 				return Err(ScenegraphError::MethodNotFound);
@@ -215,7 +243,14 @@ impl Node {
 				.original
 				.upgrade()
 				.ok_or(ScenegraphError::BrokenAlias)?
-				.execute_local_method(calling_client, method, data)
+				.execute_local_method(
+					calling_client,
+					method,
+					Message {
+						data: message.data.clone(),
+						fds: Vec::new(),
+					},
+				)
 		} else {
 			let method = self
 				.local_methods
@@ -223,27 +258,36 @@ impl Node {
 				.ok_or(ScenegraphError::MethodNotFound)?;
 
 			debug_span!("Handle method").in_scope(|| {
-				method(self, calling_client, data).map_err(|error| ScenegraphError::MethodError {
-					error: error.to_string(),
+				method(self, calling_client, message).map_err(|error| {
+					ScenegraphError::MethodError {
+						error: error.to_string(),
+					}
 				})
 			})
 		}
 	}
 	#[instrument(level = "debug", skip_all)]
-	pub fn send_remote_signal(&self, method: &str, data: &[u8]) -> Result<()> {
+	pub fn send_remote_signal(&self, method: &str, message: impl Into<Message>) -> Result<()> {
+		let message = message.into();
 		self.aliases
 			.get_valid_contents()
 			.iter()
 			.filter(|alias| alias.info.client_signals.iter().any(|e| e == &method))
 			.filter_map(|alias| alias.node.upgrade())
 			.for_each(|node| {
-				let _ = node.send_remote_signal(method, data);
+				// Beware! file descriptors will not be sent to aliases!!!
+				let _ = node.send_remote_signal(
+					method,
+					Message {
+						data: message.data.clone(),
+						fds: Vec::new(),
+					},
+				);
 			});
 		let path = self.path.clone();
 		let method = method.to_string();
-		let data = data.to_vec();
 		if let Some(handle) = self.message_sender_handle.as_ref() {
-			handle.signal(path.as_str(), method.as_str(), data.as_slice())?;
+			handle.signal(path.as_str(), method.as_str(), &message.data, message.fds)?;
 		}
 		Ok(())
 	}
@@ -252,7 +296,7 @@ impl Node {
 	// 	&self,
 	// 	method: &str,
 	// 	data: Vec<u8>,
-	// ) -> Result<impl Future<Output = Result<Vec<u8>>>> {
+	// ) -> Result<impl Future<Output = Result<Message>>> {
 	// 	let message_sender_handle = self
 	// 		.message_sender_handle
 	// 		.as_ref()

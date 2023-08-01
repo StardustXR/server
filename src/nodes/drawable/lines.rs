@@ -2,7 +2,7 @@ use crate::{
 	core::{client::Client, registry::Registry},
 	nodes::{
 		spatial::{find_spatial_parent, parse_transform, Spatial},
-		Node,
+		Message, Node,
 	},
 };
 use color_eyre::eyre::{bail, ensure, Result};
@@ -97,10 +97,14 @@ impl Lines {
 		draw_ctx.line_add_listv(points.make_contiguous());
 	}
 
-	pub fn set_points_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_points_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		let Some(Drawable::Lines(lines)) = node.drawable.get() else {bail!("Not a drawable??")};
 
-		let mut points: Vec<LinePointRaw> = deserialize(data)?;
+		let mut points: Vec<LinePointRaw> = deserialize(message.as_ref())?;
 		for p in &mut points {
 			p.color[0] = p.color[0].powf(2.2);
 			p.color[1] = p.color[1].powf(2.2);
@@ -109,10 +113,14 @@ impl Lines {
 		lines.data.lock().points = points;
 		Ok(())
 	}
-	pub fn set_cyclic_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_cyclic_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		let Some(Drawable::Lines(lines)) = node.drawable.get() else {bail!("Not a drawable??")};
 
-		lines.data.lock().cyclic = deserialize(data)?;
+		lines.data.lock().cyclic = deserialize(message.as_ref())?;
 		Ok(())
 	}
 }
@@ -130,7 +138,7 @@ pub fn draw_all(draw_ctx: &impl StereoKitDraw) {
 	}
 }
 
-pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateTextInfo<'a> {
 		name: &'a str,
@@ -139,7 +147,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 		points: Vec<LinePointRaw>,
 		cyclic: bool,
 	}
-	let mut info: CreateTextInfo = deserialize(data)?;
+	let mut info: CreateTextInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/drawable/lines", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);

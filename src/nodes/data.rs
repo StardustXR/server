@@ -1,7 +1,7 @@
 use super::alias::AliasInfo;
 use super::fields::Field;
 use super::spatial::{parse_transform, Spatial};
-use super::{Alias, Node};
+use super::{Alias, Message, Node};
 use crate::core::client::Client;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
@@ -85,9 +85,9 @@ impl PulseSender {
 		if !mask_matches(&self.mask, &receiver.mask) {
 			return;
 		}
-		let Some(tx_node) = self.node.upgrade() else { return };
-		let Some(tx_client) = tx_node.get_client() else { return };
-		let Some(rx_node) = receiver.node.upgrade() else { return };
+		let Some(tx_node) = self.node.upgrade() else {return};
+		let Some(tx_client) = tx_node.get_client() else {return};
+		let Some(rx_node) = receiver.node.upgrade() else {return};
 		// Receiver itself
 		let rx_alias = Alias::create(
 			&tx_client,
@@ -142,7 +142,7 @@ impl PulseSender {
 		};
 
 		let Ok(data) = serialize(info) else {return};
-		let _ = tx_node.send_remote_signal("new_receiver", &data);
+		let _ = tx_node.send_remote_signal("new_receiver", data);
 	}
 
 	fn handle_drop_receiver(&self, receiver: &PulseReceiver) {
@@ -151,11 +151,11 @@ impl PulseSender {
 		self.aliases.remove(&(uid.to_string() + "-field"));
 		let Some(tx_node) = self.node.upgrade() else {return};
 		let Ok(data) = serialize(&uid) else {return};
-		let _ = tx_node.send_remote_signal("drop_receiver", &data);
+		let _ = tx_node.send_remote_signal("drop_receiver", data);
 	}
 
-	fn send_data_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let info: SendDataInfo = deserialize(data)?;
+	fn send_data_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+		let info: SendDataInfo = deserialize(message.as_ref())?;
 		let receiver_node = calling_client.get_node("Pulse receiver", info.uid)?;
 		let receiver =
 			receiver_node.get_aspect("Pulse Receiver", "pulse receiver", |n| &n.pulse_receiver)?;
@@ -210,7 +210,7 @@ impl PulseReceiver {
 
 	pub fn send_data(&self, uid: &str, data: Vec<u8>) -> Result<()> {
 		if let Some(node) = self.node.upgrade() {
-			node.send_remote_signal("data", &serialize(SendDataInfo { uid, data })?)?;
+			node.send_remote_signal("data", serialize(SendDataInfo { uid, data })?)?;
 		}
 		Ok(())
 	}
@@ -235,7 +235,7 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 pub fn create_pulse_sender_flex(
 	_node: &Node,
 	calling_client: Arc<Client>,
-	data: &[u8],
+	message: Message,
 ) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreatePulseSenderInfo<'a> {
@@ -244,7 +244,7 @@ pub fn create_pulse_sender_flex(
 		transform: Transform,
 		mask: Vec<u8>,
 	}
-	let info: CreatePulseSenderInfo = deserialize(data)?;
+	let info: CreatePulseSenderInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/data/sender", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
@@ -261,7 +261,7 @@ pub fn create_pulse_sender_flex(
 pub fn create_pulse_receiver_flex(
 	_node: &Node,
 	calling_client: Arc<Client>,
-	data: &[u8],
+	message: Message,
 ) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreatePulseReceiverInfo<'a> {
@@ -271,7 +271,7 @@ pub fn create_pulse_receiver_flex(
 		field_path: &'a str,
 		mask: Vec<u8>,
 	}
-	let info: CreatePulseReceiverInfo = deserialize(data)?;
+	let info: CreatePulseReceiverInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/data/receiver", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
