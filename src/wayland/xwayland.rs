@@ -7,6 +7,7 @@ use crate::{
 	nodes::{
 		drawable::model::ModelPart,
 		items::panel::{Backend, PanelItem, RecommendedState, SurfaceID},
+		Message,
 	},
 	wayland::surface::CoreSurface,
 };
@@ -279,7 +280,7 @@ impl X11Backend {
 	// }
 }
 impl Backend for X11Backend {
-	fn serialize_start_data(&self, id: &str) -> Result<Vec<u8>> {
+	fn serialize_start_data(&self, id: &str) -> Result<Message> {
 		let size = (
 			self.toplevel.geometry().size.w as u32,
 			self.toplevel.geometry().size.h as u32,
@@ -304,9 +305,9 @@ impl Backend for X11Backend {
 			None::<SurfaceID>,
 			None::<SurfaceID>,
 		);
-		serialize((id, info)).map_err(|e| e.into())
+		Ok(serialize((id, info))?.into())
 	}
-	fn serialize_toplevel(&self) -> Result<Vec<u8>> {
+	fn serialize_toplevel(&self) -> Result<Message> {
 		let toplevel_state = (
 			None::<String>,
 			self.toplevel.title(),
@@ -319,7 +320,7 @@ impl Backend for X11Backend {
 			self.toplevel.max_size().map(|s| (s.w, s.w)),
 		);
 		let data = serialize(&toplevel_state)?;
-		Ok(data)
+		Ok(data.into())
 	}
 
 	fn set_toplevel_capabilities(&self, _capabilities: Vec<u8>) {}

@@ -1,6 +1,7 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
+use crate::nodes::Message;
 use color_eyre::eyre::{ensure, Result};
 use glam::{vec3, vec3a, Vec3, Vec3A};
 use mint::Vector3;
@@ -40,9 +41,13 @@ impl BoxField {
 		*self.size.lock() = size.into();
 	}
 
-	pub fn set_size_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_size_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		let Field::Box(box_field) = node.field.get().unwrap().as_ref() else { return Ok(()) };
-		box_field.set_size(deserialize(data)?);
+		box_field.set_size(deserialize(message.as_ref())?);
 
 		Ok(())
 	}
@@ -64,7 +69,11 @@ impl FieldTrait for BoxField {
 	}
 }
 
-pub fn create_box_field_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_box_field_flex(
+	_node: &Node,
+	calling_client: Arc<Client>,
+	message: Message,
+) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateFieldInfo<'a> {
 		name: &'a str,
@@ -72,7 +81,7 @@ pub fn create_box_field_flex(_node: &Node, calling_client: Arc<Client>, data: &[
 		transform: Transform,
 		size: Vector3<f32>,
 	}
-	let info: CreateFieldInfo = deserialize(data)?;
+	let info: CreateFieldInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/field", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);

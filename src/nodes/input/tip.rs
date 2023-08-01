@@ -3,7 +3,7 @@ use crate::core::client::Client;
 use crate::nodes::fields::Field;
 use crate::nodes::input::{InputMethod, InputType};
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
-use crate::nodes::Node;
+use crate::nodes::{Message, Node};
 use color_eyre::eyre::Result;
 use glam::{vec3a, Mat4};
 use serde::Deserialize;
@@ -17,9 +17,9 @@ pub struct Tip {
 	pub radius: f32,
 }
 impl Tip {
-	fn set_radius(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn set_radius(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
 		if let InputType::Tip(tip) = &mut *node.input_method.get().unwrap().specialization.lock() {
-			tip.radius = deserialize(data)?;
+			tip.radius = deserialize(message.as_ref())?;
 		}
 		Ok(())
 	}
@@ -45,7 +45,7 @@ impl InputSpecialization for Tip {
 	}
 }
 
-pub fn create_tip_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_tip_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateTipInfo<'a> {
 		name: &'a str,
@@ -54,7 +54,7 @@ pub fn create_tip_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -
 		radius: f32,
 		datamap: Option<Vec<u8>>,
 	}
-	let info: CreateTipInfo = deserialize(data)?;
+	let info: CreateTipInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/input/method/tip", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);

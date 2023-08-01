@@ -3,7 +3,7 @@ use crate::core::client::Client;
 use crate::nodes::fields::{Field, Ray, RayMarchResult};
 use crate::nodes::input::{InputMethod, InputType};
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
-use crate::nodes::Node;
+use crate::nodes::{Message, Node};
 use glam::{vec3, Mat4};
 use serde::Deserialize;
 use stardust_xr::schemas::flat::{Datamap, InputDataType, Pointer as FlatPointer};
@@ -63,7 +63,7 @@ impl InputSpecialization for Pointer {
 pub fn create_pointer_flex(
 	_node: &Node,
 	calling_client: Arc<Client>,
-	data: &[u8],
+	message: Message,
 ) -> color_eyre::eyre::Result<()> {
 	#[derive(Deserialize)]
 	struct CreatePointerInfo<'a> {
@@ -72,7 +72,7 @@ pub fn create_pointer_flex(
 		transform: Transform,
 		datamap: Option<Vec<u8>>,
 	}
-	let info: CreatePointerInfo = deserialize(data)?;
+	let info: CreatePointerInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/input/method/pointer", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);

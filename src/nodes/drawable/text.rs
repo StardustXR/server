@@ -3,7 +3,7 @@ use crate::{
 	nodes::{
 		drawable::Drawable,
 		spatial::{find_spatial_parent, parse_transform, Spatial},
-		Node,
+		Message, Node,
 	},
 };
 use color_eyre::eyre::{bail, ensure, eyre, Result};
@@ -151,18 +151,22 @@ impl Text {
 	pub fn set_character_height_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
-		data: &[u8],
+		message: Message,
 	) -> Result<()> {
 		let Some(Drawable::Text(text)) = node.drawable.get() else {bail!("Not a drawable??")};
 
-		text.data.lock().character_height = deserialize(data)?;
+		text.data.lock().character_height = deserialize(message.as_ref())?;
 		Ok(())
 	}
 
-	pub fn set_text_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_text_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		let Some(Drawable::Text(text)) = node.drawable.get() else {bail!("Not a drawable??")};
 
-		text.data.lock().text = deserialize(data)?;
+		text.data.lock().text = deserialize(message.as_ref())?;
 		Ok(())
 	}
 }
@@ -183,7 +187,7 @@ pub fn draw_all(sk: &impl StereoKitDraw) {
 	}
 }
 
-pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateTextInfo<'a> {
 		name: &'a str,
@@ -198,7 +202,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 		bounds_align: TextAlign,
 		color: [f32; 4],
 	}
-	let info: CreateTextInfo = deserialize(data)?;
+	let info: CreateTextInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/drawable/text", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);

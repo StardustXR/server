@@ -10,13 +10,15 @@ use stardust_xr::schemas::{
 	flex::flexbuffers::{FlexbufferSerializer, Reader, ReaderError},
 };
 
+use crate::nodes::Message;
+
 pub struct TypedDatamap<T: DeserializeOwned + Serialize>(T);
 impl<T: DeserializeOwned + Serialize> TypedDatamap<T> {
 	pub fn new(data: T) -> Self {
 		TypedDatamap(data)
 	}
-	pub fn from_flex(data: &[u8]) -> Result<Self> {
-		let root = Reader::get_root(data)?;
+	pub fn from_flex(message: Message) -> Result<Self> {
+		let root = Reader::get_root(message.as_ref())?;
 		T::deserialize(root).map(Self::new).map_err(|e| e.into())
 	}
 	pub fn to_datamap(&mut self) -> Result<Datamap> {

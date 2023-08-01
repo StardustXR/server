@@ -1,4 +1,4 @@
-use super::Node;
+use super::{Message, Node};
 use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
@@ -83,13 +83,13 @@ impl Sound {
 		}
 	}
 
-	fn play_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
+	fn play_flex(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
 		let sound = node.sound.get().unwrap();
 		sound.play.lock().replace(());
 		Ok(())
 	}
 
-	pub fn stop_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
+	pub fn stop_flex(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
 		let sound = node.sound.get().unwrap();
 		sound.stop.lock().replace(());
 		Ok(())
@@ -108,7 +108,7 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	node.add_to_scenegraph().map(|_| ())
 }
 
-pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateSoundInfo<'a> {
 		name: &'a str,
@@ -116,7 +116,7 @@ pub fn create_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Re
 		transform: Transform,
 		resource: ResourceID,
 	}
-	let info: CreateSoundInfo = deserialize(data)?;
+	let info: CreateSoundInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/audio/sound", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);

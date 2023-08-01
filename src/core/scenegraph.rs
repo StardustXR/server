@@ -1,9 +1,10 @@
-use crate::core::client::Client;
 use crate::nodes::Node;
+use crate::{core::client::Client, nodes::Message};
 use color_eyre::eyre::Result;
 use once_cell::sync::OnceCell;
 use stardust_xr::scenegraph;
 use stardust_xr::scenegraph::ScenegraphError;
+use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
 use tracing::{debug, debug_span, instrument};
 
@@ -50,12 +51,25 @@ impl Scenegraph {
 }
 
 impl scenegraph::Scenegraph for Scenegraph {
-	fn send_signal(&self, path: &str, method: &str, data: &[u8]) -> Result<(), ScenegraphError> {
+	fn send_signal(
+		&self,
+		path: &str,
+		method: &str,
+		data: &[u8],
+		fds: Vec<OwnedFd>,
+	) -> Result<(), ScenegraphError> {
 		let Some(client) = self.get_client() else {return Err(ScenegraphError::SignalNotFound)};
 		debug_span!("Handle signal", path, method).in_scope(|| {
 			self.get_node(path)
 				.ok_or(ScenegraphError::NodeNotFound)?
-				.send_local_signal(client, method, data)
+				.send_local_signal(
+					client,
+					method,
+					Message {
+						data: data.to_vec(),
+						fds,
+					},
+				)
 		})
 	}
 	fn execute_method(
@@ -63,12 +77,22 @@ impl scenegraph::Scenegraph for Scenegraph {
 		path: &str,
 		method: &str,
 		data: &[u8],
-	) -> Result<Vec<u8>, ScenegraphError> {
+		fds: Vec<OwnedFd>,
+	) -> Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError> {
 		let Some(client) = self.get_client() else {return Err(ScenegraphError::MethodNotFound)};
 		debug_span!("Handle method", path, method).in_scope(|| {
-			self.get_node(path)
+			let message = self
+				.get_node(path)
 				.ok_or(ScenegraphError::NodeNotFound)?
-				.execute_local_method(client, method, data)
+				.execute_local_method(
+					client,
+					method,
+					Message {
+						data: data.to_vec(),
+						fds,
+					},
+				)?;
+			Ok((message.data, message.fds))
 		})
 	}
 }

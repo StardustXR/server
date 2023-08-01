@@ -5,7 +5,7 @@ use crate::{
 		alias::{Alias, AliasInfo},
 		fields::{find_field, Field},
 		spatial::{find_spatial_parent, parse_transform},
-		Node,
+		Message, Node,
 	},
 };
 use color_eyre::eyre::Result;
@@ -31,17 +31,19 @@ pub fn capture(spatial: &Arc<Spatial>, zone: &Arc<Zone>) {
 		*spatial.old_parent.lock() = spatial.get_parent();
 		*spatial.zone.lock() = Arc::downgrade(zone);
 		zone.captured.add_raw(spatial);
-		let node = zone.spatial.node.upgrade().unwrap();
-		let _ = node.send_remote_signal("capture", &serialize(&spatial.uid).unwrap());
+		let Some(node) = zone.spatial.node.upgrade() else {return};
+		let Ok(message) = serialize(&spatial.uid) else {return};
+		let _ = node.send_remote_signal("capture", message);
 	}
 }
 pub fn release(spatial: &Spatial) {
 	let _ = spatial.set_spatial_parent_in_place(spatial.old_parent.lock().take());
 	let mut spatial_zone = spatial.zone.lock();
 	if let Some(spatial_zone) = spatial_zone.upgrade() {
-		let node = spatial_zone.spatial.node.upgrade().unwrap();
+		let Some(node) = spatial_zone.spatial.node.upgrade() else {return};
 		spatial_zone.captured.remove(spatial);
-		let _ = node.send_remote_signal("release", &serialize(&spatial.uid).unwrap());
+		let Ok(message) = serialize(&spatial.uid) else {return};
+		let _ = node.send_remote_signal("release", message);
 	}
 	*spatial_zone = Weak::new();
 }
@@ -66,20 +68,20 @@ impl Zone {
 		let _ = node.zone.set(zone.clone());
 		zone
 	}
-	fn capture_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	fn capture_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
 		let zone = node.zone.get().unwrap();
-		let capture_path: &str = deserialize(data)?;
+		let capture_path: &str = deserialize(message.as_ref())?;
 		let spatial = find_spatial(&calling_client, "Spatial", capture_path)?;
 		capture(&spatial, zone);
 		Ok(())
 	}
-	fn release_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let capture_path: &str = deserialize(data)?;
+	fn release_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+		let capture_path: &str = deserialize(message.as_ref())?;
 		let spatial = find_spatial(&calling_client, "Spatial", capture_path)?;
 		release(&spatial);
 		Ok(())
 	}
-	fn update(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
+	fn update(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
 		let zone = node.zone.get().unwrap();
 		let Some(field) = zone.field.upgrade() else { return Err(color_eyre::eyre::eyre!("Zone's field has been destroyed")) };
 		let Some((zone_client, zone_node)) = zone
@@ -129,10 +131,10 @@ impl Zone {
 			.collect::<FxHashMap<String, Arc<Node>>>();
 
 		for entered_uid in zoneables.keys().filter(|k| !old_zoneables.contains_key(*k)) {
-			node.send_remote_signal("enter", &serialize(entered_uid)?)?;
+			node.send_remote_signal("enter", serialize(entered_uid)?)?;
 		}
 		for left_uid in old_zoneables.keys().filter(|k| !zoneables.contains_key(*k)) {
-			node.send_remote_signal("leave", &serialize(left_uid)?)?;
+			node.send_remote_signal("leave", serialize(left_uid)?)?;
 		}
 
 		*old_zoneables = zoneables;
@@ -148,7 +150,7 @@ impl Drop for Zone {
 	}
 }
 
-pub fn create_zone_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_zone_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateZoneInfo<'a> {
 		name: &'a str,
@@ -156,7 +158,7 @@ pub fn create_zone_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) 
 		transform: Transform,
 		field_path: &'a str,
 	}
-	let info: CreateZoneInfo = deserialize(data)?;
+	let info: CreateZoneInfo = deserialize(message.as_ref())?;
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
 	let field = find_field(&calling_client, info.field_path)?;

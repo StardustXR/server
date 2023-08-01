@@ -7,7 +7,7 @@ use crate::{
 	nodes::{
 		items::TypeInfo,
 		spatial::{find_spatial_parent, parse_transform, Spatial},
-		Node,
+		Message, Node,
 	},
 };
 use color_eyre::eyre::{eyre, Result};
@@ -15,7 +15,7 @@ use lazy_static::lazy_static;
 use nanoid::nanoid;
 use serde::Deserialize;
 use stardust_xr::{
-	schemas::flex::{deserialize, flexbuffers, serialize},
+	schemas::flex::{deserialize, serialize},
 	values::Transform,
 };
 use std::sync::Arc;
@@ -46,22 +46,26 @@ impl EnvironmentItem {
 		node.add_local_method("get_path", EnvironmentItem::get_path_flex);
 	}
 
-	fn get_path_flex(node: &Node, _calling_client: Arc<Client>, _data: &[u8]) -> Result<Vec<u8>> {
+	fn get_path_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		_message: Message,
+	) -> Result<Message> {
 		let ItemType::Environment(environment_item) = &node.item.get().unwrap().specialization else {
 			return Err(eyre!("Wrong item type?"))
 		};
-		Ok(flexbuffers::singleton(environment_item.path.as_str()))
+		Ok(serialize(environment_item.path.as_str())?.into())
 	}
 
-	pub fn serialize_start_data(&self, id: &str) -> Result<Vec<u8>> {
-		serialize((id, self.path.as_str())).map_err(|e| e.into())
+	pub fn serialize_start_data(&self, id: &str) -> Result<Message> {
+		Ok(serialize((id, self.path.as_str()))?.into())
 	}
 }
 
 pub(super) fn create_environment_item_flex(
 	_node: &Node,
 	calling_client: Arc<Client>,
-	data: &[u8],
+	message: Message,
 ) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateEnvironmentItemInfo<'a> {
@@ -70,7 +74,7 @@ pub(super) fn create_environment_item_flex(
 		transform: Transform,
 		item_data: String,
 	}
-	let info: CreateEnvironmentItemInfo = deserialize(data)?;
+	let info: CreateEnvironmentItemInfo = deserialize(message.as_ref())?;
 	let parent_name = format!("/item/{}/item", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
 	let space = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);

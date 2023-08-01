@@ -1,7 +1,7 @@
 pub mod zone;
 
 use self::zone::{create_zone_flex, Zone};
-use super::Node;
+use super::{Message, Node};
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use color_eyre::eyre::{ensure, eyre, Result};
@@ -232,13 +232,13 @@ impl Spatial {
 	pub fn get_bounding_box_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
-		data: &[u8],
-	) -> Result<Vec<u8>> {
+		message: Message,
+	) -> Result<Message> {
 		let this_spatial = node
 			.spatial
 			.get()
 			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-		let relative_spatial_path: Option<&str> = deserialize(data)?;
+		let relative_spatial_path: Option<&str> = deserialize(message.as_ref())?;
 		let bounds = if let Some(relative_spatial_path) = relative_spatial_path {
 			let relative_spatial = find_reference_space(&calling_client, relative_spatial_path)?;
 			let center =
@@ -260,23 +260,24 @@ impl Spatial {
 			this_spatial.get_bounding_box()
 		};
 
-		serialize((
+		Ok(serialize((
 			mint::Vector3::from(bounds.center),
 			mint::Vector3::from(bounds.dimensions),
-		))
-		.map_err(|e| e.into())
+		))?
+		.into())
 	}
 
 	pub fn get_transform_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
-		data: &[u8],
-	) -> Result<Vec<u8>> {
+		message: Message,
+	) -> Result<Message> {
 		let this_spatial = node
 			.spatial
 			.get()
 			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-		let relative_spatial = find_reference_space(&calling_client, deserialize(data)?)?;
+		let relative_spatial =
+			find_reference_space(&calling_client, deserialize(message.as_ref())?)?;
 
 		let (scale, rotation, position) = Spatial::space_to_space_matrix(
 			Some(this_spatial.as_ref()),
@@ -284,20 +285,24 @@ impl Spatial {
 		)
 		.to_scale_rotation_translation();
 
-		serialize((
+		Ok(serialize((
 			mint::Vector3::from(position),
 			mint::Quaternion::from(rotation),
 			mint::Vector3::from(scale),
-		))
-		.map_err(|e| e.into())
+		))?
+		.into())
 	}
-	pub fn set_transform_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+	pub fn set_transform_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		#[derive(Deserialize)]
 		struct TransformArgs<'a> {
 			reference_space_path: Option<&'a str>,
 			transform: Transform,
 		}
-		let transform_args: TransformArgs = deserialize(data)?;
+		let transform_args: TransformArgs = deserialize(message.as_ref())?;
 		let reference_space_transform = transform_args
 			.reference_space_path
 			.map(|path| find_reference_space(&calling_client, path))
@@ -312,25 +317,29 @@ impl Spatial {
 	pub fn set_spatial_parent_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
-		data: &[u8],
+		message: Message,
 	) -> Result<()> {
-		let parent = find_spatial_parent(&calling_client, deserialize(data)?)?;
+		let parent = find_spatial_parent(&calling_client, deserialize(message.as_ref())?)?;
 		node.spatial.get().unwrap().set_spatial_parent(Some(parent))
 	}
 	pub fn set_spatial_parent_in_place_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
-		data: &[u8],
+		message: Message,
 	) -> Result<()> {
-		let parent = find_spatial_parent(&calling_client, deserialize(data)?)?;
+		let parent = find_spatial_parent(&calling_client, deserialize(message.as_ref())?)?;
 		node.spatial
 			.get()
 			.unwrap()
 			.set_spatial_parent_in_place(Some(parent))?;
 		Ok(())
 	}
-	pub fn set_zoneable_flex(node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let zoneable: bool = deserialize(data)?;
+	pub fn set_zoneable_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
+		let zoneable: bool = deserialize(message.as_ref())?;
 		let spatial = node.spatial.get().unwrap();
 		if zoneable {
 			ZONEABLE_REGISTRY.add_raw(spatial);
@@ -344,9 +353,9 @@ impl Spatial {
 	pub fn field_distance_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
-		data: &[u8],
-	) -> Result<Vec<u8>> {
-		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(data)?;
+		message: Message,
+	) -> Result<Message> {
+		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
 		let spatial = node.spatial.get().unwrap();
 
 		let output = fields
@@ -362,14 +371,14 @@ impl Spatial {
 			.map(|f| f.map(|f| f.distance(spatial, point.into())))
 			.collect::<Vec<Option<f32>>>();
 
-		Ok(serialize(output)?)
+		Ok(serialize(output)?.into())
 	}
 	pub fn field_normal_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
-		data: &[u8],
-	) -> Result<Vec<u8>> {
-		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(data)?;
+		message: Message,
+	) -> Result<Message> {
+		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
 		let spatial = node.spatial.get().unwrap();
 
 		let output = fields
@@ -385,14 +394,14 @@ impl Spatial {
 			.map(|f| f.map(|f| Vector3::from(f.normal(spatial, point.into(), 0.001))))
 			.collect::<Vec<_>>();
 
-		Ok(serialize(output)?)
+		Ok(serialize(output)?.into())
 	}
 	pub fn field_closest_point_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
-		data: &[u8],
-	) -> Result<Vec<u8>> {
-		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(data)?;
+		message: Message,
+	) -> Result<Message> {
+		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
 		let spatial = node.spatial.get().unwrap();
 
 		let output = fields
@@ -408,7 +417,7 @@ impl Spatial {
 			.map(|f| f.map(|f| Vector3::from(f.closest_point(spatial, point.into(), 0.001))))
 			.collect::<Vec<_>>();
 
-		Ok(serialize(output)?)
+		Ok(serialize(output)?.into())
 	}
 
 	#[instrument]
@@ -490,7 +499,11 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	node.add_to_scenegraph().map(|_| ())
 }
 
-pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+pub fn create_spatial_flex(
+	_node: &Node,
+	calling_client: Arc<Client>,
+	message: Message,
+) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateSpatialInfo<'a> {
 		name: &'a str,
@@ -498,7 +511,7 @@ pub fn create_spatial_flex(_node: &Node, calling_client: Arc<Client>, data: &[u8
 		transform: Transform,
 		zoneable: bool,
 	}
-	let info: CreateSpatialInfo = deserialize(data)?;
+	let info: CreateSpatialInfo = deserialize(message.as_ref())?;
 	let node = Node::create(&calling_client, "/spatial/spatial", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);

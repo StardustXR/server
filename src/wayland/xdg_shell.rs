@@ -7,7 +7,7 @@ use super::{
 use crate::nodes::{
 	drawable::model::ModelPart,
 	items::panel::{Backend, PanelItem, RecommendedState, SurfaceID},
-	Node,
+	Message, Node,
 };
 use color_eyre::eyre::{eyre, Result};
 use mint::Vector2;
@@ -521,7 +521,7 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 			}
 			xdg_toplevel::Request::Move { seat, serial } => {
 				debug!(?xdg_toplevel, ?seat, serial, "XDG Toplevel move request");
-				let Some(panel_item) = data.lock().panel_item() else { return };
+				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.recommend_toplevel_state(RecommendedState::Move);
 			}
 			xdg_toplevel::Request::Resize {
@@ -529,7 +529,7 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 				serial,
 				edges,
 			} => {
-				let WEnum::Value(edges) = edges else { return };
+				let WEnum::Value(edges) = edges else {return};
 				debug!(
 					?xdg_toplevel,
 					?seat,
@@ -537,7 +537,7 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 					?edges,
 					"XDG Toplevel resize request"
 				);
-				let Some(panel_item) = data.lock().panel_item() else { return };
+				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.recommend_toplevel_state(RecommendedState::Resize(edges as u32));
 			}
 			xdg_toplevel::Request::SetMaxSize { width, height } => {
@@ -551,28 +551,28 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 					.then_some(Vector2::from([width as u32, height as u32]));
 			}
 			xdg_toplevel::Request::SetMaximized => {
-				let Some(panel_item) = data.lock().panel_item() else { return };
+				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.recommend_toplevel_state(RecommendedState::Maximize(true));
 			}
 			xdg_toplevel::Request::UnsetMaximized => {
-				let Some(panel_item) = data.lock().panel_item() else { return };
+				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.recommend_toplevel_state(RecommendedState::Maximize(false));
 			}
 			xdg_toplevel::Request::SetFullscreen { output: _ } => {
-				let Some(panel_item) = data.lock().panel_item() else { return };
+				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.recommend_toplevel_state(RecommendedState::Fullscreen(true));
 			}
 			xdg_toplevel::Request::UnsetFullscreen => {
-				let Some(panel_item) = data.lock().panel_item() else { return };
+				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.recommend_toplevel_state(RecommendedState::Fullscreen(true));
 			}
 			xdg_toplevel::Request::SetMinimized => {
-				let Some(panel_item) = data.lock().panel_item() else { return };
+				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.recommend_toplevel_state(RecommendedState::Minimize);
 			}
 			xdg_toplevel::Request::Destroy => {
 				debug!(?xdg_toplevel, "Destroy XDG Toplevel");
-				let Some(panel_item) = data.lock().panel_item() else { return };
+				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.backend.on_drop();
 			}
 			_ => unreachable!(),
@@ -779,15 +779,16 @@ impl XDGBackend {
 
 		self.popups.lock().insert(uid.clone(), popup.downgrade());
 
-		let Some(node) = panel_item.node() else { return };
-		let _ = node.send_remote_signal("new_popup", &serialize(&(&uid, data)).unwrap());
+		let Some(node) = panel_item.node() else {return};
+		let Ok(message) = serialize(&(&uid, data)) else {return};
+		let _ = node.send_remote_signal("new_popup", message);
 	}
 	pub fn reposition_popup(&self, panel_item: &PanelItem<XDGBackend>, popup_state: &PopupData) {
-		let Some(node) = panel_item.node() else { return };
+		let Some(node) = panel_item.node() else {return};
 
 		let _ = node.send_remote_signal(
 			"reposition_popup",
-			&serialize(popup_state.positioner_data().unwrap()).unwrap(),
+			serialize(popup_state.positioner_data().unwrap()).unwrap(),
 		);
 	}
 	pub fn drop_popup(&self, panel_item: &PanelItem<XDGBackend>, uid: &str) {
@@ -802,8 +803,9 @@ impl XDGBackend {
 			self.seat.drop_surface(&wl_surface);
 		}
 
-		let Some(node) = panel_item.node() else { return };
-		let _ = node.send_remote_signal("drop_popup", &serialize(uid).unwrap());
+		let Some(node) = panel_item.node() else {return};
+		let Ok(message) = serialize(uid) else {return};
+		let _ = node.send_remote_signal("drop_popup", message);
 	}
 
 	fn popups_data(&self) -> Vec<PopupData> {
@@ -829,7 +831,7 @@ impl XDGBackend {
 	}
 }
 impl Backend for XDGBackend {
-	fn serialize_start_data(&self, id: &str) -> Result<Vec<u8>> {
+	fn serialize_start_data(&self, id: &str) -> Result<Message> {
 		let toplevel_state = self
 			.toplevel()
 			.map(|t| ToplevelData::get(&t).lock().clone());
@@ -837,7 +839,7 @@ impl Backend for XDGBackend {
 		let pointer_grab = self.pointer_grab.lock().clone();
 		let keyboard_grab = self.keyboard_grab.lock().clone();
 
-		serialize((
+		Ok(serialize((
 			id,
 			(
 				self.cursor.borrow().as_ref().and_then(|c| c.cursor_data()),
@@ -846,16 +848,16 @@ impl Backend for XDGBackend {
 				pointer_grab,
 				keyboard_grab,
 			),
-		))
-		.map_err(|e| e.into())
+		))?
+		.into())
 	}
-	fn serialize_toplevel(&self) -> Result<Vec<u8>> {
+	fn serialize_toplevel(&self) -> Result<Message> {
 		let toplevel = self
 			.toplevel()
 			.ok_or_else(|| eyre!("Toplevel does not exist"))?;
 		let state = ToplevelData::get(&toplevel);
 		let data = serialize(&state.lock().clone())?;
-		Ok(data)
+		Ok(data.into())
 	}
 
 	fn set_toplevel_capabilities(&self, capabilities: Vec<u8>) {

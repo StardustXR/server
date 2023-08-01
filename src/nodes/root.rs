@@ -1,5 +1,5 @@
 use super::spatial::Spatial;
-use super::Node;
+use super::{Message, Node};
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use color_eyre::eyre::Result;
@@ -39,7 +39,11 @@ impl Root {
 		}))
 	}
 
-	fn subscribe_frame_flex(_node: &Node, calling_client: Arc<Client>, _data: &[u8]) -> Result<()> {
+	fn subscribe_frame_flex(
+		_node: &Node,
+		calling_client: Arc<Client>,
+		_message: Message,
+	) -> Result<()> {
 		calling_client
 			.root
 			.get()
@@ -54,7 +58,7 @@ impl Root {
 		if let Ok(data) = serialize((delta, 0.0)) {
 			for root in ROOT_REGISTRY.get_valid_contents() {
 				if root.send_frame_event.load(Ordering::Relaxed) {
-					let _ = root.node.send_remote_signal("frame", &data);
+					let _ = root.node.send_remote_signal("frame", data.clone());
 				}
 			}
 		}
@@ -63,9 +67,9 @@ impl Root {
 	fn set_base_prefixes_flex(
 		_node: &Node,
 		calling_client: Arc<Client>,
-		data: &[u8],
+		message: Message,
 	) -> Result<()> {
-		*calling_client.base_resource_prefixes.lock() = deserialize(data)?;
+		*calling_client.base_resource_prefixes.lock() = deserialize(message.as_ref())?;
 		Ok(())
 	}
 }

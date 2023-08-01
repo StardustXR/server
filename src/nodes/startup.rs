@@ -5,7 +5,7 @@ use crate::{core::client::Client, wayland::WAYLAND_DISPLAY, STARDUST_INSTANCE};
 use super::{
 	items::{ItemAcceptor, TypeInfo},
 	spatial::find_spatial,
-	Node,
+	Message, Node,
 };
 use color_eyre::eyre::Result;
 use glam::Mat4;
@@ -33,8 +33,12 @@ impl StartupSettings {
 			.set(Mutex::new(StartupSettings::default()));
 	}
 
-	fn set_root_flex(node: &Node, calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
-		let spatial = find_spatial(&calling_client, "Root spatial", deserialize(data)?)?;
+	fn set_root_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+		let spatial = find_spatial(
+			&calling_client,
+			"Root spatial",
+			deserialize(message.as_ref())?,
+		)?;
 		node.startup_settings.get().unwrap().lock().transform = spatial.global_transform();
 
 		Ok(())
@@ -43,9 +47,10 @@ impl StartupSettings {
 	fn add_automatic_acceptor_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
-		data: &[u8],
+		message: Message,
 	) -> Result<()> {
-		let acceptor_node = calling_client.get_node("Item acceptor", deserialize(data)?)?;
+		let acceptor_node =
+			calling_client.get_node("Item acceptor", deserialize(message.as_ref())?)?;
 		let acceptor =
 			acceptor_node.get_aspect("Item acceptor", "item acceptor", |n| &n.item_acceptor)?;
 		let mut startup_settings = node.startup_settings.get().unwrap().lock();
@@ -59,14 +64,14 @@ impl StartupSettings {
 	fn generate_startup_token_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
-		_data: &[u8],
-	) -> Result<Vec<u8>> {
+		_message: Message,
+	) -> Result<Message> {
 		let id = nanoid::nanoid!();
 		let data = serialize(&id)?;
 		STARTUP_SETTINGS
 			.lock()
 			.insert(id, node.startup_settings.get().unwrap().lock().clone());
-		Ok(data)
+		Ok(data.into())
 	}
 }
 impl Debug for StartupSettings {
@@ -98,12 +103,12 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 pub fn create_startup_settings_flex(
 	_node: &Node,
 	calling_client: Arc<Client>,
-	data: &[u8],
+	message: Message,
 ) -> Result<()> {
 	let node = Node::create(
 		&calling_client,
 		"/startup/settings",
-		deserialize(data)?,
+		deserialize(message.as_ref())?,
 		true,
 	)
 	.add_to_scenegraph()?;
@@ -130,8 +135,8 @@ macro_rules! var_env_insert {
 pub fn get_connection_environment_flex(
 	_node: &Node,
 	_calling_client: Arc<Client>,
-	_data: &[u8],
-) -> Result<Vec<u8>> {
+	_message: Message,
+) -> Result<Message> {
 	let mut env: FxHashMap<String, String> = FxHashMap::default();
 	var_env_insert!(env, STARDUST_INSTANCE);
 	#[cfg(feature = "wayland")]
@@ -146,5 +151,5 @@ pub fn get_connection_environment_flex(
 		env.insert("SDL_VIDEODRIVER".to_string(), "wayland".to_string());
 	}
 
-	Ok(serialize(env)?)
+	Ok(serialize(env)?.into())
 }

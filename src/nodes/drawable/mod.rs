@@ -9,7 +9,7 @@ use self::{
 	text::Text,
 };
 
-use super::Node;
+use super::{Message, Node};
 use crate::core::client::Client;
 use color_eyre::eyre::Result;
 use parking_lot::Mutex;
@@ -56,14 +56,14 @@ pub fn draw(sk: &impl StereoKitDraw) {
 static QUEUED_SKYLIGHT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static QUEUED_SKYTEX: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-fn set_sky_file_flex(_node: &Node, _calling_client: Arc<Client>, data: &[u8]) -> Result<()> {
+fn set_sky_file_flex(_node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct SkyFileInfo {
 		path: PathBuf,
 		skytex: Option<bool>,
 		skylight: Option<bool>,
 	}
-	let info: SkyFileInfo = deserialize(data)?;
+	let info: SkyFileInfo = deserialize(message.as_ref())?;
 	info.path.metadata()?;
 	if info.skytex.unwrap_or_default() {
 		QUEUED_SKYTEX.lock().replace(info.path.clone());
