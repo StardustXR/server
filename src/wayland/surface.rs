@@ -1,7 +1,7 @@
-use super::{shaders::PANEL_SHADER_BYTES, state::WaylandState};
+use super::state::WaylandState;
 use crate::{
 	core::{delta::Delta, destroy_queue, registry::Registry},
-	nodes::drawable::model::ModelPart,
+	nodes::drawable::{model::ModelPart, shaders::PANEL_SHADER_BYTES},
 };
 use mint::Vector2;
 use once_cell::sync::OnceCell;

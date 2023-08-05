@@ -2,7 +2,6 @@ mod compositor;
 mod data_device;
 mod decoration;
 mod seat;
-mod shaders;
 mod state;
 mod surface;
 // mod xdg_activation;
@@ -22,7 +21,11 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::egl::EGLContext;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::ImportDma;
+use smithay::reexports::wayland_server::backend::ClientId;
+use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket};
+use std::mem::ManuallyDrop;
+use std::os::fd::OwnedFd;
 use std::os::unix::prelude::AsRawFd;
 use std::{
 	ffi::c_void,
@@ -62,15 +65,33 @@ fn get_sk_egl() -> Result<EGLRawHandles> {
 
 static GLOBAL_DESTROY_QUEUE: OnceCell<mpsc::Sender<GlobalId>> = OnceCell::new();
 
+pub struct DisplayWrapper(Mutex<Display<WaylandState>>, DisplayHandle);
+impl DisplayWrapper {
+	pub fn handle(&self) -> DisplayHandle {
+		self.1.clone()
+	}
+	pub fn dispatch_clients(&self, state: &mut WaylandState) -> Result<usize, std::io::Error> {
+		self.0.lock().dispatch_clients(state)
+	}
+	pub fn flush_clients(&self, client: Option<ClientId>) {
+		if let Some(mut lock) = self.0.try_lock() {
+			let _ = lock.backend().flush(client);
+		}
+	}
+	pub fn poll_fd(&self) -> Result<OwnedFd, std::io::Error> {
+		self.0.lock().backend().poll_fd().try_clone_to_owned()
+	}
+}
+
 pub struct Wayland {
-	display: Arc<Mutex<Display<WaylandState>>>,
+	display: Arc<DisplayWrapper>,
 	pub socket_name: String,
 	join_handle: JoinHandle<Result<()>>,
 	renderer: GlesRenderer,
 	dmabuf_rx: UnboundedReceiver<Dmabuf>,
 	wayland_state: Arc<Mutex<WaylandState>>,
 	#[cfg(feature = "xwayland")]
-	pub xwayland_state: xwayland::XWaylandState,
+	pub xwayland_state: ManuallyDrop<xwayland::XWaylandState>,
 }
 impl Wayland {
 	pub fn new() -> Result<Self> {
@@ -87,11 +108,10 @@ impl Wayland {
 		let display_handle = display.handle();
 
 		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
-		let display = Arc::new(Mutex::new(display));
+		let display = Arc::new(DisplayWrapper(Mutex::new(display), display_handle.clone()));
 		#[cfg(feature = "xwayland")]
-		let xwayland_state = xwayland::XWaylandState::create(&display_handle).unwrap();
-		let wayland_state =
-			WaylandState::new(display.clone(), display_handle, &renderer, dmabuf_tx);
+		let xwayland_state = ManuallyDrop::new(xwayland::XWaylandState::create(&display_handle)?);
+		let wayland_state = WaylandState::new(display_handle, &renderer, dmabuf_tx);
 
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
 		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();
@@ -123,7 +143,7 @@ impl Wayland {
 	}
 
 	fn start_loop(
-		display: Arc<Mutex<Display<WaylandState>>>,
+		display: Arc<DisplayWrapper>,
 		socket: ListeningSocket,
 		state: Arc<Mutex<WaylandState>>,
 		mut global_destroy_queue: mpsc::Receiver<GlobalId>,
@@ -131,10 +151,10 @@ impl Wayland {
 		let listen_async =
 			AsyncUnixListener::from_std(unsafe { UnixListener::from_raw_fd(socket.as_raw_fd()) })?;
 
-		let dispatch_poll_fd = display.lock().backend().poll_fd().try_clone_to_owned()?;
+		let dispatch_poll_fd = display.poll_fd()?;
 		let dispatch_poll_listener = AsyncFd::new(dispatch_poll_fd)?;
 
-		let dh1 = display.lock().handle();
+		let dh1 = display.handle();
 		let mut dh2 = dh1.clone();
 
 		Ok(task::new(|| "wayland loop", async move {
@@ -148,6 +168,7 @@ impl Wayland {
 					acc = listen_async.accept() => { // New client connected
 						let (stream, _) = acc?;
 						let client_state = Arc::new(ClientState {
+							id: OnceCell::new(),
 							compositor_state: Default::default(),
 							display: Arc::downgrade(&display),
 							seat: SeatData::new(&dh1)
@@ -158,9 +179,8 @@ impl Wayland {
 					e = dispatch_poll_listener.readable() => { // Dispatch
 						let mut guard = e?;
 						debug_span!("Dispatch wayland event").in_scope(|| -> Result<(), color_eyre::Report> {
-							let mut display = display.lock();
 							display.dispatch_clients(&mut *state.lock())?;
-							display.flush_clients()?;
+							display.flush_clients(None);
 							Ok(())
 						})?;
 						guard.clear_ready();
@@ -179,14 +199,14 @@ impl Wayland {
 			core_surface.process(sk, &mut self.renderer);
 		}
 
-		self.display.lock().flush_clients().unwrap();
+		self.display.flush_clients(None);
 	}
 
 	pub fn frame_event(&self, sk: &impl StereoKitDraw) {
-		let state = self.wayland_state.lock();
+		let output = self.wayland_state.lock().output.clone();
 
 		for core_surface in CORE_SURFACES.get_valid_contents() {
-			core_surface.frame(sk, state.output.clone());
+			core_surface.frame(sk, output.clone());
 		}
 	}
 

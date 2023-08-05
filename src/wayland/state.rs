@@ -1,4 +1,5 @@
 use crate::wayland::seat::SeatData;
+use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::{
 	backend::{
@@ -17,7 +18,7 @@ use smithay::{
 		wayland_server::{
 			backend::{ClientData, ClientId, DisconnectReason},
 			protocol::{wl_buffer::WlBuffer, wl_data_device_manager::WlDataDeviceManager},
-			Display, DisplayHandle,
+			DisplayHandle,
 		},
 	},
 	utils::{Size, Transform},
@@ -36,20 +37,24 @@ use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{info, warn};
 
+use super::DisplayWrapper;
+
 pub struct ClientState {
+	pub id: OnceCell<ClientId>,
 	pub compositor_state: CompositorClientState,
-	pub display: Weak<Mutex<Display<WaylandState>>>,
+	pub display: Weak<DisplayWrapper>,
 	pub seat: Arc<SeatData>,
 }
 impl ClientState {
 	pub fn flush(&self) {
 		let Some(display) = self.display.upgrade() else {return};
-		let _ = display.lock().flush_clients();
+		let _ = display.flush_clients(self.id.get().cloned());
 	}
 }
 impl ClientData for ClientState {
 	fn initialized(&self, client_id: ClientId) {
 		info!("Wayland client {:?} connected", client_id);
+		let _ = self.id.set(client_id);
 	}
 
 	fn disconnected(&self, client_id: ClientId, reason: DisconnectReason) {
@@ -62,7 +67,6 @@ impl ClientData for ClientState {
 
 pub struct WaylandState {
 	pub weak_ref: Weak<Mutex<WaylandState>>,
-	pub display: Arc<Mutex<Display<WaylandState>>>,
 	pub display_handle: DisplayHandle,
 
 	pub compositor_state: CompositorState,
@@ -76,7 +80,6 @@ pub struct WaylandState {
 
 impl WaylandState {
 	pub fn new(
-		display: Arc<Mutex<Display<WaylandState>>>,
 		display_handle: DisplayHandle,
 		renderer: &GlesRenderer,
 		dmabuf_tx: UnboundedSender<Dmabuf>,
@@ -154,7 +157,6 @@ impl WaylandState {
 		Arc::new_cyclic(|weak| {
 			Mutex::new(WaylandState {
 				weak_ref: weak.clone(),
-				display,
 				display_handle,
 
 				compositor_state,

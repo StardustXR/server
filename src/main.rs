@@ -188,7 +188,7 @@ fn main() {
 	let _tokio_handle = event_loop_info.tokio_handle.enter();
 
 	#[cfg(feature = "wayland")]
-	let mut wayland = Some(wayland::Wayland::new().expect("Could not initialize wayland"));
+	let mut wayland = wayland::Wayland::new().expect("Could not initialize wayland");
 	info!("Stardust ready!");
 
 	let mut startup_child = if let Some(project_dirs) = project_dirs.as_ref() {
@@ -213,12 +213,9 @@ fn main() {
 		);
 		#[cfg(feature = "wayland")]
 		{
-			startup_command.env("WAYLAND_DISPLAY", &wayland.as_ref().unwrap().socket_name);
+			startup_command.env("WAYLAND_DISPLAY", &wayland.socket_name);
 			#[cfg(feature = "xwayland")]
-			startup_command.env(
-				"DISPLAY",
-				format!(":{}", wayland.as_ref().unwrap().xwayland_state.display),
-			);
+			startup_command.env("DISPLAY", format!(":{}", wayland.xwayland_state.display));
 			startup_command.env("GDK_BACKEND", "wayland");
 			startup_command.env("QT_QPA_PLATFORM", "wayland");
 			startup_command.env("MOZ_ENABLE_WAYLAND", "1");
@@ -233,15 +230,14 @@ fn main() {
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
 	debug_span!("StereoKit").in_scope(|| {
-		sk.run_stateful(
-			&mut wayland,
-			move |wayland, _, sk| {
+		sk.run(
+			move |sk| {
 				let _span = debug_span!("StereoKit step");
 				let _span = _span.enter();
 
 				hmd::frame(sk);
 				#[cfg(feature = "wayland")]
-				wayland.as_mut().unwrap().frame_event(sk);
+				wayland.frame_event(sk);
 				destroy_queue::clear();
 
 				if let Some(mouse_pointer) = &mut mouse_pointer {
@@ -271,21 +267,18 @@ fn main() {
 				);
 
 				#[cfg(feature = "wayland")]
-				wayland.as_mut().unwrap().update(sk);
+				wayland.update(sk);
 				drawable::draw(sk);
 				audio::update(sk);
 				#[cfg(feature = "wayland")]
-				wayland.as_mut().unwrap().make_context_current();
+				wayland.make_context_current();
 			},
-			|wayland, _sk| {
+			|_sk| {
 				info!("Cleanly shut down StereoKit");
 
 				if let Some(mut startup_child) = startup_child.take() {
 					let _ = startup_child.kill();
 				}
-
-				#[cfg(feature = "wayland")]
-				wayland.take();
 			},
 		)
 	});
