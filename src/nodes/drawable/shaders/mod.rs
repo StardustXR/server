@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-
 use smithay::backend::renderer::gles::{
 	ffi::{self, Gles2, FRAGMENT_SHADER, VERTEX_SHADER},
 	GlesError,
@@ -7,6 +6,12 @@ use smithay::backend::renderer::gles::{
 use std::mem::transmute;
 use stereokit::Shader;
 use tracing::error;
+
+// Simula shader with fancy lanzcos sampling
+pub const UNLIT_SHADER_BYTES: &[u8] = include_bytes!("shader_unlit_gamma.sks");
+
+// Simula shader with fancy lanzcos sampling
+pub const PANEL_SHADER_BYTES: &[u8] = include_bytes!("shader_unlit_simula.sks");
 
 struct FfiAssetHeader {
 	asset_type: i32,
