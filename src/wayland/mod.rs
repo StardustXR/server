@@ -24,7 +24,6 @@ use smithay::backend::renderer::ImportDma;
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket};
-use std::mem::ManuallyDrop;
 use std::os::fd::OwnedFd;
 use std::os::unix::prelude::AsRawFd;
 use std::{
@@ -91,7 +90,7 @@ pub struct Wayland {
 	dmabuf_rx: UnboundedReceiver<Dmabuf>,
 	wayland_state: Arc<Mutex<WaylandState>>,
 	#[cfg(feature = "xwayland")]
-	pub xwayland_state: ManuallyDrop<xwayland::XWaylandState>,
+	pub xwayland_state: xwayland::XWaylandState,
 }
 impl Wayland {
 	pub fn new() -> Result<Self> {
@@ -110,7 +109,7 @@ impl Wayland {
 		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
 		let display = Arc::new(DisplayWrapper(Mutex::new(display), display_handle.clone()));
 		#[cfg(feature = "xwayland")]
-		let xwayland_state = ManuallyDrop::new(xwayland::XWaylandState::create(&display_handle)?);
+		let xwayland_state = xwayland::XWaylandState::create(&display_handle)?;
 		let wayland_state = WaylandState::new(display_handle, &renderer, dmabuf_tx);
 
 		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);

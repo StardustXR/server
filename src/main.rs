@@ -234,7 +234,7 @@ fn main() {
 	let mut sleep_duration = Duration::ZERO;
 	debug_span!("StereoKit").in_scope(|| {
 		sk.run(
-			move |sk| {
+			|sk| {
 				let _span = debug_span!("StereoKit step");
 				let _span = _span.enter();
 
@@ -287,6 +287,8 @@ fn main() {
 		)
 	});
 
+	#[cfg(feature = "wayland")]
+	drop(wayland);
 	let _ = event_stop_tx.send(());
 	event_thread
 		.join()
