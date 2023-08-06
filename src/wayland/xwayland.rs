@@ -268,7 +268,7 @@ impl X11Backend {
 		match id {
 			SurfaceID::Cursor => None,
 			SurfaceID::Toplevel => self.toplevel.wl_surface(),
-			SurfaceID::Popup(_) => None,
+			SurfaceID::Child(_) => None,
 		}
 	}
 
