@@ -200,6 +200,8 @@ fn main() {
 		let mut startup_command = Command::new(startup_script_path);
 
 		startup_command.stdin(Stdio::null());
+		startup_command.stdout(Stdio::null());
+		startup_command.stderr(Stdio::null());
 		startup_command.env(
 			"FLAT_WAYLAND_DISPLAY",
 			std::env::var_os("WAYLAND_DISPLAY").unwrap_or_default(),
@@ -288,8 +290,6 @@ fn main() {
 		.join()
 		.expect("Failed to cleanly shut down event loop")
 		.unwrap();
-	// #[cfg(feature = "wayland")]
-	// let _wayland = ManuallyDrop::new(wayland);
 
 	info!("Cleanly shut down Stardust");
 }
