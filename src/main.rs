@@ -5,6 +5,7 @@ mod objects;
 mod wayland;
 
 use crate::core::destroy_queue;
+use crate::nodes::items::camera;
 use crate::nodes::{audio, drawable, hmd, input};
 use crate::objects::input::eye_pointer::EyePointer;
 use crate::objects::input::mouse_pointer::MousePointer;
@@ -238,6 +239,7 @@ fn main() {
 				let _span = _span.enter();
 
 				hmd::frame(sk);
+				camera::update(sk);
 				#[cfg(feature = "wayland")]
 				wayland.frame_event(sk);
 				destroy_queue::clear();
