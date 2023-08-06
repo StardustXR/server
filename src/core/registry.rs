@@ -54,6 +54,14 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 	pub fn clear(&self) {
 		self.lock().clear();
 	}
+	pub fn is_empty(&self) -> bool {
+		let registry = self.0.lock();
+		let Some(registry) = &*registry else {return true};
+		if registry.is_empty() {
+			return true;
+		}
+		registry.values().all(|v| v.strong_count() == 0)
+	}
 }
 impl<T: Send + Sync + ?Sized> Clone for Registry<T> {
 	fn clone(&self) -> Self {
