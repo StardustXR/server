@@ -44,9 +44,9 @@ lazy_static! {
 			"commit_toplevel",
 			"recommend_toplevel_state",
 			"set_cursor",
-			"new_popup",
-			"reposition_popup",
-			"drop_popup",
+			"new_child",
+			"reposition_child",
+			"drop_child",
 		],
 		ui: Default::default(),
 		items: Registry::new(),
@@ -60,7 +60,7 @@ lazy_static! {
 pub enum SurfaceID {
 	Cursor,
 	Toplevel,
-	Popup(String),
+	Child(String),
 }
 impl Default for SurfaceID {
 	fn default() -> Self {
@@ -94,15 +94,15 @@ impl<'de> Visitor<'de> for SurfaceIDVisitor {
 		match discrim {
 			"Cursor" => Ok(SurfaceID::Cursor),
 			"Toplevel" => Ok(SurfaceID::Toplevel),
-			"Popup" => {
+			"Child" => {
 				let Some(text) = seq.next_element()? else {
-                    return Err(A::Error::missing_field("popup_text"));
+                    return Err(A::Error::missing_field("child_text"));
                 };
-				Ok(SurfaceID::Popup(text))
+				Ok(SurfaceID::Child(text))
 			}
 			_ => Err(A::Error::unknown_variant(
 				discrim,
-				&["Cursor", "Toplevel", "Popup"],
+				&["Cursor", "Toplevel", "Child"],
 			)),
 		}
 	}
@@ -113,7 +113,7 @@ impl serde::Serialize for SurfaceID {
 		match self {
 			Self::Cursor => ["Cursor"].serialize(serializer),
 			Self::Toplevel => ["Toplevel"].serialize(serializer),
-			Self::Popup(text) => ["Popup", text].serialize(serializer),
+			Self::Child(text) => ["Child", text].serialize(serializer),
 		}
 	}
 }

@@ -82,14 +82,14 @@ impl Dispatch<XdgWmBase, (), WaylandState> for WaylandState {
 	}
 }
 
-#[derive(Debug, Serialize, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 pub struct PositionerData {
 	size: Vector2<u32>,
 	anchor_rect_pos: Vector2<i32>,
 	anchor_rect_size: Vector2<u32>,
-	anchor: u32,
-	gravity: u32,
-	constraint_adjustment: u32,
+	anchor: Anchor,
+	gravity: Gravity,
+	constraint_adjustment: ConstraintAdjustment,
 	offset: Vector2<i32>,
 	reactive: bool,
 }
@@ -99,12 +99,100 @@ impl Default for PositionerData {
 			size: Vector2::from([0; 2]),
 			anchor_rect_pos: Vector2::from([0; 2]),
 			anchor_rect_size: Vector2::from([0; 2]),
-			anchor: Anchor::None as u32,
-			gravity: Gravity::None as u32,
-			constraint_adjustment: ConstraintAdjustment::None.bits(),
+			anchor: Anchor::None,
+			gravity: Gravity::None,
+			constraint_adjustment: ConstraintAdjustment::None,
 			offset: Vector2::from([0; 2]),
 			reactive: false,
 		}
+	}
+}
+
+impl PositionerData {
+	fn anchor_has_edge(&self, edge: Anchor) -> bool {
+		match edge {
+			Anchor::Top => {
+				self.anchor == Anchor::Top
+					|| self.anchor == Anchor::TopLeft
+					|| self.anchor == Anchor::TopRight
+			}
+			Anchor::Bottom => {
+				self.anchor == Anchor::Bottom
+					|| self.anchor == Anchor::BottomLeft
+					|| self.anchor == Anchor::BottomRight
+			}
+			Anchor::Left => {
+				self.anchor == Anchor::Left
+					|| self.anchor == Anchor::TopLeft
+					|| self.anchor == Anchor::BottomLeft
+			}
+			Anchor::Right => {
+				self.anchor == Anchor::Right
+					|| self.anchor == Anchor::TopRight
+					|| self.anchor == Anchor::BottomRight
+			}
+			_ => unreachable!(),
+		}
+	}
+
+	fn gravity_has_edge(&self, edge: Gravity) -> bool {
+		match edge {
+			Gravity::Top => {
+				self.gravity == Gravity::Top
+					|| self.gravity == Gravity::TopLeft
+					|| self.gravity == Gravity::TopRight
+			}
+			Gravity::Bottom => {
+				self.gravity == Gravity::Bottom
+					|| self.gravity == Gravity::BottomLeft
+					|| self.gravity == Gravity::BottomRight
+			}
+			Gravity::Left => {
+				self.gravity == Gravity::Left
+					|| self.gravity == Gravity::TopLeft
+					|| self.gravity == Gravity::BottomLeft
+			}
+			Gravity::Right => {
+				self.gravity == Gravity::Right
+					|| self.gravity == Gravity::TopRight
+					|| self.gravity == Gravity::BottomRight
+			}
+			_ => unreachable!(),
+		}
+	}
+
+	pub fn get_pos(&self) -> Vector2<i32> {
+		let mut pos = self.offset;
+
+		if self.anchor_has_edge(Anchor::Top) {
+			pos.y += self.anchor_rect_pos.y;
+		} else if self.anchor_has_edge(Anchor::Bottom) {
+			pos.y += self.anchor_rect_pos.y + self.anchor_rect_size.y as i32;
+		} else {
+			pos.y += self.anchor_rect_pos.y + self.anchor_rect_size.y as i32 / 2;
+		}
+
+		if self.anchor_has_edge(Anchor::Left) {
+			pos.x += self.anchor_rect_pos.x;
+		} else if self.anchor_has_edge(Anchor::Right) {
+			pos.x += self.anchor_rect_pos.x + self.anchor_rect_size.x as i32;
+		} else {
+			pos.x += self.anchor_rect_pos.x + self.anchor_rect_size.x as i32 / 2;
+		}
+
+		if self.gravity_has_edge(Gravity::Top) {
+			pos.y -= self.size.y as i32;
+		} else if !self.gravity_has_edge(Gravity::Bottom) {
+			pos.y -= self.size.y as i32 / 2;
+		}
+
+		if self.gravity_has_edge(Gravity::Left) {
+			pos.x -= self.size.x as i32;
+		} else if !self.gravity_has_edge(Gravity::Right) {
+			pos.x -= self.size.x as i32 / 2;
+		}
+
+		pos
 	}
 }
 
@@ -152,13 +240,13 @@ impl Dispatch<XdgPositioner, Mutex<PositionerData>, WaylandState> for WaylandSta
 			xdg_positioner::Request::SetAnchor { anchor } => {
 				if let WEnum::Value(anchor) = anchor {
 					debug!(?positioner, ?anchor, "Set positioner anchor");
-					data.lock().anchor = anchor as u32;
+					data.lock().anchor = anchor;
 				}
 			}
 			xdg_positioner::Request::SetGravity { gravity } => {
 				if let WEnum::Value(gravity) = gravity {
 					debug!(?positioner, ?gravity, "Set positioner gravity");
-					data.lock().gravity = gravity as u32;
+					data.lock().gravity = gravity;
 				}
 			}
 			xdg_positioner::Request::SetConstraintAdjustment {
@@ -168,7 +256,8 @@ impl Dispatch<XdgPositioner, Mutex<PositionerData>, WaylandState> for WaylandSta
 					?positioner,
 					constraint_adjustment, "Set positioner constraint adjustment"
 				);
-				data.lock().constraint_adjustment = constraint_adjustment;
+				data.lock().constraint_adjustment =
+					ConstraintAdjustment::from_bits(constraint_adjustment).unwrap();
 			}
 			xdg_positioner::Request::SetOffset { x, y } => {
 				debug!(?positioner, x, y, "Set positioner offset");
@@ -353,7 +442,7 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 					positioner,
 				));
 				let xdg_popup = data_init.init(id, popup_data);
-				xdg_surface_data.lock().surface_id = SurfaceID::Popup(uid);
+				xdg_surface_data.lock().surface_id = SurfaceID::Child(uid);
 				let panel_item = parent_data.panel_item().unwrap();
 				xdg_surface_data.lock().panel_item = Arc::downgrade(&panel_item);
 				debug!(?xdg_popup, ?xdg_surface, "Create XDG popup");
@@ -640,7 +729,8 @@ impl Serialize for PopupData {
 		let mut seq = serializer.serialize_seq(None)?;
 		seq.serialize_element(&self.uid)?;
 		seq.serialize_element(&self.parent_id)?;
-		seq.serialize_element(&positioner_data)?;
+		seq.serialize_element(&positioner_data.get_pos())?;
+		seq.serialize_element(&positioner_data.size)?;
 		seq.end()
 	}
 }
@@ -669,7 +759,7 @@ impl Dispatch<XdgPopup, Mutex<PopupData>, WaylandState> for WaylandState {
 				data.grabbed = true;
 				debug!(?xdg_popup, ?seat, serial, "XDG popup grab");
 				let Some(panel_item) = data.panel_item() else {return};
-				panel_item.grab_keyboard(Some(SurfaceID::Popup(data.uid.clone())));
+				panel_item.grab_keyboard(Some(SurfaceID::Child(data.uid.clone())));
 			}
 			xdg_popup::Request::Reposition { positioner, token } => {
 				let mut data = data.lock();
@@ -735,7 +825,7 @@ impl XDGBackend {
 		match id {
 			SurfaceID::Cursor => self.cursor.borrow().as_ref()?.surface.upgrade().ok(),
 			SurfaceID::Toplevel => self.toplevel_wl_surface(),
-			SurfaceID::Popup(popup) => {
+			SurfaceID::Child(popup) => {
 				let popups = self.popups.lock();
 				let popup = popups.get(popup)?.upgrade().ok()?;
 				let wl_surface = PopupData::get(&popup)?.lock().wl_surface();
@@ -781,14 +871,15 @@ impl XDGBackend {
 
 		let Some(node) = panel_item.node() else {return};
 		let Ok(message) = serialize(&(&uid, data)) else {return};
-		let _ = node.send_remote_signal("new_popup", message);
+		let _ = node.send_remote_signal("new_child", message);
 	}
 	pub fn reposition_popup(&self, panel_item: &PanelItem<XDGBackend>, popup_state: &PopupData) {
 		let Some(node) = panel_item.node() else {return};
+		let Some(positioner_data) = popup_state.positioner_data() else {return};
 
 		let _ = node.send_remote_signal(
-			"reposition_popup",
-			serialize(popup_state.positioner_data().unwrap()).unwrap(),
+			"reposition_child",
+			serialize((positioner_data.get_pos(), positioner_data.size)).unwrap(),
 		);
 	}
 	pub fn drop_popup(&self, panel_item: &PanelItem<XDGBackend>, uid: &str) {
@@ -805,7 +896,7 @@ impl XDGBackend {
 
 		let Some(node) = panel_item.node() else {return};
 		let Ok(message) = serialize(uid) else {return};
-		let _ = node.send_remote_signal("drop_popup", message);
+		let _ = node.send_remote_signal("drop_child", message);
 	}
 
 	fn popups_data(&self) -> Vec<PopupData> {
