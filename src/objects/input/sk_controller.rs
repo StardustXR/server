@@ -7,13 +7,12 @@ use crate::{
 	},
 };
 use color_eyre::eyre::Result;
-use glam::{Mat4, Vec2};
-use nanoid::nanoid;
+use glam::{Mat4, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
-use stardust_xr::values::Transform;
 use std::sync::Arc;
 use stereokit::{
-	ButtonState, Color128, Handed, Model, RenderLayer, StereoKitDraw, StereoKitMultiThread,
+	named_colors::WHITE, ButtonState, Handed, Model, RenderLayer, StereoKitDraw,
+	StereoKitMultiThread,
 };
 use tracing::instrument;
 
@@ -33,9 +32,19 @@ pub struct SkController {
 }
 impl SkController {
 	pub fn new(sk: &impl StereoKitMultiThread, handed: Handed) -> Result<Self> {
-		let _node = Node::create(&INTERNAL_CLIENT, "", &nanoid!(), false).add_to_scenegraph()?;
+		let _node = Node::create(
+			&INTERNAL_CLIENT,
+			"",
+			if handed == Handed::Left {
+				"controller_left"
+			} else {
+				"controller_right"
+			},
+			false,
+		)
+		.add_to_scenegraph()?;
 		Spatial::add_to(&_node, None, Mat4::IDENTITY, false)?;
-		let model = sk.model_create_mem("cursor", include_bytes!("cursor.glb"), None)?;
+		let model = sk.model_create_mem("cursor.glb", include_bytes!("cursor.glb"), None)?;
 		let tip = InputType::Tip(Tip::default());
 		let input = InputMethod::add_to(&_node, tip, None)?;
 		Ok(SkController {
@@ -51,22 +60,17 @@ impl SkController {
 		let controller = sk.input_controller(self.handed);
 		*self.input.enabled.lock() = controller.tracked.contains(ButtonState::ACTIVE);
 		if *self.input.enabled.lock() {
+			let world_transform = Mat4::from_rotation_translation(
+				controller.aim.orientation,
+				controller.aim.position,
+			);
 			sk.model_draw(
 				&self.model,
-				Mat4::from_rotation_translation(
-					controller.aim.orientation,
-					controller.aim.position,
-				),
-				Color128::default(),
-				RenderLayer::all(),
+				world_transform * Mat4::from_scale(Vec3::ONE * 0.02),
+				WHITE,
+				RenderLayer::LAYER0,
 			);
-			self.input.spatial.set_local_transform_components(
-				None,
-				Transform::from_position_rotation(
-					controller.aim.position,
-					controller.aim.orientation,
-				),
-			);
+			self.input.spatial.set_local_transform(world_transform);
 		}
 		self.datamap.select = controller.trigger;
 		self.datamap.grab = controller.grip;
