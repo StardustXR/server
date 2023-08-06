@@ -14,7 +14,6 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
-use send_wrapper::SendWrapper;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
 use stardust_xr::values::Transform;
@@ -122,7 +121,7 @@ pub struct ModelPart {
 	space: Arc<Spatial>,
 	model: Weak<Model>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
-	pending_material_replacement: Mutex<Option<Arc<SendWrapper<Material>>>>,
+	pending_material_replacement: Mutex<Option<Arc<Material>>>,
 }
 impl ModelPart {
 	fn create_for_model(sk: &impl StereoKitMultiThread, model: &Arc<Model>, sk_model: &SKModel) {
@@ -228,7 +227,7 @@ impl ModelPart {
 		Ok(())
 	}
 
-	pub fn replace_material(&self, replacement: Arc<SendWrapper<Material>>) {
+	pub fn replace_material(&self, replacement: Arc<Material>) {
 		self.pending_material_replacement
 			.lock()
 			.replace(replacement);

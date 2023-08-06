@@ -40,8 +40,8 @@ pub struct CoreSurface {
 	pub dh: DisplayHandle,
 	pub weak_surface: wayland_server::Weak<WlSurface>,
 	mapped_data: Mutex<Option<CoreSurfaceData>>,
-	sk_tex: OnceCell<SendWrapper<Tex>>,
-	sk_mat: OnceCell<Arc<SendWrapper<Material>>>,
+	sk_tex: OnceCell<Tex>,
+	sk_mat: OnceCell<Arc<Material>>,
 	material_offset: Mutex<Delta<u32>>,
 	on_mapped: Box<dyn Fn() + Send + Sync>,
 	on_commit: Box<dyn Fn(u32) + Send + Sync>,
@@ -85,9 +85,9 @@ impl CoreSurface {
 	pub fn process(&self, sk: &impl StereoKitDraw, renderer: &mut GlesRenderer) {
 		let Some(wl_surface) = self.wl_surface() else {return};
 
-		let sk_tex = self.sk_tex.get_or_init(|| {
-			SendWrapper::new(sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32))
-		});
+		let sk_tex = self
+			.sk_tex
+			.get_or_init(|| sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32));
 		self.sk_mat.get_or_init(|| {
 			let shader = sk.shader_create_mem(&PANEL_SHADER_BYTES).unwrap();
 			// let _ = renderer.with_context(|c| unsafe {
@@ -97,7 +97,7 @@ impl CoreSurface {
 			let mat = sk.material_create(&shader);
 			sk.material_set_texture(&mat, "diffuse", sk_tex.as_ref());
 			sk.material_set_transparency(&mat, Transparency::Blend);
-			Arc::new(SendWrapper::new(mat))
+			Arc::new(mat)
 		});
 
 		// Let smithay handle buffer management (has to be done here as RendererSurfaceStates is not thread safe)
