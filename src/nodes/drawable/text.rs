@@ -13,7 +13,6 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use prisma::{Flatten, Rgba};
-use send_wrapper::SendWrapper;
 use serde::Deserialize;
 use stardust_xr::{schemas::flex::deserialize, values::Transform};
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
@@ -35,7 +34,7 @@ pub struct Text {
 	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
 	font_path: Option<PathBuf>,
-	style: OnceCell<SendWrapper<TextStyle>>,
+	style: OnceCell<TextStyle>,
 
 	data: Mutex<TextData>,
 }
@@ -91,18 +90,16 @@ impl Text {
 	}
 
 	fn draw(&self, sk: &impl StereoKitDraw) {
-		let style = self.style.get_or_try_init(
-			|| -> Result<SendWrapper<TextStyle>, color_eyre::eyre::Error> {
+		let style = self
+			.style
+			.get_or_try_init(|| -> Result<TextStyle, color_eyre::eyre::Error> {
 				let font = self
 					.font_path
 					.as_deref()
 					.and_then(|path| sk.font_create(path).ok())
 					.unwrap_or_else(|| sk.font_find("default/font").unwrap());
-				Ok(SendWrapper::new(unsafe {
-					sk.text_make_style(font, 1.0, WHITE)
-				}))
-			},
-		);
+				Ok(unsafe { sk.text_make_style(font, 1.0, WHITE) })
+			});
 
 		if let Ok(style) = style {
 			let data = self.data.lock();
@@ -118,7 +115,7 @@ impl Text {
 					transform,
 					bounds / data.character_height,
 					data.fit,
-					**style,
+					*style,
 					data.bounds_align,
 					data.text_align,
 					vec3(0.0, 0.0, 0.0),
@@ -133,7 +130,7 @@ impl Text {
 				sk.text_add_at(
 					&data.text,
 					transform,
-					**style,
+					*style,
 					data.bounds_align,
 					data.text_align,
 					vec3(0.0, 0.0, 0.0),
