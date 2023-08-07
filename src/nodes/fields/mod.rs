@@ -162,7 +162,6 @@ fn field_normal_flex(
 	struct FieldInfoArgs<'a> {
 		reference_space_path: &'a str,
 		point: Vector3<f32>,
-		radius: Option<f32>,
 	}
 	let args: FieldInfoArgs = deserialize(message.as_ref())?;
 	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
@@ -170,7 +169,7 @@ fn field_normal_flex(
 	let normal = node.field.get().as_ref().unwrap().normal(
 		reference_space.as_ref(),
 		args.point.into(),
-		args.radius.unwrap_or(0.001),
+		0.001,
 	);
 	Ok(serialize(mint::Vector3::from(normal))?.into())
 }
@@ -183,7 +182,6 @@ fn field_closest_point_flex(
 	struct FieldInfoArgs<'a> {
 		reference_space_path: &'a str,
 		point: Vector3<f32>,
-		radius: Option<f32>,
 	}
 	let args: FieldInfoArgs = deserialize(message.as_ref())?;
 	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
@@ -191,7 +189,7 @@ fn field_closest_point_flex(
 	let closest_point = node.field.get().as_ref().unwrap().closest_point(
 		reference_space.as_ref(),
 		args.point.into(),
-		args.radius.unwrap_or(0.001),
+		0.001,
 	);
 	Ok(serialize(mint::Vector3::from(closest_point))?.into())
 }
