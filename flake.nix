@@ -69,10 +69,15 @@
               }} $sk/build/cpm/CPM_0.32.2.cmake
             '';
 
+            postFixup = ''
+              wrapProgram $out/bin/${pname} \
+                --prefix PATH : ${pkgs.lib.makeBinPath (with pkgs; [ xwayland bash ])}
+            '';
+
             CPM_SOURCE_CACHE = "./build";
 
             nativeBuildInputs = with pkgs; [
-              cmake pkg-config llvmPackages.libcxxClang
+              cmake pkg-config llvmPackages.libcxxClang makeWrapper
             ];
 
             buildInputs = with pkgs; [
