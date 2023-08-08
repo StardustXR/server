@@ -292,7 +292,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		let (surface_id, button, state): (SurfaceID, u32, u32) = deserialize(message.as_ref())?;
 		debug!(?surface_id, button, state, "Pointer button");
 
-		panel_item.pointer_button(&surface_id, button, state == 0);
+		panel_item.pointer_button(&surface_id, button, state != 0);
 		Ok(())
 	}
 	fn pointer_scroll_flex(
