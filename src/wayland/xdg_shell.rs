@@ -908,6 +908,8 @@ impl XDGBackend {
 	}
 
 	pub fn on_drop(&self) {
+		let Some(toplevel_popup) = self.toplevel_xdg_surface().and_then(|s| XdgSurfaceData::get(&s).and_then(|s| s.lock().panel_item.upgrade())) else {return};
+		toplevel_popup.drop_toplevel();
 		let Some(toplevel) = self.toplevel_wl_surface() else {return};
 		self.seat.drop_surface(&toplevel);
 
