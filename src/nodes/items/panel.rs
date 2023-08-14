@@ -201,10 +201,6 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			ItemType::Panel(generic_panel_item),
 		);
 
-		// panel_item
-		// 	.seat_data
-		// 	.new_surface(&wl_surface, Arc::downgrade(&panel_item));
-
 		if let Some(startup_settings) = &startup_settings {
 			if let Some(acceptor) = startup_settings
 				.acceptors
@@ -413,7 +409,6 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		panel_item.configure_toplevel(info.size, info.states, info.bounds);
 		Ok(())
 	}
-
 	fn set_toplevel_capabilities_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
@@ -434,13 +429,17 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		let Ok(data) = self.backend.serialize_toplevel() else {return};
 		let _ = node.send_remote_signal("commit_toplevel", data);
 	}
-
 	pub fn recommend_toplevel_state(&self, state: RecommendedState) {
 		let Some(node) = self.node.upgrade() else {return};
 		let data = serialize(state).unwrap();
 		debug!(?state, "Recommend toplevel state");
 
 		let _ = node.send_remote_signal("recommend_toplevel_state", data);
+	}
+
+	pub fn drop_toplevel(&self) {
+		let Some(node) = self.node.upgrade() else {return};
+		node.destroy();
 	}
 }
 impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
@@ -477,11 +476,9 @@ impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 	fn pointer_motion(&self, surface: &SurfaceID, position: Vector2<f32>) {
 		self.backend.pointer_motion(surface, position)
 	}
-
 	fn pointer_button(&self, surface: &SurfaceID, button: u32, pressed: bool) {
 		self.backend.pointer_button(surface, button, pressed)
 	}
-
 	fn pointer_scroll(
 		&self,
 		surface: &SurfaceID,
@@ -495,7 +492,6 @@ impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 	fn keyboard_set_keymap(&self, keymap: &str) -> Result<()> {
 		self.backend.keyboard_set_keymap(keymap)
 	}
-
 	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool) {
 		self.backend.keyboard_key(surface, key, state)
 	}
