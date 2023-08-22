@@ -3,8 +3,11 @@ use super::{
 	surface::CoreSurface,
 	GLOBAL_DESTROY_QUEUE, SERIAL_COUNTER,
 };
-use crate::core::task;
-use color_eyre::eyre::{eyre, Result};
+use crate::{
+	core::task,
+	nodes::items::panel::{Backend, Geometry, PanelItem},
+};
+use color_eyre::eyre::Result;
 use mint::Vector2;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
@@ -12,7 +15,7 @@ use parking_lot::Mutex;
 use rand::{seq::IteratorRandom, thread_rng};
 use rustc_hash::{FxHashMap, FxHashSet};
 use smithay::{
-	input::keyboard::{KeymapFile, ModifiersState},
+	input::keyboard::ModifiersState,
 	reexports::wayland_server::{
 		backend::{ClientId, GlobalId, ObjectId},
 		protocol::{
@@ -33,10 +36,23 @@ use std::{
 };
 use tokio::sync::watch;
 use tracing::{debug, warn};
-use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};
+use xkbcommon::xkb::{self, Context, Keymap};
+
+pub fn handle_cursor<B: Backend>(
+	panel_item: &Arc<PanelItem<B>>,
+	mut cursor: watch::Receiver<Option<CursorInfo>>,
+) {
+	let panel_item_weak = Arc::downgrade(panel_item);
+	let _ = task::new(|| "cursor handler", async move {
+		while cursor.changed().await.is_ok() {
+			let Some(panel_item) = panel_item_weak.upgrade() else {continue};
+			let cursor_info = cursor.borrow();
+			panel_item.set_cursor(cursor_info.as_ref().and_then(CursorInfo::cursor_data));
+		}
+	});
+}
 
 pub struct KeyboardInfo {
-	keymap: KeymapFile,
 	state: xkb::State,
 	mods: ModifiersState,
 	keys: FxHashSet<u32>,
@@ -45,7 +61,6 @@ impl KeyboardInfo {
 	pub fn new(keymap: &Keymap) -> Self {
 		KeyboardInfo {
 			state: xkb::State::new(keymap),
-			keymap: KeymapFile::new(keymap),
 			mods: ModifiersState::default(),
 			keys: FxHashSet::default(),
 		}
@@ -101,7 +116,6 @@ pub enum PointerEvent {
 }
 #[derive(Debug, Clone)]
 pub enum KeyboardEvent {
-	Keymap,
 	Key { key: u32, state: u32 },
 }
 
@@ -112,7 +126,7 @@ struct SurfaceInfo {
 	pointer_queue: VecDeque<PointerEvent>,
 	pointer_latest_event: Instant,
 	keyboard_queue: VecDeque<KeyboardEvent>,
-	keyboard_info: Option<KeyboardInfo>,
+	keyboard_info: KeyboardInfo,
 }
 impl SurfaceInfo {
 	fn new(wl_surface: &WlSurface, cursor_sender: watch::Sender<Option<CursorInfo>>) -> Self {
@@ -122,7 +136,9 @@ impl SurfaceInfo {
 			pointer_queue: VecDeque::new(),
 			pointer_latest_event: Instant::now(),
 			keyboard_queue: VecDeque::new(),
-			keyboard_info: None,
+			keyboard_info: KeyboardInfo::new(
+				&Keymap::new_from_names(&Context::new(0), "", "", "", "", None, 0).unwrap(),
+			),
 		}
 	}
 	fn flush(&self) {
@@ -217,25 +233,20 @@ impl SurfaceInfo {
 
 		locked
 	}
-	fn handle_keyboard_events(&mut self, keyboard: &WlKeyboard, mut locked: bool) -> bool {
+	fn handle_keyboard_events(&mut self, keyboard: &WlKeyboard, locked: bool) -> bool {
 		let Ok(focus) = self.wl_surface.upgrade() else { return false; };
-		let Some(info) = self.keyboard_info.as_mut() else { return true; };
 
 		if !locked {
 			keyboard.enter(0, &focus, vec![]);
 			if keyboard.version() >= wl_keyboard::EVT_REPEAT_INFO_SINCE {
 				keyboard.repeat_info(0, 0);
 			}
-			locked = info.keymap.send(keyboard).is_ok();
 		}
 		while let Some(event) = self.keyboard_queue.pop_front() {
 			debug!(locked, ?event, "Process keyboard event");
 			match (locked, event) {
-				(true, KeyboardEvent::Keymap) => {
-					let _ = info.keymap.send(keyboard);
-				}
 				(true, KeyboardEvent::Key { key, state }) => {
-					if let Ok(key_count) = info.process(key, state, keyboard) {
+					if let Ok(key_count) = self.keyboard_info.process(key, state, keyboard) {
 						if key_count == 0 {
 							keyboard.leave(SERIAL_COUNTER.inc(), &focus);
 							return false;
@@ -277,29 +288,6 @@ impl SeatData {
 			.unwrap();
 
 		seat_data
-	}
-
-	pub fn set_keymap_str(&self, keymap: &str, surfaces: Vec<WlSurface>) -> Result<()> {
-		let context = xkb::Context::new(0);
-		let keymap =
-			Keymap::new_from_string(&context, keymap.to_string(), XKB_KEYMAP_FORMAT_TEXT_V1, 0)
-				.ok_or_else(|| eyre!("Keymap is not valid"))?;
-		self.set_keymap(&keymap, surfaces);
-		Ok(())
-	}
-	pub fn set_keymap(&self, keymap: &Keymap, surfaces: Vec<WlSurface>) {
-		let mut panels = self.surfaces.lock();
-		let Some((_, focus)) = self.keyboard.get() else {return};
-		for surface in surfaces {
-			let Some(surface_info) = panels.get_mut(&surface.id()) else {continue};
-			surface_info
-				.keyboard_info
-				.replace(KeyboardInfo::new(keymap));
-
-			if *focus.lock() == surface.id() {
-				surface_info.keyboard_queue.push_back(KeyboardEvent::Keymap);
-			}
-		}
 	}
 
 	pub fn pointer_event(&self, surface: &WlSurface, event: PointerEvent) {
@@ -357,7 +345,6 @@ impl SeatData {
 			if keyboard_focus.is_null() {
 				*keyboard_focus = surfaces
 					.iter()
-					.filter(|(_k, v)| v.keyboard_info.is_some())
 					.filter(|(_k, v)| !v.keyboard_queue.is_empty())
 					.map(|(k, _v)| k)
 					.choose(&mut thread_rng())
@@ -414,9 +401,12 @@ pub struct CursorInfo {
 	pub hotspot_y: i32,
 }
 impl CursorInfo {
-	pub fn cursor_data(&self) -> Option<(Vector2<u32>, Vector2<i32>)> {
+	pub fn cursor_data(&self) -> Option<Geometry> {
 		let cursor_size = CoreSurface::from_wl_surface(&self.surface.upgrade().ok()?)?.size()?;
-		Some((cursor_size, [self.hotspot_x, self.hotspot_y].into()))
+		Some(Geometry {
+			origin: [self.hotspot_x, self.hotspot_y].into(),
+			size: cursor_size,
+		})
 	}
 }
 

@@ -52,7 +52,7 @@ pub fn startup_settings(env: &FxHashMap<String, String>) -> Option<StartupSettin
 }
 
 pub struct Client {
-	pid: Option<i32>,
+	pub pid: Option<i32>,
 	// env: Option<FxHashMap<String, String>>,
 	exe: Option<PathBuf>,
 	dispatch_join_handle: OnceCell<JoinHandle<Result<()>>>,
