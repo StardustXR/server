@@ -55,6 +55,7 @@ xkbcommon = { version = "0.5.0", default-features = false, optional = true }
 stardust-xr = "0.14.0"
 directories = "5.0.0"
 serde = { version = "1.0.160", features = ["derive"] }
+serde_repr = "0.1.16"
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 global_counter = "0.2.2"

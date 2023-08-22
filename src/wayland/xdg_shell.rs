@@ -4,23 +4,30 @@ use super::{
 	surface::CoreSurface,
 	SERIAL_COUNTER,
 };
-use crate::nodes::{
-	drawable::model::ModelPart,
-	items::panel::{Backend, PanelItem, RecommendedState, SurfaceID},
-	Message, Node,
+use crate::{
+	nodes::{
+		drawable::model::ModelPart,
+		items::panel::{
+			Backend, ChildInfo, Geometry, PanelItem, PanelItemInitData, SurfaceID, ToplevelInfo,
+			ToplevelState,
+		},
+		Node,
+	},
+	wayland::seat::handle_cursor,
 };
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{bail, eyre, Result};
 use mint::Vector2;
 use nanoid::nanoid;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use serde::{ser::SerializeSeq, Serialize, Serializer};
 use smithay::reexports::{
 	wayland_protocols::xdg::shell::server::{
 		xdg_popup::{self, XdgPopup},
 		xdg_positioner::{self, Anchor, ConstraintAdjustment, Gravity, XdgPositioner},
 		xdg_surface::{self, XdgSurface},
-		xdg_toplevel::{self, XdgToplevel, EVT_CONFIGURE_BOUNDS_SINCE, EVT_WM_CAPABILITIES_SINCE},
+		xdg_toplevel::{
+			self, ResizeEdge, XdgToplevel, EVT_CONFIGURE_BOUNDS_SINCE, EVT_WM_CAPABILITIES_SINCE,
+		},
 		xdg_wm_base::{self, XdgWmBase},
 	},
 	wayland_server::{
@@ -30,14 +37,12 @@ use smithay::reexports::{
 		Weak as WlWeak,
 	},
 };
-use stardust_xr::schemas::flex::serialize;
 use std::{
 	fmt::Debug,
 	sync::{Arc, Weak},
 };
 use tokio::sync::watch;
 use tracing::{debug, warn};
-use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};
 
 impl GlobalDispatch<XdgWmBase, (), WaylandState> for WaylandState {
 	fn bind(
@@ -195,6 +200,14 @@ impl PositionerData {
 		pos
 	}
 }
+impl From<PositionerData> for Geometry {
+	fn from(value: PositionerData) -> Self {
+		Geometry {
+			origin: value.get_pos(),
+			size: value.size,
+		}
+	}
+}
 
 impl Dispatch<XdgPositioner, Mutex<PositionerData>, WaylandState> for WaylandState {
 	fn request(
@@ -281,20 +294,6 @@ impl Dispatch<XdgPositioner, Mutex<PositionerData>, WaylandState> for WaylandSta
 			}
 			xdg_positioner::Request::Destroy => (),
 			_ => unreachable!(),
-		}
-	}
-}
-
-#[derive(Debug, Serialize, Clone, Copy)]
-pub struct Geometry {
-	pub origin: Vector2<i32>,
-	pub size: Vector2<u32>,
-}
-impl Default for Geometry {
-	fn default() -> Self {
-		Self {
-			origin: Vector2::from([0; 2]),
-			size: Vector2::from([0; 2]),
 		}
 	}
 }
@@ -388,6 +387,7 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 							);
 							toplevel_data.lock().panel_item_node.replace(node);
 							xdg_surface_data.lock().panel_item = Arc::downgrade(&panel_item);
+							handle_cursor(&panel_item, panel_item.backend.cursor.clone());
 						}
 					},
 					{
@@ -410,7 +410,12 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 								xdg_surface.configure(SERIAL_COUNTER.inc());
 								return
 							};
-							panel_item.commit_toplevel();
+							let Some(xdg_surface) = toplevel_data.lock().xdg_surface() else {return};
+							let Some(xdg_surface_data) = XdgSurfaceData::get(&xdg_surface) else {return};
+							let Some(wl_surface) = xdg_surface_data.lock().wl_surface() else {return};
+							let Some(core_surface) = CoreSurface::from_wl_surface(&wl_surface) else {return};
+							let Some(size) = core_surface.size() else {return};
+							panel_item.toplevel_size_changed(size);
 						}
 					},
 				);
@@ -441,9 +446,17 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 					parent_data.surface_id.clone(),
 					positioner,
 				));
+				let panel_item = parent_data.panel_item().unwrap();
+				handle_cursor(
+					&panel_item,
+					panel_item
+						.backend
+						.seat
+						.new_surface(&popup_data.lock().wl_surface().unwrap()),
+				);
 				let xdg_popup = data_init.init(id, popup_data);
 				xdg_surface_data.lock().surface_id = SurfaceID::Child(uid);
-				let panel_item = parent_data.panel_item().unwrap();
+
 				xdg_surface_data.lock().panel_item = Arc::downgrade(&panel_item);
 				debug!(?xdg_popup, ?xdg_surface, "Create XDG popup");
 
@@ -456,7 +469,6 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 						let xdg_popup = xdg_popup.upgrade().unwrap();
 						let Some(popup_data) = PopupData::get(&xdg_popup) else {return};
 						let popup_data = popup_data.lock();
-						// panel_item.commit_popup(popup_data);
 						panel_item
 							.backend
 							.new_popup(&panel_item, &xdg_popup, &*popup_data);
@@ -498,10 +510,6 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 	}
 }
 
-fn serde_error<S: Serializer>(msg: &str) -> Result<S::Ok, S::Error> {
-	Err(serde::ser::Error::custom(msg))
-}
-
 #[derive(Debug, Clone)]
 pub struct ToplevelData {
 	panel_item_node: Option<Arc<Node>>,
@@ -511,7 +519,6 @@ pub struct ToplevelData {
 	app_id: Option<String>,
 	max_size: Option<Vector2<u32>>,
 	min_size: Option<Vector2<u32>>,
-	states: Vec<u32>,
 }
 impl ToplevelData {
 	fn new(xdg_surface: &XdgSurface) -> Self {
@@ -523,7 +530,6 @@ impl ToplevelData {
 			app_id: None,
 			max_size: None,
 			min_size: None,
-			states: Vec::new(),
 		}
 	}
 
@@ -540,41 +546,6 @@ impl ToplevelData {
 		xdg_surface_data.panel_item()
 	}
 }
-impl Serialize for ToplevelData {
-	fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-		let Some(xdg_surface) = self.xdg_surface() else {return serializer.serialize_none()};
-		let Some(xdg_surface_data) = XdgSurfaceData::get(&xdg_surface) else {return serializer.serialize_none()};
-		let xdg_surface_data = xdg_surface_data.lock();
-		let geometry = xdg_surface_data.geometry.clone();
-		let Some(wl_surface) = xdg_surface_data.wl_surface() else {return serde_error::<S>("Wayland surface not found")};
-		let Some(core_surface) = CoreSurface::from_wl_surface(&wl_surface) else {return serde_error::<S>("Core surface not found")};
-		let Some(size) = core_surface.size() else {return serializer.serialize_none()};
-		let geometry = geometry.unwrap_or_else(|| Geometry {
-			origin: [0; 2].into(),
-			size,
-		});
-
-		let mut seq = serializer.serialize_seq(None)?;
-		// Parent UID
-		seq.serialize_element(&self.parent.as_ref().and_then(|p| {
-			Some(
-				ToplevelData::get(&p.upgrade().ok()?)
-					.lock()
-					.panel_item()?
-					.uid
-					.clone(),
-			)
-		}))?;
-		seq.serialize_element(&self.title)?;
-		seq.serialize_element(&self.app_id)?;
-		seq.serialize_element(&size)?;
-		seq.serialize_element(&self.min_size)?;
-		seq.serialize_element(&self.max_size)?;
-		seq.serialize_element(&geometry)?;
-		seq.serialize_element(&self.states)?;
-		seq.end()
-	}
-}
 impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 	fn request(
 		_state: &mut WaylandState,
@@ -588,30 +559,41 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 		match request {
 			xdg_toplevel::Request::SetParent { parent } => {
 				debug!(?xdg_toplevel, ?parent, "Set XDG Toplevel parent");
-				data.lock().parent = parent.map(|toplevel| toplevel.downgrade());
+				data.lock().parent = parent.clone().map(|toplevel| toplevel.downgrade());
+				let Some(panel_item) = data.lock().panel_item() else {return};
+				if let Some(parent) = parent {
+					panel_item.toplevel_parent_changed(
+						&ToplevelData::get(&parent).lock().panel_item().unwrap().uid,
+					);
+				}
 			}
 			xdg_toplevel::Request::SetTitle { title } => {
 				debug!(?xdg_toplevel, ?title, "Set XDG Toplevel title");
-				data.lock().title = (!title.is_empty()).then_some(title);
+				data.lock().title = (!title.is_empty()).then_some(title.clone());
+
+				let Some(panel_item) = data.lock().panel_item() else {return};
+				panel_item.toplevel_title_changed(&title);
 			}
 			xdg_toplevel::Request::SetAppId { app_id } => {
 				debug!(?xdg_toplevel, ?app_id, "Set XDG Toplevel app ID");
-				data.lock().app_id = (!app_id.is_empty()).then_some(app_id);
+				data.lock().app_id = (!app_id.is_empty()).then_some(app_id.clone());
+
+				let Some(panel_item) = data.lock().panel_item() else {return};
+				panel_item.toplevel_app_id_changed(&app_id);
 			}
-			xdg_toplevel::Request::ShowWindowMenu { seat, serial, x, y } => {
-				debug!(
-					?xdg_toplevel,
-					?seat,
-					serial,
-					x,
-					y,
-					"Show XDG Toplevel window menu"
-				);
+			xdg_toplevel::Request::ShowWindowMenu {
+				seat: _,
+				serial: _,
+				x,
+				y,
+			} => {
+				let Some(panel_item) = data.lock().panel_item() else {return};
+				panel_item.toplevel_window_menu([x, y].into());
 			}
 			xdg_toplevel::Request::Move { seat, serial } => {
 				debug!(?xdg_toplevel, ?seat, serial, "XDG Toplevel move request");
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(RecommendedState::Move);
+				panel_item.toplevel_move_request();
 			}
 			xdg_toplevel::Request::Resize {
 				seat,
@@ -627,7 +609,18 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 					"XDG Toplevel resize request"
 				);
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(RecommendedState::Resize(edges as u32));
+				let (up, down, left, right) = match edges {
+					ResizeEdge::Top => (true, false, false, false),
+					ResizeEdge::Bottom => (false, true, false, false),
+					ResizeEdge::Left => (false, false, true, false),
+					ResizeEdge::TopLeft => (true, false, true, false),
+					ResizeEdge::BottomLeft => (false, true, true, false),
+					ResizeEdge::Right => (false, false, false, true),
+					ResizeEdge::TopRight => (true, false, false, true),
+					ResizeEdge::BottomRight => (false, true, false, true),
+					_ => (false, false, false, false),
+				};
+				panel_item.toplevel_resize_request(up, down, left, right)
 			}
 			xdg_toplevel::Request::SetMaxSize { width, height } => {
 				debug!(?xdg_toplevel, width, height, "Set XDG Toplevel max size");
@@ -641,28 +634,28 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 			}
 			xdg_toplevel::Request::SetMaximized => {
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(RecommendedState::Maximize(true));
+				panel_item.recommend_toplevel_state(ToplevelState::Maximized);
 			}
 			xdg_toplevel::Request::UnsetMaximized => {
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(RecommendedState::Maximize(false));
+				panel_item.recommend_toplevel_state(ToplevelState::UnMaximized);
 			}
 			xdg_toplevel::Request::SetFullscreen { output: _ } => {
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(RecommendedState::Fullscreen(true));
+				panel_item.recommend_toplevel_state(ToplevelState::Fullscreen);
 			}
 			xdg_toplevel::Request::UnsetFullscreen => {
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(RecommendedState::Fullscreen(true));
+				panel_item.recommend_toplevel_state(ToplevelState::UnFullscreen);
 			}
 			xdg_toplevel::Request::SetMinimized => {
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(RecommendedState::Minimize);
+				panel_item.recommend_toplevel_state(ToplevelState::Minimized);
 			}
 			xdg_toplevel::Request::Destroy => {
 				debug!(?xdg_toplevel, "Destroy XDG Toplevel");
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.backend.on_drop();
+				panel_item.drop_toplevel();
 			}
 			_ => unreachable!(),
 		}
@@ -723,17 +716,6 @@ impl PopupData {
 	}
 }
 
-impl Serialize for PopupData {
-	fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-		let Some(positioner_data) = self.positioner_data() else {return serde_error::<S>("Positioner not found")};
-		let mut seq = serializer.serialize_seq(None)?;
-		seq.serialize_element(&self.uid)?;
-		seq.serialize_element(&self.parent_id)?;
-		seq.serialize_element(&positioner_data.get_pos())?;
-		seq.serialize_element(&positioner_data.size)?;
-		seq.end()
-	}
-}
 impl Debug for PopupData {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("XdgPopupData")
@@ -793,12 +775,27 @@ impl Dispatch<XdgPopup, Mutex<PopupData>, WaylandState> for WaylandState {
 	}
 }
 
+struct XdgToplevelState {
+	fullscreen: bool,
+	maximized: bool,
+	activated: bool,
+	tiled_up: bool,
+	tiled_down: bool,
+	tiled_left: bool,
+	tiled_right: bool,
+	capability_window_menu: bool,
+	capability_maximize: bool,
+	capability_fullscreen: bool,
+	capability_minimize: bool,
+}
+
 pub struct XDGBackend {
 	toplevel: WlWeak<XdgToplevel>,
 	toplevel_wl_surface: WlWeak<WlSurface>,
+	toplevel_state: Mutex<XdgToplevelState>,
 	popups: Mutex<FxHashMap<String, WlWeak<XdgPopup>>>,
 	cursor: watch::Receiver<Option<CursorInfo>>,
-	pub seat: Arc<SeatData>,
+	seat: Arc<SeatData>,
 	pointer_grab: Mutex<Option<SurfaceID>>,
 	keyboard_grab: Mutex<Option<SurfaceID>>,
 }
@@ -814,6 +811,19 @@ impl XDGBackend {
 		Some(XDGBackend {
 			toplevel: toplevel.downgrade(),
 			toplevel_wl_surface,
+			toplevel_state: Mutex::new(XdgToplevelState {
+				fullscreen: false,
+				maximized: false,
+				activated: false,
+				tiled_up: false,
+				tiled_down: false,
+				tiled_left: false,
+				tiled_right: false,
+				capability_window_menu: false,
+				capability_maximize: false,
+				capability_fullscreen: false,
+				capability_minimize: false,
+			}),
 			popups: Mutex::new(FxHashMap::default()),
 			cursor,
 			seat,
@@ -844,19 +854,50 @@ impl XDGBackend {
 	fn toplevel_wl_surface(&self) -> Option<WlSurface> {
 		self.toplevel_wl_surface.upgrade().ok()
 	}
-	fn input_surfaces(&self) -> Vec<WlSurface> {
-		let mut surfaces = self
-			.toplevel_wl_surface()
-			.map(|s| vec![s])
-			.unwrap_or_default();
-		surfaces.extend(self.popups.lock().values().filter_map(|p| {
-			let popup = p.upgrade().ok()?;
-			let popup_data = PopupData::get(&popup)?.lock();
-			let xdg_surface = popup_data.xdg_surface()?;
-			let xdg_surface_data = XdgSurfaceData::get(&xdg_surface)?.lock();
-			xdg_surface_data.wl_surface()
-		}));
-		surfaces
+
+	fn configure(&self, size: Option<Vector2<u32>>) {
+		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
+		let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
+		let Some(wl_surface) = self.toplevel_wl_surface() else {return};
+		let Some(core_surface) = CoreSurface::from_wl_surface(&wl_surface) else {return};
+		let Some(surface_size) = core_surface.size() else {return};
+
+		xdg_toplevel.configure(
+			size.unwrap_or(surface_size).x as i32,
+			size.unwrap_or(surface_size).y as i32,
+			self.states()
+				.into_iter()
+				.flat_map(|state| state.to_ne_bytes())
+				.collect(),
+		);
+		xdg_surface.configure(SERIAL_COUNTER.inc());
+		self.flush_client();
+	}
+	fn states(&self) -> Vec<u32> {
+		let mut states = Vec::new();
+		let toplevel_state = self.toplevel_state.lock();
+		if toplevel_state.maximized {
+			states.push(1);
+		}
+		if toplevel_state.fullscreen {
+			states.push(2);
+		}
+		if toplevel_state.activated {
+			states.push(4);
+		}
+		if toplevel_state.tiled_left {
+			states.push(5);
+		}
+		if toplevel_state.tiled_right {
+			states.push(6);
+		}
+		if toplevel_state.tiled_up {
+			states.push(7);
+		}
+		if toplevel_state.tiled_down {
+			states.push(8);
+		}
+		states
 	}
 
 	pub fn new_popup(
@@ -869,51 +910,44 @@ impl XDGBackend {
 
 		self.popups.lock().insert(uid.clone(), popup.downgrade());
 
-		let Some(node) = panel_item.node() else {return};
-		let Ok(message) = serialize(&(&uid, data)) else {return};
-		let _ = node.send_remote_signal("new_child", message);
+		let Some(positioner_data) = data.positioner_data() else {return};
+		panel_item.new_child(ChildInfo {
+			uid,
+			parent: data.parent_id.clone(),
+			geometry: positioner_data.into(),
+		})
 	}
 	pub fn reposition_popup(&self, panel_item: &PanelItem<XDGBackend>, popup_state: &PopupData) {
-		let Some(node) = panel_item.node() else {return};
 		let Some(positioner_data) = popup_state.positioner_data() else {return};
-
-		let _ = node.send_remote_signal(
-			"reposition_child",
-			serialize((positioner_data.get_pos(), positioner_data.size)).unwrap(),
-		);
+		panel_item.reposition_child(&popup_state.uid, positioner_data.into())
 	}
 	pub fn drop_popup(&self, panel_item: &PanelItem<XDGBackend>, uid: &str) {
-		'seat_drop: {
-			let Some(popup) = self
+		panel_item.drop_child(uid);
+		let Some(popup) = self
 				.popups
 				.lock()
-				.remove(uid) else {break 'seat_drop};
-			let Some(popup) = popup.upgrade().ok() else {break 'seat_drop};
-			let Some(popup) = popup.data::<Arc<PopupData>>().cloned() else {break 'seat_drop};
-			let Some(wl_surface) = popup.wl_surface() else {break 'seat_drop};
-			self.seat.drop_surface(&wl_surface);
-		}
-
-		let Some(node) = panel_item.node() else {return};
-		let Ok(message) = serialize(uid) else {return};
-		let _ = node.send_remote_signal("drop_child", message);
+				.remove(uid) else {return};
+		let Some(popup) = popup.upgrade().ok() else {return};
+		let Some(popup) = popup.data::<Arc<PopupData>>().cloned() else {return};
+		let Some(wl_surface) = popup.wl_surface() else {return};
+		self.seat.drop_surface(&wl_surface);
 	}
 
-	fn popups_data(&self) -> Vec<PopupData> {
+	fn child_data(&self) -> Vec<ChildInfo> {
 		self.popups
 			.lock()
 			.values()
-			.filter_map(|v| Some(v.upgrade().ok()?.data::<Mutex<PopupData>>()?.lock().clone()))
+			.filter_map(|v| {
+				let popup = v.upgrade().ok()?;
+				let data = PopupData::get(&popup)?;
+				let data_lock = data.lock();
+				Some(ChildInfo {
+					uid: data_lock.uid.clone(),
+					parent: data_lock.parent_id.clone(),
+					geometry: data_lock.positioner_data()?.into(),
+				})
+			})
 			.collect::<Vec<_>>()
-	}
-
-	pub fn on_drop(&self) {
-		let Some(toplevel_popup) = self.toplevel_xdg_surface().and_then(|s| XdgSurfaceData::get(&s).and_then(|s| s.lock().panel_item.upgrade())) else {return};
-		toplevel_popup.drop_toplevel();
-		let Some(toplevel) = self.toplevel_wl_surface() else {return};
-		self.seat.drop_surface(&toplevel);
-
-		debug!("Dropped panel item gracefully");
 	}
 
 	fn flush_client(&self) {
@@ -923,73 +957,54 @@ impl XDGBackend {
 		}
 	}
 }
+impl Drop for XDGBackend {
+	fn drop(&mut self) {
+		let Some(toplevel) = self.toplevel_wl_surface() else {return};
+		self.seat.drop_surface(&toplevel);
+		debug!("Dropped panel item gracefully");
+	}
+}
 impl Backend for XDGBackend {
-	fn serialize_start_data(&self, id: &str) -> Result<Message> {
-		let toplevel_state = self
+	fn start_data(&self) -> Result<PanelItemInitData> {
+		let toplevel_data = self
 			.toplevel()
-			.map(|t| ToplevelData::get(&t).lock().clone());
+			.map(|t| ToplevelData::get(&t).lock().clone())
+			.ok_or_else(|| eyre!("Could not get toplevel"))?;
 
 		let pointer_grab = self.pointer_grab.lock().clone();
 		let keyboard_grab = self.keyboard_grab.lock().clone();
 
-		Ok(serialize((
-			id,
-			(
-				self.cursor.borrow().as_ref().and_then(|c| c.cursor_data()),
-				toplevel_state,
-				self.popups_data(),
-				pointer_grab,
-				keyboard_grab,
-			),
-		))?
-		.into())
-	}
-	fn serialize_toplevel(&self) -> Result<Message> {
-		let toplevel = self
-			.toplevel()
-			.ok_or_else(|| eyre!("Toplevel does not exist"))?;
-		let state = ToplevelData::get(&toplevel);
-		let data = serialize(&state.lock().clone())?;
-		Ok(data.into())
-	}
+		let Some(wl_surface) = self.toplevel_wl_surface() else {bail!("Wayland surface not found")};
+		let Some(core_surface) = CoreSurface::from_wl_surface(&wl_surface) else {bail!("Core surface not found")};
+		let Some(size) = core_surface.size() else {bail!("Surface size not found")};
 
-	fn set_toplevel_capabilities(&self, capabilities: Vec<u8>) {
-		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
-		let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
+		let toplevel = ToplevelInfo {
+			parent: toplevel_data
+				.parent
+				.as_ref()
+				.and_then(|p| p.upgrade().ok())
+				.and_then(|p| ToplevelData::get(&p).lock().panel_item())
+				.map(|p| p.uid.clone()),
+			title: toplevel_data.title.clone(),
+			app_id: toplevel_data.app_id.clone(),
+			size,
+			min_size: toplevel_data.min_size.clone(),
+			max_size: toplevel_data.max_size.clone(),
+			logical_rectangle: XdgSurfaceData::get(&self.toplevel_xdg_surface().unwrap())
+				.unwrap()
+				.lock()
+				.geometry
+				.clone()
+				.unwrap(),
+		};
 
-		if xdg_toplevel.version() < EVT_WM_CAPABILITIES_SINCE {
-			return;
-		}
-		xdg_toplevel.wm_capabilities(capabilities);
-		xdg_surface.configure(SERIAL_COUNTER.inc());
-		self.flush_client();
-	}
-
-	fn configure_toplevel(
-		&self,
-		size: Option<Vector2<u32>>,
-		states: Vec<u32>,
-		bounds: Option<Vector2<u32>>,
-	) {
-		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
-		let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
-		debug!(?size, ?states, ?bounds, "Configure toplevel info");
-		if let Some(bounds) = bounds {
-			if xdg_toplevel.version() > EVT_CONFIGURE_BOUNDS_SINCE {
-				xdg_toplevel.configure_bounds(bounds.x as i32, bounds.y as i32);
-			}
-		}
-		let size = size.unwrap_or(Vector2::from([0; 2]));
-		xdg_toplevel.configure(
-			size.x as i32,
-			size.y as i32,
-			states
-				.into_iter()
-				.flat_map(|state| state.to_ne_bytes())
-				.collect(),
-		);
-		xdg_surface.configure(SERIAL_COUNTER.inc());
-		self.flush_client();
+		Ok(PanelItemInitData {
+			cursor: self.cursor.borrow().as_ref().and_then(|c| c.cursor_data()),
+			toplevel,
+			children: self.child_data(),
+			pointer_grab,
+			keyboard_grab,
+		})
 	}
 
 	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>) {
@@ -997,6 +1012,86 @@ impl Backend for XDGBackend {
 		let Some(core_surface) = CoreSurface::from_wl_surface(&wl_surface) else {return};
 
 		core_surface.apply_material(model_part);
+	}
+
+	// fn set_toplevel_capabilities(&self, capabilities: Vec<u8>) {
+	// 	let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
+	// 	let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
+
+	// 	if xdg_toplevel.version() < EVT_WM_CAPABILITIES_SINCE {
+	// 		return;
+	// 	}
+	// 	xdg_toplevel.wm_capabilities(capabilities);
+	// 	xdg_surface.configure(SERIAL_COUNTER.inc());
+	// 	self.flush_client();
+	// }
+
+	fn close_toplevel(&self) {
+		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
+		xdg_toplevel.close();
+	}
+	fn auto_size_toplevel(&self) {
+		self.configure(Some([0, 0].into()));
+	}
+	fn set_toplevel_size(&self, size: Vector2<u32>) {
+		self.configure(Some(size));
+	}
+	fn toplevel_maximize(&self) {
+		self.toplevel_state.lock().maximized = true;
+		self.configure(None);
+	}
+	fn toplevel_unmaximize(&self) {
+		self.toplevel_state.lock().maximized = false;
+		self.configure(None);
+	}
+	fn toplevel_fullscreen(&self) {
+		self.toplevel_state.lock().fullscreen = true;
+		self.configure(None);
+	}
+	fn toplevel_unfullscreen(&self) {
+		self.toplevel_state.lock().fullscreen = false;
+		self.configure(None);
+	}
+	fn set_toplevel_focused_visuals(&self, focused: bool) {
+		self.toplevel_state.lock().activated = focused;
+		self.configure(None);
+	}
+	fn set_toplevel_tiling(&self, up: bool, down: bool, left: bool, right: bool) {
+		self.toplevel_state.lock().tiled_up = up;
+		self.toplevel_state.lock().tiled_down = down;
+		self.toplevel_state.lock().tiled_left = left;
+		self.toplevel_state.lock().tiled_right = right;
+		self.configure(None);
+	}
+	fn set_toplevel_bounds(&self, bounds: Option<Vector2<u32>>) {
+		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
+		let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
+		if xdg_toplevel.version() <= EVT_CONFIGURE_BOUNDS_SINCE {
+			return;
+		}
+		xdg_toplevel.configure_bounds(
+			bounds.map(|b| b.x as i32).unwrap_or_default(),
+			bounds.map(|b| b.y as i32).unwrap_or_default(),
+		);
+		xdg_surface.configure(SERIAL_COUNTER.inc());
+		self.flush_client();
+	}
+
+	fn set_maximize_enabled(&self, enabled: bool) {
+		self.toplevel_state.lock().capability_maximize = enabled;
+		self.configure(None);
+	}
+	fn set_minimize_enabled(&self, enabled: bool) {
+		self.toplevel_state.lock().capability_minimize = enabled;
+		self.configure(None);
+	}
+	fn set_fullscreen_enabled(&self, enabled: bool) {
+		self.toplevel_state.lock().capability_fullscreen = enabled;
+		self.configure(None);
+	}
+	fn set_window_menu_enabled(&self, enabled: bool) {
+		self.toplevel_state.lock().capability_window_menu = enabled;
+		self.configure(None);
 	}
 
 	fn pointer_motion(&self, surface: &SurfaceID, position: Vector2<f32>) {
@@ -1030,14 +1125,6 @@ impl Backend for XDGBackend {
 		)
 	}
 
-	fn keyboard_set_keymap(&self, keymap: &str) -> Result<()> {
-		let context = xkb::Context::new(0);
-		let keymap =
-			Keymap::new_from_string(&context, keymap.to_string(), XKB_KEYMAP_FORMAT_TEXT_V1, 0)
-				.ok_or_else(|| eyre!("Keymap is not valid"))?;
-		self.seat.set_keymap(&keymap, self.input_surfaces());
-		Ok(())
-	}
 	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool) {
 		let Some(surface) = self.wl_surface_from_id(surface) else {return};
 		self.seat.keyboard_event(

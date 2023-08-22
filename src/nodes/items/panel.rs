@@ -20,6 +20,7 @@ use serde::{
 	ser::Serializer,
 	Deserialize, Serialize,
 };
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::{Arc, Weak};
 use tracing::debug;
@@ -29,20 +30,31 @@ lazy_static! {
 		type_name: "panel",
 		aliased_local_signals: vec![
 			"apply_surface_material",
-			"configure_toplevel",
-			"set_toplevel_capabilities",
+			"close_toplevel",
+			"auto_size_toplevel",
+			"set_toplevel_size_changed",
+			"set_toplevel_state",
+			"set_toplevel_tiling",
+			"set_toplevel_bounds",
+			"set_maximize_enabled",
+			"set_minimize_enabled",
+			"set_fullscreen_enabled",
+			"set_window_menu_enabled",
 			"pointer_scroll",
 			"pointer_button",
 			"pointer_motion",
 			"keyboard_key",
-			"keyboard_set_keymap_names",
-			"keyboard_set_keymap_string",
-			"close",
 		],
 		aliased_local_methods: vec![],
 		aliased_remote_signals: vec![
-			"commit_toplevel",
+			"toplevel_parent_changed",
+			"toplevel_title_changed",
+			"toplevel_app_id_changed",
+			"toplevel_window_menu",
 			"recommend_toplevel_state",
+			"toplevel_move_request",
+			"toplevel_resize_request",
+			"toplevel_size_changed",
 			"set_cursor",
 			"new_child",
 			"reposition_child",
@@ -118,27 +130,100 @@ impl serde::Serialize for SurfaceID {
 	}
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
-#[serde(tag = "type", content = "content")]
-pub enum RecommendedState {
-	Maximize(bool),
-	Fullscreen(bool),
-	Minimize,
-	Move,
-	Resize(u32),
+/// The origin and size of the surface's "solid" part.
+#[derive(Debug, Serialize, Clone, Copy)]
+pub struct Geometry {
+	pub origin: Vector2<i32>,
+	pub size: Vector2<u32>,
+}
+/// The state of the panel item's toplevel.
+#[derive(Debug, Clone, Serialize)]
+pub struct ToplevelInfo {
+	/// The UID of the panel item of the parent of this toplevel, if it exists
+	pub parent: Option<String>,
+	/// Equivalent to the window title
+	pub title: Option<String>,
+	/// Application identifier, see <https://standards.freedesktop.org/desktop-entry-spec/>
+	pub app_id: Option<String>,
+	/// Current size in pixels
+	pub size: Vector2<u32>,
+	/// Recommended minimum size in pixels
+	pub min_size: Option<Vector2<u32>>,
+	/// Recommended maximum size in pixels
+	pub max_size: Option<Vector2<u32>>,
+	/// Surface geometry
+	pub logical_rectangle: Geometry,
+}
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
+pub enum ToplevelState {
+	Floating,
+	Minimized,
+	UnMinimized,
+	Maximized,
+	UnMaximized,
+	Fullscreen,
+	UnFullscreen,
+}
+
+/// Data on positioning a child
+#[derive(Debug, Clone, Serialize)]
+pub struct ChildInfo {
+	pub uid: String,
+	pub parent: SurfaceID,
+	pub geometry: Geometry,
+}
+
+#[derive(Debug, Clone, Deserialize_repr)]
+#[repr(u32)]
+pub enum Edge {
+	None = 0,
+	Top = 1,
+	Bottom = 2,
+	Left = 4,
+	TopLeft = 5,
+	BottomLeft = 6,
+	Right = 8,
+	TopRight = 9,
+	BottomRight = 10,
+}
+
+/// The init data for the panel item.
+#[derive(Debug, Clone, Serialize)]
+pub struct PanelItemInitData {
+	/// The cursor, if applicable.
+	pub cursor: Option<Geometry>,
+	/// Size of the toplevel surface in pixels.
+	pub toplevel: ToplevelInfo,
+	/// Vector of childs that already exist
+	pub children: Vec<ChildInfo>,
+	/// The surface, if any, that has exclusive input to the pointer.
+	pub pointer_grab: Option<SurfaceID>,
+	/// The surface, if any, that has exclusive input to the keyboard.
+	pub keyboard_grab: Option<SurfaceID>,
 }
 
 pub trait Backend: Send + Sync + 'static {
-	fn serialize_start_data(&self, id: &str) -> Result<Message>;
-	fn serialize_toplevel(&self) -> Result<Message>;
-	fn set_toplevel_capabilities(&self, capabilities: Vec<u8>);
-	fn configure_toplevel(
-		&self,
-		size: Option<Vector2<u32>>,
-		states: Vec<u32>,
-		bounds: Option<Vector2<u32>>,
-	);
+	fn start_data(&self) -> Result<PanelItemInitData>;
+
 	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>);
+
+	fn close_toplevel(&self);
+	fn auto_size_toplevel(&self);
+	fn set_toplevel_size(&self, size: Vector2<u32>);
+	fn toplevel_maximize(&self);
+	fn toplevel_unmaximize(&self);
+	fn toplevel_fullscreen(&self);
+	fn toplevel_unfullscreen(&self);
+	fn set_toplevel_tiling(&self, up: bool, down: bool, left: bool, right: bool);
+	fn set_toplevel_bounds(&self, bounds: Option<Vector2<u32>>);
+	fn set_toplevel_focused_visuals(&self, focused: bool);
+
+	fn set_maximize_enabled(&self, enabled: bool);
+	fn set_minimize_enabled(&self, enabled: bool);
+	fn set_fullscreen_enabled(&self, enabled: bool);
+	fn set_window_menu_enabled(&self, enabled: bool);
 
 	fn pointer_motion(&self, surface: &SurfaceID, position: Vector2<f32>);
 	fn pointer_button(&self, surface: &SurfaceID, button: u32, pressed: bool);
@@ -149,7 +234,6 @@ pub trait Backend: Send + Sync + 'static {
 		scroll_steps: Option<Vector2<f32>>,
 	);
 
-	fn keyboard_set_keymap(&self, keymap: &str) -> Result<()>;
 	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool);
 }
 
@@ -160,7 +244,7 @@ pub fn panel_item_from_node(node: &Node) -> Option<Arc<dyn PanelItemTrait>> {
 
 pub trait PanelItemTrait: Backend + Send + Sync + 'static {
 	fn uid(&self) -> &str;
-	// fn node(&self) -> Option<Arc<Node>>;
+	fn serialize_start_data(&self, id: &str) -> Result<Message>;
 }
 
 pub struct PanelItem<B: Backend + ?Sized> {
@@ -210,20 +294,34 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 				items::capture(&item, &acceptor);
 			}
 		}
-		node.add_local_signal("apply_surface_material", Self::apply_surface_material_flex);
-		node.add_local_signal("configure_toplevel", Self::configure_toplevel_flex);
-		node.add_local_signal(
-			"set_toplevel_capabilities",
-			Self::set_toplevel_capabilities_flex,
-		);
-		node.add_local_signal("pointer_scroll", Self::pointer_scroll_flex);
-		node.add_local_signal("pointer_button", Self::pointer_button_flex);
-		node.add_local_signal("pointer_motion", Self::pointer_motion_flex);
 
+		node.add_local_signal("apply_surface_material", Self::apply_surface_material_flex);
+		node.add_local_signal("close_toplevel", Self::close_toplevel_flex);
+		node.add_local_signal("auto_size_toplevel", Self::auto_size_toplevel_flex);
+		node.add_local_signal("set_toplevel_size_changed", Self::set_toplevel_size_changed);
+		node.add_local_signal("toplevel_maximize", Self::toplevel_maximize_flex);
+		node.add_local_signal("toplevel_unmaximize", Self::toplevel_unmaximize_flex);
+		node.add_local_signal("toplevel_fullscreen", Self::toplevel_fullscreen_flex);
+		node.add_local_signal("toplevel_unfullscreen", Self::toplevel_unfullscreen_flex);
+		node.add_local_signal("set_toplevel_tiling", Self::set_toplevel_tiling_flex);
+		node.add_local_signal("set_toplevel_bounds", Self::set_toplevel_bounds_flex);
+
+		node.add_local_signal("set_maximize_enabled", Self::set_maximize_enabled_flex);
+		node.add_local_signal("set_minimize_enabled", Self::set_minimize_enabled_flex);
+		node.add_local_signal("set_fullscreen_enabled", Self::set_fullscreen_enabled_flex);
 		node.add_local_signal(
-			"keyboard_set_keymap_string",
-			Self::keyboard_set_keymap_string_flex,
+			"set_window_menu_enabled",
+			Self::set_window_menu_enabled_flex,
 		);
+
+		node.add_local_signal("pointer_motion", Self::pointer_motion_flex);
+		node.add_local_signal("pointer_button", Self::pointer_button_flex);
+		node.add_local_signal("pointer_scroll", Self::pointer_scroll_flex);
+
+		// node.add_local_signal(
+		// 	"keyboard_set_keymap_string",
+		// 	Self::keyboard_set_keymap_string_flex,
+		// );
 		// node.add_local_signal(
 		// 	"keyboard_set_keymap_names",
 		// 	Self::keyboard_set_keymap_names_flex,
@@ -232,11 +330,88 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 
 		(node, panel_item)
 	}
+	pub fn drop_toplevel(&self) {
+		let Some(node) = self.node.upgrade() else {return};
+		node.destroy();
+	}
+}
 
-	pub fn node(&self) -> Option<Arc<Node>> {
-		self.node.upgrade()
+// Remote signals
+impl<B: Backend + ?Sized> PanelItem<B> {
+	pub fn toplevel_parent_changed(&self, parent: &str) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("toplevel_parent_changed", serialize(parent).unwrap());
+	}
+	pub fn toplevel_title_changed(&self, title: &str) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("toplevel_title_changed", serialize(title).unwrap());
+	}
+	pub fn toplevel_app_id_changed(&self, app_id: &str) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("toplevel_app_id_changed", serialize(app_id).unwrap());
+	}
+	pub fn toplevel_window_menu(&self, offset: Vector2<i32>) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("toplevel_window_menu", serialize(offset).unwrap());
+	}
+	pub fn recommend_toplevel_state(&self, state: ToplevelState) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("recommend_toplevel_state", serialize(state).unwrap());
+	}
+	pub fn toplevel_move_request(&self) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("toplevel_move_request", Vec::<u8>::new());
+	}
+	pub fn toplevel_resize_request(&self, up: bool, down: bool, left: bool, right: bool) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal(
+			"toplevel_resize_request",
+			serialize((up, down, left, right)).unwrap(),
+		);
+	}
+	pub fn toplevel_size_changed(&self, size: Vector2<u32>) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("toplevel_size_changed", serialize(size).unwrap());
 	}
 
+	pub fn set_cursor(&self, geometry: Option<Geometry>) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("set_cursor", serialize(geometry).unwrap());
+	}
+
+	pub fn new_child(&self, info: ChildInfo) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("new_child", serialize(info).unwrap());
+	}
+	pub fn reposition_child(&self, uid: &str, geometry: Geometry) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("reposition_child", serialize((uid, geometry)).unwrap());
+	}
+	pub fn drop_child(&self, uid: &str) {
+		let Some(node) = self.node.upgrade() else {return};
+		let _ = node.send_remote_signal("drop_child", serialize(uid).unwrap());
+	}
+}
+// Local signals
+macro_rules! flex_no_args {
+	($fn_name: ident, $trait_fn: ident) => {
+		fn $fn_name(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
+			let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+			panel_item.$trait_fn();
+			Ok(())
+		}
+	};
+}
+macro_rules! flex_deserialize {
+	($fn_name: ident, $trait_fn: ident) => {
+		fn $fn_name(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
+			let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+			panel_item.$trait_fn(deserialize(message.as_ref())?);
+			Ok(())
+		}
+	};
+}
+impl<B: Backend + ?Sized> PanelItem<B> {
 	fn apply_surface_material_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
@@ -263,6 +438,30 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 
 		Ok(())
 	}
+
+	flex_no_args!(close_toplevel_flex, close_toplevel);
+	flex_no_args!(auto_size_toplevel_flex, auto_size_toplevel);
+	flex_deserialize!(set_toplevel_size_changed, set_toplevel_size);
+	flex_no_args!(toplevel_maximize_flex, toplevel_maximize);
+	flex_no_args!(toplevel_unmaximize_flex, toplevel_unmaximize);
+	flex_no_args!(toplevel_fullscreen_flex, toplevel_fullscreen);
+	flex_no_args!(toplevel_unfullscreen_flex, toplevel_unfullscreen);
+	flex_deserialize!(set_toplevel_bounds_flex, set_toplevel_bounds);
+	fn set_toplevel_tiling_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
+		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+		let (up, down, left, right) = deserialize(message.as_ref())?;
+		panel_item.set_toplevel_tiling(up, down, left, right);
+		Ok(())
+	}
+
+	flex_deserialize!(set_maximize_enabled_flex, set_maximize_enabled);
+	flex_deserialize!(set_minimize_enabled_flex, set_minimize_enabled);
+	flex_deserialize!(set_fullscreen_enabled_flex, set_fullscreen_enabled);
+	flex_deserialize!(set_window_menu_enabled_flex, set_window_menu_enabled);
 
 	fn pointer_motion_flex(
 		node: &Node,
@@ -312,65 +511,6 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		Ok(())
 	}
 
-	fn keyboard_set_keymap_string_flex(
-		node: &Node,
-		_calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let keymap_string: &str = deserialize(message.as_ref())?;
-
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
-		debug!("Keyboard set keymap");
-		panel_item.keyboard_set_keymap(keymap_string)
-
-		// PanelItem::keyboard_set_keymap_flex(node, &keymap)
-	}
-	// fn keyboard_set_keymap_names_flex(
-	// 	node: &Node,
-	// 	_calling_client: Arc<Client>,
-	// 	message: Message,
-	// ) -> Result<()> {
-	// 	#[derive(Debug, Deserialize)]
-	// 	struct Names<'a> {
-	// 		rules: &'a str,
-	// 		model: &'a str,
-	// 		layout: &'a str,
-	// 		variant: &'a str,
-	// 		options: Option<String>,
-	// 	}
-	// 	let names: Names = deserialize(message.as_ref())?;
-	// 	let context = xkb::Context::new(0);
-	// 	let keymap = Keymap::new_from_names(
-	// 		&context,
-	// 		names.rules,
-	// 		names.model,
-	// 		names.layout,
-	// 		names.variant,
-	// 		names.options,
-	// 		XKB_KEYMAP_FORMAT_TEXT_V1,
-	// 	)
-	// 	.ok_or_else(|| eyre!("Keymap is not valid"))?;
-
-	// 	PanelItem::keyboard_set_keymap_flex(node, &keymap)
-	// }
-	// fn keyboard_set_keymap_flex(node: &Node, keymap: &str) -> Result<()> {
-	// 	let Some(panel_item): Option<Arc<PanelItem<dyn WaylandBackend>>> = panel_item_from_node(node) else { return Ok(()) };
-	// 	debug!("Keyboard set keymap");
-
-	// 	panel_item.seat_data.set_keymap(
-	// 		keymap,
-	// 		match &panel_item {
-	// 			Backend::Wayland(w) => w.input_surfaces(),
-	// 			#[cfg(feature = "xwayland")]
-	// 			Backend::X11(_) => panel_item
-	// 				.toplevel_wl_surface()
-	// 				.map(|s| vec![s])
-	// 				.unwrap_or_default(),
-	// 		},
-	// 	);
-
-	// 	Ok(())
-	// }
 	fn keyboard_key_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
@@ -390,87 +530,67 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		let Ok(message) = serialize(sid) else {return};
 		let _ = node.send_remote_signal("grab_keyboard", message);
 	}
-
-	fn configure_toplevel_flex(
-		node: &Node,
-		_calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
-
-		#[derive(Debug, Deserialize)]
-		struct ConfigureToplevelInfo {
-			size: Option<Vector2<u32>>,
-			states: Vec<u32>,
-			bounds: Option<Vector2<u32>>,
-		}
-		let info: ConfigureToplevelInfo = deserialize(message.as_ref())?;
-
-		panel_item.configure_toplevel(info.size, info.states, info.bounds);
-		Ok(())
-	}
-	fn set_toplevel_capabilities_flex(
-		node: &Node,
-		_calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
-
-		let capabilities: Vec<u8> = deserialize(message.as_ref())?;
-		debug!("Set toplevel capabilities");
-		panel_item.set_toplevel_capabilities(capabilities);
-
-		Ok(())
-	}
-
-	pub fn commit_toplevel(&self) {
-		debug!("Commit toplevel");
-		let Some(node) = self.node.upgrade() else {return};
-		let Ok(data) = self.backend.serialize_toplevel() else {return};
-		let _ = node.send_remote_signal("commit_toplevel", data);
-	}
-	pub fn recommend_toplevel_state(&self, state: RecommendedState) {
-		let Some(node) = self.node.upgrade() else {return};
-		let data = serialize(state).unwrap();
-		debug!(?state, "Recommend toplevel state");
-
-		let _ = node.send_remote_signal("recommend_toplevel_state", data);
-	}
-
-	pub fn drop_toplevel(&self) {
-		let Some(node) = self.node.upgrade() else {return};
-		node.destroy();
-	}
 }
 impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
 	fn uid(&self) -> &str {
 		&self.uid
 	}
+
+	fn serialize_start_data(&self, id: &str) -> Result<Message> {
+		Ok(serialize((id, self.start_data()?))?.into())
+	}
 }
 impl<B: Backend + ?Sized> Backend for PanelItem<B> {
-	fn serialize_start_data(&self, id: &str) -> Result<Message> {
-		self.backend.serialize_start_data(id)
-	}
-
-	fn serialize_toplevel(&self) -> Result<Message> {
-		self.backend.serialize_toplevel()
-	}
-
-	fn set_toplevel_capabilities(&self, capabilities: Vec<u8>) {
-		self.backend.set_toplevel_capabilities(capabilities)
-	}
-
-	fn configure_toplevel(
-		&self,
-		size: Option<Vector2<u32>>,
-		states: Vec<u32>,
-		bounds: Option<Vector2<u32>>,
-	) {
-		self.backend.configure_toplevel(size, states, bounds)
+	fn start_data(&self) -> Result<PanelItemInitData> {
+		self.backend.start_data()
 	}
 
 	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>) {
 		self.backend.apply_surface_material(surface, model_part)
+	}
+
+	fn close_toplevel(&self) {
+		self.backend.close_toplevel()
+	}
+	fn auto_size_toplevel(&self) {
+		self.backend.auto_size_toplevel()
+	}
+	fn set_toplevel_size(&self, size: Vector2<u32>) {
+		self.backend.set_toplevel_size(size)
+	}
+
+	fn set_toplevel_tiling(&self, up: bool, down: bool, left: bool, right: bool) {
+		self.backend.set_toplevel_tiling(up, down, left, right)
+	}
+	fn set_toplevel_bounds(&self, bounds: Option<Vector2<u32>>) {
+		self.backend.set_toplevel_bounds(bounds)
+	}
+	fn set_toplevel_focused_visuals(&self, focused: bool) {
+		self.backend.set_toplevel_focused_visuals(focused)
+	}
+	fn toplevel_maximize(&self) {
+		self.backend.toplevel_maximize()
+	}
+	fn toplevel_unmaximize(&self) {
+		self.backend.toplevel_unmaximize()
+	}
+	fn toplevel_fullscreen(&self) {
+		self.backend.toplevel_fullscreen()
+	}
+	fn toplevel_unfullscreen(&self) {
+		self.backend.toplevel_unfullscreen()
+	}
+	fn set_maximize_enabled(&self, enabled: bool) {
+		self.backend.set_maximize_enabled(enabled)
+	}
+	fn set_minimize_enabled(&self, enabled: bool) {
+		self.backend.set_minimize_enabled(enabled)
+	}
+	fn set_fullscreen_enabled(&self, enabled: bool) {
+		self.backend.set_fullscreen_enabled(enabled)
+	}
+	fn set_window_menu_enabled(&self, enabled: bool) {
+		self.backend.set_window_menu_enabled(enabled)
 	}
 
 	fn pointer_motion(&self, surface: &SurfaceID, position: Vector2<f32>) {
@@ -489,9 +609,6 @@ impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 			.pointer_scroll(surface, scroll_distance, scroll_steps)
 	}
 
-	fn keyboard_set_keymap(&self, keymap: &str) -> Result<()> {
-		self.backend.keyboard_set_keymap(keymap)
-	}
 	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool) {
 		self.backend.keyboard_key(surface, key, state)
 	}

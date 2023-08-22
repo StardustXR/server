@@ -1,13 +1,13 @@
 use super::{
 	seat::{KeyboardEvent, PointerEvent, SeatData},
 	state::ClientState,
-	xdg_shell::PopupData,
 };
 use crate::{
 	nodes::{
 		drawable::model::ModelPart,
-		items::panel::{Backend, PanelItem, RecommendedState, SurfaceID},
-		Message,
+		items::panel::{
+			Backend, Geometry, PanelItem, PanelItemInitData, SurfaceID, ToplevelInfo, ToplevelState,
+		},
 	},
 	wayland::surface::CoreSurface,
 };
@@ -18,8 +18,7 @@ use parking_lot::Mutex;
 use smithay::{
 	reexports::{
 		calloop::{EventLoop, LoopSignal},
-		wayland_protocols::xdg::shell::server::xdg_toplevel,
-		wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource, WEnum},
+		wayland_server::{protocol::wl_surface::WlSurface, DisplayHandle, Resource},
 		x11rb::protocol::xproto::Window,
 	},
 	utils::{Logical, Rectangle},
@@ -29,7 +28,6 @@ use smithay::{
 		X11Surface, X11Wm, XWayland, XWaylandEvent, XwmHandler,
 	},
 };
-use stardust_xr::schemas::flex::serialize;
 use std::{ffi::OsStr, iter::empty, sync::Arc, time::Duration};
 use tokio::sync::oneshot;
 use tracing::debug;
@@ -165,7 +163,13 @@ impl XwmHandler for XWaylandHandler {
 			},
 			move |_| {
 				let Some(panel_item) = window.user_data().get::<Arc<PanelItem<X11Backend>>>() else {return};
-				panel_item.commit_toplevel();
+				panel_item.toplevel_size_changed(
+					[
+						window.geometry().size.w as u32,
+						window.geometry().size.h as u32,
+					]
+					.into(),
+				);
 			},
 		);
 	}
@@ -208,7 +212,7 @@ impl XwmHandler for XWaylandHandler {
 	fn move_request(&mut self, _xwm: XwmId, window: X11Surface, button: u32) {
 		let Some(panel_item) = self.panel_item(&window) else {return};
 		debug!(?window, button, "X window requests move");
-		panel_item.recommend_toplevel_state(RecommendedState::Move);
+		panel_item.toplevel_move_request();
 	}
 	fn resize_request(
 		&mut self,
@@ -219,40 +223,39 @@ impl XwmHandler for XWaylandHandler {
 	) {
 		let Some(panel_item) = self.panel_item(&window) else {return};
 		debug!(?window, button, ?resize_edge, "X window requests resize");
-		panel_item.recommend_toplevel_state(RecommendedState::Resize(
-			WEnum::Value(match resize_edge {
-				ResizeEdge::Top => xdg_toplevel::ResizeEdge::Top,
-				ResizeEdge::Bottom => xdg_toplevel::ResizeEdge::Bottom,
-				ResizeEdge::Left => xdg_toplevel::ResizeEdge::Left,
-				ResizeEdge::TopLeft => xdg_toplevel::ResizeEdge::TopLeft,
-				ResizeEdge::BottomLeft => xdg_toplevel::ResizeEdge::BottomLeft,
-				ResizeEdge::Right => xdg_toplevel::ResizeEdge::Right,
-				ResizeEdge::TopRight => xdg_toplevel::ResizeEdge::TopRight,
-				ResizeEdge::BottomRight => xdg_toplevel::ResizeEdge::BottomRight,
-			})
-			.into(),
-		));
+		let (up, down, left, right) = match resize_edge {
+			ResizeEdge::Top => (true, false, false, false),
+			ResizeEdge::Bottom => (false, true, false, false),
+			ResizeEdge::Left => (false, false, true, false),
+			ResizeEdge::TopLeft => (true, false, true, false),
+			ResizeEdge::BottomLeft => (false, true, true, false),
+			ResizeEdge::Right => (false, false, false, true),
+			ResizeEdge::TopRight => (true, false, false, true),
+			ResizeEdge::BottomRight => (false, true, false, true),
+			// _ => (false, false, false, false),
+		};
+		panel_item.toplevel_resize_request(up, down, left, right)
 	}
 
 	fn maximize_request(&mut self, _xwm: XwmId, window: X11Surface) {
 		let Some(panel_item) = self.panel_item(&window) else {return};
-		panel_item.recommend_toplevel_state(RecommendedState::Maximize(true));
+		panel_item.recommend_toplevel_state(ToplevelState::Maximized);
 	}
 	fn unmaximize_request(&mut self, _xwm: XwmId, window: X11Surface) {
 		let Some(panel_item) = self.panel_item(&window) else {return};
-		panel_item.recommend_toplevel_state(RecommendedState::Maximize(false));
+		panel_item.recommend_toplevel_state(ToplevelState::UnMaximized);
 	}
 	fn fullscreen_request(&mut self, _xwm: XwmId, window: X11Surface) {
 		let Some(panel_item) = self.panel_item(&window) else {return};
-		panel_item.recommend_toplevel_state(RecommendedState::Fullscreen(true));
+		panel_item.recommend_toplevel_state(ToplevelState::Fullscreen);
 	}
 	fn unfullscreen_request(&mut self, _xwm: XwmId, window: X11Surface) {
 		let Some(panel_item) = self.panel_item(&window) else {return};
-		panel_item.recommend_toplevel_state(RecommendedState::Fullscreen(true));
+		panel_item.recommend_toplevel_state(ToplevelState::UnFullscreen);
 	}
 	fn minimize_request(&mut self, _xwm: XwmId, window: X11Surface) {
 		let Some(panel_item) = self.panel_item(&window) else {return};
-		panel_item.recommend_toplevel_state(RecommendedState::Minimize);
+		panel_item.recommend_toplevel_state(ToplevelState::Minimized);
 	}
 }
 
@@ -280,62 +283,129 @@ impl X11Backend {
 	// }
 }
 impl Backend for X11Backend {
-	fn serialize_start_data(&self, id: &str) -> Result<Message> {
-		let size = (
-			self.toplevel.geometry().size.w as u32,
-			self.toplevel.geometry().size.h as u32,
-		);
-		let toplevel_state = (
-			None::<String>,
-			self.toplevel.title(),
-			None::<String>,
-			(
-				self.toplevel.geometry().size.w as u32,
-				self.toplevel.geometry().size.h as u32,
-			),
-			self.toplevel.min_size().map(|s| (s.w as u32, s.h as u32)),
-			self.toplevel.max_size().map(|s| (s.w as u32, s.w as u32)),
-			((0_i32, 0_i32), size),
-			vec![0_u32; 0],
-		);
-		let info = (
-			None::<(Vector2<u32>, Vector2<i32>)>,
-			toplevel_state,
-			Vec::<PopupData>::new(),
-			None::<SurfaceID>,
-			None::<SurfaceID>,
-		);
-		Ok(serialize((id, info))?.into())
-	}
-	fn serialize_toplevel(&self) -> Result<Message> {
-		let toplevel_state = (
-			None::<String>,
-			self.toplevel.title(),
-			None::<String>,
-			(
-				self.toplevel.geometry().size.w,
-				self.toplevel.geometry().size.h,
-			),
-			self.toplevel.min_size().map(|s| (s.w, s.h)),
-			self.toplevel.max_size().map(|s| (s.w, s.w)),
-		);
-		let data = serialize(&toplevel_state)?;
-		Ok(data.into())
-	}
+	// fn start_data(&self, id: &str) -> Result<Message> {
+	// 	let size = (
+	// 		self.toplevel.geometry().size.w as u32,
+	// 		self.toplevel.geometry().size.h as u32,
+	// 	);
+	// 	let toplevel_state = (
+	// 		None::<String>,
+	// 		self.toplevel.title(),
+	// 		None::<String>,
+	// 		(
+	// 			self.toplevel.geometry().size.w as u32,
+	// 			self.toplevel.geometry().size.h as u32,
+	// 		),
+	// 		self.toplevel.min_size().map(|s| (s.w as u32, s.h as u32)),
+	// 		self.toplevel.max_size().map(|s| (s.w as u32, s.w as u32)),
+	// 		((0_i32, 0_i32), size),
+	// 		vec![0_u32; 0],
+	// 	);
+	// 	let info = (
+	// 		None::<(Vector2<u32>, Vector2<i32>)>,
+	// 		toplevel_state,
+	// 		Vec::<PopupData>::new(),
+	// 		None::<SurfaceID>,
+	// 		None::<SurfaceID>,
+	// 	);
+	// 	Ok(serialize((id, info))?.into())
+	// }
+	// fn serialize_toplevel(&self) -> Result<Message> {
+	// 	let toplevel_state = (
+	// 		None::<String>,
+	// 		self.toplevel.title(),
+	// 		None::<String>,
+	// 		(
+	// 			self.toplevel.geometry().size.w,
+	// 			self.toplevel.geometry().size.h,
+	// 		),
+	// 		self.toplevel.min_size().map(|s| (s.w, s.h)),
+	// 		self.toplevel.max_size().map(|s| (s.w, s.w)),
+	// 	);
+	// 	let data = serialize(&toplevel_state)?;
+	// 	Ok(data.into())
+	// }
 
-	fn set_toplevel_capabilities(&self, _capabilities: Vec<u8>) {}
+	// fn set_toplevel_capabilities(&self, _capabilities: Vec<u8>) {}
 
-	fn configure_toplevel(
-		&self,
-		size: Option<Vector2<u32>>,
-		states: Vec<u32>,
-		_bounds: Option<Vector2<u32>>,
-	) {
-		let _ = self.toplevel.configure(
-			size.map(|s| Rectangle::from_loc_and_size((0, 0), (s.x as i32, s.y as i32))),
-		);
-		let _ = self.toplevel.set_maximized(states.contains(&1));
+	// fn set_toplevel_size(
+	// 	&self,
+	// 	size: Option<Vector2<u32>>,
+	// 	states: Vec<u32>,
+	// 	_bounds: Option<Vector2<u32>>,
+	// ) {
+	// 	let _ = self.toplevel.configure(
+	// 		size.map(|s| Rectangle::from_loc_and_size((0, 0), (s.x as i32, s.y as i32))),
+	// 	);
+	// 	let _ = self.toplevel.set_maximized(states.contains(&1));
+	// }
+
+	fn start_data(&self) -> Result<PanelItemInitData> {
+		Ok(PanelItemInitData {
+			cursor: None,
+			toplevel: ToplevelInfo {
+				parent: None,
+				title: Some(self.toplevel.title()),
+				app_id: Some(self.toplevel.instance()),
+				size: [
+					self.toplevel.geometry().size.w as u32,
+					self.toplevel.geometry().size.h as u32,
+				]
+				.into(),
+				min_size: self
+					.toplevel
+					.min_size()
+					.map(|s| [s.w as u32, s.h as u32].into()),
+				max_size: self
+					.toplevel
+					.max_size()
+					.map(|s| [s.w as u32, s.h as u32].into()),
+				logical_rectangle: Geometry {
+					origin: [0, 0].into(),
+					size: [
+						self.toplevel.geometry().size.w as u32,
+						self.toplevel.geometry().size.h as u32,
+					]
+					.into(),
+				},
+			},
+			children: vec![],
+			pointer_grab: self._pointer_grab.lock().clone(),
+			keyboard_grab: self._keyboard_grab.lock().clone(),
+		})
 	}
+	fn close_toplevel(&self) {}
+
+	fn auto_size_toplevel(&self) {
+		let _ = self.toplevel.configure(None);
+	}
+	fn set_toplevel_size(&self, size: Vector2<u32>) {
+		let _ = self.toplevel.configure(Some(Rectangle {
+			loc: self.toplevel.geometry().loc,
+			size: (size.x as i32, size.y as i32).into(),
+		}));
+	}
+	fn toplevel_maximize(&self) {
+		let _ = self.toplevel.set_maximized(true);
+	}
+	fn toplevel_unmaximize(&self) {
+		let _ = self.toplevel.set_maximized(false);
+	}
+	fn toplevel_fullscreen(&self) {
+		let _ = self.toplevel.set_fullscreen(true);
+	}
+	fn toplevel_unfullscreen(&self) {
+		let _ = self.toplevel.set_fullscreen(false);
+	}
+	fn set_toplevel_tiling(&self, _up: bool, _down: bool, _left: bool, _right: bool) {}
+	fn set_toplevel_bounds(&self, _bounds: Option<Vector2<u32>>) {}
+	fn set_toplevel_focused_visuals(&self, focused: bool) {
+		let _ = self.toplevel.set_activated(focused);
+	}
+	fn set_maximize_enabled(&self, _enabled: bool) {}
+	fn set_minimize_enabled(&self, _enabled: bool) {}
+	fn set_fullscreen_enabled(&self, _enabled: bool) {}
+	fn set_window_menu_enabled(&self, _enabled: bool) {}
 
 	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>) {
 		let Some(wl_surface) = self.wl_surface_from_id(&surface) else {return};
@@ -375,16 +445,6 @@ impl Backend for X11Backend {
 		)
 	}
 
-	fn keyboard_set_keymap(&self, keymap: &str) -> Result<()> {
-		self.seat.set_keymap_str(
-			&keymap,
-			if let Some(toplevel) = self.toplevel.wl_surface() {
-				vec![toplevel]
-			} else {
-				vec![]
-			},
-		)
-	}
 	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool) {
 		let Some(surface) = self.wl_surface_from_id(surface) else {return};
 		self.seat.keyboard_event(

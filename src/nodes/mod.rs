@@ -173,6 +173,19 @@ impl Node {
 			.store(deserialize(message.as_ref())?, Ordering::Relaxed);
 		Ok(())
 	}
+	// very much up for debate if we should allow this, as you can match objects using this
+	// pub fn get_client_pid_flex(
+	// 	node: &Node,
+	// 	_calling_client: Arc<Client>,
+	// 	_message: Message,
+	// ) -> Result<Message> {
+	// 	let client = node
+	// 		.client
+	// 		.upgrade()
+	// 		.ok_or_else(|| eyre!("Could not get client for node?"))?;
+	// 	let pid = client.pid.ok_or_else(|| eyre!("Client PID is unknown"))?;
+	// 	Ok(serialize(pid)?.into())
+	// }
 	pub fn destroy_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
