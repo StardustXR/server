@@ -212,18 +212,7 @@ pub trait Backend: Send + Sync + 'static {
 	fn close_toplevel(&self);
 	fn auto_size_toplevel(&self);
 	fn set_toplevel_size(&self, size: Vector2<u32>);
-	fn toplevel_maximize(&self);
-	fn toplevel_unmaximize(&self);
-	fn toplevel_fullscreen(&self);
-	fn toplevel_unfullscreen(&self);
-	fn set_toplevel_tiling(&self, up: bool, down: bool, left: bool, right: bool);
-	fn set_toplevel_bounds(&self, bounds: Option<Vector2<u32>>);
 	fn set_toplevel_focused_visuals(&self, focused: bool);
-
-	fn set_maximize_enabled(&self, enabled: bool);
-	fn set_minimize_enabled(&self, enabled: bool);
-	fn set_fullscreen_enabled(&self, enabled: bool);
-	fn set_window_menu_enabled(&self, enabled: bool);
 
 	fn pointer_motion(&self, surface: &SurfaceID, position: Vector2<f32>);
 	fn pointer_button(&self, surface: &SurfaceID, button: u32, pressed: bool);
@@ -234,6 +223,7 @@ pub trait Backend: Send + Sync + 'static {
 		scroll_steps: Option<Vector2<f32>>,
 	);
 
+	fn keyboard_keymap(&self, surface: &SurfaceID, keymap_id: &str);
 	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool);
 }
 
@@ -299,33 +289,12 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		node.add_local_signal("close_toplevel", Self::close_toplevel_flex);
 		node.add_local_signal("auto_size_toplevel", Self::auto_size_toplevel_flex);
 		node.add_local_signal("set_toplevel_size_changed", Self::set_toplevel_size_changed);
-		node.add_local_signal("toplevel_maximize", Self::toplevel_maximize_flex);
-		node.add_local_signal("toplevel_unmaximize", Self::toplevel_unmaximize_flex);
-		node.add_local_signal("toplevel_fullscreen", Self::toplevel_fullscreen_flex);
-		node.add_local_signal("toplevel_unfullscreen", Self::toplevel_unfullscreen_flex);
-		node.add_local_signal("set_toplevel_tiling", Self::set_toplevel_tiling_flex);
-		node.add_local_signal("set_toplevel_bounds", Self::set_toplevel_bounds_flex);
-
-		node.add_local_signal("set_maximize_enabled", Self::set_maximize_enabled_flex);
-		node.add_local_signal("set_minimize_enabled", Self::set_minimize_enabled_flex);
-		node.add_local_signal("set_fullscreen_enabled", Self::set_fullscreen_enabled_flex);
-		node.add_local_signal(
-			"set_window_menu_enabled",
-			Self::set_window_menu_enabled_flex,
-		);
 
 		node.add_local_signal("pointer_motion", Self::pointer_motion_flex);
 		node.add_local_signal("pointer_button", Self::pointer_button_flex);
 		node.add_local_signal("pointer_scroll", Self::pointer_scroll_flex);
 
-		// node.add_local_signal(
-		// 	"keyboard_set_keymap_string",
-		// 	Self::keyboard_set_keymap_string_flex,
-		// );
-		// node.add_local_signal(
-		// 	"keyboard_set_keymap_names",
-		// 	Self::keyboard_set_keymap_names_flex,
-		// );
+		node.add_local_signal("keyboard_keymap", Self::keyboard_keymap_flex);
 		node.add_local_signal("keyboard_key", Self::keyboard_key_flex);
 
 		(node, panel_item)
@@ -354,9 +323,9 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		let Some(node) = self.node.upgrade() else {return};
 		let _ = node.send_remote_signal("toplevel_window_menu", serialize(offset).unwrap());
 	}
-	pub fn recommend_toplevel_state(&self, state: ToplevelState) {
+	pub fn toplevel_fullscreen_active(&self, active: bool) {
 		let Some(node) = self.node.upgrade() else {return};
-		let _ = node.send_remote_signal("recommend_toplevel_state", serialize(state).unwrap());
+		let _ = node.send_remote_signal("toplevel_fullscreen_active", serialize(active).unwrap());
 	}
 	pub fn toplevel_move_request(&self) {
 		let Some(node) = self.node.upgrade() else {return};
@@ -442,26 +411,6 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 	flex_no_args!(close_toplevel_flex, close_toplevel);
 	flex_no_args!(auto_size_toplevel_flex, auto_size_toplevel);
 	flex_deserialize!(set_toplevel_size_changed, set_toplevel_size);
-	flex_no_args!(toplevel_maximize_flex, toplevel_maximize);
-	flex_no_args!(toplevel_unmaximize_flex, toplevel_unmaximize);
-	flex_no_args!(toplevel_fullscreen_flex, toplevel_fullscreen);
-	flex_no_args!(toplevel_unfullscreen_flex, toplevel_unfullscreen);
-	flex_deserialize!(set_toplevel_bounds_flex, set_toplevel_bounds);
-	fn set_toplevel_tiling_flex(
-		node: &Node,
-		_calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
-		let (up, down, left, right) = deserialize(message.as_ref())?;
-		panel_item.set_toplevel_tiling(up, down, left, right);
-		Ok(())
-	}
-
-	flex_deserialize!(set_maximize_enabled_flex, set_maximize_enabled);
-	flex_deserialize!(set_minimize_enabled_flex, set_minimize_enabled);
-	flex_deserialize!(set_fullscreen_enabled_flex, set_fullscreen_enabled);
-	flex_deserialize!(set_window_menu_enabled_flex, set_window_menu_enabled);
 
 	fn pointer_motion_flex(
 		node: &Node,
@@ -511,6 +460,19 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		Ok(())
 	}
 
+	fn keyboard_keymap_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
+		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+		let (surface_id, keymap): (SurfaceID, &str) = deserialize(message.as_ref())?;
+		debug!(?surface_id, keymap, "Set keyboard keymap");
+
+		panel_item.keyboard_keymap(&surface_id, keymap);
+
+		Ok(())
+	}
 	fn keyboard_key_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
@@ -558,39 +520,8 @@ impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 	fn set_toplevel_size(&self, size: Vector2<u32>) {
 		self.backend.set_toplevel_size(size)
 	}
-
-	fn set_toplevel_tiling(&self, up: bool, down: bool, left: bool, right: bool) {
-		self.backend.set_toplevel_tiling(up, down, left, right)
-	}
-	fn set_toplevel_bounds(&self, bounds: Option<Vector2<u32>>) {
-		self.backend.set_toplevel_bounds(bounds)
-	}
 	fn set_toplevel_focused_visuals(&self, focused: bool) {
 		self.backend.set_toplevel_focused_visuals(focused)
-	}
-	fn toplevel_maximize(&self) {
-		self.backend.toplevel_maximize()
-	}
-	fn toplevel_unmaximize(&self) {
-		self.backend.toplevel_unmaximize()
-	}
-	fn toplevel_fullscreen(&self) {
-		self.backend.toplevel_fullscreen()
-	}
-	fn toplevel_unfullscreen(&self) {
-		self.backend.toplevel_unfullscreen()
-	}
-	fn set_maximize_enabled(&self, enabled: bool) {
-		self.backend.set_maximize_enabled(enabled)
-	}
-	fn set_minimize_enabled(&self, enabled: bool) {
-		self.backend.set_minimize_enabled(enabled)
-	}
-	fn set_fullscreen_enabled(&self, enabled: bool) {
-		self.backend.set_fullscreen_enabled(enabled)
-	}
-	fn set_window_menu_enabled(&self, enabled: bool) {
-		self.backend.set_window_menu_enabled(enabled)
 	}
 
 	fn pointer_motion(&self, surface: &SurfaceID, position: Vector2<f32>) {
@@ -609,6 +540,9 @@ impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 			.pointer_scroll(surface, scroll_distance, scroll_steps)
 	}
 
+	fn keyboard_keymap(&self, surface: &SurfaceID, keymap_id: &str) {
+		self.backend.keyboard_keymap(surface, keymap_id)
+	}
 	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool) {
 		self.backend.keyboard_key(surface, key, state)
 	}

@@ -5,9 +5,7 @@ use super::{
 use crate::{
 	nodes::{
 		drawable::model::ModelPart,
-		items::panel::{
-			Backend, Geometry, PanelItem, PanelItemInitData, SurfaceID, ToplevelInfo, ToplevelState,
-		},
+		items::panel::{Backend, Geometry, PanelItem, PanelItemInitData, SurfaceID, ToplevelInfo},
 	},
 	wayland::surface::CoreSurface,
 };
@@ -237,25 +235,15 @@ impl XwmHandler for XWaylandHandler {
 		panel_item.toplevel_resize_request(up, down, left, right)
 	}
 
-	fn maximize_request(&mut self, _xwm: XwmId, window: X11Surface) {
-		let Some(panel_item) = self.panel_item(&window) else {return};
-		panel_item.recommend_toplevel_state(ToplevelState::Maximized);
-	}
-	fn unmaximize_request(&mut self, _xwm: XwmId, window: X11Surface) {
-		let Some(panel_item) = self.panel_item(&window) else {return};
-		panel_item.recommend_toplevel_state(ToplevelState::UnMaximized);
-	}
 	fn fullscreen_request(&mut self, _xwm: XwmId, window: X11Surface) {
+		let _ = window.set_fullscreen(true);
 		let Some(panel_item) = self.panel_item(&window) else {return};
-		panel_item.recommend_toplevel_state(ToplevelState::Fullscreen);
+		panel_item.toplevel_fullscreen_active(true);
 	}
 	fn unfullscreen_request(&mut self, _xwm: XwmId, window: X11Surface) {
+		let _ = window.set_fullscreen(false);
 		let Some(panel_item) = self.panel_item(&window) else {return};
-		panel_item.recommend_toplevel_state(ToplevelState::UnFullscreen);
-	}
-	fn minimize_request(&mut self, _xwm: XwmId, window: X11Surface) {
-		let Some(panel_item) = self.panel_item(&window) else {return};
-		panel_item.recommend_toplevel_state(ToplevelState::Minimized);
+		panel_item.toplevel_fullscreen_active(true);
 	}
 }
 
@@ -385,27 +373,9 @@ impl Backend for X11Backend {
 			size: (size.x as i32, size.y as i32).into(),
 		}));
 	}
-	fn toplevel_maximize(&self) {
-		let _ = self.toplevel.set_maximized(true);
-	}
-	fn toplevel_unmaximize(&self) {
-		let _ = self.toplevel.set_maximized(false);
-	}
-	fn toplevel_fullscreen(&self) {
-		let _ = self.toplevel.set_fullscreen(true);
-	}
-	fn toplevel_unfullscreen(&self) {
-		let _ = self.toplevel.set_fullscreen(false);
-	}
-	fn set_toplevel_tiling(&self, _up: bool, _down: bool, _left: bool, _right: bool) {}
-	fn set_toplevel_bounds(&self, _bounds: Option<Vector2<u32>>) {}
 	fn set_toplevel_focused_visuals(&self, focused: bool) {
 		let _ = self.toplevel.set_activated(focused);
 	}
-	fn set_maximize_enabled(&self, _enabled: bool) {}
-	fn set_minimize_enabled(&self, _enabled: bool) {}
-	fn set_fullscreen_enabled(&self, _enabled: bool) {}
-	fn set_window_menu_enabled(&self, _enabled: bool) {}
 
 	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>) {
 		let Some(wl_surface) = self.wl_surface_from_id(&surface) else {return};
@@ -445,6 +415,9 @@ impl Backend for X11Backend {
 		)
 	}
 
+	fn keyboard_keymap(&self, surface: &SurfaceID, keymap_id: &str) {
+		todo!()
+	}
 	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool) {
 		let Some(surface) = self.wl_surface_from_id(surface) else {return};
 		self.seat.keyboard_event(
