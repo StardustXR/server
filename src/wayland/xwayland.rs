@@ -131,6 +131,8 @@ impl XwmHandler for XWaylandHandler {
 	fn map_window_notify(&mut self, _xwm: XwmId, window: X11Surface) {
 		debug!(?window, "X map window notify");
 
+		let _ = window.set_maximized(true);
+
 		let dh = self.wayland_display_handle.clone();
 		let seat = self.seat.clone().unwrap();
 		CoreSurface::add_to(
@@ -171,7 +173,6 @@ impl XwmHandler for XWaylandHandler {
 			},
 		);
 	}
-
 	fn mapped_override_redirect_window(&mut self, _xwm: XwmId, window: X11Surface) {
 		debug!(?window, "X map override redirect window");
 	}
@@ -179,7 +180,6 @@ impl XwmHandler for XWaylandHandler {
 	fn unmapped_window(&mut self, _xwm: XwmId, window: X11Surface) {
 		debug!(?window, "Unmap X window");
 	}
-
 	fn destroyed_window(&mut self, _xwm: XwmId, window: X11Surface) {
 		debug!(?window, "Destroy X window");
 	}
