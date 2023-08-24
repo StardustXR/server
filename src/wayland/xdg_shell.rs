@@ -346,13 +346,13 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 				debug!(?toplevel, ?xdg_surface, "Create XDG toplevel");
 
 				if toplevel.version() >= EVT_WM_CAPABILITIES_SINCE {
-					toplevel.wm_capabilities(vec![2, 3, 4]);
+					toplevel.wm_capabilities(vec![3]);
 				}
 				toplevel.configure(
 					0,
 					0,
 					if toplevel.version() >= 2 {
-						vec![5, 6, 7, 8]
+						vec![1, 5, 6, 7, 8]
 							.into_iter()
 							.flat_map(u32::to_ne_bytes)
 							.collect()
@@ -970,18 +970,6 @@ impl Backend for XDGBackend {
 
 		core_surface.apply_material(model_part);
 	}
-
-	// fn set_toplevel_capabilities(&self, capabilities: Vec<u8>) {
-	// 	let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
-	// 	let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
-
-	// 	if xdg_toplevel.version() < EVT_WM_CAPABILITIES_SINCE {
-	// 		return;
-	// 	}
-	// 	xdg_toplevel.wm_capabilities(capabilities);
-	// 	xdg_surface.configure(SERIAL_COUNTER.inc());
-	// 	self.flush_client();
-	// }
 
 	fn close_toplevel(&self) {
 		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
