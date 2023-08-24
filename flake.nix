@@ -5,13 +5,13 @@
   };
 
   # 22.11 does not include PR #218472, hence we use the unstable version
-  inputs.nixpkgs.url = github:NixOS/nixpkgs/nixos-unstable;
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
   # Since we do not have a monorepo, we have to fetch Flatland in order to use
   # it to create VM Tests
   inputs.flatland.url = "github:StardustXR/flatland";
 
-  inputs.fenix.url = github:nix-community/fenix;
+  inputs.fenix.url = "github:nix-community/fenix";
   inputs.fenix.inputs.nixpkgs.follows = "nixpkgs";
 
   inputs.hercules-ci-effects.url = "github:hercules-ci/hercules-ci-effects";
