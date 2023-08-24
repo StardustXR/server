@@ -9,7 +9,6 @@ use crate::{
 		drawable::model::ModelPart,
 		items::panel::{
 			Backend, ChildInfo, Geometry, PanelItem, PanelItemInitData, SurfaceID, ToplevelInfo,
-			ToplevelState,
 		},
 		Node,
 	},
@@ -25,9 +24,7 @@ use smithay::reexports::{
 		xdg_popup::{self, XdgPopup},
 		xdg_positioner::{self, Anchor, ConstraintAdjustment, Gravity, XdgPositioner},
 		xdg_surface::{self, XdgSurface},
-		xdg_toplevel::{
-			self, ResizeEdge, XdgToplevel, EVT_CONFIGURE_BOUNDS_SINCE, EVT_WM_CAPABILITIES_SINCE,
-		},
+		xdg_toplevel::{self, ResizeEdge, XdgToplevel, EVT_WM_CAPABILITIES_SINCE},
 		xdg_wm_base::{self, XdgWmBase},
 	},
 	wayland_server::{
@@ -632,26 +629,19 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 				data.lock().min_size = (width > 1 || height > 1)
 					.then_some(Vector2::from([width as u32, height as u32]));
 			}
-			xdg_toplevel::Request::SetMaximized => {
-				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(ToplevelState::Maximized);
-			}
-			xdg_toplevel::Request::UnsetMaximized => {
-				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(ToplevelState::UnMaximized);
-			}
+			xdg_toplevel::Request::SetMaximized => {}
+			xdg_toplevel::Request::UnsetMaximized => {}
 			xdg_toplevel::Request::SetFullscreen { output: _ } => {
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(ToplevelState::Fullscreen);
+				panel_item.backend.toplevel_state.lock().fullscreen = true;
+				panel_item.backend.configure(None);
 			}
 			xdg_toplevel::Request::UnsetFullscreen => {
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(ToplevelState::UnFullscreen);
+				panel_item.backend.toplevel_state.lock().fullscreen = false;
+				panel_item.backend.configure(None);
 			}
-			xdg_toplevel::Request::SetMinimized => {
-				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.recommend_toplevel_state(ToplevelState::Minimized);
-			}
+			xdg_toplevel::Request::SetMinimized => {}
 			xdg_toplevel::Request::Destroy => {
 				debug!(?xdg_toplevel, "Destroy XDG Toplevel");
 				let Some(panel_item) = data.lock().panel_item() else {return};
@@ -777,16 +767,7 @@ impl Dispatch<XdgPopup, Mutex<PopupData>, WaylandState> for WaylandState {
 
 struct XdgToplevelState {
 	fullscreen: bool,
-	maximized: bool,
 	activated: bool,
-	tiled_up: bool,
-	tiled_down: bool,
-	tiled_left: bool,
-	tiled_right: bool,
-	capability_window_menu: bool,
-	capability_maximize: bool,
-	capability_fullscreen: bool,
-	capability_minimize: bool,
 }
 
 pub struct XDGBackend {
@@ -813,16 +794,7 @@ impl XDGBackend {
 			toplevel_wl_surface,
 			toplevel_state: Mutex::new(XdgToplevelState {
 				fullscreen: false,
-				maximized: false,
 				activated: false,
-				tiled_up: false,
-				tiled_down: false,
-				tiled_left: false,
-				tiled_right: false,
-				capability_window_menu: false,
-				capability_maximize: false,
-				capability_fullscreen: false,
-				capability_minimize: false,
 			}),
 			popups: Mutex::new(FxHashMap::default()),
 			cursor,
@@ -874,28 +846,13 @@ impl XDGBackend {
 		self.flush_client();
 	}
 	fn states(&self) -> Vec<u32> {
-		let mut states = Vec::new();
+		let mut states = vec![1, 5, 6, 7, 8]; // maximized always and tiled
 		let toplevel_state = self.toplevel_state.lock();
-		if toplevel_state.maximized {
-			states.push(1);
-		}
 		if toplevel_state.fullscreen {
 			states.push(2);
 		}
 		if toplevel_state.activated {
 			states.push(4);
-		}
-		if toplevel_state.tiled_left {
-			states.push(5);
-		}
-		if toplevel_state.tiled_right {
-			states.push(6);
-		}
-		if toplevel_state.tiled_up {
-			states.push(7);
-		}
-		if toplevel_state.tiled_down {
-			states.push(8);
 		}
 		states
 	}
@@ -1036,61 +993,8 @@ impl Backend for XDGBackend {
 	fn set_toplevel_size(&self, size: Vector2<u32>) {
 		self.configure(Some(size));
 	}
-	fn toplevel_maximize(&self) {
-		self.toplevel_state.lock().maximized = true;
-		self.configure(None);
-	}
-	fn toplevel_unmaximize(&self) {
-		self.toplevel_state.lock().maximized = false;
-		self.configure(None);
-	}
-	fn toplevel_fullscreen(&self) {
-		self.toplevel_state.lock().fullscreen = true;
-		self.configure(None);
-	}
-	fn toplevel_unfullscreen(&self) {
-		self.toplevel_state.lock().fullscreen = false;
-		self.configure(None);
-	}
 	fn set_toplevel_focused_visuals(&self, focused: bool) {
 		self.toplevel_state.lock().activated = focused;
-		self.configure(None);
-	}
-	fn set_toplevel_tiling(&self, up: bool, down: bool, left: bool, right: bool) {
-		self.toplevel_state.lock().tiled_up = up;
-		self.toplevel_state.lock().tiled_down = down;
-		self.toplevel_state.lock().tiled_left = left;
-		self.toplevel_state.lock().tiled_right = right;
-		self.configure(None);
-	}
-	fn set_toplevel_bounds(&self, bounds: Option<Vector2<u32>>) {
-		let Ok(xdg_toplevel) = self.toplevel.upgrade() else {return};
-		let Some(xdg_surface) = self.toplevel_xdg_surface() else {return};
-		if xdg_toplevel.version() <= EVT_CONFIGURE_BOUNDS_SINCE {
-			return;
-		}
-		xdg_toplevel.configure_bounds(
-			bounds.map(|b| b.x as i32).unwrap_or_default(),
-			bounds.map(|b| b.y as i32).unwrap_or_default(),
-		);
-		xdg_surface.configure(SERIAL_COUNTER.inc());
-		self.flush_client();
-	}
-
-	fn set_maximize_enabled(&self, enabled: bool) {
-		self.toplevel_state.lock().capability_maximize = enabled;
-		self.configure(None);
-	}
-	fn set_minimize_enabled(&self, enabled: bool) {
-		self.toplevel_state.lock().capability_minimize = enabled;
-		self.configure(None);
-	}
-	fn set_fullscreen_enabled(&self, enabled: bool) {
-		self.toplevel_state.lock().capability_fullscreen = enabled;
-		self.configure(None);
-	}
-	fn set_window_menu_enabled(&self, enabled: bool) {
-		self.toplevel_state.lock().capability_window_menu = enabled;
 		self.configure(None);
 	}
 
@@ -1134,5 +1038,9 @@ impl Backend for XDGBackend {
 				state: if state { 1 } else { 0 },
 			},
 		)
+	}
+
+	fn keyboard_keymap(&self, _surface: &SurfaceID, _keymap_id: &str) {
+		todo!()
 	}
 }
