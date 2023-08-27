@@ -60,6 +60,8 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 global_counter = "0.2.2"
 rand = "0.8.5"
 atty = "0.2.14"
+async-trait = "0.1.73"
+async-recursion = "1.0.4"
 
 [dependencies.stereokit]
 default-features = false
@@ -87,7 +89,7 @@ optional = true
 # path = "../stereokit-rs"
 # [patch.crates-io.stereokit-sys]
 # path = "../stereokit-sys"
-# [patch.crates-io.stardust-xr]
-# path = "../core/core"
+[patch.crates-io.stardust-xr]
+path = "../core/core"
 # [patch.crates-io.stardust-xr-schemas]
 # path = "../core/schemas"

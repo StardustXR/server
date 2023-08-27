@@ -10,6 +10,7 @@ pub mod root;
 pub mod spatial;
 pub mod startup;
 
+use async_recursion::async_recursion;
 use color_eyre::eyre::{eyre, Result};
 use core::hash::BuildHasherDefault;
 use dashmap::DashMap;
@@ -22,7 +23,9 @@ use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::deserialize;
 use std::fmt::Debug;
+use std::future::Future;
 use std::os::fd::OwnedFd;
+use std::pin::Pin;
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
 use tracing::{debug_span, instrument};
@@ -60,7 +63,11 @@ impl AsRef<[u8]> for Message {
 }
 
 pub type Signal = fn(&Node, Arc<Client>, Message) -> Result<()>;
-pub type Method = fn(&Node, Arc<Client>, Message) -> Result<Message>;
+pub type Method = fn(
+	&Node,
+	Arc<Client>,
+	Message,
+) -> Pin<Box<dyn Future<Output = Result<Message>> + Send + Sync + 'static>>;
 
 pub struct Node {
 	pub enabled: Arc<AtomicBool>,
@@ -186,8 +193,15 @@ impl Node {
 	pub fn add_local_signal(&self, name: &str, signal: Signal) {
 		self.local_signals.insert(name.to_string(), signal);
 	}
-	pub fn add_local_method(&self, name: &str, method: Method) {
-		self.local_methods.insert(name.to_string(), method);
+	pub fn add_local_method<F: Future<Output = Result<Message>> + Send + Sync + 'static>(
+		&self,
+		name: &str,
+		method: fn(&Node, Arc<Client>, Message) -> F,
+	) {
+		self.local_methods
+			.insert(name.to_string(), |node, calling_client, message| {
+				Box::Pin(method(node, calling_client, message))
+			});
 	}
 
 	pub fn get_aspect<F, T>(
@@ -229,7 +243,8 @@ impl Node {
 			})
 		}
 	}
-	pub fn execute_local_method(
+	#[async_recursion]
+	pub async fn execute_local_method(
 		&self,
 		calling_client: Arc<Client>,
 		method: &str,
@@ -251,19 +266,18 @@ impl Node {
 						fds: Vec::new(),
 					},
 				)
+				.await
 		} else {
 			let method = self
 				.local_methods
 				.get(method)
 				.ok_or(ScenegraphError::MethodNotFound)?;
 
-			debug_span!("Handle method").in_scope(|| {
-				method(self, calling_client, message).map_err(|error| {
-					ScenegraphError::MethodError {
-						error: error.to_string(),
-					}
+			method(self, calling_client, message)
+				.await
+				.map_err(|error| ScenegraphError::MethodError {
+					error: error.to_string(),
 				})
-			})
 		}
 	}
 	#[instrument(level = "debug", skip_all)]
