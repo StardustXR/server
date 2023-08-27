@@ -15,12 +15,12 @@ use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::Vector2;
 use nanoid::nanoid;
+use rustc_hash::FxHashMap;
 use serde::{
 	de::{Deserializer, Error, SeqAccess, Visitor},
 	ser::Serializer,
 	Deserialize, Serialize,
 };
-use serde_repr::{Deserialize_repr, Serialize_repr};
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::{Arc, Weak};
 use tracing::debug;
@@ -29,20 +29,16 @@ lazy_static! {
 	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
 		type_name: "panel",
 		aliased_local_signals: vec![
+			"start_data",
 			"apply_surface_material",
 			"close_toplevel",
 			"auto_size_toplevel",
-			"set_toplevel_size_changed",
-			"set_toplevel_state",
-			"set_toplevel_tiling",
-			"set_toplevel_bounds",
-			"set_maximize_enabled",
-			"set_minimize_enabled",
-			"set_fullscreen_enabled",
-			"set_window_menu_enabled",
-			"pointer_scroll",
-			"pointer_button",
+			"set_toplevel_size",
+			"set_toplevel_focused_visuals",
 			"pointer_motion",
+			"pointer_button",
+			"pointer_scroll",
+			"keyboard_keymap",
 			"keyboard_key",
 		],
 		aliased_local_methods: vec![],
@@ -50,8 +46,7 @@ lazy_static! {
 			"toplevel_parent_changed",
 			"toplevel_title_changed",
 			"toplevel_app_id_changed",
-			"toplevel_window_menu",
-			"recommend_toplevel_state",
+			"toplevel_fullscreen_active",
 			"toplevel_move_request",
 			"toplevel_resize_request",
 			"toplevel_size_changed",
@@ -155,38 +150,11 @@ pub struct ToplevelInfo {
 	pub logical_rectangle: Geometry,
 }
 
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, Serialize_repr, Deserialize_repr)]
-pub enum ToplevelState {
-	Floating,
-	Minimized,
-	UnMinimized,
-	Maximized,
-	UnMaximized,
-	Fullscreen,
-	UnFullscreen,
-}
-
 /// Data on positioning a child
 #[derive(Debug, Clone, Serialize)]
 pub struct ChildInfo {
-	pub uid: String,
 	pub parent: SurfaceID,
 	pub geometry: Geometry,
-}
-
-#[derive(Debug, Clone, Deserialize_repr)]
-#[repr(u32)]
-pub enum Edge {
-	None = 0,
-	Top = 1,
-	Bottom = 2,
-	Left = 4,
-	TopLeft = 5,
-	BottomLeft = 6,
-	Right = 8,
-	TopRight = 9,
-	BottomRight = 10,
 }
 
 /// The init data for the panel item.
@@ -197,7 +165,7 @@ pub struct PanelItemInitData {
 	/// Size of the toplevel surface in pixels.
 	pub toplevel: ToplevelInfo,
 	/// Vector of childs that already exist
-	pub children: Vec<ChildInfo>,
+	pub children: FxHashMap<String, ChildInfo>,
 	/// The surface, if any, that has exclusive input to the pointer.
 	pub pointer_grab: Option<SurfaceID>,
 	/// The surface, if any, that has exclusive input to the keyboard.
@@ -223,8 +191,7 @@ pub trait Backend: Send + Sync + 'static {
 		scroll_steps: Option<Vector2<f32>>,
 	);
 
-	fn keyboard_keymap(&self, surface: &SurfaceID, keymap_id: &str);
-	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool);
+	fn keyboard_keys(&self, surface: &SurfaceID, keymap_id: &str, keys: Vec<i32>);
 }
 
 pub fn panel_item_from_node(node: &Node) -> Option<Arc<dyn PanelItemTrait>> {
@@ -243,7 +210,7 @@ pub struct PanelItem<B: Backend + ?Sized> {
 	pub backend: Box<B>,
 }
 impl<B: Backend + ?Sized> PanelItem<B> {
-	pub fn create(backend: Box<B>, pid: Option<i32>) -> (Arc<Node>, Arc<PanelItem<B>>) {
+	pub fn create(backend: Box<B>, pid: Option<i32>) -> Arc<PanelItem<B>> {
 		debug!(?pid, "Create panel item");
 
 		let startup_settings = pid
@@ -294,10 +261,9 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		node.add_local_signal("pointer_button", Self::pointer_button_flex);
 		node.add_local_signal("pointer_scroll", Self::pointer_scroll_flex);
 
-		node.add_local_signal("keyboard_keymap", Self::keyboard_keymap_flex);
-		node.add_local_signal("keyboard_key", Self::keyboard_key_flex);
+		node.add_local_signal("keyboard_key", Self::keyboard_keys_flex);
 
-		(node, panel_item)
+		panel_item
 	}
 	pub fn drop_toplevel(&self) {
 		let Some(node) = self.node.upgrade() else {return};
@@ -318,10 +284,6 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 	pub fn toplevel_app_id_changed(&self, app_id: &str) {
 		let Some(node) = self.node.upgrade() else {return};
 		let _ = node.send_remote_signal("toplevel_app_id_changed", serialize(app_id).unwrap());
-	}
-	pub fn toplevel_window_menu(&self, offset: Vector2<i32>) {
-		let Some(node) = self.node.upgrade() else {return};
-		let _ = node.send_remote_signal("toplevel_window_menu", serialize(offset).unwrap());
 	}
 	pub fn toplevel_fullscreen_active(&self, active: bool) {
 		let Some(node) = self.node.upgrade() else {return};
@@ -348,9 +310,9 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		let _ = node.send_remote_signal("set_cursor", serialize(geometry).unwrap());
 	}
 
-	pub fn new_child(&self, info: ChildInfo) {
+	pub fn new_child(&self, uid: &str, info: ChildInfo) {
 		let Some(node) = self.node.upgrade() else {return};
-		let _ = node.send_remote_signal("new_child", serialize(info).unwrap());
+		let _ = node.send_remote_signal("new_child", serialize((uid, info)).unwrap());
 	}
 	pub fn reposition_child(&self, uid: &str, geometry: Geometry) {
 		let Some(node) = self.node.upgrade() else {return};
@@ -460,29 +422,17 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		Ok(())
 	}
 
-	fn keyboard_keymap_flex(
+	fn keyboard_keys_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
 		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
-		let (surface_id, keymap): (SurfaceID, &str) = deserialize(message.as_ref())?;
-		debug!(?surface_id, keymap, "Set keyboard keymap");
+		let (surface_id, keymap_id, keys): (SurfaceID, &str, Vec<i32>) =
+			deserialize(message.as_ref())?;
+		debug!(?keys, "Set keyboard key state");
 
-		panel_item.keyboard_keymap(&surface_id, keymap);
-
-		Ok(())
-	}
-	fn keyboard_key_flex(
-		node: &Node,
-		_calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
-		let (surface_id, key, state): (SurfaceID, u32, u32) = deserialize(message.as_ref())?;
-		debug!(key, state, "Set keyboard key state");
-
-		panel_item.keyboard_key(&surface_id, key, state == 0);
+		panel_item.keyboard_keys(&surface_id, keymap_id, keys);
 
 		Ok(())
 	}
@@ -540,11 +490,8 @@ impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 			.pointer_scroll(surface, scroll_distance, scroll_steps)
 	}
 
-	fn keyboard_keymap(&self, surface: &SurfaceID, keymap_id: &str) {
-		self.backend.keyboard_keymap(surface, keymap_id)
-	}
-	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool) {
-		self.backend.keyboard_key(surface, key, state)
+	fn keyboard_keys(&self, surface: &SurfaceID, keymap_id: &str, keys: Vec<i32>) {
+		self.backend.keyboard_keys(surface, keymap_id, keys)
 	}
 }
 impl<B: Backend + ?Sized> Drop for PanelItem<B> {

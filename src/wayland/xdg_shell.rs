@@ -6,11 +6,11 @@ use super::{
 };
 use crate::{
 	nodes::{
+		data::KEYMAPS,
 		drawable::model::ModelPart,
 		items::panel::{
 			Backend, ChildInfo, Geometry, PanelItem, PanelItemInitData, SurfaceID, ToplevelInfo,
 		},
-		Node,
 	},
 	wayland::seat::handle_cursor,
 };
@@ -378,11 +378,10 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 
 							xdg_surface_data.lock().surface_id = SurfaceID::Toplevel;
 							let Some(backend) = XDGBackend::create(toplevel.clone(), seat_data.clone()) else {return};
-							let (node, panel_item) = PanelItem::create(
+							let panel_item = PanelItem::create(
 								Box::new(backend),
 								client_credentials.map(|c| c.pid),
 							);
-							toplevel_data.lock().panel_item_node.replace(node);
 							xdg_surface_data.lock().panel_item = Arc::downgrade(&panel_item);
 							handle_cursor(&panel_item, panel_item.backend.cursor.clone());
 						}
@@ -509,7 +508,6 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 
 #[derive(Debug, Clone)]
 pub struct ToplevelData {
-	panel_item_node: Option<Arc<Node>>,
 	xdg_surface: WlWeak<XdgSurface>,
 	parent: Option<WlWeak<XdgToplevel>>,
 	title: Option<String>,
@@ -520,7 +518,6 @@ pub struct ToplevelData {
 impl ToplevelData {
 	fn new(xdg_surface: &XdgSurface) -> Self {
 		ToplevelData {
-			panel_item_node: None,
 			xdg_surface: xdg_surface.downgrade(),
 			parent: None,
 			title: None,
@@ -541,6 +538,12 @@ impl ToplevelData {
 		let xdg_surface = self.xdg_surface()?;
 		let xdg_surface_data = XdgSurfaceData::get(&xdg_surface)?.lock();
 		xdg_surface_data.panel_item()
+	}
+}
+impl Drop for ToplevelData {
+	fn drop(&mut self) {
+		let Some(panel_item) = self.panel_item() else {return};
+		panel_item.drop_toplevel();
 	}
 }
 impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
@@ -577,15 +580,6 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 
 				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.toplevel_app_id_changed(&app_id);
-			}
-			xdg_toplevel::Request::ShowWindowMenu {
-				seat: _,
-				serial: _,
-				x,
-				y,
-			} => {
-				let Some(panel_item) = data.lock().panel_item() else {return};
-				panel_item.toplevel_window_menu([x, y].into());
 			}
 			xdg_toplevel::Request::Move { seat, serial } => {
 				debug!(?xdg_toplevel, ?seat, serial, "XDG Toplevel move request");
@@ -629,8 +623,6 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 				data.lock().min_size = (width > 1 || height > 1)
 					.then_some(Vector2::from([width as u32, height as u32]));
 			}
-			xdg_toplevel::Request::SetMaximized => {}
-			xdg_toplevel::Request::UnsetMaximized => {}
 			xdg_toplevel::Request::SetFullscreen { output: _ } => {
 				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.backend.toplevel_state.lock().fullscreen = true;
@@ -641,13 +633,12 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 				panel_item.backend.toplevel_state.lock().fullscreen = false;
 				panel_item.backend.configure(None);
 			}
-			xdg_toplevel::Request::SetMinimized => {}
 			xdg_toplevel::Request::Destroy => {
 				debug!(?xdg_toplevel, "Destroy XDG Toplevel");
 				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.drop_toplevel();
 			}
-			_ => unreachable!(),
+			_ => {}
 		}
 	}
 }
@@ -863,16 +854,18 @@ impl XDGBackend {
 		popup: &XdgPopup,
 		data: &PopupData,
 	) {
-		let uid = data.uid.clone();
-
-		self.popups.lock().insert(uid.clone(), popup.downgrade());
+		self.popups
+			.lock()
+			.insert(data.uid.clone(), popup.downgrade());
 
 		let Some(positioner_data) = data.positioner_data() else {return};
-		panel_item.new_child(ChildInfo {
-			uid,
-			parent: data.parent_id.clone(),
-			geometry: positioner_data.into(),
-		})
+		panel_item.new_child(
+			&data.uid,
+			ChildInfo {
+				parent: data.parent_id.clone(),
+				geometry: positioner_data.into(),
+			},
+		)
 	}
 	pub fn reposition_popup(&self, panel_item: &PanelItem<XDGBackend>, popup_state: &PopupData) {
 		let Some(positioner_data) = popup_state.positioner_data() else {return};
@@ -890,21 +883,19 @@ impl XDGBackend {
 		self.seat.drop_surface(&wl_surface);
 	}
 
-	fn child_data(&self) -> Vec<ChildInfo> {
-		self.popups
-			.lock()
-			.values()
-			.filter_map(|v| {
-				let popup = v.upgrade().ok()?;
-				let data = PopupData::get(&popup)?;
-				let data_lock = data.lock();
-				Some(ChildInfo {
-					uid: data_lock.uid.clone(),
+	fn child_data(&self) -> FxHashMap<String, ChildInfo> {
+		FxHashMap::from_iter(self.popups.lock().values().filter_map(|v| {
+			let popup = v.upgrade().ok()?;
+			let data = PopupData::get(&popup)?;
+			let data_lock = data.lock();
+			Some((
+				data_lock.uid.clone(),
+				ChildInfo {
 					parent: data_lock.parent_id.clone(),
 					geometry: data_lock.positioner_data()?.into(),
-				})
-			})
-			.collect::<Vec<_>>()
+				},
+			))
+		}))
 	}
 
 	fn flush_client(&self) {
@@ -952,7 +943,10 @@ impl Backend for XDGBackend {
 				.lock()
 				.geometry
 				.clone()
-				.unwrap(),
+				.unwrap_or_else(|| Geometry {
+					origin: [0, 0].into(),
+					size,
+				}),
 		};
 
 		Ok(PanelItemInitData {
@@ -1017,18 +1011,21 @@ impl Backend for XDGBackend {
 		)
 	}
 
-	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool) {
+	fn keyboard_keys(&self, surface: &SurfaceID, keymap_id: &str, keys: Vec<i32>) {
 		let Some(surface) = self.wl_surface_from_id(surface) else {return};
-		self.seat.keyboard_event(
-			&surface,
-			KeyboardEvent::Key {
-				key,
-				state: if state { 1 } else { 0 },
-			},
-		)
-	}
-
-	fn keyboard_keymap(&self, _surface: &SurfaceID, _keymap_id: &str) {
-		todo!()
+		let keymaps = KEYMAPS.lock();
+		let Some(keymap) = keymaps.get(keymap_id).cloned() else {return};
+		if self.seat.set_keymap(keymap, vec![surface.clone()]).is_err() {
+			return;
+		}
+		for key in keys {
+			self.seat.keyboard_event(
+				&surface,
+				KeyboardEvent::Key {
+					key: key.abs() as u32,
+					state: if key < 0 { 1 } else { 0 },
+				},
+			);
+		}
 	}
 }

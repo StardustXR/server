@@ -7,14 +7,21 @@ use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::nodes::fields::{find_field, FIELD_ALIAS_INFO};
 use crate::nodes::spatial::find_spatial_parent;
-use color_eyre::eyre::{ensure, eyre, Result};
+use color_eyre::eyre::{bail, ensure, eyre, Result};
 use glam::vec3a;
+use lazy_static::lazy_static;
 use mint::{Quaternion, Vector3};
 use nanoid::nanoid;
+use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use stardust_xr::schemas::flex::{deserialize, flexbuffers, serialize};
 use stardust_xr::values::Transform;
 use std::sync::{Arc, Weak};
+
+lazy_static! {
+	pub static ref KEYMAPS: Mutex<FxHashMap<String, String>> = Mutex::new(FxHashMap::default());
+}
 
 static PULSE_SENDER_REGISTRY: Registry<PulseSender> = Registry::new();
 pub static PULSE_RECEIVER_REGISTRY: Registry<PulseReceiver> = Registry::new();
@@ -231,6 +238,8 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	let node = Node::create(client, "", "data", false);
 	node.add_local_signal("create_pulse_sender", create_pulse_sender_flex);
 	node.add_local_signal("create_pulse_receiver", create_pulse_receiver_flex);
+	node.add_local_method("register_keymap", register_keymap_flex);
+	node.add_local_method("get_keymap", get_keymap_flex);
 	node.add_to_scenegraph().map(|_| ())
 }
 
@@ -285,4 +294,37 @@ pub fn create_pulse_receiver_flex(
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	PulseReceiver::add_to(&node, field, mask)?;
 	Ok(())
+}
+
+pub fn register_keymap_flex(
+	_node: &Node,
+	_calling_client: Arc<Client>,
+	message: Message,
+) -> Result<Message> {
+	let keymap: String = deserialize(message.as_ref())?;
+	let mut keymaps = KEYMAPS.lock();
+	if let Some(found_keymap_id) = keymaps
+		.iter()
+		.filter(|(_k, v)| *v == &keymap)
+		.map(|(k, _v)| k)
+		.last()
+	{
+		return Ok(serialize(found_keymap_id)?.into());
+	}
+
+	let generated_id = nanoid!();
+	keymaps.insert(generated_id.clone(), keymap);
+
+	Ok(serialize(generated_id)?.into())
+}
+pub fn get_keymap_flex(
+	_node: &Node,
+	_calling_client: Arc<Client>,
+	message: Message,
+) -> Result<Message> {
+	let keymap_id: &str = deserialize(message.as_ref())?;
+	let keymaps = KEYMAPS.lock();
+	let Some(keymap) = keymaps.get(keymap_id) else {bail!("Could not find keymap. Try registering it")};
+
+	Ok(serialize(keymap)?.into())
 }

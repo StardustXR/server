@@ -4,6 +4,7 @@ use super::{
 };
 use crate::{
 	nodes::{
+		data::KEYMAPS,
 		drawable::model::ModelPart,
 		items::panel::{Backend, Geometry, PanelItem, PanelItemInitData, SurfaceID, ToplevelInfo},
 	},
@@ -13,6 +14,7 @@ use color_eyre::eyre::Result;
 use mint::Vector2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use smithay::{
 	reexports::{
 		calloop::{EventLoop, LoopSignal},
@@ -42,7 +44,7 @@ impl XWaylandState {
 
 		let (tx, rx) = oneshot::channel();
 
-		tokio::task::spawn_blocking(move || {
+		std::thread::spawn(move || {
 			let mut event_loop: EventLoop<XWaylandHandler> = EventLoop::try_new()?;
 			let (xwayland, connection) = XWayland::new(&dh);
 			let handle = event_loop.handle();
@@ -144,7 +146,7 @@ impl XwmHandler for XWaylandHandler {
 					let Some(wl_surface) = window.wl_surface() else {return};
 					let seat = seat.clone();
 					window.user_data().insert_if_missing_threadsafe(|| {
-						let (_node, panel_item) = PanelItem::create(
+						let panel_item = PanelItem::create(
 							Box::new(X11Backend {
 								toplevel_parent: None,
 								toplevel: window.clone(),
@@ -357,7 +359,7 @@ impl Backend for X11Backend {
 					.into(),
 				},
 			},
-			children: vec![],
+			children: FxHashMap::default(),
 			pointer_grab: self._pointer_grab.lock().clone(),
 			keyboard_grab: self._keyboard_grab.lock().clone(),
 		})
@@ -415,17 +417,21 @@ impl Backend for X11Backend {
 		)
 	}
 
-	fn keyboard_keymap(&self, surface: &SurfaceID, keymap_id: &str) {
-		todo!()
-	}
-	fn keyboard_key(&self, surface: &SurfaceID, key: u32, state: bool) {
+	fn keyboard_keys(&self, surface: &SurfaceID, keymap_id: &str, keys: Vec<i32>) {
 		let Some(surface) = self.wl_surface_from_id(surface) else {return};
-		self.seat.keyboard_event(
-			&surface,
-			KeyboardEvent::Key {
-				key,
-				state: if state { 1 } else { 0 },
-			},
-		)
+		let keymaps = KEYMAPS.lock();
+		let Some(keymap) = keymaps.get(keymap_id).cloned() else {return};
+		if self.seat.set_keymap(keymap, vec![surface.clone()]).is_err() {
+			return;
+		}
+		for key in keys {
+			self.seat.keyboard_event(
+				&surface,
+				KeyboardEvent::Key {
+					key: key.abs() as u32,
+					state: if key < 0 { 1 } else { 0 },
+				},
+			);
+		}
 	}
 }
