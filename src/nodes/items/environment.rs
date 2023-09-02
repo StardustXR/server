@@ -3,6 +3,7 @@ use crate::{
 	core::{
 		client::{Client, INTERNAL_CLIENT},
 		registry::Registry,
+		scenegraph::MethodResponseSender,
 	},
 	nodes::{
 		items::TypeInfo,
@@ -50,11 +51,14 @@ impl EnvironmentItem {
 		node: &Node,
 		_calling_client: Arc<Client>,
 		_message: Message,
-	) -> Result<Message> {
-		let ItemType::Environment(environment_item) = &node.item.get().unwrap().specialization else {
+		response: MethodResponseSender,
+	) {
+		response.wrap_sync(move || {
+			let ItemType::Environment(environment_item) = &node.item.get().unwrap().specialization else {
 			return Err(eyre!("Wrong item type?"))
 		};
-		Ok(serialize(environment_item.path.as_str())?.into())
+			Ok(serialize(environment_item.path.as_str())?.into())
+		});
 	}
 
 	pub fn serialize_start_data(&self, id: &str) -> Result<Message> {

@@ -139,17 +139,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "async-recursion"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e97ce7de6cf12de5d7226c73f5ba9811622f4db3a5b91b55c53e987e5f91cba"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.28",
-]
-
-[[package]]
 name = "async-trait"
 version = "0.1.73"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2034,9 +2023,10 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr"
-version = "0.13.0"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "996e151a9271144684a8ccb1d23d2949c5590bc37c4a12119d4f72f64462307e"
 dependencies = [
- "async-trait",
  "cluFlock",
  "color-rs",
  "dirs",
@@ -2054,6 +2044,8 @@ dependencies = [
 [[package]]
 name = "stardust-xr-schemas"
 version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd65a40d6e6e8dc993ea9832666cf4cdc09c1a329f38b48ec9704af26cba229b"
 dependencies = [
  "flatbuffers",
  "flexbuffers",
@@ -2070,8 +2062,6 @@ dependencies = [
 name = "stardust-xr-server"
 version = "0.42.1"
 dependencies = [
- "async-recursion",
- "async-trait",
  "atty",
  "clap",
  "color-eyre",

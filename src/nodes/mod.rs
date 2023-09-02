@@ -10,7 +10,6 @@ pub mod root;
 pub mod spatial;
 pub mod startup;
 
-use async_recursion::async_recursion;
 use color_eyre::eyre::{eyre, Result};
 use core::hash::BuildHasherDefault;
 use dashmap::DashMap;
@@ -23,15 +22,14 @@ use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::deserialize;
 use std::fmt::Debug;
-use std::future::Future;
 use std::os::fd::OwnedFd;
-use std::pin::Pin;
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
-use tracing::{debug_span, instrument};
+use tracing::instrument;
 
 use crate::core::client::Client;
 use crate::core::registry::Registry;
+use crate::core::scenegraph::MethodResponseSender;
 
 use self::alias::Alias;
 use self::audio::Sound;
@@ -63,11 +61,7 @@ impl AsRef<[u8]> for Message {
 }
 
 pub type Signal = fn(&Node, Arc<Client>, Message) -> Result<()>;
-pub type Method = fn(
-	&Node,
-	Arc<Client>,
-	Message,
-) -> Pin<Box<dyn Future<Output = Result<Message>> + Send + Sync + 'static>>;
+pub type Method = fn(&Node, Arc<Client>, Message, MethodResponseSender);
 
 pub struct Node {
 	pub enabled: Arc<AtomicBool>,
@@ -193,15 +187,8 @@ impl Node {
 	pub fn add_local_signal(&self, name: &str, signal: Signal) {
 		self.local_signals.insert(name.to_string(), signal);
 	}
-	pub fn add_local_method<F: Future<Output = Result<Message>> + Send + Sync + 'static>(
-		&self,
-		name: &str,
-		method: fn(&Node, Arc<Client>, Message) -> F,
-	) {
-		self.local_methods
-			.insert(name.to_string(), |node, calling_client, message| {
-				Box::Pin(method(node, calling_client, message))
-			});
+	pub fn add_local_method(&self, name: &str, method: Method) {
+		self.local_methods.insert(name.to_string(), method);
 	}
 
 	pub fn get_aspect<F, T>(
@@ -243,41 +230,37 @@ impl Node {
 			})
 		}
 	}
-	#[async_recursion]
-	pub async fn execute_local_method(
+	pub fn execute_local_method(
 		&self,
 		calling_client: Arc<Client>,
 		method: &str,
 		message: Message,
-	) -> Result<Message, ScenegraphError> {
+		response: MethodResponseSender,
+	) {
 		if let Some(alias) = self.alias.get() {
 			if !alias.info.server_methods.iter().any(|e| e == &method) {
-				return Err(ScenegraphError::MethodNotFound);
+				response.send(Err(ScenegraphError::MethodNotFound));
+				return;
 			}
-			alias
-				.original
-				.upgrade()
-				.ok_or(ScenegraphError::BrokenAlias)?
-				.execute_local_method(
-					calling_client,
-					method,
-					Message {
-						data: message.data.clone(),
-						fds: Vec::new(),
-					},
-				)
-				.await
+			let Some(alias) = alias.original.upgrade() else {
+				response.send(Err(ScenegraphError::BrokenAlias));
+				return;
+			};
+			alias.execute_local_method(
+				calling_client,
+				method,
+				Message {
+					data: message.data.clone(),
+					fds: Vec::new(),
+				},
+				response,
+			)
 		} else {
-			let method = self
-				.local_methods
-				.get(method)
-				.ok_or(ScenegraphError::MethodNotFound)?;
-
-			method(self, calling_client, message)
-				.await
-				.map_err(|error| ScenegraphError::MethodError {
-					error: error.to_string(),
-				})
+			let Some(method) = self.local_methods.get(method) else {
+				response.send(Err(ScenegraphError::MethodNotFound));
+				return;
+			};
+			method(self, calling_client, message, response);
 		}
 	}
 	#[instrument(level = "debug", skip_all)]

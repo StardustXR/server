@@ -4,6 +4,7 @@ use self::zone::{create_zone_flex, Zone};
 use super::{Message, Node};
 use crate::core::client::Client;
 use crate::core::registry::Registry;
+use crate::core::scenegraph::MethodResponseSender;
 use color_eyre::eyre::{ensure, eyre, Result};
 use glam::{vec3a, Mat4, Quat};
 use mint::Vector3;
@@ -233,64 +234,71 @@ impl Spatial {
 		node: &Node,
 		calling_client: Arc<Client>,
 		message: Message,
-	) -> Result<Message> {
-		let this_spatial = node
-			.spatial
-			.get()
-			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-		let relative_spatial_path: Option<&str> = deserialize(message.as_ref())?;
-		let bounds = if let Some(relative_spatial_path) = relative_spatial_path {
-			let relative_spatial = find_reference_space(&calling_client, relative_spatial_path)?;
-			let center =
-				Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
-					.transform_point3([0.0; 3].into());
-			let bounds: Bounds = Bounds {
-				center,
-				dimensions: [0.0; 3].into(),
+		response: MethodResponseSender,
+	) {
+		response.wrap_sync(move || {
+			let this_spatial = node
+				.spatial
+				.get()
+				.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+			let relative_spatial_path: Option<&str> = deserialize(message.as_ref())?;
+			let bounds = if let Some(relative_spatial_path) = relative_spatial_path {
+				let relative_spatial =
+					find_reference_space(&calling_client, relative_spatial_path)?;
+				let center =
+					Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
+						.transform_point3([0.0; 3].into());
+				let bounds: Bounds = Bounds {
+					center,
+					dimensions: [0.0; 3].into(),
+				};
+				bounds_grow_to_fit_box(
+					bounds,
+					this_spatial.get_bounding_box(),
+					Some(Spatial::space_to_space_matrix(
+						Some(&this_spatial),
+						Some(&relative_spatial),
+					)),
+				)
+			} else {
+				this_spatial.get_bounding_box()
 			};
-			bounds_grow_to_fit_box(
-				bounds,
-				this_spatial.get_bounding_box(),
-				Some(Spatial::space_to_space_matrix(
-					Some(&this_spatial),
-					Some(&relative_spatial),
-				)),
-			)
-		} else {
-			this_spatial.get_bounding_box()
-		};
 
-		Ok(serialize((
-			mint::Vector3::from(bounds.center),
-			mint::Vector3::from(bounds.dimensions),
-		))?
-		.into())
+			Ok(serialize((
+				mint::Vector3::from(bounds.center),
+				mint::Vector3::from(bounds.dimensions),
+			))?
+			.into())
+		});
 	}
 
 	pub fn get_transform_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
 		message: Message,
-	) -> Result<Message> {
-		let this_spatial = node
-			.spatial
-			.get()
-			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-		let relative_spatial =
-			find_reference_space(&calling_client, deserialize(message.as_ref())?)?;
+		response: MethodResponseSender,
+	) {
+		response.wrap_sync(move || {
+			let this_spatial = node
+				.spatial
+				.get()
+				.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+			let relative_spatial =
+				find_reference_space(&calling_client, deserialize(message.as_ref())?)?;
 
-		let (scale, rotation, position) = Spatial::space_to_space_matrix(
-			Some(this_spatial.as_ref()),
-			Some(relative_spatial.as_ref()),
-		)
-		.to_scale_rotation_translation();
+			let (scale, rotation, position) = Spatial::space_to_space_matrix(
+				Some(this_spatial.as_ref()),
+				Some(relative_spatial.as_ref()),
+			)
+			.to_scale_rotation_translation();
 
-		Ok(serialize((
-			mint::Vector3::from(position),
-			mint::Quaternion::from(rotation),
-			mint::Vector3::from(scale),
-		))?
-		.into())
+			Ok(serialize((
+				mint::Vector3::from(position),
+				mint::Quaternion::from(rotation),
+				mint::Vector3::from(scale),
+			))?
+			.into())
+		});
 	}
 	pub fn set_transform_flex(
 		node: &Node,
@@ -354,70 +362,79 @@ impl Spatial {
 		node: &Node,
 		calling_client: Arc<Client>,
 		message: Message,
-	) -> Result<Message> {
-		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
-		let spatial = node.spatial.get().unwrap();
+		response: MethodResponseSender,
+	) {
+		response.wrap_sync(move || {
+			let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
+			let spatial = node.spatial.get().unwrap();
 
-		let output = fields
-			.into_iter()
-			.map(|f| {
-				calling_client
-					.get_node("Field", f?)
-					.ok()?
-					.get_aspect("Field", "field", |n| &n.field)
-					.ok()
-					.cloned()
-			})
-			.map(|f| f.map(|f| f.distance(spatial, point.into())))
-			.collect::<Vec<Option<f32>>>();
+			let output = fields
+				.into_iter()
+				.map(|f| {
+					calling_client
+						.get_node("Field", f?)
+						.ok()?
+						.get_aspect("Field", "field", |n| &n.field)
+						.ok()
+						.cloned()
+				})
+				.map(|f| f.map(|f| f.distance(spatial, point.into())))
+				.collect::<Vec<Option<f32>>>();
 
-		Ok(serialize(output)?.into())
+			Ok(serialize(output)?.into())
+		});
 	}
 	pub fn field_normal_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
 		message: Message,
-	) -> Result<Message> {
-		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
-		let spatial = node.spatial.get().unwrap();
+		response: MethodResponseSender,
+	) {
+		response.wrap_sync(move || {
+			let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
+			let spatial = node.spatial.get().unwrap();
 
-		let output = fields
-			.into_iter()
-			.map(|f| {
-				calling_client
-					.get_node("Field", f?)
-					.ok()?
-					.get_aspect("Field", "field", |n| &n.field)
-					.ok()
-					.cloned()
-			})
-			.map(|f| f.map(|f| Vector3::from(f.normal(spatial, point.into(), 0.001))))
-			.collect::<Vec<_>>();
+			let output = fields
+				.into_iter()
+				.map(|f| {
+					calling_client
+						.get_node("Field", f?)
+						.ok()?
+						.get_aspect("Field", "field", |n| &n.field)
+						.ok()
+						.cloned()
+				})
+				.map(|f| f.map(|f| Vector3::from(f.normal(spatial, point.into(), 0.001))))
+				.collect::<Vec<_>>();
 
-		Ok(serialize(output)?.into())
+			Ok(serialize(output)?.into())
+		});
 	}
 	pub fn field_closest_point_flex(
 		node: &Node,
 		calling_client: Arc<Client>,
 		message: Message,
-	) -> Result<Message> {
-		let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
-		let spatial = node.spatial.get().unwrap();
+		response: MethodResponseSender,
+	) {
+		response.wrap_sync(move || {
+			let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
+			let spatial = node.spatial.get().unwrap();
 
-		let output = fields
-			.into_iter()
-			.map(|f| {
-				calling_client
-					.get_node("Field", f?)
-					.ok()?
-					.get_aspect("Field", "field", |n| &n.field)
-					.ok()
-					.cloned()
-			})
-			.map(|f| f.map(|f| Vector3::from(f.closest_point(spatial, point.into(), 0.001))))
-			.collect::<Vec<_>>();
+			let output = fields
+				.into_iter()
+				.map(|f| {
+					calling_client
+						.get_node("Field", f?)
+						.ok()?
+						.get_aspect("Field", "field", |n| &n.field)
+						.ok()
+						.cloned()
+				})
+				.map(|f| f.map(|f| Vector3::from(f.closest_point(spatial, point.into(), 0.001))))
+				.collect::<Vec<_>>();
 
-		Ok(serialize(output)?.into())
+			Ok(serialize(output)?.into())
+		});
 	}
 
 	#[instrument]

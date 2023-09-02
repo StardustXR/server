@@ -12,6 +12,7 @@ use super::alias::AliasInfo;
 use super::spatial::Spatial;
 use super::{Message, Node};
 use crate::core::client::Client;
+use crate::core::scenegraph::MethodResponseSender;
 use crate::nodes::spatial::find_reference_space;
 use color_eyre::eyre::Result;
 use glam::{vec2, vec3a, Vec3, Vec3A};
@@ -137,82 +138,94 @@ fn field_distance_flex(
 	node: &Node,
 	calling_client: Arc<Client>,
 	message: Message,
-) -> Result<Message> {
-	#[derive(Deserialize)]
-	struct FieldInfoArgs<'a> {
-		reference_space_path: &'a str,
-		point: Vector3<f32>,
-	}
-	let args: FieldInfoArgs = deserialize(message.as_ref())?;
-	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
+	response: MethodResponseSender,
+) {
+	response.wrap_sync(move || {
+		#[derive(Deserialize)]
+		struct FieldInfoArgs<'a> {
+			reference_space_path: &'a str,
+			point: Vector3<f32>,
+		}
+		let args: FieldInfoArgs = deserialize(message.as_ref())?;
+		let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
-	let distance = node
-		.field
-		.get()
-		.unwrap()
-		.distance(reference_space.as_ref(), args.point.into());
-	Ok(serialize(distance)?.into())
+		let distance = node
+			.field
+			.get()
+			.unwrap()
+			.distance(reference_space.as_ref(), args.point.into());
+		Ok(serialize(distance)?.into())
+	});
 }
 fn field_normal_flex(
 	node: &Node,
 	calling_client: Arc<Client>,
 	message: Message,
-) -> Result<Message> {
-	#[derive(Deserialize)]
-	struct FieldInfoArgs<'a> {
-		reference_space_path: &'a str,
-		point: Vector3<f32>,
-	}
-	let args: FieldInfoArgs = deserialize(message.as_ref())?;
-	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
+	response: MethodResponseSender,
+) {
+	response.wrap_sync(move || {
+		#[derive(Deserialize)]
+		struct FieldInfoArgs<'a> {
+			reference_space_path: &'a str,
+			point: Vector3<f32>,
+		}
+		let args: FieldInfoArgs = deserialize(message.as_ref())?;
+		let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
-	let normal = node.field.get().as_ref().unwrap().normal(
-		reference_space.as_ref(),
-		args.point.into(),
-		0.001,
-	);
-	Ok(serialize(mint::Vector3::from(normal))?.into())
+		let normal = node.field.get().as_ref().unwrap().normal(
+			reference_space.as_ref(),
+			args.point.into(),
+			0.001,
+		);
+		Ok(serialize(mint::Vector3::from(normal))?.into())
+	});
 }
 fn field_closest_point_flex(
 	node: &Node,
 	calling_client: Arc<Client>,
 	message: Message,
-) -> Result<Message> {
-	#[derive(Deserialize)]
-	struct FieldInfoArgs<'a> {
-		reference_space_path: &'a str,
-		point: Vector3<f32>,
-	}
-	let args: FieldInfoArgs = deserialize(message.as_ref())?;
-	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
+	response: MethodResponseSender,
+) {
+	response.wrap_sync(move || {
+		#[derive(Deserialize)]
+		struct FieldInfoArgs<'a> {
+			reference_space_path: &'a str,
+			point: Vector3<f32>,
+		}
+		let args: FieldInfoArgs = deserialize(message.as_ref())?;
+		let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
-	let closest_point = node.field.get().as_ref().unwrap().closest_point(
-		reference_space.as_ref(),
-		args.point.into(),
-		0.001,
-	);
-	Ok(serialize(mint::Vector3::from(closest_point))?.into())
+		let closest_point = node.field.get().as_ref().unwrap().closest_point(
+			reference_space.as_ref(),
+			args.point.into(),
+			0.001,
+		);
+		Ok(serialize(mint::Vector3::from(closest_point))?.into())
+	});
 }
 fn field_ray_march_flex(
 	node: &Node,
 	calling_client: Arc<Client>,
 	message: Message,
-) -> Result<Message> {
-	#[derive(Deserialize)]
-	struct FieldInfoArgs<'a> {
-		reference_space_path: &'a str,
-		ray_origin: Vector3<f32>,
-		ray_direction: Vector3<f32>,
-	}
-	let args: FieldInfoArgs = deserialize(message.as_ref())?;
-	let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
+	response: MethodResponseSender,
+) {
+	response.wrap_sync(move || {
+		#[derive(Deserialize)]
+		struct FieldInfoArgs<'a> {
+			reference_space_path: &'a str,
+			ray_origin: Vector3<f32>,
+			ray_direction: Vector3<f32>,
+		}
+		let args: FieldInfoArgs = deserialize(message.as_ref())?;
+		let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
 
-	let ray_march_result = node.field.get().unwrap().ray_march(Ray {
-		origin: args.ray_origin.into(),
-		direction: args.ray_direction.into(),
-		space: reference_space,
+		let ray_march_result = node.field.get().unwrap().ray_march(Ray {
+			origin: args.ray_origin.into(),
+			direction: args.ray_direction.into(),
+			space: reference_space,
+		});
+		Ok(serialize(ray_march_result)?.into())
 	});
-	Ok(serialize(ray_march_result)?.into())
 }
 
 pub enum Field {

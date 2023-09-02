@@ -3,6 +3,7 @@ use crate::{
 	core::{
 		client::{Client, INTERNAL_CLIENT},
 		registry::Registry,
+		scenegraph::MethodResponseSender,
 	},
 	nodes::{
 		drawable::{model::ModelPart, shaders::UNLIT_SHADER_BYTES, Drawable},
@@ -11,7 +12,7 @@ use crate::{
 		Message, Node,
 	},
 };
-use color_eyre::eyre::{bail, Result};
+use color_eyre::eyre::{bail, eyre, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::{RowMatrix4, Vector2};
@@ -31,7 +32,7 @@ use stereokit::{
 lazy_static! {
 	pub(super) static ref ITEM_TYPE_INFO_CAMERA: TypeInfo = TypeInfo {
 		type_name: "camera",
-		aliased_local_signals: vec!["frame"],
+		aliased_local_signals: vec!["apply_preview_material", "frame"],
 		aliased_local_methods: vec![],
 		aliased_remote_signals: vec![],
 		ui: Default::default(),
@@ -71,19 +72,26 @@ impl CameraItem {
 				apply_to: Registry::new(),
 			}),
 		);
-		// node.add_local_method("frame", CameraItem::frame_flex);
+		node.add_local_method("frame", CameraItem::frame_flex);
 		node.add_local_signal(
 			"apply_preview_material",
 			CameraItem::apply_preview_material_flex,
 		);
 	}
 
-	// fn frame_flex(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<Message> {
-	// 	let ItemType::Camera(camera) = &node.item.get().unwrap().specialization else {
-	// 		return Err(eyre!("Wrong item type?"))
-	// 	};
-	// 	Ok(serialize(())?.into())
-	// }
+	fn frame_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		_message: Message,
+		response: MethodResponseSender,
+	) {
+		response.wrap_sync(move || {
+			let ItemType::Camera(_camera) = &node.item.get().unwrap().specialization else {
+				return Err(eyre!("Wrong item type?"))
+			};
+			Ok(serialize(())?.into())
+		});
+	}
 
 	fn apply_preview_material_flex(
 		node: &Node,

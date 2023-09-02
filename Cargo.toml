@@ -52,7 +52,7 @@ tokio = { version = "1.27.0", features = ["rt-multi-thread", "signal"] }
 send_wrapper = "0.6.0"
 prisma = "0.1.1"
 xkbcommon = { version = "0.5.0", default-features = false, optional = true }
-stardust-xr = "0.13.0"
+stardust-xr = "0.14.0"
 directories = "5.0.0"
 serde = { version = "1.0.160", features = ["derive"] }
 tracing = "0.1.37"
@@ -60,8 +60,6 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 global_counter = "0.2.2"
 rand = "0.8.5"
 atty = "0.2.14"
-async-trait = "0.1.73"
-async-recursion = "1.0.4"
 
 [dependencies.stereokit]
 default-features = false
@@ -89,7 +87,7 @@ optional = true
 # path = "../stereokit-rs"
 # [patch.crates-io.stereokit-sys]
 # path = "../stereokit-sys"
-[patch.crates-io.stardust-xr]
-path = "../core/core"
+# [patch.crates-io.stardust-xr]
+# path = "../core/core"
 # [patch.crates-io.stardust-xr-schemas]
 # path = "../core/schemas"
