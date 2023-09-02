@@ -1,6 +1,10 @@
 #[cfg(feature = "xwayland")]
 use crate::wayland::xwayland::DISPLAY;
-use crate::{core::client::Client, wayland::WAYLAND_DISPLAY, STARDUST_INSTANCE};
+use crate::{
+	core::{client::Client, scenegraph::MethodResponseSender},
+	wayland::WAYLAND_DISPLAY,
+	STARDUST_INSTANCE,
+};
 
 use super::{
 	items::{ItemAcceptor, TypeInfo},
@@ -65,13 +69,16 @@ impl StartupSettings {
 		node: &Node,
 		_calling_client: Arc<Client>,
 		_message: Message,
-	) -> Result<Message> {
-		let id = nanoid::nanoid!();
-		let data = serialize(&id)?;
-		STARTUP_SETTINGS
-			.lock()
-			.insert(id, node.startup_settings.get().unwrap().lock().clone());
-		Ok(data.into())
+		response: MethodResponseSender,
+	) {
+		response.wrap_sync(move || {
+			let id = nanoid::nanoid!();
+			let data = serialize(&id)?;
+			STARTUP_SETTINGS
+				.lock()
+				.insert(id, node.startup_settings.get().unwrap().lock().clone());
+			Ok(data.into())
+		});
 	}
 }
 impl Debug for StartupSettings {
@@ -136,20 +143,23 @@ pub fn get_connection_environment_flex(
 	_node: &Node,
 	_calling_client: Arc<Client>,
 	_message: Message,
-) -> Result<Message> {
-	let mut env: FxHashMap<String, String> = FxHashMap::default();
-	var_env_insert!(env, STARDUST_INSTANCE);
-	#[cfg(feature = "wayland")]
-	{
-		var_env_insert!(env, WAYLAND_DISPLAY);
-		#[cfg(feature = "xwayland")]
-		var_env_insert!(env, DISPLAY);
-		env.insert("GDK_BACKEND".to_string(), "wayland".to_string());
-		env.insert("QT_QPA_PLATFORM".to_string(), "wayland".to_string());
-		env.insert("MOZ_ENABLE_WAYLAND".to_string(), "1".to_string());
-		env.insert("CLUTTER_BACKEND".to_string(), "wayland".to_string());
-		env.insert("SDL_VIDEODRIVER".to_string(), "wayland".to_string());
-	}
+	response: MethodResponseSender,
+) {
+	response.wrap_sync(move || {
+		let mut env: FxHashMap<String, String> = FxHashMap::default();
+		var_env_insert!(env, STARDUST_INSTANCE);
+		#[cfg(feature = "wayland")]
+		{
+			var_env_insert!(env, WAYLAND_DISPLAY);
+			#[cfg(feature = "xwayland")]
+			var_env_insert!(env, DISPLAY);
+			env.insert("GDK_BACKEND".to_string(), "wayland".to_string());
+			env.insert("QT_QPA_PLATFORM".to_string(), "wayland".to_string());
+			env.insert("MOZ_ENABLE_WAYLAND".to_string(), "1".to_string());
+			env.insert("CLUTTER_BACKEND".to_string(), "wayland".to_string());
+			env.insert("SDL_VIDEODRIVER".to_string(), "wayland".to_string());
+		}
 
-	Ok(serialize(env)?.into())
+		Ok(serialize(env)?.into())
+	});
 }

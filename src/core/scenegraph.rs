@@ -1,12 +1,12 @@
 use crate::nodes::Node;
 use crate::{core::client::Client, nodes::Message};
-use async_trait::async_trait;
 use color_eyre::eyre::Result;
 use once_cell::sync::OnceCell;
 use stardust_xr::scenegraph;
 use stardust_xr::scenegraph::ScenegraphError;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
+use tokio::sync::oneshot;
 use tracing::{debug, debug_span, instrument};
 
 use core::hash::BuildHasherDefault;
@@ -51,7 +51,17 @@ impl Scenegraph {
 	}
 }
 
-#[async_trait]
+pub struct MethodResponseSender(oneshot::Sender<Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError>>);
+impl MethodResponseSender {
+	pub fn send(self, t: Result<Message, ScenegraphError>) {
+		let _ = self.0.send(t.map(|m| (m.data, m.fds)));
+	}
+	pub fn wrap_sync<F: FnOnce() -> color_eyre::eyre::Result<Message>>(self, f: F) {
+		self.send(f().map_err(|e| ScenegraphError::MethodError {
+			error: e.to_string(),
+		}))
+	}
+}
 impl scenegraph::Scenegraph for Scenegraph {
 	fn send_signal(
 		&self,
@@ -76,29 +86,31 @@ impl scenegraph::Scenegraph for Scenegraph {
 				)
 		})
 	}
-	async fn execute_method(
+	fn execute_method(
 		&self,
 		path: &str,
 		method: &str,
 		data: &[u8],
 		fds: Vec<OwnedFd>,
-	) -> Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError> {
+		response: oneshot::Sender<Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError>>,
+	) {
 		let Some(client) = self.get_client() else {
-			return Err(ScenegraphError::MethodNotFound);
+			let _ = response.send(Err(ScenegraphError::MethodNotFound));
+			return;
 		};
 		debug!(path, method, "Handle method");
-		let message = self
-			.get_node(path)
-			.ok_or(ScenegraphError::NodeNotFound)?
-			.execute_local_method(
-				client,
-				method,
-				Message {
-					data: data.to_vec(),
-					fds,
-				},
-			)
-			.await?;
-		Ok((message.data, message.fds))
+		let Some(node) = self.get_node(path) else {
+			let _ = response.send(Err(ScenegraphError::NodeNotFound));
+			return;
+		};
+		node.execute_local_method(
+			client,
+			method,
+			Message {
+				data: data.to_vec(),
+				fds,
+			},
+			MethodResponseSender(response),
+		);
 	}
 }
