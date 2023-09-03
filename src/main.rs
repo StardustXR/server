@@ -260,8 +260,8 @@ fn main() {
 				let _span = debug_span!("StereoKit step");
 				let _span = _span.enter();
 
+				camera::send_rendered();
 				hmd::frame(sk);
-				camera::update(sk);
 				#[cfg(feature = "wayland")]
 				wayland.frame_event(sk);
 				destroy_queue::clear();
@@ -298,6 +298,8 @@ fn main() {
 				audio::update(sk);
 				#[cfg(feature = "wayland")]
 				wayland.make_context_current();
+
+				camera::update(sk);
 			},
 			|_sk| {
 				info!("Cleanly shut down StereoKit");
