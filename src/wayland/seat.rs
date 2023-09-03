@@ -124,7 +124,7 @@ pub enum KeyboardEvent {
 	Key { key: u32, state: u32 },
 }
 
-const POINTER_EVENT_TIMEOUT: Duration = Duration::from_secs(1);
+const POINTER_EVENT_TIMEOUT: Duration = Duration::from_millis(50);
 struct SurfaceInfo {
 	wl_surface: WlWeak<WlSurface>,
 	cursor_sender: watch::Sender<Option<CursorInfo>>,
