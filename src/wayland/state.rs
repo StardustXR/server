@@ -2,11 +2,7 @@ use crate::wayland::seat::SeatData;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::{
-	backend::{
-		allocator::dmabuf::Dmabuf,
-		egl::EGLDevice,
-		renderer::{gles::GlesRenderer, ImportDma},
-	},
+	backend::{allocator::dmabuf::Dmabuf, egl::EGLDevice, renderer::gles::GlesRenderer},
 	delegate_dmabuf, delegate_output, delegate_shm,
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
@@ -92,11 +88,16 @@ impl WaylandState {
 		let render_node = EGLDevice::device_for_display(renderer.egl_context().display())
 			.and_then(|device| device.try_get_render_node());
 
+		let dmabuf_formats = renderer
+			.egl_context()
+			.dmabuf_render_formats()
+			.iter()
+			.cloned()
+			.collect::<Vec<_>>();
 		let dmabuf_default_feedback = match render_node {
 			Ok(Some(node)) => {
-				let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
 				let dmabuf_default_feedback =
-					DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats)
+					DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats.clone())
 						.build()
 						.unwrap();
 				Some(dmabuf_default_feedback)
@@ -120,10 +121,9 @@ impl WaylandState {
 			);
 			(dmabuf_state, dmabuf_global, Some(default_feedback))
 		} else {
-			let dmabuf_formats = renderer.dmabuf_formats().collect::<Vec<_>>();
 			let mut dmabuf_state = DmabufState::new();
 			let dmabuf_global =
-				dmabuf_state.create_global::<WaylandState>(&display_handle, dmabuf_formats);
+				dmabuf_state.create_global::<WaylandState>(&display_handle, dmabuf_formats.clone());
 			(dmabuf_state, dmabuf_global, None)
 		};
 
