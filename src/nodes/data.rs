@@ -5,6 +5,7 @@ use super::{Alias, Message, Node};
 use crate::core::client::Client;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
+use crate::core::scenegraph::MethodResponseSender;
 use crate::nodes::fields::{find_field, FIELD_ALIAS_INFO};
 use crate::nodes::spatial::find_spatial_parent;
 use color_eyre::eyre::{bail, ensure, eyre, Result};
@@ -300,31 +301,37 @@ pub fn register_keymap_flex(
 	_node: &Node,
 	_calling_client: Arc<Client>,
 	message: Message,
-) -> Result<Message> {
-	let keymap: String = deserialize(message.as_ref())?;
-	let mut keymaps = KEYMAPS.lock();
-	if let Some(found_keymap_id) = keymaps
-		.iter()
-		.filter(|(_k, v)| *v == &keymap)
-		.map(|(k, _v)| k)
-		.last()
-	{
-		return Ok(serialize(found_keymap_id)?.into());
-	}
+	response: MethodResponseSender,
+) {
+	response.wrap_sync(move || {
+		let keymap: String = deserialize(message.as_ref())?;
+		let mut keymaps = KEYMAPS.lock();
+		if let Some(found_keymap_id) = keymaps
+			.iter()
+			.filter(|(_k, v)| *v == &keymap)
+			.map(|(k, _v)| k)
+			.last()
+		{
+			return Ok(serialize(found_keymap_id)?.into());
+		}
 
-	let generated_id = nanoid!();
-	keymaps.insert(generated_id.clone(), keymap);
+		let generated_id = nanoid!();
+		keymaps.insert(generated_id.clone(), keymap);
 
-	Ok(serialize(generated_id)?.into())
+		Ok(serialize(generated_id)?.into())
+	});
 }
 pub fn get_keymap_flex(
 	_node: &Node,
 	_calling_client: Arc<Client>,
 	message: Message,
-) -> Result<Message> {
-	let keymap_id: &str = deserialize(message.as_ref())?;
-	let keymaps = KEYMAPS.lock();
-	let Some(keymap) = keymaps.get(keymap_id) else {bail!("Could not find keymap. Try registering it")};
+	response: MethodResponseSender,
+) {
+	response.wrap_sync(move || {
+		let keymap_id: &str = deserialize(message.as_ref())?;
+		let keymaps = KEYMAPS.lock();
+		let Some(keymap) = keymaps.get(keymap_id) else {bail!("Could not find keymap. Try registering it")};
 
-	Ok(serialize(keymap)?.into())
+		Ok(serialize(keymap)?.into())
+	});
 }

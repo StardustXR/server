@@ -17,6 +17,7 @@ use crate::{
 use color_eyre::eyre::{bail, eyre, Result};
 use mint::Vector2;
 use nanoid::nanoid;
+use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use smithay::reexports::{
@@ -383,6 +384,10 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 								client_credentials.map(|c| c.pid),
 							);
 							xdg_surface_data.lock().panel_item = Arc::downgrade(&panel_item);
+							let _ = toplevel_data
+								.lock()
+								.panel_item
+								.set(Arc::downgrade(&panel_item));
 							handle_cursor(&panel_item, panel_item.backend.cursor.clone());
 						}
 					},
@@ -508,6 +513,7 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 
 #[derive(Debug, Clone)]
 pub struct ToplevelData {
+	panel_item: OnceCell<Weak<PanelItem<XDGBackend>>>,
 	xdg_surface: WlWeak<XdgSurface>,
 	parent: Option<WlWeak<XdgToplevel>>,
 	title: Option<String>,
@@ -518,6 +524,7 @@ pub struct ToplevelData {
 impl ToplevelData {
 	fn new(xdg_surface: &XdgSurface) -> Self {
 		ToplevelData {
+			panel_item: OnceCell::new(),
 			xdg_surface: xdg_surface.downgrade(),
 			parent: None,
 			title: None,
@@ -535,9 +542,7 @@ impl ToplevelData {
 		self.xdg_surface.upgrade().ok()
 	}
 	fn panel_item(&self) -> Option<Arc<PanelItem<XDGBackend>>> {
-		let xdg_surface = self.xdg_surface()?;
-		let xdg_surface_data = XdgSurfaceData::get(&xdg_surface)?.lock();
-		xdg_surface_data.panel_item()
+		self.panel_item.get()?.upgrade()
 	}
 }
 impl Drop for ToplevelData {
