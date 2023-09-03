@@ -19,8 +19,10 @@ use mint::{RowMatrix4, Vector2};
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use stardust_xr::{
+	scenegraph::ScenegraphError,
 	schemas::flex::{deserialize, serialize},
 	values::Transform,
 };
@@ -28,6 +30,7 @@ use std::sync::Arc;
 use stereokit::{
 	Color128, Material, Rect, RenderLayer, StereoKitDraw, Tex, TextureType, Transparency,
 };
+use tokio::sync::{mpsc, oneshot};
 
 lazy_static! {
 	pub(super) static ref ITEM_TYPE_INFO_CAMERA: TypeInfo = TypeInfo {
@@ -49,13 +52,17 @@ struct FrameInfo {
 pub struct CameraItem {
 	space: Arc<Spatial>,
 	frame_info: Mutex<FrameInfo>,
-	sk_tex: OnceCell<Tex>,
+	sk_textures: Mutex<FxHashMap<(usize, usize), Tex>>,
 	sk_mat: OnceCell<Arc<Material>>,
+	render_requests_tx: mpsc::Sender<(usize, oneshot::Sender<()>)>,
+	render_requests_rx: mpsc::Receiver<(usize, oneshot::Sender<()>)>,
+	rendered_notifiers: Mutex<Vec<oneshot::Sender<()>>>,
 	applied_to: Registry<ModelPart>,
 	apply_to: Registry<ModelPart>,
 }
 impl CameraItem {
 	pub fn add_to(node: &Arc<Node>, proj_matrix: Mat4, px_size: Vector2<u32>) {
+		let (render_requests_tx, render_requests_rx) = mpsc::channel(5);
 		Item::add_to(
 			node,
 			nanoid!(),
@@ -66,30 +73,47 @@ impl CameraItem {
 					proj_matrix,
 					px_size,
 				}),
-				sk_tex: OnceCell::new(),
+				sk_textures: Mutex::new(FxHashMap::default()),
 				sk_mat: OnceCell::new(),
+				render_requests_tx,
+				render_requests_rx,
+				rendered_notifiers: Mutex::new(Vec::new()),
 				applied_to: Registry::new(),
 				apply_to: Registry::new(),
 			}),
 		);
-		node.add_local_method("frame", CameraItem::frame_flex);
+		node.add_local_method("render", CameraItem::render_flex);
 		node.add_local_signal(
 			"apply_preview_material",
 			CameraItem::apply_preview_material_flex,
 		);
 	}
 
-	fn frame_flex(
+	fn render_flex(
 		node: &Node,
 		_calling_client: Arc<Client>,
-		_message: Message,
+		message: Message,
 		response: MethodResponseSender,
 	) {
-		response.wrap_sync(move || {
-			let ItemType::Camera(_camera) = &node.item.get().unwrap().specialization else {
-				return Err(eyre!("Wrong item type?"))
-			};
-			Ok(serialize(())?.into())
+		let ItemType::Camera(camera) = &node.item.get().unwrap().specialization else {
+			let _ = response.send(Err(ScenegraphError::MethodError {
+				error: "Wrong item type?".to_string(),
+			}));
+			return;
+		};
+
+		let (rendered_tx, rendered_rx) = oneshot::channel();
+
+		let buffer_to_render: usize = deserialize(&message.data).unwrap();
+
+		tokio::task::spawn(async move {
+			camera
+				.render_requests_tx
+				.send((buffer_to_render, rendered_tx))
+				.await;
+
+			rendered_rx.await;
+			response.send(Ok(Vec::new().into()));
 		});
 	}
 
@@ -101,11 +125,18 @@ impl CameraItem {
 		let ItemType::Camera(camera) = &node.item.get().unwrap().specialization else {
 			bail!("Wrong item type?")
 		};
+
 		let model_part_node =
 			calling_client.get_node("Model part", deserialize(&message.data).unwrap())?;
-		let Drawable::ModelPart(model_part) = model_part_node.get_aspect("Model part", "model part", |n| &n.drawable)? else {bail!("Drawable is not a model node")};
+		let Drawable::ModelPart(model_part) =
+			model_part_node.get_aspect("Model part", "model part", |n| &n.drawable)?
+		else {
+			bail!("Drawable is not a model node")
+		};
+
 		camera.applied_to.add_raw(model_part);
 		camera.apply_to.add_raw(model_part);
+
 		Ok(())
 	}
 
@@ -135,7 +166,11 @@ impl CameraItem {
 			model_part.replace_material(sk_mat.clone())
 		}
 
-		if !self.applied_to.is_empty() {
+		//if !self.applied_to.is_empty() {
+		//}
+
+		let mut render_notifiers = self.rendered_notifiers.lock();
+		while let Ok((buffer_to_render, rendered_tx)) = self.render_requests_rx.try_recv() {
 			sk.render_to(
 				sk_tex,
 				frame_info.proj_matrix,
@@ -149,14 +184,32 @@ impl CameraItem {
 					h: 0.0,
 				},
 			);
+			render_notifiers.push(rendered_tx);
+		}
+	}
+
+	pub fn send_rendered(&self) {
+		for notifier in self.rendered_notifiers.lock().drain(..) {
+			notifier.send(());
 		}
 	}
 }
 
 pub fn update(sk: &impl StereoKitDraw) {
 	for camera in ITEM_TYPE_INFO_CAMERA.items.get_valid_contents() {
-		let ItemType::Camera(camera) = &camera.specialization else {continue};
+		let ItemType::Camera(camera) = &camera.specialization else {
+			continue;
+		};
 		camera.update(sk);
+	}
+}
+
+pub fn send_rendered() {
+	for camera in ITEM_TYPE_INFO_CAMERA.items.get_valid_contents() {
+		let ItemType::Camera(camera) = &camera.specialization else {
+			continue;
+		};
+		camera.send_rendered();
 	}
 }
 
