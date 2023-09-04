@@ -13,7 +13,7 @@ name = "stardust-xr-server"
 path = "src/main.rs"
 
 [features]
-default = ["wayland", "xwayland"]
+default = ["wayland"]
 wayland = ["dep:smithay", "dep:xkbcommon"]
 xwayland = ["smithay/xwayland"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
