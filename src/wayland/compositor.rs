@@ -25,11 +25,9 @@ impl CompositorHandler for WaylandState {
 				.data_map
 				.insert_if_missing_threadsafe(|| AtomicU32::new(0));
 			if !count_new {
-				count = data
-					.data_map
-					.get::<AtomicU32>()
-					.unwrap()
-					.fetch_add(1, Ordering::Relaxed);
+				if let Some(stored_count) = data.data_map.get::<AtomicU32>() {
+					count = stored_count.fetch_add(1, Ordering::Relaxed);
+				}
 			}
 
 			data.data_map.get::<Arc<CoreSurface>>().cloned()

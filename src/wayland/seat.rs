@@ -1,7 +1,7 @@
 use super::{
 	state::{ClientState, WaylandState},
 	surface::CoreSurface,
-	GLOBAL_DESTROY_QUEUE, SERIAL_COUNTER,
+	SERIAL_COUNTER,
 };
 use crate::{
 	core::task,
@@ -290,10 +290,9 @@ impl SeatData {
 			touch: OnceCell::new(),
 		});
 
-		seat_data
+		let _ = seat_data
 			.global_id
-			.set(dh.create_global::<WaylandState, _, _>(7, seat_data.clone()))
-			.unwrap();
+			.set(dh.create_global::<WaylandState, _, _>(7, seat_data.clone()));
 
 		seat_data
 	}
@@ -418,14 +417,6 @@ impl SeatData {
 				*keyboard_focus = ObjectId::null();
 			}
 		}
-	}
-}
-impl Drop for SeatData {
-	fn drop(&mut self) {
-		let id = self.global_id.take().unwrap();
-		let _ = task::new(|| "global destroy queue garbage collection", async move {
-			GLOBAL_DESTROY_QUEUE.get().unwrap().send(id).await
-		});
 	}
 }
 

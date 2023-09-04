@@ -23,7 +23,8 @@ use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::ImportDma;
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::DisplayHandle;
-use smithay::reexports::wayland_server::{backend::GlobalId, Display, ListeningSocket};
+use smithay::reexports::wayland_server::{Display, ListeningSocket};
+use std::ffi::OsStr;
 use std::os::fd::OwnedFd;
 use std::os::unix::prelude::AsRawFd;
 use std::{
@@ -36,7 +37,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
 };
-use tracing::{debug, debug_span, info, instrument};
+use tracing::{debug_span, info, instrument};
 
 pub static WAYLAND_DISPLAY: OnceCell<String> = OnceCell::new();
 pub static SERIAL_COUNTER: CounterU32 = CounterU32::new(0);
@@ -62,8 +63,6 @@ fn get_sk_egl() -> Result<EGLRawHandles> {
 	})
 }
 
-static GLOBAL_DESTROY_QUEUE: OnceCell<mpsc::Sender<GlobalId>> = OnceCell::new();
-
 pub struct DisplayWrapper(Mutex<Display<WaylandState>>, DisplayHandle);
 impl DisplayWrapper {
 	pub fn handle(&self) -> DisplayHandle {
@@ -84,7 +83,7 @@ impl DisplayWrapper {
 
 pub struct Wayland {
 	display: Arc<DisplayWrapper>,
-	pub socket_name: String,
+	pub socket_name: Option<String>,
 	join_handle: JoinHandle<Result<()>>,
 	renderer: GlesRenderer,
 	dmabuf_rx: UnboundedReceiver<Dmabuf>,
@@ -112,22 +111,17 @@ impl Wayland {
 		let xwayland_state = xwayland::XWaylandState::create(&display_handle)?;
 		let wayland_state = WaylandState::new(display_handle, &renderer, dmabuf_tx);
 
-		let (global_destroy_queue_in, global_destroy_queue) = mpsc::channel(8);
-		GLOBAL_DESTROY_QUEUE.set(global_destroy_queue_in).unwrap();
-
 		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
-		let socket_name = socket.socket_name().unwrap().to_str().unwrap().to_string();
-		WAYLAND_DISPLAY
-			.set(socket_name.clone())
-			.expect("seriously message nova this time they screwed up big time");
+		let socket_name = socket
+			.socket_name()
+			.and_then(OsStr::to_str)
+			.map(ToString::to_string);
+		if let Some(socket_name) = &socket_name {
+			let _ = WAYLAND_DISPLAY.set(socket_name.clone());
+		}
 		info!(socket_name, "Wayland active");
 
-		let join_handle = Wayland::start_loop(
-			display.clone(),
-			socket,
-			wayland_state.clone(),
-			global_destroy_queue,
-		)?;
+		let join_handle = Wayland::start_loop(display.clone(), socket, wayland_state.clone())?;
 
 		Ok(Wayland {
 			display,
@@ -145,7 +139,6 @@ impl Wayland {
 		display: Arc<DisplayWrapper>,
 		socket: ListeningSocket,
 		state: Arc<Mutex<WaylandState>>,
-		mut global_destroy_queue: mpsc::Receiver<GlobalId>,
 	) -> Result<JoinHandle<Result<()>>> {
 		let listen_async =
 			AsyncUnixListener::from_std(unsafe { UnixListener::from_raw_fd(socket.as_raw_fd()) })?;
@@ -160,10 +153,6 @@ impl Wayland {
 			let _socket = socket; // Keep the socket alive
 			loop {
 				tokio::select! {
-					e = global_destroy_queue.recv() => { // New global to destroy
-						debug!(?e, "destroy global");
-						dh1.remove_global::<WaylandState>(e.unwrap());
-					}
 					acc = listen_async.accept() => { // New client connected
 						let (stream, _) = acc?;
 						let client_state = Arc::new(ClientState {
@@ -173,7 +162,7 @@ impl Wayland {
 							seat: SeatData::new(&dh1)
 						});
 						let client = dh2.insert_client(stream.into_std()?, client_state.clone())?;
-						client_state.seat.client.set(client.id()).unwrap();
+						let _ = client_state.seat.client.set(client.id());
 					}
 					e = dispatch_poll_listener.readable() => { // Dispatch
 						let mut guard = e?;
@@ -211,7 +200,7 @@ impl Wayland {
 
 	pub fn make_context_current(&self) {
 		unsafe {
-			self.renderer.egl_context().make_current().unwrap();
+			let _ = self.renderer.egl_context().make_current();
 		}
 	}
 }
