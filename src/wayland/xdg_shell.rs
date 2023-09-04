@@ -618,11 +618,13 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.backend.toplevel_state.lock().fullscreen = true;
 				panel_item.backend.configure(None);
+				panel_item.toplevel_fullscreen_active(true);
 			}
 			xdg_toplevel::Request::UnsetFullscreen => {
 				let Some(panel_item) = data.lock().panel_item() else {return};
 				panel_item.backend.toplevel_state.lock().fullscreen = false;
 				panel_item.backend.configure(None);
+				panel_item.toplevel_fullscreen_active(false);
 			}
 			xdg_toplevel::Request::Destroy => {
 				debug!(?xdg_toplevel, "Destroy XDG Toplevel");
