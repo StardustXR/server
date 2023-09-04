@@ -90,7 +90,8 @@ impl KdeDecorationHandler for WaylandState {
 		decoration: &OrgKdeKwinServerDecoration,
 		mode: WEnum<KdeMode>,
 	) {
-		decoration.mode(mode.into_result().unwrap());
+		let Ok(mode) = mode.into_result() else {return};
+		decoration.mode(mode);
 	}
 }
 delegate_kde_decoration!(WaylandState);

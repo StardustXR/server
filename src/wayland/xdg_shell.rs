@@ -267,8 +267,8 @@ impl Dispatch<XdgPositioner, Mutex<PositionerData>, WaylandState> for WaylandSta
 					?positioner,
 					constraint_adjustment, "Set positioner constraint adjustment"
 				);
-				data.lock().constraint_adjustment =
-					ConstraintAdjustment::from_bits(constraint_adjustment).unwrap();
+				let Some(constraint_adjustment) = ConstraintAdjustment::from_bits(constraint_adjustment) else {return};
+				data.lock().constraint_adjustment = constraint_adjustment;
 			}
 			xdg_positioner::Request::SetOffset { x, y } => {
 				debug!(?positioner, x, y, "Set positioner offset");
@@ -372,7 +372,7 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 					{
 						let toplevel = toplevel.downgrade();
 						move || {
-							let toplevel = toplevel.upgrade().unwrap();
+							let Ok(toplevel) = toplevel.upgrade() else {return};
 							let toplevel_data = ToplevelData::get(&toplevel);
 							let Some(xdg_surface) = toplevel_data.lock().xdg_surface() else {return};
 							let Some(xdg_surface_data) = XdgSurfaceData::get(&xdg_surface) else {return};
@@ -394,7 +394,7 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 					{
 						let toplevel = toplevel.downgrade();
 						move |_| {
-							let toplevel = toplevel.upgrade().unwrap();
+							let Ok(toplevel) = toplevel.upgrade() else {return};
 							let toplevel_data = ToplevelData::get(&toplevel);
 							let Some(panel_item) = toplevel_data.lock().panel_item() else {
 								let Some(xdg_surface) = toplevel_data.lock().xdg_surface() else {return};
@@ -426,20 +426,10 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 				parent,
 				positioner,
 			} => {
-				let parent_clone = parent.clone().unwrap();
-				let parent_data = parent_clone.data::<Mutex<XdgSurfaceData>>().unwrap().lock();
-				// let positioner_data = positioner
-				// 	.data::<Mutex<PositionerData>>()
-				// 	.unwrap()
-				// 	.lock()
-				// 	.clone();
-				// let parent = match &*parent_data {
-				// 	XdgSurfaceType::Toplevel(_) => SurfaceID::Toplevel,
-				// 	XdgSurfaceType::Popup(p) => {
-				// 		SurfaceID::Popup(p.upgrade().unwrap().uid.clone())
-				// 	}
-				// 	XdgSurfaceType::Unknown => return,
-				// };
+				let Some(parent) = parent else {return};
+				let Some(parent_data) = parent.data::<Mutex<XdgSurfaceData>>() else {return};
+				let parent_data = parent_data.lock();
+
 				let uid = nanoid!();
 				let popup_data = Mutex::new(PopupData::new(
 					uid.clone(),
@@ -447,13 +437,11 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 					parent_data.surface_id.clone(),
 					positioner,
 				));
-				let panel_item = parent_data.panel_item().unwrap();
+				let Some(panel_item) = parent_data.panel_item() else {return};
+				let Some(popup_wl_surface) = popup_data.lock().wl_surface() else {return};
 				handle_cursor(
 					&panel_item,
-					panel_item
-						.backend
-						.seat
-						.new_surface(&popup_data.lock().wl_surface().unwrap()),
+					panel_item.backend.seat.new_surface(&popup_wl_surface),
 				);
 				let xdg_popup = data_init.init(id, popup_data);
 				xdg_surface_data.lock().surface_id = SurfaceID::Child(uid);
@@ -462,12 +450,13 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 				debug!(?xdg_popup, ?xdg_surface, "Create XDG popup");
 
 				let xdg_surface = xdg_surface.downgrade();
-				let xdg_popup = xdg_popup.downgrade();
+				let xdg_popup: WlWeak<XdgPopup> = xdg_popup.downgrade();
+				let Ok(wl_surface) = xdg_surface_data.lock().wl_surface.upgrade() else {return};
 				CoreSurface::add_to(
 					state.display_handle.clone(),
-					&xdg_surface_data.lock().wl_surface.upgrade().unwrap(),
+					&wl_surface,
 					move || {
-						let xdg_popup = xdg_popup.upgrade().unwrap();
+						let Ok(xdg_popup) = xdg_popup.upgrade() else {return};
 						let Some(popup_data) = PopupData::get(&xdg_popup) else {return};
 						let popup_data = popup_data.lock();
 						panel_item
@@ -476,10 +465,9 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 					},
 					move |commit_count| {
 						if commit_count == 0 {
-							xdg_surface
-								.upgrade()
-								.unwrap()
-								.configure(SERIAL_COUNTER.inc())
+							if let Ok(xdg_surface) = xdg_surface.upgrade() {
+								xdg_surface.configure(SERIAL_COUNTER.inc())
+							}
 						}
 					},
 				);
@@ -566,11 +554,9 @@ impl Dispatch<XdgToplevel, Mutex<ToplevelData>, WaylandState> for WaylandState {
 				debug!(?xdg_toplevel, ?parent, "Set XDG Toplevel parent");
 				data.lock().parent = parent.clone().map(|toplevel| toplevel.downgrade());
 				let Some(panel_item) = data.lock().panel_item() else {return};
-				if let Some(parent) = parent {
-					panel_item.toplevel_parent_changed(
-						&ToplevelData::get(&parent).lock().panel_item().unwrap().uid,
-					);
-				}
+				let Some(parent) = parent else {return};
+				let Some(parent_panel_item) = ToplevelData::get(&parent).lock().panel_item() else {return};
+				panel_item.toplevel_parent_changed(&parent_panel_item.uid);
 			}
 			xdg_toplevel::Request::SetTitle { title } => {
 				debug!(?xdg_toplevel, ?title, "Set XDG Toplevel title");
@@ -943,11 +929,11 @@ impl Backend for XDGBackend {
 			size,
 			min_size: toplevel_data.min_size.clone(),
 			max_size: toplevel_data.max_size.clone(),
-			logical_rectangle: XdgSurfaceData::get(&self.toplevel_xdg_surface().unwrap())
-				.unwrap()
-				.lock()
-				.geometry
-				.clone()
+			logical_rectangle: self
+				.toplevel_xdg_surface()
+				.as_ref()
+				.and_then(XdgSurfaceData::get)
+				.and_then(|d| d.lock().geometry.clone())
 				.unwrap_or_else(|| Geometry {
 					origin: [0, 0].into(),
 					size,

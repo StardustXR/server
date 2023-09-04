@@ -216,7 +216,9 @@ fn main() {
 		);
 		#[cfg(feature = "wayland")]
 		{
-			startup_command.env("WAYLAND_DISPLAY", &wayland.socket_name);
+			if let Some(wayland_socket) = wayland.socket_name.as_ref() {
+				startup_command.env("WAYLAND_DISPLAY", &wayland_socket);
+			}
 			#[cfg(feature = "xwayland")]
 			startup_command.env("DISPLAY", format!(":{}", wayland.xwayland_state.display));
 			startup_command.env("GDK_BACKEND", "wayland");

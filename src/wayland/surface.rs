@@ -18,10 +18,10 @@ use smithay::{
 	reexports::wayland_server::{self, protocol::wl_surface::WlSurface, DisplayHandle, Resource},
 	wayland::compositor::{self, SurfaceData},
 };
-use std::{ffi::c_void, sync::Arc, time::Duration};
+use std::{cell::RefCell, ffi::c_void, sync::Arc, time::Duration};
 use stereokit::{
-	Material, StereoKitDraw, Tex, TextureAddress, TextureFormat, TextureSample, TextureType,
-	Transparency,
+	Material, Shader, StereoKitDraw, Tex, TextureAddress, TextureFormat, TextureSample,
+	TextureType, Transparency,
 };
 
 pub static CORE_SURFACES: Registry<CoreSurface> = Registry::new();
@@ -89,12 +89,12 @@ impl CoreSurface {
 			.sk_tex
 			.get_or_init(|| sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32));
 		self.sk_mat.get_or_init(|| {
-			let shader = sk.shader_create_mem(&PANEL_SHADER_BYTES).unwrap();
+			let shader = sk.shader_create_mem(&PANEL_SHADER_BYTES);
 			// let _ = renderer.with_context(|c| unsafe {
 			// 	shader_inject(c, &mut shader, SIMULA_VERT_STR, SIMULA_FRAG_STR)
 			// });
 
-			let mat = sk.material_create(&shader);
+			let mat = sk.material_create(shader.as_ref().unwrap_or(Shader::UI.as_ref()));
 			sk.material_set_texture(&mat, "diffuse", sk_tex.as_ref());
 			sk.material_set_transparency(&mat, Transparency::Blend);
 			Arc::new(mat)
@@ -121,18 +121,16 @@ impl CoreSurface {
 		let mut mapped_data = self.mapped_data.lock();
 		let just_mapped = mapped_data.is_none();
 		self.with_states(|data| {
-			let renderer_surface_state = data
+			let Some(renderer_surface_state) = data
 				.data_map
 				.get::<RendererSurfaceStateUserData>()
-				.unwrap()
-				.borrow();
-			let smithay_tex = renderer_surface_state
+				.map(RefCell::borrow) else {return};
+			let Some(smithay_tex) = renderer_surface_state
 				.texture::<GlesRenderer>(renderer.id())
-				.unwrap()
-				.clone();
+				.cloned() else {return};
 
-			let sk_tex = self.sk_tex.get().unwrap();
-			let sk_mat = self.sk_mat.get().unwrap();
+			let Some(sk_tex) = self.sk_tex.get() else {return};
+			let Some(sk_mat) = self.sk_mat.get() else {return};
 			unsafe {
 				sk.tex_set_surface(
 					sk_tex.as_ref(),
@@ -151,7 +149,7 @@ impl CoreSurface {
 				sk.material_set_queue_offset(sk_mat.as_ref().as_ref(), *material_offset as i32);
 			}
 
-			let surface_size = renderer_surface_state.surface_size().unwrap();
+			let Some(surface_size) = renderer_surface_state.surface_size() else {return};
 			let new_mapped_data = CoreSurfaceData {
 				size: Vector2::from([surface_size.w as u32, surface_size.h as u32]),
 				wl_tex: Some(SendWrapper::new(smithay_tex)),
@@ -186,10 +184,12 @@ impl CoreSurface {
 	}
 
 	fn apply_surface_materials(&self) {
-		for model_node in self.pending_material_applications.get_valid_contents() {
-			model_node.replace_material(self.sk_mat.clone().get().unwrap().clone());
+		if let Some(sk_mat) = self.sk_mat.get() {
+			for model_node in self.pending_material_applications.get_valid_contents() {
+				model_node.replace_material(sk_mat.clone());
+			}
+			self.pending_material_applications.clear();
 		}
-		self.pending_material_applications.clear();
 	}
 
 	pub fn wl_surface(&self) -> Option<WlSurface> {

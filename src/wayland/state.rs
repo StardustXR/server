@@ -95,13 +95,9 @@ impl WaylandState {
 			.cloned()
 			.collect::<Vec<_>>();
 		let dmabuf_default_feedback = match render_node {
-			Ok(Some(node)) => {
-				let dmabuf_default_feedback =
-					DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats.clone())
-						.build()
-						.unwrap();
-				Some(dmabuf_default_feedback)
-			}
+			Ok(Some(node)) => DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats.clone())
+				.build()
+				.ok(),
 			Ok(None) => {
 				warn!("failed to query render node, dmabuf will use v3");
 				None
