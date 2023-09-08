@@ -223,9 +223,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			.unwrap();
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
 		if let Some(startup_settings) = &startup_settings {
-			spatial.set_local_transform(
-				spatial.global_transform().inverse() * startup_settings.transform,
-			);
+			spatial.set_local_transform(startup_settings.transform);
 		}
 
 		let panel_item = Arc::new(PanelItem {
