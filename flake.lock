@@ -85,11 +85,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1691334443,
-        "narHash": "sha256-gNjLgTvN6dhBGWHk8S7jvwSm9YCTpLoYBH65fDjtrv4=",
+        "lastModified": 1694146606,
+        "narHash": "sha256-qI+yYnn1fFjtAeeJdgbdDtDRF522E49SKQ8iqg+O/Ag=",
         "owner": "StardustXR",
         "repo": "flatland",
-        "rev": "da6e286300c2a1f6e0ba103f9a79c53b9c3e70dc",
+        "rev": "53e324a832f218ffd8cfe784e4bf8596fcd79577",
         "type": "github"
       },
       "original": {
