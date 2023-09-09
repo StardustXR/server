@@ -46,7 +46,7 @@ lazy_static! {
 
 struct FrameInfo {
 	proj_matrix: Mat4,
-	px_size: Vector2<u32>,
+	preview_size: Vector2<u32>,
 }
 
 pub struct CameraItem {
@@ -54,14 +54,14 @@ pub struct CameraItem {
 	frame_info: Mutex<FrameInfo>,
 	sk_textures: Mutex<FxHashMap<(usize, usize), Tex>>,
 	sk_mat: OnceCell<Arc<Material>>,
-	render_requests_tx: mpsc::Sender<(usize, oneshot::Sender<()>)>,
-	render_requests_rx: mpsc::Receiver<(usize, oneshot::Sender<()>)>,
+	render_requests_tx: mpsc::Sender<((usize, usize), oneshot::Sender<()>)>,
+	render_requests_rx: Mutex<mpsc::Receiver<((usize, usize), oneshot::Sender<()>)>>,
 	rendered_notifiers: Mutex<Vec<oneshot::Sender<()>>>,
 	applied_to: Registry<ModelPart>,
 	apply_to: Registry<ModelPart>,
 }
 impl CameraItem {
-	pub fn add_to(node: &Arc<Node>, proj_matrix: Mat4, px_size: Vector2<u32>) {
+	pub fn add_to(node: &Arc<Node>, proj_matrix: Mat4, preview_size: Vector2<u32>) {
 		let (render_requests_tx, render_requests_rx) = mpsc::channel(5);
 		Item::add_to(
 			node,
@@ -71,12 +71,12 @@ impl CameraItem {
 				space: node.spatial.get().unwrap().clone(),
 				frame_info: Mutex::new(FrameInfo {
 					proj_matrix,
-					px_size,
+					preview_size,
 				}),
 				sk_textures: Mutex::new(FxHashMap::default()),
 				sk_mat: OnceCell::new(),
 				render_requests_tx,
-				render_requests_rx,
+				render_requests_rx: Mutex::new(render_requests_rx),
 				rendered_notifiers: Mutex::new(Vec::new()),
 				applied_to: Registry::new(),
 				apply_to: Registry::new(),
@@ -89,9 +89,21 @@ impl CameraItem {
 		);
 	}
 
+	fn import_buffers_flex(
+		node: &Node,
+		calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
+		let ItemType::Camera(camera) = &node.item.get().unwrap().specialization else {
+			bail!("Wrong item type?")
+		};
+
+		Ok(())
+	}
+
 	fn render_flex(
 		node: &Node,
-		_calling_client: Arc<Client>,
+		calling_client: Arc<Client>,
 		message: Message,
 		response: MethodResponseSender,
 	) {
@@ -104,7 +116,7 @@ impl CameraItem {
 
 		let (rendered_tx, rendered_rx) = oneshot::channel();
 
-		let buffer_to_render: usize = deserialize(&message.data).unwrap();
+		let buffer_to_render: (usize, usize) = (Arc::as_ptr(&calling_client) as usize, deserialize(&message.data).unwrap());
 
 		tokio::task::spawn(async move {
 			camera
@@ -146,31 +158,56 @@ impl CameraItem {
 
 	pub fn update(&self, sk: &impl StereoKitDraw) {
 		let frame_info = self.frame_info.lock();
-		let sk_tex = self.sk_tex.get_or_init(|| {
-			sk.tex_gen_color(
-				Color128::default(),
-				frame_info.px_size.x as i32,
-				frame_info.px_size.y as i32,
-				TextureType::RENDER_TARGET,
-				stereokit::TextureFormat::RGBA32Linear,
-			)
-		});
-		let sk_mat = self.sk_mat.get_or_init(|| {
-			let shader = sk.shader_create_mem(&UNLIT_SHADER_BYTES).unwrap();
-			let mat = sk.material_create(&shader);
-			sk.material_set_texture(&mat, "diffuse", sk_tex.as_ref());
-			sk.material_set_transparency(&mat, Transparency::Blend);
-			Arc::new(mat)
-		});
-		for model_part in self.apply_to.take_valid_contents() {
-			model_part.replace_material(sk_mat.clone())
+		let mut sk_textures = self.sk_textures.lock();
+
+		if !self.apply_to.is_empty() {
+			let sk_tex = sk_textures.entry((0, 0)).or_insert_with(|| {
+				sk.tex_gen_color(
+					Color128::default(),
+					frame_info.preview_size.x as i32,
+					frame_info.preview_size.y as i32,
+					TextureType::RENDER_TARGET,
+					stereokit::TextureFormat::RGBA32Linear,
+				)
+			});
+			let sk_mat = self.sk_mat.get_or_init(|| {
+				let shader = sk.shader_create_mem(&UNLIT_SHADER_BYTES).unwrap();
+				let mat = sk.material_create(&shader);
+				sk.material_set_texture(&mat, "diffuse", sk_tex.as_ref());
+				sk.material_set_transparency(&mat, Transparency::Blend);
+				Arc::new(mat)
+			});
+			for model_part in self.apply_to.take_valid_contents() {
+				model_part.replace_material(sk_mat.clone())
+			}
 		}
 
-		//if !self.applied_to.is_empty() {
-		//}
+		if !self.applied_to.is_empty() {
+			sk.render_to(
+				sk_textures.get(&(0, 0)).unwrap(),
+				frame_info.proj_matrix,
+				self.space.global_transform(),
+				RenderLayer::all(),
+				stereokit::RenderClear::All,
+				Rect {
+					x: 0.0,
+					y: 0.0,
+					w: 0.0,
+					h: 0.0,
+				},
+			);
+		}
 
 		let mut render_notifiers = self.rendered_notifiers.lock();
-		while let Ok((buffer_to_render, rendered_tx)) = self.render_requests_rx.try_recv() {
+		let mut render_requests_rx = self.render_requests_rx.lock();
+		while let Ok((buffer_to_render, rendered_tx)) = render_requests_rx.try_recv() {
+			let Some(sk_tex) = sk_textures.get(&buffer_to_render).take() else {
+				// TODO: Consider allocating a new buffer in a or_insert_with (requires desired formats and a size)
+				// For now, rendering to no buffer means not rendering at all.
+				render_notifiers.push(rendered_tx);
+				continue;
+			};
+
 			sk.render_to(
 				sk_tex,
 				frame_info.proj_matrix,
