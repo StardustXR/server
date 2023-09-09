@@ -69,16 +69,11 @@ impl KeyboardInfo {
 			keys: FxHashSet::default(),
 		}
 	}
-	pub fn process(&mut self, key: u32, state: u32, keyboard: &WlKeyboard) -> Result<usize> {
-		let wl_key_state = match state {
-			0 => KeyState::Released,
-			1 => KeyState::Pressed,
-			_ => color_eyre::eyre::bail!("Invalid key state!"),
-		};
-		let xkb_key_state = match state {
-			0 => xkb::KeyDirection::Up,
-			1 => xkb::KeyDirection::Down,
-			_ => color_eyre::eyre::bail!("Invalid key state!"),
+	pub fn process(&mut self, key: u32, pressed: bool, keyboard: &WlKeyboard) -> Result<usize> {
+		let xkb_key_state = if pressed {
+			xkb::KeyDirection::Down
+		} else {
+			xkb::KeyDirection::Up
 		};
 		let state_components = self.state.update_key(key + 8, xkb_key_state);
 		if state_components != 0 {
@@ -91,6 +86,12 @@ impl KeyboardInfo {
 				0,
 			);
 		}
+
+		let wl_key_state = if pressed {
+			KeyState::Pressed
+		} else {
+			KeyState::Released
+		};
 		keyboard.key(SERIAL_COUNTER.inc(), 0, key, wl_key_state);
 		match wl_key_state {
 			KeyState::Pressed => {
@@ -121,7 +122,7 @@ pub enum PointerEvent {
 #[derive(Debug, Clone)]
 pub enum KeyboardEvent {
 	Keymap,
-	Key { key: u32, state: u32 },
+	Key { key: u32, state: bool },
 }
 
 const POINTER_EVENT_TIMEOUT: Duration = Duration::from_millis(50);

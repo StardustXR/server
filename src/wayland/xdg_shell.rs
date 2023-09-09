@@ -1016,7 +1016,7 @@ impl Backend for XDGBackend {
 				&surface,
 				KeyboardEvent::Key {
 					key: key.abs() as u32,
-					state: if key < 0 { 1 } else { 0 },
+					state: key < 0,
 				},
 			);
 		}
