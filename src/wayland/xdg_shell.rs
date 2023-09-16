@@ -499,7 +499,7 @@ impl Dispatch<XdgSurface, Mutex<XdgSurfaceData>, WaylandState> for WaylandState 
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ToplevelData {
 	panel_item: OnceCell<Weak<PanelItem<XDGBackend>>>,
 	xdg_surface: WlWeak<XdgSurface>,
@@ -907,10 +907,23 @@ impl Drop for XDGBackend {
 }
 impl Backend for XDGBackend {
 	fn start_data(&self) -> Result<PanelItemInitData> {
-		let toplevel_data = self
-			.toplevel()
-			.map(|t| ToplevelData::get(&t).lock().clone())
+		let toplevel = self.toplevel();
+		let toplevel_data = toplevel
+			.as_ref()
+			.map(|t| ToplevelData::get(t).lock())
 			.ok_or_else(|| eyre!("Could not get toplevel"))?;
+
+		let parent = toplevel_data
+			.parent
+			.as_ref()
+			.and_then(|p| p.upgrade().ok())
+			.and_then(|p| ToplevelData::get(&p).lock().panel_item())
+			.map(|p| p.uid.clone());
+		let title = toplevel_data.title.clone();
+		let app_id = toplevel_data.app_id.clone();
+		let min_size = toplevel_data.min_size.clone();
+		let max_size = toplevel_data.max_size.clone();
+		drop(toplevel_data);
 
 		let pointer_grab = self.pointer_grab.lock().clone();
 		let keyboard_grab = self.keyboard_grab.lock().clone();
@@ -919,27 +932,24 @@ impl Backend for XDGBackend {
 		let Some(core_surface) = CoreSurface::from_wl_surface(&wl_surface) else {bail!("Core surface not found")};
 		let Some(size) = core_surface.size() else {bail!("Surface size not found")};
 
+		let logical_rectangle = self
+			.toplevel_xdg_surface()
+			.as_ref()
+			.and_then(XdgSurfaceData::get)
+			.and_then(|d| d.lock().geometry.clone())
+			.unwrap_or_else(|| Geometry {
+				origin: [0, 0].into(),
+				size,
+			});
+
 		let toplevel = ToplevelInfo {
-			parent: toplevel_data
-				.parent
-				.as_ref()
-				.and_then(|p| p.upgrade().ok())
-				.and_then(|p| ToplevelData::get(&p).lock().panel_item())
-				.map(|p| p.uid.clone()),
-			title: toplevel_data.title.clone(),
-			app_id: toplevel_data.app_id.clone(),
+			parent,
+			title,
+			app_id,
 			size,
-			min_size: toplevel_data.min_size.clone(),
-			max_size: toplevel_data.max_size.clone(),
-			logical_rectangle: self
-				.toplevel_xdg_surface()
-				.as_ref()
-				.and_then(XdgSurfaceData::get)
-				.and_then(|d| d.lock().geometry.clone())
-				.unwrap_or_else(|| Geometry {
-					origin: [0, 0].into(),
-					size,
-				}),
+			min_size,
+			max_size,
+			logical_rectangle,
 		};
 
 		Ok(PanelItemInitData {
