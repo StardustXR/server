@@ -164,10 +164,11 @@ fn main() {
 			left.zip(right)
 		})
 		.flatten();
-	let eye_pointer = (!cli_args.flatscreen && sk.device_has_eye_gaze())
-		.then(EyePointer::new)
-		.transpose()
-		.unwrap();
+	let eye_pointer = (sk.active_display_mode() == DisplayMode::MixedReality
+		&& sk.device_has_eye_gaze())
+	.then(EyePointer::new)
+	.transpose()
+	.unwrap();
 
 	if hands.is_none() {
 		sk.input_hand_visible(Handed::Left, false);
