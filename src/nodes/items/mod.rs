@@ -39,8 +39,8 @@ lazy_static! {
 }
 
 pub fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
-	if let Some(acceptor) = item.captured_acceptor.lock().upgrade() {
-		release(item, Some(&acceptor));
+	if item.captured_acceptor.lock().strong_count() > 0 {
+		release(item);
 	}
 	*item.captured_acceptor.lock() = Arc::downgrade(acceptor);
 	acceptor.handle_capture(item);
@@ -48,9 +48,9 @@ pub fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
 		ui.handle_capture_item(item, acceptor);
 	}
 }
-fn release(item: &Item, acceptor: Option<&ItemAcceptor>) {
+fn release(item: &Item) {
 	let mut captured_acceptor = item.captured_acceptor.lock();
-	if let Some(acceptor) = captured_acceptor.upgrade().as_deref().or(acceptor) {
+	if let Some(acceptor) = captured_acceptor.upgrade().as_ref() {
 		*captured_acceptor = Weak::default();
 		acceptor.handle_release(item);
 		if let Some(ui) = item.type_info.ui.lock().upgrade() {
@@ -157,7 +157,7 @@ impl Item {
 
 	fn release_flex(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
 		let item = node.get_aspect("Item", "item", |n| &n.item)?;
-		release(item, None);
+		release(item);
 
 		Ok(())
 	}
@@ -165,7 +165,7 @@ impl Item {
 impl Drop for Item {
 	fn drop(&mut self) {
 		self.type_info.items.remove(self);
-		release(self, None);
+		release(self);
 		if let Some(ui) = self.type_info.ui.lock().upgrade() {
 			ui.handle_destroy_item(self);
 		}
@@ -378,7 +378,7 @@ impl Drop for ItemAcceptor {
 	fn drop(&mut self) {
 		self.type_info.acceptors.remove(self);
 		for item in self.accepted_registry.get_valid_contents() {
-			release(&item, Some(self));
+			release(&item);
 		}
 		if let Some(ui) = self.type_info.ui.lock().upgrade() {
 			ui.handle_destroy_acceptor(self);
