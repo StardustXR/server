@@ -29,7 +29,6 @@ lazy_static! {
 	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
 		type_name: "panel",
 		aliased_local_signals: vec![
-			"start_data",
 			"apply_surface_material",
 			"close_toplevel",
 			"auto_size_toplevel",
