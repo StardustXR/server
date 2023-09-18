@@ -157,12 +157,15 @@ impl CameraItem {
 		calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let ItemType::Camera(camera) = &node.item.get().unwrap().specialization else {
+		let Some(item) = node.item.get() else {
+			bail!("Item not found?")
+		};
+		let ItemType::Camera(camera) = &item.specialization else {
 			bail!("Wrong item type?")
 		};
 
-		let model_part_node =
-			calling_client.get_node("Model part", deserialize(&message.data).unwrap())?;
+		let model_part_path = deserialize(&message.data)?;
+		let model_part_node = calling_client.get_node("Model part", model_part_path)?;
 		let Drawable::ModelPart(model_part) =
 			model_part_node.get_aspect("Model part", "model part", |n| &n.drawable)?
 		else {
@@ -325,6 +328,7 @@ pub(super) fn create_camera_item_flex(
 		Node::create(&INTERNAL_CLIENT, &parent_name, info.name, false).add_to_scenegraph()?;
 	Spatial::add_to(&node, None, transform * space.global_transform(), false)?;
 	CameraItem::add_to(&node, info.proj_matrix.into(), info.preview_size);
+	// TODO: this means ANY client can render anywhere with no limits, this needs to be changed!!
 	node.item
 		.get()
 		.unwrap()
