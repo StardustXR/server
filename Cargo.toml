@@ -62,6 +62,7 @@ xkbcommon = { version = "0.6.0", default-features = false, optional = true }
 ctrlc = "3.4.1"
 libc = "0.2.148"
 input-event-codes = "5.16.8"
+drm-fourcc = { version = "2.2.0", features = ["serde"] }
 
 [dependencies.smithay]
 # git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures

@@ -10,16 +10,15 @@ mod xdg_shell;
 pub mod xwayland;
 
 use self::{state::WaylandState, surface::CORE_SURFACES};
+use crate::core::buffers::BufferManager;
 use crate::wayland::seat::SeatData;
 use crate::{core::task, wayland::state::ClientState};
-use color_eyre::eyre::{ensure, Result};
+use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use sk::StereoKitDraw;
 use smithay::backend::allocator::dmabuf::Dmabuf;
-use smithay::backend::egl::EGLContext;
-use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::ImportDma;
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::DisplayHandle;
@@ -28,7 +27,6 @@ use std::ffi::OsStr;
 use std::os::fd::OwnedFd;
 use std::os::unix::prelude::AsRawFd;
 use std::{
-	ffi::c_void,
 	os::unix::{net::UnixListener, prelude::FromRawFd},
 	sync::Arc,
 };
@@ -41,27 +39,6 @@ use tracing::{debug_span, info, instrument};
 
 pub static WAYLAND_DISPLAY: OnceCell<String> = OnceCell::new();
 pub static SERIAL_COUNTER: CounterU32 = CounterU32::new(0);
-
-struct EGLRawHandles {
-	display: *const c_void,
-	config: *const c_void,
-	context: *const c_void,
-}
-fn get_sk_egl() -> Result<EGLRawHandles> {
-	ensure!(
-		unsafe { sk::sys::backend_graphics_get() }
-			== sk::sys::backend_graphics__backend_graphics_opengles_egl,
-		"StereoKit is not running using EGL!"
-	);
-
-	Ok(unsafe {
-		EGLRawHandles {
-			display: sk::sys::backend_opengl_egl_get_display() as *const c_void,
-			config: sk::sys::backend_opengl_egl_get_config() as *const c_void,
-			context: sk::sys::backend_opengl_egl_get_context() as *const c_void,
-		}
-	})
-}
 
 pub struct DisplayWrapper(Mutex<Display<WaylandState>>, DisplayHandle);
 impl DisplayWrapper {
@@ -85,23 +62,13 @@ pub struct Wayland {
 	display: Arc<DisplayWrapper>,
 	pub socket_name: Option<String>,
 	join_handle: JoinHandle<Result<()>>,
-	renderer: GlesRenderer,
 	dmabuf_rx: UnboundedReceiver<Dmabuf>,
 	wayland_state: Arc<Mutex<WaylandState>>,
 	#[cfg(feature = "xwayland")]
 	pub xwayland_state: xwayland::XWaylandState,
 }
 impl Wayland {
-	pub fn new() -> Result<Self> {
-		let egl_raw_handles = get_sk_egl()?;
-		let renderer = unsafe {
-			GlesRenderer::new(EGLContext::from_raw(
-				egl_raw_handles.display,
-				egl_raw_handles.config,
-				egl_raw_handles.context,
-			)?)?
-		};
-
+	pub fn new(buffer_manager: &BufferManager) -> Result<Self> {
 		let display: Display<WaylandState> = Display::new()?;
 		let display_handle = display.handle();
 
@@ -109,7 +76,7 @@ impl Wayland {
 		let display = Arc::new(DisplayWrapper(Mutex::new(display), display_handle.clone()));
 		#[cfg(feature = "xwayland")]
 		let xwayland_state = xwayland::XWaylandState::create(&display_handle)?;
-		let wayland_state = WaylandState::new(display_handle, &renderer, dmabuf_tx);
+		let wayland_state = WaylandState::new(display_handle, &buffer_manager.renderer, dmabuf_tx);
 
 		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
 		let socket_name = socket
@@ -127,7 +94,6 @@ impl Wayland {
 			display,
 			socket_name,
 			join_handle,
-			renderer,
 			dmabuf_rx,
 			wayland_state,
 			#[cfg(feature = "xwayland")]
@@ -178,13 +144,17 @@ impl Wayland {
 		})?)
 	}
 
-	#[instrument(level = "debug", name = "Wayland frame", skip(self, sk))]
-	pub fn update(&mut self, sk: &impl StereoKitDraw) {
+	#[instrument(
+		level = "debug",
+		name = "Wayland frame",
+		skip(self, sk, buffer_manager)
+	)]
+	pub fn update(&mut self, sk: &impl StereoKitDraw, buffer_manager: &mut BufferManager) {
 		while let Ok(dmabuf) = self.dmabuf_rx.try_recv() {
-			let _ = self.renderer.import_dmabuf(&dmabuf, None);
+			let _ = buffer_manager.renderer.import_dmabuf(&dmabuf, None);
 		}
 		for core_surface in CORE_SURFACES.get_valid_contents() {
-			core_surface.process(sk, &mut self.renderer);
+			core_surface.process(sk, &mut buffer_manager.renderer);
 		}
 
 		self.display.flush_clients(None);
@@ -195,12 +165,6 @@ impl Wayland {
 
 		for core_surface in CORE_SURFACES.get_valid_contents() {
 			core_surface.frame(sk, output.clone());
-		}
-	}
-
-	pub fn make_context_current(&self) {
-		unsafe {
-			let _ = self.renderer.egl_context().make_current();
 		}
 	}
 }
