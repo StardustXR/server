@@ -41,7 +41,7 @@ use stereokit::{
 	Color128, Material, Rect, RenderLayer, StereoKitDraw, Tex, TextureFormat, TextureType,
 	Transparency,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 
 lazy_static! {
 	pub(super) static ref ITEM_TYPE_INFO_CAMERA: TypeInfo = TypeInfo {
@@ -65,33 +65,34 @@ pub struct CameraItem {
 	frame_info: Mutex<FrameInfo>,
 	sk_tex: OnceCell<Tex>,
 	sk_mat: OnceCell<Arc<Material>>,
-	render_requests_tx: mpsc::Sender<(Dmabuf, oneshot::Sender<()>)>,
-	render_requests_rx: Mutex<mpsc::Receiver<(Dmabuf, oneshot::Sender<()>)>>,
-	rendered_notifiers: Mutex<Vec<oneshot::Sender<()>>>,
-	applied_to: Registry<ModelPart>,
-	apply_to: Registry<ModelPart>,
+	render_requests_tx: mpsc::Sender<(Dmabuf, MethodResponseSender)>,
+	render_requests_rx: Mutex<mpsc::Receiver<(Dmabuf, MethodResponseSender)>>,
+	rendered_notifiers: Mutex<Vec<MethodResponseSender>>,
+	applied_preview_to: Registry<ModelPart>,
+	apply_preview_to: Registry<ModelPart>,
 }
 impl CameraItem {
 	pub fn add_to(node: &Arc<Node>, proj_matrix: Mat4, preview_size: Vector2<u32>) {
 		let (render_requests_tx, render_requests_rx) = mpsc::channel(5);
+		let camera_specialization = CameraItem {
+			space: node.spatial.get().unwrap().clone(),
+			frame_info: Mutex::new(FrameInfo {
+				proj_matrix,
+				preview_size,
+			}),
+			sk_tex: OnceCell::new(),
+			sk_mat: OnceCell::new(),
+			render_requests_tx,
+			render_requests_rx: Mutex::new(render_requests_rx),
+			rendered_notifiers: Mutex::new(Vec::new()),
+			applied_preview_to: Registry::new(),
+			apply_preview_to: Registry::new(),
+		};
 		Item::add_to(
 			node,
 			nanoid!(),
 			&ITEM_TYPE_INFO_CAMERA,
-			ItemType::Camera(CameraItem {
-				space: node.spatial.get().unwrap().clone(),
-				frame_info: Mutex::new(FrameInfo {
-					proj_matrix,
-					preview_size,
-				}),
-				sk_tex: OnceCell::new(),
-				sk_mat: OnceCell::new(),
-				render_requests_tx,
-				render_requests_rx: Mutex::new(render_requests_rx),
-				rendered_notifiers: Mutex::new(Vec::new()),
-				applied_to: Registry::new(),
-				apply_to: Registry::new(),
-			}),
+			ItemType::Camera(camera_specialization),
 		);
 		node.add_local_method("render", CameraItem::render_flex);
 		node.add_local_signal(
@@ -106,14 +107,16 @@ impl CameraItem {
 		message: Message,
 		response: MethodResponseSender,
 	) {
-		let ItemType::Camera(camera) = &node.item.get().unwrap().specialization else {
+		let Some(item) = node.item.get() else {
+			let _ = response.send(Err(ScenegraphError::MethodError { error: "Item not found".to_string() }));
+			return
+		};
+		let ItemType::Camera(camera) = &item.specialization else {
 			let _ = response.send(Err(ScenegraphError::MethodError {
 				error: "Wrong item type?".to_string(),
 			}));
-			return;
+			return
 		};
-
-		let (rendered_tx, rendered_rx) = oneshot::channel();
 
 		let buffer_info: BufferInfo = deserialize(&message.data).unwrap();
 		let mut fds = message.fds.iter();
@@ -138,11 +141,15 @@ impl CameraItem {
 
 		let _ = camera
 			.render_requests_tx
-			.try_send((buffer_to_render, rendered_tx));
-		tokio::task::spawn(async move {
-			let _ = rendered_rx.await;
-			response.send(Ok(Vec::new().into()));
-		});
+			.try_send((buffer_to_render, response));
+		// tokio::task::spawn(async move {
+		// 	let result = rendered_rx.await;
+		// 	response.wrap_sync(|| {
+		// 		let result = result.map_err(|_| eyre!("failed to recieve response"))?;
+		// 		result.map_err(|e| eyre!(e))?;
+		// 		Ok(Message::from(Vec::new()))
+		// 	});
+		// });
 	}
 
 	fn apply_preview_material_flex(
@@ -162,8 +169,8 @@ impl CameraItem {
 			bail!("Drawable is not a model node")
 		};
 
-		camera.applied_to.add_raw(model_part);
-		camera.apply_to.add_raw(model_part);
+		camera.applied_preview_to.add_raw(model_part);
+		camera.apply_preview_to.add_raw(model_part);
 
 		Ok(())
 	}
@@ -174,8 +181,12 @@ impl CameraItem {
 
 	pub fn update(&self, sk: &impl StereoKitDraw, buffer_manager: &mut BufferManager) {
 		let frame_info = self.frame_info.lock();
+		self.render_preview(sk, &*frame_info);
+		self.render_dmabuf(sk, buffer_manager, &*frame_info);
+	}
 
-		if !self.apply_to.is_empty() {
+	fn render_preview(&self, sk: &impl StereoKitDraw, frame_info: &FrameInfo) {
+		if !self.apply_preview_to.is_empty() {
 			let sk_tex = self.sk_tex.get_or_init(|| {
 				sk.tex_gen_color(
 					Color128::default(),
@@ -192,12 +203,12 @@ impl CameraItem {
 				sk.material_set_transparency(&mat, Transparency::Blend);
 				Arc::new(mat)
 			});
-			for model_part in self.apply_to.take_valid_contents() {
+			for model_part in self.apply_preview_to.take_valid_contents() {
 				model_part.replace_material(sk_mat.clone())
 			}
 		}
 
-		if !self.applied_to.is_empty() {
+		if !self.applied_preview_to.is_empty() {
 			sk.render_to(
 				self.sk_tex.get().unwrap(),
 				frame_info.proj_matrix,
@@ -212,17 +223,28 @@ impl CameraItem {
 				},
 			);
 		}
+	}
 
+	fn render_dmabuf(
+		&self,
+		sk: &impl StereoKitDraw,
+		buffer_manager: &mut BufferManager,
+		frame_info: &FrameInfo,
+	) {
 		let mut render_notifiers = self.rendered_notifiers.lock();
 		let mut render_requests_rx = self.render_requests_rx.lock();
-		while let Ok((buffer_to_render, rendered_tx)) = render_requests_rx.try_recv() {
-			let Ok(smithay_tex) = buffer_manager
+		while let Ok((buffer_to_render, render_response_sender)) = render_requests_rx.try_recv() {
+			let imported_dmabuf = buffer_manager
 				.renderer
-				.import_dmabuf(&buffer_to_render, None)
-			else {
-				// TODO: Failed to import the buffer somehow. This fails gracefully, but silently.
-				render_notifiers.push(rendered_tx);
-				continue;
+				.import_dmabuf(&buffer_to_render, None);
+			let smithay_tex = match imported_dmabuf {
+				Ok(t) => t,
+				Err(e) => {
+					let _ = render_response_sender.send(Err(ScenegraphError::MethodError {
+						error: e.to_string(),
+					}));
+					continue;
+				}
 			};
 
 			let sk_tex = sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32);
@@ -252,13 +274,13 @@ impl CameraItem {
 					h: 0.0,
 				},
 			);
-			render_notifiers.push(rendered_tx);
+			render_notifiers.push(render_response_sender);
 		}
 	}
 
 	pub fn send_rendered(&self) {
 		for notifier in self.rendered_notifiers.lock().drain(..) {
-			let _ = notifier.send(());
+			let _ = notifier.send(Ok(Vec::new().into()));
 		}
 	}
 }
