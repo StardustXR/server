@@ -1131,6 +1131,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "itertools"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
+dependencies = [
+ "either",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2049,11 +2058,11 @@ dependencies = [
 [[package]]
 name = "stardust-xr"
 version = "0.14.1"
-source = "git+https://github.com/StardustXR/core.git#f19187dc1d0015b29e542010ad3e9dbd64d5645e"
 dependencies = [
  "cluFlock",
  "color-rs",
  "dirs",
+ "drm-fourcc",
  "global_counter",
  "mint",
  "nix 0.26.4",
@@ -2069,7 +2078,6 @@ dependencies = [
 [[package]]
 name = "stardust-xr-schemas"
 version = "1.5.3"
-source = "git+https://github.com/StardustXR/core.git#f19187dc1d0015b29e542010ad3e9dbd64d5645e"
 dependencies = [
  "flatbuffers",
  "flexbuffers",
@@ -2092,7 +2100,6 @@ dependencies = [
  "console-subscriber",
  "ctrlc",
  "directories",
- "drm-fourcc",
  "glam 0.23.0",
  "global_counter",
  "input-event-codes",
