@@ -6,7 +6,7 @@ mod wayland;
 
 use crate::core::client::CLIENTS;
 use crate::core::client_state::ClientState;
-use crate::core::destroy_queue;
+use crate::core::{destroy_queue, buffers};
 use crate::nodes::items::camera;
 use crate::nodes::{audio, drawable, hmd, input};
 use crate::objects::input::eye_pointer::EyePointer;
@@ -206,8 +206,10 @@ fn main() {
 	let event_loop_info = info_receiver.blocking_recv().unwrap();
 	let _tokio_handle = event_loop_info.tokio_handle.enter();
 
+	let mut buffer_manager = buffers::BufferManager::new().expect("Could not initialize buffer manager");
+
 	#[cfg(feature = "wayland")]
-	let mut wayland = wayland::Wayland::new().expect("Could not initialize wayland");
+	let mut wayland = wayland::Wayland::new(&buffer_manager).expect("Could not initialize wayland");
 	info!("Stardust ready!");
 
 	let mut startup_child = (|| {
@@ -300,13 +302,13 @@ fn main() {
 				);
 
 				#[cfg(feature = "wayland")]
-				wayland.update(sk);
+				wayland.update(sk, &mut buffer_manager);
 				drawable::draw(sk);
 				audio::update(sk);
-				#[cfg(feature = "wayland")]
-				wayland.make_context_current();
 
-				camera::update(sk);
+				buffer_manager.make_context_current();
+
+				camera::update(sk, &mut buffer_manager);
 			},
 			|_sk| {
 				info!("Cleanly shut down StereoKit");

@@ -3,7 +3,7 @@ use crate::{
 	core::{
 		client::{Client, INTERNAL_CLIENT},
 		registry::Registry,
-		scenegraph::MethodResponseSender,
+		scenegraph::MethodResponseSender, buffers::BufferManager,
 	},
 	nodes::{
 		drawable::{model::ModelPart, shaders::UNLIT_SHADER_BYTES, Drawable},
@@ -12,23 +12,23 @@ use crate::{
 		Message, Node,
 	},
 };
-use color_eyre::eyre::{bail, eyre, Result};
+use color_eyre::eyre::{bail, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::{RowMatrix4, Vector2};
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use rustc_hash::FxHashMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use smithay::{backend::{renderer::ImportDma, allocator::{dmabuf::{Dmabuf, DmabufFlags}, Modifier, Fourcc, Buffer}}, utils::Size};
 use stardust_xr::{
 	scenegraph::ScenegraphError,
 	schemas::flex::{deserialize, serialize},
 	values::Transform,
 };
-use std::sync::Arc;
+use std::{sync::Arc, ffi::c_void};
 use stereokit::{
-	Color128, Material, Rect, RenderLayer, StereoKitDraw, Tex, TextureType, Transparency,
+	Color128, Material, Rect, RenderLayer, StereoKitDraw, Tex, TextureType, Transparency, TextureFormat,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -49,13 +49,29 @@ struct FrameInfo {
 	preview_size: Vector2<u32>,
 }
 
+#[derive(Serialize, Deserialize)]
+struct BufferPlaneInfo{
+	idx: u32,
+	offset: u32,
+	stride: u32,
+	modifier: Modifier,
+}
+
+#[derive(Serialize, Deserialize)]
+struct BufferInfo {
+	size: (u32, u32),
+	fourcc: Fourcc,
+	flags: u32,
+	planes: Vec<BufferPlaneInfo>,
+}
+
 pub struct CameraItem {
 	space: Arc<Spatial>,
 	frame_info: Mutex<FrameInfo>,
-	sk_textures: Mutex<FxHashMap<(usize, usize), Tex>>,
+	sk_tex: OnceCell<Tex>,
 	sk_mat: OnceCell<Arc<Material>>,
-	render_requests_tx: mpsc::Sender<((usize, usize), oneshot::Sender<()>)>,
-	render_requests_rx: Mutex<mpsc::Receiver<((usize, usize), oneshot::Sender<()>)>>,
+	render_requests_tx: mpsc::Sender<(Dmabuf, oneshot::Sender<()>)>,
+	render_requests_rx: Mutex<mpsc::Receiver<(Dmabuf, oneshot::Sender<()>)>>,
 	rendered_notifiers: Mutex<Vec<oneshot::Sender<()>>>,
 	applied_to: Registry<ModelPart>,
 	apply_to: Registry<ModelPart>,
@@ -73,7 +89,7 @@ impl CameraItem {
 					proj_matrix,
 					preview_size,
 				}),
-				sk_textures: Mutex::new(FxHashMap::default()),
+				sk_tex: OnceCell::new(),
 				sk_mat: OnceCell::new(),
 				render_requests_tx,
 				render_requests_rx: Mutex::new(render_requests_rx),
@@ -89,21 +105,9 @@ impl CameraItem {
 		);
 	}
 
-	fn import_buffers_flex(
-		node: &Node,
-		calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let ItemType::Camera(camera) = &node.item.get().unwrap().specialization else {
-			bail!("Wrong item type?")
-		};
-
-		Ok(())
-	}
-
 	fn render_flex(
 		node: &Node,
-		calling_client: Arc<Client>,
+		_calling_client: Arc<Client>,
 		message: Message,
 		response: MethodResponseSender,
 	) {
@@ -116,17 +120,32 @@ impl CameraItem {
 
 		let (rendered_tx, rendered_rx) = oneshot::channel();
 
-		let buffer_to_render: (usize, usize) = (Arc::as_ptr(&calling_client) as usize, deserialize(&message.data).unwrap());
+		let buffer_info: BufferInfo = deserialize(&message.data).unwrap();
+		let mut fds = message.fds.iter();
+		let mut builder = Dmabuf::builder(
+			Into::<Size<i32, smithay::utils::Buffer>>::into((
+				buffer_info.size.0 as i32,
+				buffer_info.size.1 as i32,
+			)),
+			buffer_info.fourcc,
+			DmabufFlags::from_bits_truncate(buffer_info.flags),
+		);
+		for plane in buffer_info.planes {
+			builder.add_plane(
+				fds.next().unwrap().try_clone().unwrap(),
+				plane.idx,
+				plane.offset,
+				plane.stride,
+				plane.modifier,
+			);
+		}
+		let buffer_to_render = builder.build().unwrap();
 
-		tokio::task::spawn(async move {
-			camera
-				.render_requests_tx
-				.send((buffer_to_render, rendered_tx))
-				.await;
-
-			rendered_rx.await;
-			response.send(Ok(Vec::new().into()));
-		});
+        let _ = camera.render_requests_tx.try_send((buffer_to_render, rendered_tx));
+        tokio::task::spawn(async move {
+            let _ = rendered_rx.await;
+            response.send(Ok(Vec::new().into()));
+        });
 	}
 
 	fn apply_preview_material_flex(
@@ -156,18 +175,17 @@ impl CameraItem {
 		Ok(serialize(id)?.into())
 	}
 
-	pub fn update(&self, sk: &impl StereoKitDraw) {
+	pub fn update(&self, sk: &impl StereoKitDraw, buffer_manager: &mut BufferManager) {
 		let frame_info = self.frame_info.lock();
-		let mut sk_textures = self.sk_textures.lock();
 
 		if !self.apply_to.is_empty() {
-			let sk_tex = sk_textures.entry((0, 0)).or_insert_with(|| {
+			let sk_tex = self.sk_tex.get_or_init(|| {
 				sk.tex_gen_color(
 					Color128::default(),
 					frame_info.preview_size.x as i32,
 					frame_info.preview_size.y as i32,
 					TextureType::RENDER_TARGET,
-					stereokit::TextureFormat::RGBA32Linear,
+					TextureFormat::RGBA32Linear,
 				)
 			});
 			let sk_mat = self.sk_mat.get_or_init(|| {
@@ -184,7 +202,7 @@ impl CameraItem {
 
 		if !self.applied_to.is_empty() {
 			sk.render_to(
-				sk_textures.get(&(0, 0)).unwrap(),
+				self.sk_tex.get().unwrap(),
 				frame_info.proj_matrix,
 				self.space.global_transform(),
 				RenderLayer::all(),
@@ -201,12 +219,28 @@ impl CameraItem {
 		let mut render_notifiers = self.rendered_notifiers.lock();
 		let mut render_requests_rx = self.render_requests_rx.lock();
 		while let Ok((buffer_to_render, rendered_tx)) = render_requests_rx.try_recv() {
-			let Some(sk_tex) = sk_textures.get(&buffer_to_render).take() else {
-				// TODO: Consider allocating a new buffer in a or_insert_with (requires desired formats and a size)
-				// For now, rendering to no buffer means not rendering at all.
+			let Ok(smithay_tex) = buffer_manager.renderer.import_dmabuf(&buffer_to_render, None) else {
+				// TODO: Failed to import the buffer somehow. This fails gracefully, but silently.
 				render_notifiers.push(rendered_tx);
 				continue;
 			};
+
+			let sk_tex = sk.tex_create(
+				TextureType::IMAGE_NO_MIPS,
+				TextureFormat::RGBA32,
+			);
+			unsafe {
+				sk.tex_set_surface(
+					&sk_tex,
+					smithay_tex.tex_id() as usize as *mut c_void,
+					TextureType::IMAGE_NO_MIPS,
+					smithay::backend::renderer::gles::ffi::RGBA8.into(),
+					buffer_to_render.size().w,
+					buffer_to_render.size().h,
+					1,
+					false,
+				);
+			}
 
 			sk.render_to(
 				sk_tex,
@@ -227,17 +261,17 @@ impl CameraItem {
 
 	pub fn send_rendered(&self) {
 		for notifier in self.rendered_notifiers.lock().drain(..) {
-			notifier.send(());
+			let _ = notifier.send(());
 		}
 	}
 }
 
-pub fn update(sk: &impl StereoKitDraw) {
+pub fn update(sk: &impl StereoKitDraw, buffer_manager: &mut BufferManager) {
 	for camera in ITEM_TYPE_INFO_CAMERA.items.get_valid_contents() {
 		let ItemType::Camera(camera) = &camera.specialization else {
 			continue;
 		};
-		camera.update(sk);
+		camera.update(sk, buffer_manager);
 	}
 }
 
