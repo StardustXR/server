@@ -1,9 +1,10 @@
 use super::{Item, ItemType};
 use crate::{
 	core::{
+		buffers::BufferManager,
 		client::{Client, INTERNAL_CLIENT},
 		registry::Registry,
-		scenegraph::MethodResponseSender, buffers::BufferManager,
+		scenegraph::MethodResponseSender,
 	},
 	nodes::{
 		drawable::{model::ModelPart, shaders::UNLIT_SHADER_BYTES, Drawable},
@@ -19,24 +20,34 @@ use mint::{RowMatrix4, Vector2};
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
-use smithay::{backend::{renderer::ImportDma, allocator::{dmabuf::{Dmabuf, DmabufFlags}, Modifier, Fourcc, Buffer}}, utils::Size};
+use serde::Deserialize;
+use smithay::{
+	backend::{
+		allocator::{
+			dmabuf::{Dmabuf, DmabufFlags},
+			Buffer,
+		},
+		renderer::ImportDma,
+	},
+	utils::Size,
+};
 use stardust_xr::{
 	scenegraph::ScenegraphError,
 	schemas::flex::{deserialize, serialize},
-	values::Transform,
+	values::{BufferInfo, Transform},
 };
-use std::{sync::Arc, ffi::c_void};
+use std::{ffi::c_void, sync::Arc};
 use stereokit::{
-	Color128, Material, Rect, RenderLayer, StereoKitDraw, Tex, TextureType, Transparency, TextureFormat,
+	Color128, Material, Rect, RenderLayer, StereoKitDraw, Tex, TextureFormat, TextureType,
+	Transparency,
 };
 use tokio::sync::{mpsc, oneshot};
 
 lazy_static! {
 	pub(super) static ref ITEM_TYPE_INFO_CAMERA: TypeInfo = TypeInfo {
 		type_name: "camera",
-		aliased_local_signals: vec!["apply_preview_material", "frame"],
-		aliased_local_methods: vec![],
+		aliased_local_signals: vec!["apply_preview_material"],
+		aliased_local_methods: vec!["render"],
 		aliased_remote_signals: vec![],
 		ui: Default::default(),
 		items: Registry::new(),
@@ -47,22 +58,6 @@ lazy_static! {
 struct FrameInfo {
 	proj_matrix: Mat4,
 	preview_size: Vector2<u32>,
-}
-
-#[derive(Serialize, Deserialize)]
-struct BufferPlaneInfo{
-	idx: u32,
-	offset: u32,
-	stride: u32,
-	modifier: Modifier,
-}
-
-#[derive(Serialize, Deserialize)]
-struct BufferInfo {
-	size: (u32, u32),
-	fourcc: Fourcc,
-	flags: u32,
-	planes: Vec<BufferPlaneInfo>,
 }
 
 pub struct CameraItem {
@@ -141,11 +136,13 @@ impl CameraItem {
 		}
 		let buffer_to_render = builder.build().unwrap();
 
-        let _ = camera.render_requests_tx.try_send((buffer_to_render, rendered_tx));
-        tokio::task::spawn(async move {
-            let _ = rendered_rx.await;
-            response.send(Ok(Vec::new().into()));
-        });
+		let _ = camera
+			.render_requests_tx
+			.try_send((buffer_to_render, rendered_tx));
+		tokio::task::spawn(async move {
+			let _ = rendered_rx.await;
+			response.send(Ok(Vec::new().into()));
+		});
 	}
 
 	fn apply_preview_material_flex(
@@ -219,16 +216,16 @@ impl CameraItem {
 		let mut render_notifiers = self.rendered_notifiers.lock();
 		let mut render_requests_rx = self.render_requests_rx.lock();
 		while let Ok((buffer_to_render, rendered_tx)) = render_requests_rx.try_recv() {
-			let Ok(smithay_tex) = buffer_manager.renderer.import_dmabuf(&buffer_to_render, None) else {
+			let Ok(smithay_tex) = buffer_manager
+				.renderer
+				.import_dmabuf(&buffer_to_render, None)
+			else {
 				// TODO: Failed to import the buffer somehow. This fails gracefully, but silently.
 				render_notifiers.push(rendered_tx);
 				continue;
 			};
 
-			let sk_tex = sk.tex_create(
-				TextureType::IMAGE_NO_MIPS,
-				TextureFormat::RGBA32,
-			);
+			let sk_tex = sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32);
 			unsafe {
 				sk.tex_set_surface(
 					&sk_tex,
@@ -295,7 +292,7 @@ pub(super) fn create_camera_item_flex(
 		parent_path: &'a str,
 		transform: Transform,
 		proj_matrix: RowMatrix4<f32>,
-		px_size: Vector2<u32>,
+		preview_size: Vector2<u32>,
 	}
 	let info: CreateCameraItemInfo = deserialize(message.as_ref())?;
 	let parent_name = format!("/item/{}/item", ITEM_TYPE_INFO_CAMERA.type_name);
@@ -305,7 +302,7 @@ pub(super) fn create_camera_item_flex(
 	let node =
 		Node::create(&INTERNAL_CLIENT, &parent_name, info.name, false).add_to_scenegraph()?;
 	Spatial::add_to(&node, None, transform * space.global_transform(), false)?;
-	CameraItem::add_to(&node, info.proj_matrix.into(), info.px_size);
+	CameraItem::add_to(&node, info.proj_matrix.into(), info.preview_size);
 	node.item
 		.get()
 		.unwrap()
