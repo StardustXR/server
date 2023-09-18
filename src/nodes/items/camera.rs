@@ -21,15 +21,12 @@ use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use serde::Deserialize;
-use smithay::{
-	backend::{
-		allocator::{
-			dmabuf::{Dmabuf, DmabufFlags},
-			Buffer,
-		},
-		renderer::ImportDma,
+use smithay::backend::{
+	allocator::{
+		dmabuf::{Dmabuf, DmabufFlags},
+		Buffer,
 	},
-	utils::Size,
+	renderer::ImportDma,
 };
 use stardust_xr::{
 	scenegraph::ScenegraphError,
@@ -41,7 +38,7 @@ use stereokit::{
 	Color128, Material, Rect, RenderLayer, StereoKitDraw, Tex, TextureFormat, TextureType,
 	Transparency,
 };
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::{self, error::SendError};
 
 lazy_static! {
 	pub(super) static ref ITEM_TYPE_INFO_CAMERA: TypeInfo = TypeInfo {
@@ -65,15 +62,15 @@ pub struct CameraItem {
 	frame_info: Mutex<FrameInfo>,
 	sk_tex: OnceCell<Tex>,
 	sk_mat: OnceCell<Arc<Material>>,
-	render_requests_tx: mpsc::Sender<(Dmabuf, MethodResponseSender)>,
-	render_requests_rx: Mutex<mpsc::Receiver<(Dmabuf, MethodResponseSender)>>,
+	render_requests_tx: mpsc::UnboundedSender<(Dmabuf, MethodResponseSender)>,
+	render_requests_rx: Mutex<mpsc::UnboundedReceiver<(Dmabuf, MethodResponseSender)>>,
 	rendered_notifiers: Mutex<Vec<MethodResponseSender>>,
 	applied_preview_to: Registry<ModelPart>,
 	apply_preview_to: Registry<ModelPart>,
 }
 impl CameraItem {
 	pub fn add_to(node: &Arc<Node>, proj_matrix: Mat4, preview_size: Vector2<u32>) {
-		let (render_requests_tx, render_requests_rx) = mpsc::channel(5);
+		let (render_requests_tx, render_requests_rx) = mpsc::unbounded_channel();
 		let camera_specialization = CameraItem {
 			space: node.spatial.get().unwrap().clone(),
 			frame_info: Mutex::new(FrameInfo {
@@ -118,38 +115,38 @@ impl CameraItem {
 			return
 		};
 
-		let buffer_info: BufferInfo = deserialize(&message.data).unwrap();
-		let mut fds = message.fds.iter();
+		let buffer_info: BufferInfo = match deserialize(&message.data) {
+			Ok(i) => i,
+			Err(e) => {
+				let _ = response.send(Err(ScenegraphError::MethodError {
+					error: e.to_string(),
+				}));
+				return;
+			}
+		};
 		let mut builder = Dmabuf::builder(
-			Into::<Size<i32, smithay::utils::Buffer>>::into((
-				buffer_info.size.0 as i32,
-				buffer_info.size.1 as i32,
-			)),
-			buffer_info.fourcc,
+			(buffer_info.width as i32, buffer_info.height as i32),
+			buffer_info.fourcc.try_into().unwrap(),
 			DmabufFlags::from_bits_truncate(buffer_info.flags),
 		);
-		for plane in buffer_info.planes {
+		for (fd, plane) in message.fds.into_iter().zip(buffer_info.planes) {
 			builder.add_plane(
-				fds.next().unwrap().try_clone().unwrap(),
+				fd,
 				plane.idx,
 				plane.offset,
 				plane.stride,
-				plane.modifier,
+				plane.modifier.try_into().unwrap(),
 			);
 		}
 		let buffer_to_render = builder.build().unwrap();
 
-		let _ = camera
-			.render_requests_tx
-			.try_send((buffer_to_render, response));
-		// tokio::task::spawn(async move {
-		// 	let result = rendered_rx.await;
-		// 	response.wrap_sync(|| {
-		// 		let result = result.map_err(|_| eyre!("failed to recieve response"))?;
-		// 		result.map_err(|e| eyre!(e))?;
-		// 		Ok(Message::from(Vec::new()))
-		// 	});
-		// });
+		if let Err(SendError((_dmabuf, sender))) =
+			camera.render_requests_tx.send((buffer_to_render, response))
+		{
+			sender.send(Err(ScenegraphError::MethodError {
+				error: "Internal: sender broke????".to_string(),
+			}));
+		}
 	}
 
 	fn apply_preview_material_flex(
@@ -214,8 +211,8 @@ impl CameraItem {
 		if !self.applied_preview_to.is_empty() {
 			sk.render_to(
 				self.sk_tex.get().unwrap(),
-				frame_info.proj_matrix,
 				self.space.global_transform(),
+				frame_info.proj_matrix,
 				RenderLayer::all(),
 				stereokit::RenderClear::All,
 				Rect {
@@ -250,12 +247,12 @@ impl CameraItem {
 				}
 			};
 
-			let sk_tex = sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32);
+			let sk_tex = sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32Linear);
 			unsafe {
 				sk.tex_set_surface(
 					&sk_tex,
 					smithay_tex.tex_id() as usize as *mut c_void,
-					TextureType::IMAGE_NO_MIPS,
+					TextureType::RENDER_TARGET,
 					smithay::backend::renderer::gles::ffi::RGBA8.into(),
 					buffer_to_render.size().w,
 					buffer_to_render.size().h,
@@ -266,8 +263,8 @@ impl CameraItem {
 
 			sk.render_to(
 				sk_tex,
-				frame_info.proj_matrix,
 				self.space.global_transform(),
+				frame_info.proj_matrix,
 				RenderLayer::all(),
 				stereokit::RenderClear::All,
 				Rect {
