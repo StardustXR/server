@@ -105,14 +105,16 @@ impl CameraItem {
 		response: MethodResponseSender,
 	) {
 		let Some(item) = node.item.get() else {
-			let _ = response.send(Err(ScenegraphError::MethodError { error: "Item not found".to_string() }));
-			return
+			let _ = response.send(Err(ScenegraphError::MethodError {
+				error: "Item not found".to_string(),
+			}));
+			return;
 		};
 		let ItemType::Camera(camera) = &item.specialization else {
 			let _ = response.send(Err(ScenegraphError::MethodError {
 				error: "Wrong item type?".to_string(),
 			}));
-			return
+			return;
 		};
 
 		let buffer_info: BufferInfo = match deserialize(&message.data) {
@@ -247,13 +249,13 @@ impl CameraItem {
 				}
 			};
 
-			let sk_tex = sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32Linear);
+			let sk_tex = sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32);
 			unsafe {
 				sk.tex_set_surface(
 					&sk_tex,
 					smithay_tex.tex_id() as usize as *mut c_void,
 					TextureType::RENDER_TARGET,
-					smithay::backend::renderer::gles::ffi::RGBA8.into(),
+					smithay::backend::renderer::gles::ffi::SRGB8_ALPHA8.into(),
 					buffer_to_render.size().w,
 					buffer_to_render.size().h,
 					1,
