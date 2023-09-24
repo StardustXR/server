@@ -54,12 +54,16 @@ impl SkHand {
 		})
 	}
 	#[instrument(level = "debug", name = "Update Hand Input Method", skip_all)]
-	pub fn update(&mut self, sk: &impl StereoKitMultiThread) {
+	pub fn update(&mut self, controller_enabled: bool, sk: &impl StereoKitMultiThread) {
 		let sk_hand = sk.input_hand(self.handed);
 		if let InputType::Hand(hand) = &mut *self.input.specialization.lock() {
-			let controller = sk.input_controller(self.handed);
-			*self.input.enabled.lock() = !controller.tracked.contains(ButtonState::ACTIVE)
-				&& sk_hand.tracked_state.contains(ButtonState::ACTIVE);
+			let controller_active = controller_enabled
+				&& sk
+					.input_controller(self.handed)
+					.tracked
+					.contains(ButtonState::ACTIVE);
+			*self.input.enabled.lock() =
+				!controller_active && sk_hand.tracked_state.contains(ButtonState::ACTIVE);
 			sk.input_hand_visible(self.handed, *self.input.enabled.lock());
 			if *self.input.enabled.lock() {
 				hand.base.thumb.tip = convert_joint(sk_hand.fingers[0][4]);
