@@ -39,6 +39,10 @@ lazy_static! {
 			"pointer_scroll",
 			"keyboard_keymap",
 			"keyboard_key",
+			"touch_down",
+			"touch_move",
+			"touch_up",
+			"reset_touches",
 		],
 		aliased_local_methods: vec![],
 		aliased_remote_signals: vec![
@@ -191,6 +195,11 @@ pub trait Backend: Send + Sync + 'static {
 	);
 
 	fn keyboard_keys(&self, surface: &SurfaceID, keymap_id: &str, keys: Vec<i32>);
+
+	fn touch_down(&self, surface: &SurfaceID, id: u32, position: Vector2<f32>);
+	fn touch_move(&self, id: u32, position: Vector2<f32>);
+	fn touch_up(&self, id: u32);
+	fn reset_touches(&self);
 }
 
 pub fn panel_item_from_node(node: &Node) -> Option<Arc<dyn PanelItemTrait>> {
@@ -252,13 +261,21 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		node.add_local_signal("apply_surface_material", Self::apply_surface_material_flex);
 		node.add_local_signal("close_toplevel", Self::close_toplevel_flex);
 		node.add_local_signal("auto_size_toplevel", Self::auto_size_toplevel_flex);
-		node.add_local_signal("set_toplevel_size_changed", Self::set_toplevel_size_changed);
+		node.add_local_signal(
+			"set_toplevel_size_changed",
+			Self::set_toplevel_size_changed_flex,
+		);
 
 		node.add_local_signal("pointer_motion", Self::pointer_motion_flex);
 		node.add_local_signal("pointer_button", Self::pointer_button_flex);
 		node.add_local_signal("pointer_scroll", Self::pointer_scroll_flex);
 
 		node.add_local_signal("keyboard_key", Self::keyboard_keys_flex);
+
+		node.add_local_signal("touch_down", Self::touch_down_flex);
+		node.add_local_signal("touch_move", Self::touch_move_flex);
+		node.add_local_signal("touch_up", Self::touch_up_flex);
+		node.add_local_signal("reset_touches", Self::reset_touches_flex);
 
 		panel_item
 	}
@@ -369,7 +386,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 
 	flex_no_args!(close_toplevel_flex, close_toplevel);
 	flex_no_args!(auto_size_toplevel_flex, auto_size_toplevel);
-	flex_deserialize!(set_toplevel_size_changed, set_toplevel_size);
+	flex_deserialize!(set_toplevel_size_changed_flex, set_toplevel_size);
 
 	fn pointer_motion_flex(
 		node: &Node,
@@ -439,6 +456,30 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		let Ok(message) = serialize(sid) else {return};
 		let _ = node.send_remote_signal("grab_keyboard", message);
 	}
+
+	fn touch_down_flex(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
+		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+
+		let (surface_id, id, position): (SurfaceID, u32, Vector2<f32>) =
+			deserialize(message.as_ref())?;
+		debug!(?surface_id, id, ?position, "Touch down");
+
+		panel_item.touch_down(&surface_id, id, position);
+
+		Ok(())
+	}
+	fn touch_move_flex(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
+		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+
+		let (id, position): (u32, Vector2<f32>) = deserialize(message.as_ref())?;
+		debug!(?position, "Touch move");
+
+		panel_item.touch_move(id, position);
+
+		Ok(())
+	}
+	flex_deserialize!(touch_up_flex, touch_up);
+	flex_no_args!(reset_touches_flex, reset_touches);
 }
 impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
 	fn uid(&self) -> &str {
@@ -489,6 +530,19 @@ impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 
 	fn keyboard_keys(&self, surface: &SurfaceID, keymap_id: &str, keys: Vec<i32>) {
 		self.backend.keyboard_keys(surface, keymap_id, keys)
+	}
+
+	fn touch_down(&self, surface: &SurfaceID, id: u32, position: Vector2<f32>) {
+		self.backend.touch_down(surface, id, position)
+	}
+	fn touch_move(&self, id: u32, position: Vector2<f32>) {
+		self.backend.touch_move(id, position)
+	}
+	fn touch_up(&self, id: u32) {
+		self.backend.touch_up(id)
+	}
+	fn reset_touches(&self) {
+		self.backend.reset_touches()
 	}
 }
 impl<B: Backend + ?Sized> Drop for PanelItem<B> {

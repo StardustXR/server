@@ -279,6 +279,7 @@ pub struct SeatData {
 	pointer: OnceCell<(WlPointer, Mutex<ObjectId>)>,
 	keyboard: OnceCell<(WlKeyboard, Mutex<ObjectId>)>,
 	touch: OnceCell<WlTouch>,
+	touches: Mutex<FxHashMap<ObjectId, u32>>,
 }
 impl SeatData {
 	pub fn new(dh: &DisplayHandle) -> Arc<Self> {
@@ -289,6 +290,7 @@ impl SeatData {
 			pointer: OnceCell::new(),
 			keyboard: OnceCell::new(),
 			touch: OnceCell::new(),
+			touches: Mutex::new(FxHashMap::default()),
 		});
 
 		let _ = seat_data
@@ -418,6 +420,36 @@ impl SeatData {
 				*keyboard_focus = ObjectId::null();
 			}
 		}
+		self.touches.lock().remove(&surface.id());
+	}
+
+	pub fn touch_down(&self, surface: &WlSurface, id: u32, position: Vector2<f32>) {
+		let Some(touch) = self.touch.get() else {return};
+		touch.down(
+			SERIAL_COUNTER.inc(),
+			0,
+			surface,
+			id as i32,
+			position.x as f64,
+			position.y as f64,
+		);
+		self.touches.lock().insert(surface.id(), id);
+	}
+	pub fn touch_move(&self, id: u32, position: Vector2<f32>) {
+		let Some(touch) = self.touch.get() else {return};
+		touch.motion(0, id as i32, position.x as f64, position.y as f64);
+	}
+	pub fn touch_up(&self, id: u32) {
+		let Some(touch) = self.touch.get() else {return};
+		touch.up(SERIAL_COUNTER.inc(), 0, id as i32);
+		let mut touches = self.touches.lock();
+		touches.retain(|_, tid| *tid != id);
+	}
+	pub fn reset_touches(&self) {
+		let Some(touch) = self.touch.get() else {return};
+		for (_, touch_id) in self.touches.lock().drain() {
+			touch.up(SERIAL_COUNTER.inc(), 0, touch_id as i32);
+		}
 	}
 }
 
@@ -451,7 +483,7 @@ impl GlobalDispatch<WlSeat, Arc<SeatData>, WaylandState> for WaylandState {
 			resource.name(nanoid!());
 		}
 
-		resource.capabilities(Capability::Pointer | Capability::Keyboard);
+		resource.capabilities(Capability::Pointer | Capability::Keyboard | Capability::Touch);
 	}
 
 	fn can_view(client: Client, data: &Arc<SeatData>) -> bool {
