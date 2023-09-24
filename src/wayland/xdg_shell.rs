@@ -1031,4 +1031,18 @@ impl Backend for XDGBackend {
 			);
 		}
 	}
+
+	fn touch_down(&self, surface: &SurfaceID, id: u32, position: Vector2<f32>) {
+		let Some(surface) = self.wl_surface_from_id(surface) else {return};
+		self.seat.touch_down(&surface, id, position)
+	}
+	fn touch_move(&self, id: u32, position: Vector2<f32>) {
+		self.seat.touch_move(id, position)
+	}
+	fn touch_up(&self, id: u32) {
+		self.seat.touch_up(id)
+	}
+	fn reset_touches(&self) {
+		self.seat.reset_touches()
+	}
 }
