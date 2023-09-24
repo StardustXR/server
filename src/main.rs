@@ -251,8 +251,8 @@ fn main() {
 					mouse_pointer.update(sk);
 				}
 				if let Some((left_hand, right_hand)) = &mut hands {
-					left_hand.update(sk);
-					right_hand.update(sk);
+					left_hand.update(!cli_args.disable_controller, sk);
+					right_hand.update(!cli_args.disable_controller, sk);
 				}
 				if let Some((left_controller, right_controller)) = &mut controllers {
 					left_controller.update(sk);
