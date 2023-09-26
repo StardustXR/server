@@ -29,10 +29,8 @@ use smithay::reexports::{
 		xdg_wm_base::{self, XdgWmBase},
 	},
 	wayland_server::{
-		backend::{ClientId, ObjectId},
-		protocol::wl_surface::WlSurface,
-		Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum,
-		Weak as WlWeak,
+		backend::ClientId, protocol::wl_surface::WlSurface, Client, DataInit, Dispatch,
+		DisplayHandle, GlobalDispatch, New, Resource, WEnum, Weak as WlWeak,
 	},
 };
 use std::{
@@ -740,7 +738,7 @@ impl Dispatch<XdgPopup, Mutex<PopupData>, WaylandState> for WaylandState {
 	fn destroyed(
 		_state: &mut WaylandState,
 		_client: ClientId,
-		_resource: ObjectId,
+		_popup: &XdgPopup,
 		data: &Mutex<PopupData>,
 	) {
 		let data = data.lock();

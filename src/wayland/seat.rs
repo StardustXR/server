@@ -36,7 +36,7 @@ use std::{
 };
 use tokio::sync::watch;
 use tracing::{debug, warn};
-use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keymap};
+use xkbcommon::xkb::{self, ffi::XKB_KEYMAP_FORMAT_TEXT_V1, Keycode, Keymap};
 
 pub fn handle_cursor<B: Backend>(
 	panel_item: &Arc<PanelItem<B>>,
@@ -75,7 +75,7 @@ impl KeyboardInfo {
 		} else {
 			xkb::KeyDirection::Up
 		};
-		let state_components = self.state.update_key(key + 8, xkb_key_state);
+		let state_components = self.state.update_key(Keycode::new(key + 8), xkb_key_state);
 		if state_components != 0 {
 			self.mods.update_with(&self.state);
 			keyboard.modifiers(
