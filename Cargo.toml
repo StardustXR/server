@@ -51,7 +51,7 @@ rustc-hash = "1.1.0"
 tokio = { version = "1.27.0", features = ["rt-multi-thread", "signal"] }
 send_wrapper = "0.6.0"
 prisma = "0.1.1"
-stardust-xr = "0.14.0"
+stardust-xr = "0.14.1"
 directories = "5.0.0"
 serde = { version = "1.0.160", features = ["derive"] }
 serde_repr = "0.1.16"
