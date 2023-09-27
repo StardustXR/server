@@ -2063,9 +2063,9 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr-schemas"
-version = "1.5.2"
+version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6c9d64628296b42a49f86a1523e9c7dca81d723a1a07bd7d56b1a9798f0a762"
+checksum = "68d1cc2732943497bc7ae6a55630d18bb2efdcfd0ea9462340ac703724bf1372"
 dependencies = [
  "flatbuffers",
  "flexbuffers",

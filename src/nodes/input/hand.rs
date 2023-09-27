@@ -31,7 +31,7 @@ impl InputSpecialization for Hand {
 	}
 	fn serialize(
 		&self,
-		_distance_link: &DistanceLink,
+		distance_link: &DistanceLink,
 		local_to_handler_matrix: Mat4,
 	) -> InputDataType {
 		let mut hand = self.base;
@@ -68,6 +68,10 @@ impl InputSpecialization for Hand {
 			let (_, rotation, position) = joint_matrix.to_scale_rotation_translation();
 			joint.position = position.into();
 			joint.rotation = rotation.into();
+			joint.distance = distance_link
+				.handler
+				.field
+				.distance(&distance_link.handler.spatial, position.into());
 		}
 
 		InputDataType::Hand(Box::new(hand))

@@ -20,6 +20,7 @@ fn convert_joint(joint: HandJoint) -> Joint {
 		position: joint.position.into(),
 		rotation: joint.orientation.into(),
 		radius: joint.radius,
+		distance: 0.0,
 	}
 }
 
