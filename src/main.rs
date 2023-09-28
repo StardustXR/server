@@ -29,6 +29,7 @@ use stereokit::{
 	TextureFormat, TextureType,
 };
 use stereokit::{DisplayBlend, Sk};
+use tokio::sync::Notify;
 use tokio::task::LocalSet;
 use tokio::{runtime::Handle, sync::oneshot};
 use tracing::metadata::LevelFilter;
@@ -57,13 +58,14 @@ struct CliArgs {
 
 static STARDUST_INSTANCE: OnceCell<String> = OnceCell::new();
 static SK_MULTITHREAD: OnceCell<Sk> = OnceCell::new();
+static STOP_NOTIFIER: Notify = Notify::const_new();
 
 struct EventLoopInfo {
 	tokio_handle: Handle,
 	socket_path: PathBuf,
 }
 
-fn main() {
+fn setup_tracing() {
 	let registry = tracing_subscriber::registry();
 	#[cfg(feature = "profile_app")]
 	let (chrome_layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
@@ -83,6 +85,12 @@ fn main() {
 		.with_line_number(true)
 		.with_filter(EnvFilter::from_default_env());
 	registry.with(log_layer).init();
+}
+
+fn main() {
+	ctrlc::set_handler(|| STOP_NOTIFIER.notify_waiters()).unwrap();
+
+	setup_tracing();
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");
 	if project_dirs.is_none() {
@@ -183,11 +191,10 @@ fn main() {
 		.then(|| PlaySpace::new().ok())
 		.flatten();
 
-	let (event_stop_tx, event_stop_rx) = oneshot::channel::<()>();
 	let (info_sender, info_receiver) = oneshot::channel::<EventLoopInfo>();
 	let event_thread = std::thread::Builder::new()
 		.name("event_loop".to_owned())
-		.spawn(move || event_loop(info_sender, event_stop_rx))
+		.spawn(move || event_loop(info_sender))
 		.unwrap();
 	let event_loop_info = info_receiver.blocking_recv().unwrap();
 	let _tokio_handle = event_loop_info.tokio_handle.enter();
@@ -196,7 +203,8 @@ fn main() {
 	let mut wayland = wayland::Wayland::new().expect("Could not initialize wayland");
 	info!("Stardust ready!");
 
-	let mut startup_child = if let Some(project_dirs) = project_dirs.as_ref() {
+	let mut startup_child = (|| {
+		let project_dirs = project_dirs.as_ref()?;
 		let startup_script_path = cli_args
 			.startup_script
 			.clone()
@@ -231,10 +239,9 @@ fn main() {
 			startup_command.env("CLUTTER_BACKEND", "wayland");
 			startup_command.env("SDL_VIDEODRIVER", "wayland");
 		}
-		startup_command.spawn().ok()
-	} else {
-		None
-	};
+		let child = startup_command.spawn().ok()?;
+		Some(child)
+	})();
 
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
@@ -295,7 +302,8 @@ fn main() {
 
 	#[cfg(feature = "wayland")]
 	drop(wayland);
-	let _ = event_stop_tx.send(());
+
+	STOP_NOTIFIER.notify_waiters();
 	event_thread
 		.join()
 		.expect("Failed to cleanly shut down event loop")
@@ -329,10 +337,7 @@ fn adaptive_sleep(
 
 #[tokio::main]
 // #[tokio::main(flavor = "current_thread")]
-async fn event_loop(
-	info_sender: oneshot::Sender<EventLoopInfo>,
-	stop_rx: oneshot::Receiver<()>,
-) -> color_eyre::eyre::Result<()> {
+async fn event_loop(info_sender: oneshot::Sender<EventLoopInfo>) -> color_eyre::eyre::Result<()> {
 	let socket_path =
 		server::get_free_socket_path().expect("Unable to find a free stardust socket path");
 	STARDUST_INSTANCE.set(socket_path.file_name().unwrap().to_string_lossy().into_owned()).expect("Someone hasn't done their job, yell at Nova because how is this set multiple times what the hell");
@@ -347,15 +352,8 @@ async fn event_loop(
 		socket_path,
 	});
 
-	if atty::is(atty::Stream::Stdin) {
-		stop_rx.await?;
-	} else {
-		tokio::select! {
-			biased;
-			_ = tokio::signal::ctrl_c() => (),
-			_ = stop_rx => (),
-		};
-	}
+	STOP_NOTIFIER.notified().await;
+	println!("Stopping...");
 	save_clients().await;
 
 	info!("Cleanly shut down event loop");
