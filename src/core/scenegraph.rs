@@ -2,6 +2,8 @@ use crate::nodes::Node;
 use crate::{core::client::Client, nodes::Message};
 use color_eyre::eyre::Result;
 use once_cell::sync::OnceCell;
+use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use stardust_xr::scenegraph;
 use stardust_xr::scenegraph::ScenegraphError;
 use std::os::fd::OwnedFd;
@@ -9,14 +11,10 @@ use std::sync::{Arc, Weak};
 use tokio::sync::oneshot;
 use tracing::{debug, debug_span, instrument};
 
-use core::hash::BuildHasherDefault;
-use dashmap::DashMap;
-use rustc_hash::FxHasher;
-
 #[derive(Default)]
 pub struct Scenegraph {
 	pub(super) client: OnceCell<Weak<Client>>,
-	nodes: DashMap<String, Arc<Node>, BuildHasherDefault<FxHasher>>,
+	nodes: Mutex<FxHashMap<String, Arc<Node>>>,
 }
 
 impl Scenegraph {
@@ -32,12 +30,12 @@ impl Scenegraph {
 	pub fn add_node_raw(&self, node: Arc<Node>) {
 		debug!(node = ?&*node, "Add node");
 		let path = node.get_path().to_string();
-		self.nodes.insert(path, node);
+		self.nodes.lock().insert(path, node);
 	}
 
 	#[instrument(level = "debug", skip(self))]
 	pub fn get_node(&self, path: &str) -> Option<Arc<Node>> {
-		let mut node = self.nodes.get(path)?.clone();
+		let mut node = self.nodes.lock().get(path)?.clone();
 		while let Some(alias) = node.alias.get() {
 			node = alias.original.upgrade()?;
 		}
@@ -46,8 +44,7 @@ impl Scenegraph {
 
 	pub fn remove_node(&self, path: &str) -> Option<Arc<Node>> {
 		debug!(path, "Remove node");
-		let (_, node) = self.nodes.remove(path)?;
-		Some(node)
+		self.nodes.lock().remove(path)
 	}
 }
 

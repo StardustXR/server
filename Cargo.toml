@@ -39,7 +39,6 @@ lto = true
 [dependencies]
 color-eyre = { version = "0.6.2", default-features = false }
 clap = { version = "4.2.4", features = ["derive"] }
-dashmap = "5.4.0"
 glam = { version = "0.23.0", features = ["mint"] }
 lazy_static = "1.4.0"
 mint = "0.5.9"

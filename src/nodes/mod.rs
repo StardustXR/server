@@ -11,13 +11,11 @@ pub mod spatial;
 pub mod startup;
 
 use color_eyre::eyre::{eyre, Result};
-use core::hash::BuildHasherDefault;
-use dashmap::DashMap;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
-use rustc_hash::FxHasher;
+use rustc_hash::FxHashMap;
 use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::deserialize;
@@ -70,8 +68,8 @@ pub struct Node {
 	client: Weak<Client>,
 	message_sender_handle: Option<MessageSenderHandle>,
 	// trailing_slash_pos: usize,
-	local_signals: DashMap<String, Signal, BuildHasherDefault<FxHasher>>,
-	local_methods: DashMap<String, Method, BuildHasherDefault<FxHasher>>,
+	local_signals: Mutex<FxHashMap<String, Signal>>,
+	local_methods: Mutex<FxHashMap<String, Method>>,
 	destroyable: bool,
 
 	pub alias: OnceCell<Arc<Alias>>,
@@ -198,10 +196,10 @@ impl Node {
 	}
 
 	pub fn add_local_signal(&self, name: &str, signal: Signal) {
-		self.local_signals.insert(name.to_string(), signal);
+		self.local_signals.lock().insert(name.to_string(), signal);
 	}
 	pub fn add_local_method(&self, name: &str, method: Method) {
-		self.local_methods.insert(name.to_string(), method);
+		self.local_methods.lock().insert(name.to_string(), method);
 	}
 
 	pub fn get_aspect<F, T>(
@@ -236,7 +234,9 @@ impl Node {
 		} else {
 			let signal = self
 				.local_signals
+				.lock()
 				.get(method)
+				.cloned()
 				.ok_or(ScenegraphError::SignalNotFound)?;
 			signal(self, calling_client, message).map_err(|error| ScenegraphError::SignalError {
 				error: error.to_string(),
@@ -269,7 +269,7 @@ impl Node {
 				response,
 			)
 		} else {
-			let Some(method) = self.local_methods.get(method) else {
+			let Some(method) = self.local_methods.lock().get(method).cloned() else {
 				response.send(Err(ScenegraphError::MethodNotFound));
 				return;
 			};
