@@ -191,7 +191,7 @@ impl Client {
 	}
 	pub async fn save_state(&self) -> Option<ClientState> {
 		let internal = self.root.get()?.save_state().await.ok()?;
-		Some(dbg!(ClientState::from_deserialized(self, internal)))
+		Some(ClientState::from_deserialized(self, internal))
 	}
 
 	#[inline]
