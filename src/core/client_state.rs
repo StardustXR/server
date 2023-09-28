@@ -1,19 +1,34 @@
-use super::client::Client;
+use super::client::{get_env, Client};
 use crate::nodes::{spatial::Spatial, Node};
 use glam::Mat4;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use std::{path::PathBuf, sync::Arc};
+use std::{io::Write, path::PathBuf, sync::Arc};
 
 lazy_static::lazy_static! {
 	pub static ref CLIENT_STATES: Mutex<FxHashMap<String, Arc<ClientState>>> = Default::default();
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct LaunchInfo {
+	pub cmdline: Vec<String>,
+	pub cwd: PathBuf,
+	pub env: FxHashMap<String, String>,
+}
+impl LaunchInfo {
+	fn from_client(client: &Client) -> Option<Self> {
+		Some(LaunchInfo {
+			cmdline: client.get_cmdline()?,
+			cwd: client.get_cwd()?,
+			env: get_env(client.pid?).ok()?,
+		})
+	}
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ClientState {
-	pub cmdline: Option<Vec<String>>,
-	pub cwd: Option<PathBuf>,
+	pub launch_info: Option<LaunchInfo>,
 	pub data: Option<Vec<u8>>,
 	pub root: Mat4,
 	pub spatial_anchors: FxHashMap<String, Mat4>,
@@ -21,8 +36,7 @@ pub struct ClientState {
 impl ClientState {
 	pub fn from_deserialized(client: &Client, state: ClientStateInternal) -> Self {
 		ClientState {
-			cmdline: client.get_cmdline(),
-			cwd: client.get_cwd(),
+			launch_info: LaunchInfo::from_client(client),
 			data: state.data,
 			root: Self::spatial_transform(client, &state.root.unwrap_or_default())
 				.unwrap_or_default(),
@@ -45,11 +59,12 @@ impl ClientState {
 		token
 	}
 	pub fn to_file(self) {
-		let state_dir = directories::ProjectDirs::from("", "", "stardust")
-			.unwrap()
-			.state_dir()
+		let project_dirs = directories::ProjectDirs::from("", "", "stardust").unwrap();
+		let state_dir = project_dirs.state_dir().unwrap();
+		std::fs::create_dir_all(state_dir).unwrap();
+		let mut file = std::fs::File::create(state_dir.join(nanoid::nanoid!())).unwrap();
+		file.write_all(&stardust_xr::schemas::flex::flexbuffers::to_vec(self).unwrap())
 			.unwrap();
-		// std::fs::File::create(state_dir.join(""))
 	}
 	pub fn apply_to(&self, client: &Arc<Client>) -> ClientStateInternal {
 		if let Some(root) = client.root.get() {
@@ -77,8 +92,7 @@ impl ClientState {
 impl Default for ClientState {
 	fn default() -> Self {
 		Self {
-			cmdline: None,
-			cwd: None,
+			launch_info: None,
 			data: None,
 			root: Mat4::IDENTITY,
 			spatial_anchors: Default::default(),
