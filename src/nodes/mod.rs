@@ -8,7 +8,6 @@ pub mod input;
 pub mod items;
 pub mod root;
 pub mod spatial;
-pub mod startup;
 
 use color_eyre::eyre::{eyre, Result};
 use nanoid::nanoid;
@@ -20,6 +19,7 @@ use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::deserialize;
 use std::fmt::Debug;
+use std::future::Future;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
@@ -38,8 +38,8 @@ use self::input::{InputHandler, InputMethod};
 use self::items::{Item, ItemAcceptor, ItemUI};
 use self::spatial::zone::Zone;
 use self::spatial::Spatial;
-use self::startup::StartupSettings;
 
+#[derive(Default)]
 pub struct Message {
 	pub data: Vec<u8>,
 	pub fds: Vec<OwnedFd>,
@@ -97,9 +97,6 @@ pub struct Node {
 
 	// Sound
 	pub sound: OnceCell<Arc<Sound>>,
-
-	// Startup
-	pub startup_settings: OnceCell<Mutex<StartupSettings>>,
 }
 
 impl Node {
@@ -143,7 +140,6 @@ impl Node {
 			item_acceptor: OnceCell::new(),
 			item_ui: OnceCell::new(),
 			sound: OnceCell::new(),
-			startup_settings: OnceCell::new(),
 		};
 		node.add_local_signal("set_enabled", Node::set_enabled_flex);
 		node.add_local_signal("destroy", Node::destroy_flex);
@@ -302,20 +298,30 @@ impl Node {
 		Ok(())
 	}
 	// #[instrument(level = "debug", skip_all)]
-	// pub fn execute_remote_method(
-	// 	&self,
-	// 	method: &str,
-	// 	data: Vec<u8>,
-	// ) -> Result<impl Future<Output = Result<Message>>> {
-	// 	let message_sender_handle = self
-	// 		.message_sender_handle
-	// 		.as_ref()
-	// 		.ok_or(eyre!("Messenger does not exist for this node"))?;
+	pub fn execute_remote_method(
+		&self,
+		method: &str,
+		message: impl Into<Message>,
+	) -> Result<impl Future<Output = Result<Message>>> {
+		let message = message.into();
+		let message_sender_handle = self
+			.message_sender_handle
+			.as_ref()
+			.ok_or(eyre!("Messenger does not exist for this node"))?;
 
-	// 	let future = message_sender_handle.method(self.path.as_str(), method, &data)?;
+		let future =
+			message_sender_handle.method(self.path.as_str(), method, &message.data, message.fds)?;
 
-	// 	Ok(async { future.await.map_err(|e| eyre!(e)) })
-	// }
+		Ok(async {
+			match future.await {
+				Ok(m) => {
+					let (data, fds) = m.into_components();
+					Ok(Message { data, fds })
+				}
+				Err(e) => Err(eyre!(e)),
+			}
+		})
+	}
 }
 impl Debug for Node {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

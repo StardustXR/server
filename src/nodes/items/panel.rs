@@ -1,11 +1,11 @@
 use crate::{
 	core::{
-		client::{get_env, startup_settings, Client, INTERNAL_CLIENT},
+		client::{get_env, state, Client, INTERNAL_CLIENT},
 		registry::Registry,
 	},
 	nodes::{
 		drawable::{model::ModelPart, Drawable},
-		items::{self, Item, ItemType, TypeInfo},
+		items::{Item, ItemType, TypeInfo},
 		spatial::Spatial,
 		Message, Node,
 	},
@@ -223,7 +223,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 
 		let startup_settings = pid
 			.and_then(|pid| get_env(pid).ok())
-			.and_then(|env| startup_settings(&env));
+			.and_then(|env| state(&env));
 
 		let uid = nanoid!();
 		let node = Node::create(&INTERNAL_CLIENT, "/item/panel/item", &uid, true)
@@ -231,7 +231,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			.unwrap();
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
 		if let Some(startup_settings) = &startup_settings {
-			spatial.set_local_transform(startup_settings.transform);
+			spatial.set_local_transform(startup_settings.root);
 		}
 
 		let panel_item = Arc::new(PanelItem {
@@ -241,22 +241,12 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		});
 
 		let generic_panel_item: Arc<dyn PanelItemTrait> = panel_item.clone();
-		let item = Item::add_to(
+		Item::add_to(
 			&node,
 			uid,
 			&ITEM_TYPE_INFO_PANEL,
 			ItemType::Panel(generic_panel_item),
 		);
-
-		if let Some(startup_settings) = &startup_settings {
-			if let Some(acceptor) = startup_settings
-				.acceptors
-				.get(&*ITEM_TYPE_INFO_PANEL)
-				.and_then(|acc| acc.upgrade())
-			{
-				items::capture(&item, &acceptor);
-			}
-		}
 
 		node.add_local_signal("apply_surface_material", Self::apply_surface_material_flex);
 		node.add_local_signal("close_toplevel", Self::close_toplevel_flex);
