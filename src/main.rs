@@ -4,6 +4,8 @@ mod objects;
 #[cfg(feature = "wayland")]
 mod wayland;
 
+use crate::core::client::CLIENTS;
+use crate::core::client_state::ClientState;
 use crate::core::destroy_queue;
 use crate::nodes::items::camera;
 use crate::nodes::{audio, drawable, hmd, input};
@@ -27,6 +29,7 @@ use stereokit::{
 	TextureFormat, TextureType,
 };
 use stereokit::{DisplayBlend, Sk};
+use tokio::task::LocalSet;
 use tokio::{runtime::Handle, sync::oneshot};
 use tracing::metadata::LevelFilter;
 use tracing::{debug_span, error, info};
@@ -353,6 +356,7 @@ async fn event_loop(
 			_ = stop_rx => (),
 		};
 	}
+	save_clients().await;
 
 	info!("Cleanly shut down event loop");
 
@@ -361,4 +365,18 @@ async fn event_loop(
 	}
 
 	Ok(())
+}
+
+async fn save_clients() {
+	let local_set = LocalSet::new();
+	for client in CLIENTS.get_vec() {
+		local_set.spawn_local(async move {
+			tokio::select! {
+				biased;
+				s = client.save_state() => {s.map(ClientState::to_file);},
+				_ = tokio::time::sleep(Duration::from_millis(100)) => (),
+			}
+		});
+	}
+	local_set.await;
 }

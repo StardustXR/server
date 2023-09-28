@@ -1,20 +1,20 @@
-use super::scenegraph::Scenegraph;
+use super::{
+	client_state::{ClientState, CLIENT_STATES},
+	scenegraph::Scenegraph,
+};
 use crate::{
 	core::{registry::OwnedRegistry, task},
-	nodes::{
-		audio, data, drawable, fields, hmd, input, items,
-		root::Root,
-		spatial,
-		startup::{self, StartupSettings, STARTUP_SETTINGS},
-		Node,
-	},
+	nodes::{audio, data, drawable, fields, hmd, input, items, root::Root, spatial, Node},
 };
 use color_eyre::eyre::{eyre, Result};
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use stardust_xr::messenger::{self, MessageSenderHandle};
+use stardust_xr::{
+	messenger::{self, MessageSenderHandle},
+	schemas::flex::serialize,
+};
 use std::{fs, iter::FromIterator, path::PathBuf, sync::Arc};
 use tokio::{net::UnixStream, task::JoinHandle};
 use tracing::info;
@@ -34,7 +34,7 @@ lazy_static! {
 		scenegraph: Default::default(),
 		root: OnceCell::new(),
 		base_resource_prefixes: Default::default(),
-		startup_settings: None,
+		state: Arc::new(ClientState::default()),
 	});
 }
 
@@ -46,9 +46,9 @@ pub fn get_env(pid: i32) -> Result<FxHashMap<String, String>, std::io::Error> {
 			.map(|(k, v)| (k.to_string(), v.to_string())),
 	))
 }
-pub fn startup_settings(env: &FxHashMap<String, String>) -> Option<StartupSettings> {
+pub fn state(env: &FxHashMap<String, String>) -> Option<Arc<ClientState>> {
 	let token = env.get("STARDUST_STARTUP_TOKEN")?;
-	STARTUP_SETTINGS.lock().get(token).cloned()
+	CLIENT_STATES.lock().get(token).cloned()
 }
 
 pub struct Client {
@@ -63,7 +63,7 @@ pub struct Client {
 	pub scenegraph: Arc<Scenegraph>,
 	pub root: OnceCell<Arc<Root>>,
 	pub base_resource_prefixes: Mutex<Vec<PathBuf>>,
-	pub startup_settings: Option<StartupSettings>,
+	pub state: Arc<ClientState>,
 }
 impl Client {
 	pub fn from_connection(connection: UnixStream) -> Result<Arc<Self>> {
@@ -80,7 +80,10 @@ impl Client {
 
 		let (mut messenger_tx, mut messenger_rx) = messenger::create(connection);
 		let scenegraph = Arc::new(Scenegraph::default());
-		let startup_settings = env.as_ref().and_then(startup_settings);
+		let state = env
+			.as_ref()
+			.and_then(state)
+			.unwrap_or_else(|| Arc::new(ClientState::default()));
 
 		let client = CLIENTS.add(Client {
 			pid,
@@ -95,7 +98,7 @@ impl Client {
 			scenegraph: scenegraph.clone(),
 			root: OnceCell::new(),
 			base_resource_prefixes: Default::default(),
-			startup_settings,
+			state,
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
 		let _ = client.root.set(Root::create(&client)?);
@@ -107,7 +110,13 @@ impl Client {
 		data::create_interface(&client)?;
 		items::create_interface(&client)?;
 		input::create_interface(&client)?;
-		startup::create_interface(&client)?;
+
+		client
+			.root
+			.get()
+			.unwrap()
+			.node
+			.send_remote_signal("restore_state", serialize(client.state.apply_to(&client))?)?;
 
 		let pid_printable = pid
 			.map(|pid| pid.to_string())
@@ -162,6 +171,27 @@ impl Client {
 		});
 
 		Ok(client)
+	}
+
+	pub fn get_cmdline(&self) -> Option<Vec<String>> {
+		let pid = self.pid?;
+		let exe_proc_path = format!("/proc/{pid}/exe");
+		let cmdline_proc_path = format!("/proc/{pid}/cmdline");
+		let exe = std::fs::read_link(exe_proc_path).ok()?;
+		let cmdline = std::fs::read_to_string(cmdline_proc_path).ok()?;
+		let mut cmdline_split: Vec<_> = cmdline.split('\0').map(ToString::to_string).collect();
+		cmdline_split.pop();
+		*cmdline_split.get_mut(0).unwrap() = exe.to_str()?.to_string();
+		Some(cmdline_split)
+	}
+	pub fn get_cwd(&self) -> Option<PathBuf> {
+		let pid = self.pid?;
+		let cwd_proc_path = format!("/proc/{pid}/cwd");
+		std::fs::read_link(cwd_proc_path).ok()
+	}
+	pub async fn save_state(&self) -> Option<ClientState> {
+		let internal = self.root.get()?.save_state().await.ok()?;
+		Some(dbg!(ClientState::from_deserialized(self, internal)))
 	}
 
 	#[inline]

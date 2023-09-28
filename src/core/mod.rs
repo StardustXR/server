@@ -1,4 +1,5 @@
 pub mod client;
+pub mod client_state;
 pub mod delta;
 pub mod destroy_queue;
 pub mod eventloop;
