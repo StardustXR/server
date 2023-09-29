@@ -19,7 +19,9 @@ use self::core::eventloop::EventLoop;
 use clap::Parser;
 use directories::ProjectDirs;
 use once_cell::sync::OnceCell;
+use smithay::reexports::nix;
 use stardust_xr::server;
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -88,7 +90,12 @@ fn setup_tracing() {
 }
 
 fn main() {
-	ctrlc::set_handler(|| STOP_NOTIFIER.notify_waiters()).unwrap();
+	ctrlc::set_handler(|| {
+		if atty::isnt(atty::Stream::Stdout) {
+			STOP_NOTIFIER.notify_waiters()
+		}
+	})
+	.unwrap();
 
 	setup_tracing();
 
@@ -210,7 +217,9 @@ fn main() {
 			.clone()
 			.and_then(|p| p.canonicalize().ok())
 			.unwrap_or_else(|| project_dirs.config_dir().join("startup"));
-		let mut startup_command = Command::new(startup_script_path);
+		let mut startup_command = Command::new("bash");
+		startup_command.arg(startup_script_path);
+		startup_command.arg("&");
 
 		startup_command.stdin(Stdio::null());
 		startup_command.stdout(Stdio::null());
@@ -239,6 +248,13 @@ fn main() {
 			startup_command.env("CLUTTER_BACKEND", "wayland");
 			startup_command.env("SDL_VIDEODRIVER", "wayland");
 		}
+		unsafe {
+			startup_command.pre_exec(|| {
+				nix::unistd::setsid()
+					.map(|_| ())
+					.map_err(|_| std::io::ErrorKind::Other.into())
+			})
+		};
 		let child = startup_command.spawn().ok()?;
 		Some(child)
 	})();
