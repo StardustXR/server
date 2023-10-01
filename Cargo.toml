@@ -50,7 +50,6 @@ rustc-hash = "1.1.0"
 tokio = { version = "1.27.0", features = ["rt-multi-thread", "signal", "time"] }
 send_wrapper = "0.6.0"
 prisma = "0.1.1"
-stardust-xr = "0.14.1"
 directories = "5.0.0"
 serde = { version = "1.0.160", features = ["derive"] }
 serde_repr = "0.1.16"
@@ -68,7 +67,13 @@ libc = "0.2.148"
 git = "https://github.com/smithay/smithay.git" # Until we get stereokit to understand OES samplers and external textures
 # path = "../smithay"
 default-features = false
-features = ["desktop", "backend_drm", "renderer_gl", "wayland_frontend"]
+features = [
+    "desktop",
+    "backend_drm",
+    "backend_egl",
+    "renderer_gl",
+    "wayland_frontend",
+]
 version = "*"
 optional = true
 
@@ -85,11 +90,10 @@ optional = true
 version = "0.7.1"
 optional = true
 
+[dependencies.stardust-xr]
+git = "https://github.com/StardustXR/core.git"
+
 # [patch.crates-io.stereokit]
 # path = "../stereokit-rs"
 # [patch.crates-io.stereokit-sys]
 # path = "../stereokit-sys"
-# [patch.crates-io.stardust-xr]
-# path = "../core/core"
-# [patch.crates-io.stardust-xr-schemas]
-# path = "../core/schemas"
