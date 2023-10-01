@@ -86,11 +86,11 @@ impl KeyboardInfo {
 				0,
 			);
 		}
-		if pressed {
-			println!("Key {key} is being pressed with {state_components} modifiers");
-		} else {
-			println!("Key {key} is being released with {state_components} modifiers");
-		}
+		// if pressed {
+		// 	println!("Key {key} is being pressed with {state_components} modifiers");
+		// } else {
+		// 	println!("Key {key} is being released with {state_components} modifiers");
+		// }
 
 		let wl_key_state = if pressed {
 			KeyState::Pressed
