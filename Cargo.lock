@@ -1089,6 +1089,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "input-event-codes"
+version = "5.16.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b6b0f8557f596a2db592f172015c40d0c149e16a956c7848e733d663f2c6636"
+
+[[package]]
 name = "instant"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2085,6 +2091,7 @@ dependencies = [
  "directories",
  "glam 0.23.0",
  "global_counter",
+ "input-event-codes",
  "lazy_static",
  "libc",
  "mint",
