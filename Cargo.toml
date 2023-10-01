@@ -94,6 +94,7 @@ optional = true
 
 [dependencies.stardust-xr]
 git = "https://github.com/StardustXR/core.git"
+branch = "camera-item"
 
 # [patch.crates-io.stereokit]
 # path = "../stereokit-rs"
