@@ -21,7 +21,8 @@ use xkbcommon::xkb::{Context, Keymap, FORMAT_TEXT_V1};
 struct MouseEvent {
 	select: f32,
 	grab: f32,
-	scroll: Vec2,
+	scroll_continuous: Vec2,
+	scroll_discrete: Vec2,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -103,7 +104,8 @@ impl MousePointer {
 			} else {
 				0.0f32
 			};
-			self.mouse_datamap.scroll = vec2(0.0, mouse.scroll_change / 120.0);
+			self.mouse_datamap.scroll_continuous = vec2(0.0, mouse.scroll_change / 120.0);
+			self.mouse_datamap.scroll_discrete = vec2(0.0, mouse.scroll_change / 120.0);
 			*self.pointer.datamap.lock() = self.mouse_datamap.to_datamap().ok();
 		}
 		self.send_keyboard_input(sk);
