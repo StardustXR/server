@@ -210,12 +210,12 @@ impl SurfaceInfo {
 				) => {
 					if let Some(axis_continuous) = axis_continuous {
 						pointer.axis(0, Axis::HorizontalScroll, axis_continuous.x as f64);
-						pointer.axis(0, Axis::VerticalScroll, axis_continuous.y as f64);
+						pointer.axis(0, Axis::VerticalScroll, -axis_continuous.y as f64);
 					}
 					if pointer.version() >= wl_pointer::EVT_AXIS_DISCRETE_SINCE {
 						if let Some(axis_discrete) = axis_discrete {
 							pointer.axis_discrete(Axis::HorizontalScroll, axis_discrete.x as i32);
-							pointer.axis_discrete(Axis::VerticalScroll, axis_discrete.y as i32);
+							pointer.axis_discrete(Axis::VerticalScroll, -axis_discrete.y as i32);
 						}
 					}
 					if pointer.version() >= wl_pointer::EVT_AXIS_STOP_SINCE
