@@ -18,6 +18,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use stardust_xr::schemas::flex::{deserialize, flexbuffers, serialize};
 use stardust_xr::values::Transform;
+use std::fmt::Display;
 use std::sync::{Arc, Weak};
 
 lazy_static! {
@@ -32,6 +33,13 @@ pub fn mask_matches(mask_map_lesser: &Mask, mask_map_greater: &Mask) -> bool {
 		for key in mask_map_lesser.get_mask()?.iter_keys() {
 			let lesser_key = mask_map_lesser.get_mask()?.index(key)?;
 			let greater_key = mask_map_greater.get_mask()?.index(key)?;
+			// otherwise zero-length vectors don't count the same as a single type vector
+			if lesser_key.flexbuffer_type().is_heterogenous_vector()
+				&& lesser_key.as_vector().len() == 0
+				&& greater_key.flexbuffer_type().is_vector()
+			{
+				continue;
+			}
 			if !lesser_key.flexbuffer_type().is_null()
 				&& lesser_key.flexbuffer_type() != greater_key.flexbuffer_type()
 			{
@@ -55,6 +63,14 @@ impl Mask {
 			.map_err(|_| eyre!("Mask is not a valid flexbuffer"))?
 			.get_map()
 			.map_err(|_| eyre!("Mask is not a valid map"))
+	}
+}
+impl Display for Mask {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		flexbuffers::Reader::get_root(self.0.as_slice())
+			.unwrap()
+			.to_string()
+			.fmt(f)
 	}
 }
 
@@ -179,7 +195,9 @@ impl PulseSender {
 		data_mask.get_mask()?;
 		ensure!(
 			mask_matches(receiver_mask, &data_mask),
-			"Message does not contain the same keys as the receiver's mask"
+			"Message ({}) does not contain the same keys as the receiver's mask ({})",
+			data_mask,
+			receiver_mask
 		);
 		receiver.send_data(&node.pulse_sender.get().unwrap().uid, data_mask.0)
 	}
