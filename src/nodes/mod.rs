@@ -23,7 +23,6 @@ use std::future::Future;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
-use tracing::instrument;
 
 use crate::core::client::Client;
 use crate::core::registry::Registry;
@@ -272,7 +271,6 @@ impl Node {
 			method(self, calling_client, message, response);
 		}
 	}
-	#[instrument(level = "debug", skip_all)]
 	pub fn send_remote_signal(&self, method: &str, message: impl Into<Message>) -> Result<()> {
 		let message = message.into();
 		self.aliases
@@ -297,7 +295,6 @@ impl Node {
 		}
 		Ok(())
 	}
-	// #[instrument(level = "debug", skip_all)]
 	pub fn execute_remote_method(
 		&self,
 		method: &str,

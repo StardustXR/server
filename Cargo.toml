@@ -17,7 +17,7 @@ default = ["wayland"]
 wayland = ["dep:smithay", "dep:xkbcommon"]
 xwayland = ["smithay/xwayland"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
-profile_app = ["dep:tracing-chrome"]
+profile_app = ["dep:tracing-tracy"]
 
 [package.metadata.appimage]
 auto_link = true
@@ -87,8 +87,8 @@ version = "0.16.9"
 version = "0.1.8"
 optional = true
 
-[dependencies.tracing-chrome]
-version = "0.7.1"
+[dependencies.tracing-tracy]
+version = "0.10.4"
 optional = true
 
 [dependencies.stardust-xr]

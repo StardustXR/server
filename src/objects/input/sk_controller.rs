@@ -14,7 +14,6 @@ use stereokit::{
 	named_colors::WHITE, ButtonState, Handed, Model, RenderLayer, StereoKitDraw,
 	StereoKitMultiThread,
 };
-use tracing::instrument;
 
 #[derive(Default, Deserialize, Serialize)]
 struct ControllerDatamap {
@@ -55,7 +54,6 @@ impl SkController {
 			datamap: Default::default(),
 		})
 	}
-	#[instrument(level = "debug", name = "Update StereoKit Tip Input Method", skip_all)]
 	pub fn update(&mut self, sk: &impl StereoKitDraw) {
 		let controller = sk.input_controller(self.handed);
 		*self.input.enabled.lock() = controller.tracked.contains(ButtonState::ACTIVE);

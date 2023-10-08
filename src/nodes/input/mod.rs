@@ -12,8 +12,8 @@ use super::{
 	spatial::{find_spatial_parent, parse_transform, Spatial},
 	Message, Node,
 };
+use crate::core::registry::Registry;
 use crate::core::{client::Client, node_collections::LifeLinkedNodeMap};
-use crate::core::{node_collections::LifeLinkedNodeList, registry::Registry};
 use color_eyre::eyre::{ensure, Result};
 use glam::Mat4;
 use once_cell::sync::OnceCell;
@@ -99,6 +99,7 @@ impl InputMethod {
 		};
 		for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
 			method.handle_new_handler(&handler);
+			method.make_alias(&handler);
 		}
 		let method = INPUT_METHOD_REGISTRY.add(method);
 		let _ = node.input_method.set(method.clone());
@@ -135,6 +136,26 @@ impl InputMethod {
 			.get_or_init(|| Mutex::new(Vec::new()))
 			.lock() = handlers;
 		Ok(())
+	}
+
+	fn make_alias(&self, handler: &InputHandler) {
+		let Some(method_node) = self.node.upgrade() else {return};
+		let Some(handler_node) = handler.node.upgrade() else {return};
+		let Some(client) = handler_node.get_client() else {return};
+		let Ok(method_alias) = Alias::create(
+			&client,
+			handler_node.get_path(),
+			&self.uid,
+			&method_node,
+			AliasInfo {
+				server_signals: vec!["capture"],
+				..Default::default()
+			},
+		) else {return};
+		method_alias.enabled.store(false, Ordering::Relaxed);
+		handler
+			.method_aliases
+			.add(self as *const InputMethod as usize, &method_alias);
 	}
 
 	fn compare_distance(&self, to: &Field) -> f32 {
@@ -201,25 +222,12 @@ pub struct DistanceLink {
 	handler: Arc<InputHandler>,
 }
 impl DistanceLink {
-	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Option<Self> {
-		let handler_node = handler.node.upgrade()?;
-		let method_alias = Alias::create(
-			&handler_node.get_client()?,
-			handler_node.get_path(),
-			&method.uid,
-			&method.node.upgrade()?,
-			AliasInfo {
-				server_signals: vec!["capture"],
-				..Default::default()
-			},
-		)
-		.ok()?;
-		handler.method_aliases.add(Arc::downgrade(&method_alias));
-		Some(DistanceLink {
+	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Self {
+		DistanceLink {
 			distance: method.compare_distance(&handler.field),
 			method,
 			handler,
-		})
+		}
 	}
 
 	fn send_input(&self, order: u32, datamap: Datamap) {
@@ -249,7 +257,7 @@ pub struct InputHandler {
 	node: Weak<Node>,
 	spatial: Arc<Spatial>,
 	field: Arc<Field>,
-	method_aliases: LifeLinkedNodeList,
+	method_aliases: LifeLinkedNodeMap<usize>,
 }
 impl InputHandler {
 	pub fn add_to(node: &Arc<Node>, field: &Arc<Field>) -> Result<()> {
@@ -264,9 +272,10 @@ impl InputHandler {
 			node: Arc::downgrade(node),
 			spatial: node.spatial.get().unwrap().clone(),
 			field: field.clone(),
-			method_aliases: LifeLinkedNodeList::default(),
+			method_aliases: LifeLinkedNodeMap::default(),
 		};
 		for method in INPUT_METHOD_REGISTRY.get_valid_contents() {
+			method.make_alias(&handler);
 			method.handle_new_handler(&handler);
 		}
 		let handler = INPUT_HANDLER_REGISTRY.add(handler);
@@ -343,10 +352,12 @@ pub fn process_input() {
 			.filter(|method| method.datamap.lock().is_some())
 	});
 	let handlers = INPUT_HANDLER_REGISTRY.get_valid_contents();
-	for handler in &handlers {
-		handler.method_aliases.clear();
-	}
+	const LIMIT: usize = 50;
 	for method in methods {
+		for alias in method.node.upgrade().unwrap().aliases.get_valid_contents() {
+			alias.enabled.store(false, Ordering::Relaxed);
+		}
+
 		debug_span!("Process input method").in_scope(|| {
 			// Get all valid input handlers and convert them to DistanceLink objects
 			let distance_links: Vec<DistanceLink> = debug_span!("Generate distance links")
@@ -357,14 +368,16 @@ pub fn process_input() {
 							.iter()
 							.filter_map(|h| h.upgrade())
 							.filter(|handler| handler.enabled.load(Ordering::Relaxed))
-							.filter_map(|handler| DistanceLink::from(method.clone(), handler))
+							.map(|handler| DistanceLink::from(method.clone(), handler))
 							.collect()
 					} else {
 						let mut distance_links: Vec<_> = handlers
 							.iter()
 							.filter(|handler| handler.enabled.load(Ordering::Relaxed))
-							.filter_map(|handler| {
-								DistanceLink::from(method.clone(), handler.clone())
+							.map(|handler| {
+								debug_span!("Create distance link").in_scope(|| {
+									DistanceLink::from(method.clone(), handler.clone())
+								})
 							})
 							.collect();
 
@@ -375,6 +388,9 @@ pub fn process_input() {
 							});
 						});
 
+						distance_links.reverse();
+						distance_links.truncate(LIMIT);
+						distance_links.reverse();
 						distance_links
 					}
 				});
@@ -382,6 +398,18 @@ pub fn process_input() {
 			let captures = method.captures.take_valid_contents();
 			// Iterate over the distance links and send input to them
 			for (i, distance_link) in distance_links.into_iter().enumerate() {
+				if i > LIMIT {
+					break;
+				}
+
+				if let Some(method_alias) = distance_link
+					.handler
+					.method_aliases
+					.get(&(Arc::as_ptr(&distance_link.method) as usize))
+					.and_then(|a| a.alias.get().cloned())
+				{
+					method_alias.enabled.store(true, Ordering::Relaxed);
+				}
 				distance_link.send_input(i as u32, method.datamap.lock().clone().unwrap());
 
 				// If the current distance link is in the list of captured input handlers,
