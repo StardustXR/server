@@ -13,7 +13,6 @@ use serde::Serialize;
 use stardust_xr::schemas::{flat::Datamap, flex::flexbuffers};
 use std::sync::Arc;
 use stereokit::StereoKitMultiThread;
-use tracing::instrument;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct KeyboardEvent {
@@ -36,7 +35,6 @@ impl EyePointer {
 
 		Ok(EyePointer { spatial, pointer })
 	}
-	#[instrument(level = "debug", name = "Update Flatscreen Pointer Ray", skip_all)]
 	pub fn update(&self, sk: &impl StereoKitMultiThread) {
 		let ray = sk.input_eyes();
 		self.spatial

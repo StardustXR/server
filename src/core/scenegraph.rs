@@ -3,13 +3,14 @@ use crate::{core::client::Client, nodes::Message};
 use color_eyre::eyre::Result;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use portable_atomic::Ordering;
 use rustc_hash::FxHashMap;
 use stardust_xr::scenegraph;
 use stardust_xr::scenegraph::ScenegraphError;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
 use tokio::sync::oneshot;
-use tracing::{debug, debug_span, instrument};
+use tracing::{debug, debug_span};
 
 #[derive(Default)]
 pub struct Scenegraph {
@@ -33,11 +34,14 @@ impl Scenegraph {
 		self.nodes.lock().insert(path, node);
 	}
 
-	#[instrument(level = "debug", skip(self))]
 	pub fn get_node(&self, path: &str) -> Option<Arc<Node>> {
 		let mut node = self.nodes.lock().get(path)?.clone();
 		while let Some(alias) = node.alias.get() {
-			node = alias.original.upgrade()?;
+			if alias.enabled.load(Ordering::Relaxed) {
+				node = alias.original.upgrade()?;
+			} else {
+				return None;
+			}
 		}
 		Some(node)
 	}

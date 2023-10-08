@@ -7,7 +7,6 @@ use color_eyre::eyre::Result;
 use glam::{vec3, Mat4};
 use std::sync::Arc;
 use stereokit::StereoKitMultiThread;
-use tracing::instrument;
 
 lazy_static::lazy_static! {
 	static ref HMD: Arc<Node> = create();
@@ -20,7 +19,6 @@ fn create() -> Arc<Node> {
 	node
 }
 
-#[instrument(level = "debug", name = "Update HMD Pose", skip(sk))]
 pub fn frame(sk: &impl StereoKitMultiThread) {
 	let spatial = HMD
 		.spatial
