@@ -34,9 +34,13 @@ impl Pointer {
 impl InputSpecialization for Pointer {
 	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		let ray_info = self.ray_march(space, field);
-		ray_info
-			.deepest_point_distance
-			.hypot(ray_info.min_distance.recip())
+		if ray_info.min_distance > 0.0 {
+			ray_info.deepest_point_distance + 1000.0
+		} else {
+			ray_info
+				.deepest_point_distance
+				.hypot(0.001 / ray_info.min_distance)
+		}
 	}
 	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		let ray_info = self.ray_march(space, field);

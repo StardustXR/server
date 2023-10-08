@@ -388,9 +388,7 @@ pub fn process_input() {
 							});
 						});
 
-						distance_links.reverse();
 						distance_links.truncate(LIMIT);
-						distance_links.reverse();
 						distance_links
 					}
 				});
