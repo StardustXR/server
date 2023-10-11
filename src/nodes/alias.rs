@@ -1,6 +1,7 @@
 use super::Node;
 use crate::core::client::Client;
 use color_eyre::eyre::{ensure, Result};
+use portable_atomic::AtomicBool;
 use std::sync::{Arc, Weak};
 
 #[derive(Debug, Default, Clone)]
@@ -12,6 +13,7 @@ pub struct AliasInfo {
 
 #[allow(dead_code)]
 pub struct Alias {
+	pub enabled: Arc<AtomicBool>,
 	pub(super) node: Weak<Node>,
 	pub original: Weak<Node>,
 
@@ -35,6 +37,7 @@ impl Alias {
 
 		let node = Node::create(client, parent, name, true).add_to_scenegraph()?;
 		let alias = Alias {
+			enabled: Arc::new(AtomicBool::new(true)),
 			node: Arc::downgrade(&node),
 			original: Arc::downgrade(original),
 			info,

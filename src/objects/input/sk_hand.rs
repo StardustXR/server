@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use stardust_xr::schemas::flat::{Hand as FlatHand, Joint};
 use std::sync::Arc;
 use stereokit::{ButtonState, HandJoint, Handed, StereoKitMultiThread};
-use tracing::instrument;
 
 fn convert_joint(joint: HandJoint) -> Joint {
 	Joint {
@@ -54,7 +53,6 @@ impl SkHand {
 			datamap: Default::default(),
 		})
 	}
-	#[instrument(level = "debug", name = "Update Hand Input Method", skip_all)]
 	pub fn update(&mut self, controller_enabled: bool, sk: &impl StereoKitMultiThread) {
 		let sk_hand = sk.input_hand(self.handed);
 		if let InputType::Hand(hand) = &mut *self.input.specialization.lock() {

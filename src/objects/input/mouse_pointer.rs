@@ -14,7 +14,6 @@ use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use std::{convert::TryFrom, sync::Arc};
 use stereokit::{ray_from_mouse, ButtonState, Key, StereoKitMultiThread};
-use tracing::instrument;
 use xkbcommon::xkb::{Context, Keymap, FORMAT_TEXT_V1};
 
 #[derive(Default, Deserialize, Serialize)]
@@ -77,7 +76,6 @@ impl MousePointer {
 			keyboard_sender,
 		})
 	}
-	#[instrument(level = "debug", name = "Update Flatscreen Pointer Ray", skip_all)]
 	pub fn update(&mut self, sk: &impl StereoKitMultiThread) {
 		let mouse = sk.input_mouse();
 

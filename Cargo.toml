@@ -17,7 +17,7 @@ default = ["wayland"]
 wayland = ["dep:smithay", "dep:xkbcommon"]
 xwayland = ["smithay/xwayland"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
-profile_app = ["dep:tracing-chrome"]
+profile_app = ["dep:tracing-tracy"]
 
 [package.metadata.appimage]
 auto_link = true
@@ -58,8 +58,9 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 global_counter = "0.2.2"
 rand = "0.8.5"
 atty = "0.2.14"
-libc = "0.2.148"
+xkbcommon = { version = "0.6.0", default-features = false, optional = true }
 ctrlc = "3.4.1"
+libc = "0.2.148"
 input-event-codes = "5.16.8"
 drm-fourcc = { version = "2.2.0", features = ["serde"] }
 
@@ -87,8 +88,8 @@ version = "0.16.9"
 version = "0.1.8"
 optional = true
 
-[dependencies.tracing-chrome]
-version = "0.7.1"
+[dependencies.tracing-tracy]
+version = "0.10.4"
 optional = true
 
 [dependencies.stardust-xr]

@@ -17,7 +17,6 @@ use std::fmt::Debug;
 use std::ptr;
 use std::sync::{Arc, OnceLock, Weak};
 use stereokit::{bounds_grow_to_fit_box, Bounds};
-use tracing::instrument;
 
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
@@ -81,7 +80,6 @@ impl Spatial {
 		self.node.upgrade()
 	}
 
-	#[instrument(level = "debug", skip_all)]
 	pub fn space_to_space_matrix(from: Option<&Spatial>, to: Option<&Spatial>) -> Mat4 {
 		let space_to_world_matrix = from.map_or(Mat4::IDENTITY, |from| from.global_transform());
 		let world_to_space_matrix = to.map_or(Mat4::IDENTITY, |to| to.global_transform().inverse());
@@ -89,7 +87,6 @@ impl Spatial {
 	}
 
 	// the output bounds are probably way bigger than they need to be
-	#[instrument(level = "debug")]
 	pub fn get_bounding_box(&self) -> Bounds {
 		let Some(node) = self.node() else {return Bounds::default()};
 		let mut bounds = self
@@ -107,7 +104,6 @@ impl Spatial {
 		bounds
 	}
 
-	#[instrument(level = "debug", skip_all)]
 	pub fn local_transform(&self) -> Mat4 {
 		*self.transform.lock()
 	}
@@ -117,11 +113,9 @@ impl Spatial {
 			None => *self.transform.lock(),
 		}
 	}
-	#[instrument]
 	pub fn set_local_transform(&self, transform: Mat4) {
 		*self.transform.lock() = transform;
 	}
-	#[instrument(level = "debug", skip(self, reference_space))]
 	pub fn set_local_transform_components(
 		&self,
 		reference_space: Option<&Spatial>,
@@ -165,7 +159,6 @@ impl Spatial {
 		);
 	}
 
-	#[instrument(level = "debug", skip_all)]
 	pub fn is_ancestor_of(&self, spatial: Arc<Spatial>) -> bool {
 		let mut current_ancestor = spatial;
 		loop {
@@ -197,7 +190,6 @@ impl Spatial {
 		*self.parent.lock() = new_parent;
 	}
 
-	#[instrument(level = "debug", skip_all)]
 	pub fn set_spatial_parent(&self, parent: Option<Arc<Spatial>>) -> Result<()> {
 		let is_ancestor = parent
 			.as_ref()
@@ -211,7 +203,6 @@ impl Spatial {
 		Ok(())
 	}
 
-	#[instrument(level = "debug", skip_all)]
 	pub fn set_spatial_parent_in_place(&self, parent: Option<Arc<Spatial>>) -> Result<()> {
 		let is_ancestor = parent
 			.as_ref()
@@ -437,7 +428,6 @@ impl Spatial {
 		});
 	}
 
-	#[instrument]
 	pub(self) fn zone_distance(&self) -> f32 {
 		self.zone
 			.lock()

@@ -67,14 +67,18 @@ struct EventLoopInfo {
 	socket_path: PathBuf,
 }
 
-fn setup_tracing() {
+fn main() {
+	ctrlc::set_handler(|| {
+		if atty::isnt(atty::Stream::Stdout) {
+			STOP_NOTIFIER.notify_waiters()
+		}
+	})
+	.unwrap();
+
 	let registry = tracing_subscriber::registry();
+
 	#[cfg(feature = "profile_app")]
-	let (chrome_layer, _guard) = tracing_chrome::ChromeLayerBuilder::new()
-		.include_args(true)
-		.build();
-	#[cfg(feature = "profile_app")]
-	let registry = registry.with(chrome_layer);
+	let registry = registry.with(tracing_tracy::TracyLayer::new().with_filter(LevelFilter::DEBUG));
 
 	#[cfg(feature = "profile_tokio")]
 	let (console_layer, _) = console_subscriber::ConsoleLayer::builder().build();
@@ -87,17 +91,6 @@ fn setup_tracing() {
 		.with_line_number(true)
 		.with_filter(EnvFilter::from_default_env());
 	registry.with(log_layer).init();
-}
-
-fn main() {
-	ctrlc::set_handler(|| {
-		if atty::isnt(atty::Stream::Stdout) {
-			STOP_NOTIFIER.notify_waiters()
-		}
-	})
-	.unwrap();
-
-	setup_tracing();
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");
 	if project_dirs.is_none() {
