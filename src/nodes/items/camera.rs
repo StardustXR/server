@@ -26,12 +26,12 @@ use smithay::backend::{
 		dmabuf::{Dmabuf, DmabufFlags},
 		Buffer,
 	},
-	renderer::ImportDma,
+	renderer::{gles, ImportDma},
 };
 use stardust_xr::{
 	scenegraph::ScenegraphError,
 	schemas::flex::{deserialize, serialize},
-	values::{BufferInfo, Transform},
+	values::{BufferColorspace, BufferInfo, Transform},
 };
 use std::{ffi::c_void, sync::Arc};
 use stereokit::{
@@ -62,8 +62,9 @@ pub struct CameraItem {
 	frame_info: Mutex<FrameInfo>,
 	sk_tex: OnceCell<Tex>,
 	sk_mat: OnceCell<Arc<Material>>,
-	render_requests_tx: mpsc::UnboundedSender<(Dmabuf, MethodResponseSender)>,
-	render_requests_rx: Mutex<mpsc::UnboundedReceiver<(Dmabuf, MethodResponseSender)>>,
+	render_requests_tx: mpsc::UnboundedSender<(Dmabuf, BufferColorspace, MethodResponseSender)>,
+	render_requests_rx:
+		Mutex<mpsc::UnboundedReceiver<(Dmabuf, BufferColorspace, MethodResponseSender)>>,
 	rendered_notifiers: Mutex<Vec<MethodResponseSender>>,
 	applied_preview_to: Registry<ModelPart>,
 	apply_preview_to: Registry<ModelPart>,
@@ -142,8 +143,10 @@ impl CameraItem {
 		}
 		let buffer_to_render = builder.build().unwrap();
 
-		if let Err(SendError((_dmabuf, sender))) =
-			camera.render_requests_tx.send((buffer_to_render, response))
+		if let Err(SendError((_dmabuf, _colorspace, sender))) =
+			camera
+				.render_requests_tx
+				.send((buffer_to_render, buffer_info.colorspace, response))
 		{
 			sender.send(Err(ScenegraphError::MethodError {
 				error: "Internal: sender broke????".to_string(),
@@ -235,7 +238,9 @@ impl CameraItem {
 	) {
 		let mut render_notifiers = self.rendered_notifiers.lock();
 		let mut render_requests_rx = self.render_requests_rx.lock();
-		while let Ok((buffer_to_render, render_response_sender)) = render_requests_rx.try_recv() {
+		while let Ok((buffer_to_render, colorspace, render_response_sender)) =
+			render_requests_rx.try_recv()
+		{
 			let imported_dmabuf = buffer_manager
 				.renderer
 				.import_dmabuf(&buffer_to_render, None);
@@ -249,13 +254,52 @@ impl CameraItem {
 				}
 			};
 
-			let sk_tex = sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32);
+			let texture_format;
+			let native_format;
+
+			match colorspace {
+				BufferColorspace::SRGB => match buffer_to_render.format().code {
+					drm_fourcc::DrmFourcc::Argb8888 => {
+						texture_format = TextureFormat::RGBA32;
+						native_format = gles::ffi::SRGB8_ALPHA8;
+					}
+					drm_fourcc::DrmFourcc::Abgr8888 => {
+						texture_format = TextureFormat::BGRA32;
+						native_format = gles::ffi::SRGB8_ALPHA8;
+					}
+					_ => {
+						let _ = render_response_sender.send(Err(ScenegraphError::MethodError {
+							error: "Unsupported pixel format".to_string(),
+						}));
+						continue;
+					}
+				},
+				BufferColorspace::Linear => match buffer_to_render.format().code {
+					drm_fourcc::DrmFourcc::Argb8888 => {
+						texture_format = TextureFormat::RGBA32Linear;
+						native_format = gles::ffi::RGBA8;
+					}
+					drm_fourcc::DrmFourcc::Abgr8888 => {
+						texture_format = TextureFormat::BGRA32Linear;
+						native_format = gles::ffi::RGBA8;
+					}
+					_ => {
+						let _ = render_response_sender.send(Err(ScenegraphError::MethodError {
+							error: "Unsupported pixel format".to_string(),
+						}));
+						continue;
+					}
+				},
+			}
+
+			// TODO: This doesn't seem to care about the texture format, it seems to always output with sRGB.
+			let sk_tex = sk.tex_create(TextureType::IMAGE_NO_MIPS, texture_format);
 			unsafe {
 				sk.tex_set_surface(
 					&sk_tex,
 					smithay_tex.tex_id() as usize as *mut c_void,
 					TextureType::RENDER_TARGET,
-					smithay::backend::renderer::gles::ffi::SRGB8_ALPHA8.into(),
+					native_format.into(),
 					buffer_to_render.size().w,
 					buffer_to_render.size().h,
 					1,
