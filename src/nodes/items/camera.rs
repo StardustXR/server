@@ -43,7 +43,7 @@ use tokio::sync::mpsc::{self, error::SendError};
 lazy_static! {
 	pub(super) static ref ITEM_TYPE_INFO_CAMERA: TypeInfo = TypeInfo {
 		type_name: "camera",
-		aliased_local_signals: vec!["apply_preview_material"],
+		aliased_local_signals: vec!["apply_preview_material", "set_proj_matrix"],
 		aliased_local_methods: vec!["render"],
 		aliased_remote_signals: vec![],
 		ui: Default::default(),
@@ -96,6 +96,7 @@ impl CameraItem {
 			"apply_preview_material",
 			CameraItem::apply_preview_material_flex,
 		);
+		node.add_local_signal("set_proj_matrix", CameraItem::set_proj_matrix_flex);
 	}
 
 	fn render_flex(
@@ -173,6 +174,26 @@ impl CameraItem {
 
 		camera.applied_preview_to.add_raw(model_part);
 		camera.apply_preview_to.add_raw(model_part);
+
+		Ok(())
+	}
+
+	fn set_proj_matrix_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
+		let Some(item) = node.item.get() else {
+			bail!("Item not found?")
+		};
+		let ItemType::Camera(camera) = &item.specialization else {
+			bail!("Wrong item type?")
+		};
+
+		let proj_matrix: RowMatrix4<f32> = deserialize(&message.data)?;
+
+		let mut frame_info = camera.frame_info.lock();
+		frame_info.proj_matrix = proj_matrix.into();
 
 		Ok(())
 	}
