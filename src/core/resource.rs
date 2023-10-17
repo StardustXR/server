@@ -2,6 +2,10 @@ use color_eyre::eyre::eyre;
 use serde::{de::Visitor, Deserialize};
 use std::{ffi::OsStr, path::PathBuf};
 
+lazy_static::lazy_static! {
+	static ref THEMES: Vec<PathBuf> = std::env::var("STARDUST_THEMES").map(|s| s.split(":").map(PathBuf::from).collect()).unwrap_or_default();
+}
+
 #[derive(Debug)]
 pub enum ResourceID {
 	File(PathBuf),
@@ -15,8 +19,9 @@ impl ResourceID {
 			.then_some(file.clone()),
 			ResourceID::Namespaced { namespace, path } => {
 				let file_name = path.file_name()?;
-				prefixes
+				THEMES
 					.iter()
+					.chain(prefixes.iter())
 					.filter_map(|prefix| {
 						let prefixed_path = prefix.clone().join(namespace).join(path);
 						let parent = prefixed_path.parent()?;
