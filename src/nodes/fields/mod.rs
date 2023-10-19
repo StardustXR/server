@@ -24,6 +24,8 @@ use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::ops::Deref;
 use std::sync::Arc;
 
+// TODO: get SDFs working properly with non-uniform scale and so on, output distance relative to the spatial it's compared against
+
 pub static FIELD_ALIAS_INFO: Lazy<AliasInfo> = Lazy::new(|| AliasInfo {
 	server_methods: vec!["distance", "normal", "closest_point", "ray_march"],
 	..Default::default()
