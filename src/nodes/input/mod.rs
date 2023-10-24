@@ -114,6 +114,7 @@ impl InputMethod {
 		let method = InputMethod::get(node)?;
 		let handler = InputHandler::find(&calling_client, deserialize(message.as_ref())?)?;
 
+		println!("Input method captured");
 		method.captures.add_raw(&handler);
 		node.send_remote_signal("capture", message)
 	}
@@ -230,11 +231,11 @@ impl DistanceLink {
 		}
 	}
 
-	fn send_input(&self, order: u32, datamap: Datamap) {
-		self.handler.send_input(order, self, datamap);
+	fn send_input(&self, order: u32, captured: bool, datamap: Datamap) {
+		self.handler.send_input(order, captured, self, datamap);
 	}
 	#[instrument(level = "debug", skip(self))]
-	fn serialize(&self, order: u32, datamap: Datamap) -> Vec<u8> {
+	fn serialize(&self, order: u32, captured: bool, datamap: Datamap) -> Vec<u8> {
 		let input = self.method.specialization.lock().serialize(
 			self,
 			Spatial::space_to_space_matrix(Some(&self.method.spatial), Some(&self.handler.spatial)),
@@ -246,6 +247,7 @@ impl DistanceLink {
 			distance: self.method.true_distance(&self.handler.field),
 			datamap,
 			order,
+			captured,
 		};
 		root.serialize()
 	}
@@ -291,9 +293,15 @@ impl InputHandler {
 	}
 
 	#[instrument(level = "debug", skip(self, distance_link))]
-	fn send_input(&self, order: u32, distance_link: &DistanceLink, datamap: Datamap) {
+	fn send_input(
+		&self,
+		order: u32,
+		captured: bool,
+		distance_link: &DistanceLink,
+		datamap: Datamap,
+	) {
 		let Some(node) = self.node.upgrade() else {return};
-		let _ = node.send_remote_signal("input", distance_link.serialize(order, datamap));
+		let _ = node.send_remote_signal("input", distance_link.serialize(order, captured, datamap));
 	}
 }
 impl PartialEq for InputHandler {
@@ -355,7 +363,7 @@ pub fn process_input() {
 	const LIMIT: usize = 50;
 	for method in methods {
 		for alias in method.node.upgrade().unwrap().aliases.get_valid_contents() {
-			alias.enabled.store(false, Ordering::Relaxed);
+			alias.enabled.store(false, Ordering::Release);
 		}
 
 		debug_span!("Process input method").in_scope(|| {
@@ -406,13 +414,18 @@ pub fn process_input() {
 					.get(&(Arc::as_ptr(&distance_link.method) as usize))
 					.and_then(|a| a.alias.get().cloned())
 				{
-					method_alias.enabled.store(true, Ordering::Relaxed);
+					method_alias.enabled.store(true, Ordering::Release);
 				}
-				distance_link.send_input(i as u32, method.datamap.lock().clone().unwrap());
+				let captured = dbg!(captures.contains(&distance_link.handler));
+				distance_link.send_input(
+					i as u32,
+					captured,
+					method.datamap.lock().clone().unwrap(),
+				);
 
 				// If the current distance link is in the list of captured input handlers,
 				// break out of the loop to avoid sending input to the remaining distance links
-				if captures.contains(&distance_link.handler) {
+				if captured {
 					break;
 				}
 			}
