@@ -37,7 +37,7 @@ impl Scenegraph {
 	pub fn get_node(&self, path: &str) -> Option<Arc<Node>> {
 		let mut node = self.nodes.lock().get(path)?.clone();
 		while let Some(alias) = node.alias.get() {
-			if alias.enabled.load(Ordering::Relaxed) {
+			if alias.enabled.load(Ordering::Acquire) {
 				node = alias.original.upgrade()?;
 			} else {
 				return None;
