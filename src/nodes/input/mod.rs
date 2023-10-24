@@ -416,7 +416,7 @@ pub fn process_input() {
 				{
 					method_alias.enabled.store(true, Ordering::Release);
 				}
-				let captured = dbg!(captures.contains(&distance_link.handler));
+				let captured = captures.contains(&distance_link.handler);
 				distance_link.send_input(
 					i as u32,
 					captured,
