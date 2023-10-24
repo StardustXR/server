@@ -114,7 +114,6 @@ impl InputMethod {
 		let method = InputMethod::get(node)?;
 		let handler = InputHandler::find(&calling_client, deserialize(message.as_ref())?)?;
 
-		println!("Input method captured");
 		method.captures.add_raw(&handler);
 		node.send_remote_signal("capture", message)
 	}
