@@ -403,10 +403,6 @@ pub fn process_input() {
 			let captures = method.captures.take_valid_contents();
 			// Iterate over the distance links and send input to them
 			for (i, distance_link) in distance_links.into_iter().enumerate() {
-				if i > LIMIT {
-					break;
-				}
-
 				if let Some(method_alias) = distance_link
 					.handler
 					.method_aliases
