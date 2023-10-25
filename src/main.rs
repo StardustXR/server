@@ -119,12 +119,15 @@ fn main() {
 		overlay_app: cli_args.overlay_priority.is_some(),
 		overlay_priority: cli_args.overlay_priority.unwrap_or(u32::MAX),
 		disable_desktop_input_window: true,
+		render_scaling: 2.0,
 		..Default::default()
 	}
 	.init()
 	.expect("StereoKit failed to initialize");
 	let _ = SK_MULTITHREAD.set(sk.multithreaded());
 	info!("Init StereoKit");
+
+	sk.render_set_multisample(0);
 
 	sk.material_set_shader(
 		sk.material_find("default/material_pbr").unwrap(),
