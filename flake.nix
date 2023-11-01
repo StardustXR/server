@@ -53,7 +53,7 @@
         effects = let
           pkgs = nixpkgs.legacyPackages.x86_64-linux;
           hci-effects = hercules-ci-effects.lib.withPkgs pkgs;
-        in { branch, rev, ... }: {
+        in { ref, rev, ... }: {
           gnome-graphical-test = hci-effects.mkEffect {
             secretsMap."stardustxrDiscord" = "stardustxrDiscord";
             secretsMap."stardustxrIpfs" = "stardustxrIpfs";
@@ -67,7 +67,7 @@
               export ADDRESS="https://ipfs.stardustxr.org/ipfs/$CID"
               ${pkgs.discord-sh}/bin/discord.sh \
                 --description "\`stardustxr/server\` has been modified, here's how it renders \`weston-cliptest\` on \`flatland\` via \`monado-service\` inside of the \`gnome-graphical-test\`" \
-                --field "Branch;${branch}" \
+                --field "Ref;${ref}" \
                 --field "Commit ID;${rev}" \
                 --field "Flatland Revision;${flatland.rev}" \
                 --field "Reproducer;\`nix build github:stardustxr/server/${rev}#gnome-graphical-test\`" \
