@@ -58,10 +58,11 @@ tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 global_counter = "0.2.2"
 rand = "0.8.5"
 atty = "0.2.14"
-xkbcommon = { version = "0.6.0", default-features = false, optional = true }
+xkbcommon = { version = "0.7.0", default-features = false, optional = true }
 ctrlc = "3.4.1"
 libc = "0.2.148"
 input-event-codes = "5.16.8"
+nix = "0.27.1"
 
 [dependencies.smithay]
 # git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures

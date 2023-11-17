@@ -19,7 +19,6 @@ use self::core::eventloop::EventLoop;
 use clap::Parser;
 use directories::ProjectDirs;
 use once_cell::sync::OnceCell;
-use smithay::reexports::nix;
 use stardust_xr::server;
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
