@@ -23,7 +23,6 @@ use smithay::{
 		compositor::{CompositorClientState, CompositorState},
 		dmabuf::{
 			self, DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState,
-			ImportError,
 		},
 		shell::kde::decoration::KdeDecorationState,
 		shm::{ShmHandler, ShmState},
@@ -43,7 +42,9 @@ pub struct ClientState {
 }
 impl ClientState {
 	pub fn flush(&self) {
-		let Some(display) = self.display.upgrade() else {return};
+		let Some(display) = self.display.upgrade() else {
+			return;
+		};
 		let _ = display.flush_clients(self.id.get().cloned());
 	}
 }
@@ -70,7 +71,7 @@ pub struct WaylandState {
 	pub kde_decoration_state: KdeDecorationState,
 	pub shm_state: ShmState,
 	dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
-	dmabuf_tx: UnboundedSender<Dmabuf>,
+	dmabuf_tx: UnboundedSender<(Dmabuf, dmabuf::ImportNotifier)>,
 	pub output: Output,
 }
 
@@ -78,7 +79,7 @@ impl WaylandState {
 	pub fn new(
 		display_handle: DisplayHandle,
 		renderer: &GlesRenderer,
-		dmabuf_tx: UnboundedSender<Dmabuf>,
+		dmabuf_tx: UnboundedSender<(Dmabuf, dmabuf::ImportNotifier)>,
 	) -> Arc<Mutex<Self>> {
 		let compositor_state = CompositorState::new::<Self>(&display_handle);
 		// let xdg_activation_state = XdgActivationState::new::<Self, _>(&display_handle);
@@ -188,8 +189,9 @@ impl DmabufHandler for WaylandState {
 		&mut self,
 		_global: &DmabufGlobal,
 		dmabuf: Dmabuf,
-	) -> Result<(), dmabuf::ImportError> {
-		self.dmabuf_tx.send(dmabuf).map_err(|_| ImportError::Failed)
+		notifier: dmabuf::ImportNotifier,
+	) {
+		self.dmabuf_tx.send((dmabuf, notifier)).unwrap();
 	}
 }
 delegate_dmabuf!(WaylandState);

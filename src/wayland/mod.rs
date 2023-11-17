@@ -24,6 +24,7 @@ use smithay::backend::renderer::ImportDma;
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::{Display, ListeningSocket};
+use smithay::wayland::dmabuf;
 use std::ffi::OsStr;
 use std::os::fd::OwnedFd;
 use std::os::unix::prelude::AsRawFd;
@@ -86,7 +87,7 @@ pub struct Wayland {
 	pub socket_name: Option<String>,
 	join_handle: JoinHandle<Result<()>>,
 	renderer: GlesRenderer,
-	dmabuf_rx: UnboundedReceiver<Dmabuf>,
+	dmabuf_rx: UnboundedReceiver<(Dmabuf, dmabuf::ImportNotifier)>,
 	wayland_state: Arc<Mutex<WaylandState>>,
 	#[cfg(feature = "xwayland")]
 	pub xwayland_state: xwayland::XWaylandState,
@@ -180,8 +181,10 @@ impl Wayland {
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self, sk))]
 	pub fn update(&mut self, sk: &impl StereoKitDraw) {
-		while let Ok(dmabuf) = self.dmabuf_rx.try_recv() {
-			let _ = self.renderer.import_dmabuf(&dmabuf, None);
+		while let Ok((dmabuf, notifier)) = self.dmabuf_rx.try_recv() {
+			if self.renderer.import_dmabuf(&dmabuf, None).is_err() {
+				notifier.failed();
+			}
 		}
 		for core_surface in CORE_SURFACES.get_valid_contents() {
 			core_surface.process(sk, &mut self.renderer);
