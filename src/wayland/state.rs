@@ -1,8 +1,13 @@
-use crate::wayland::seat::SeatData;
+use super::DisplayWrapper;
+use crate::wayland::{drm::wl_drm::WlDrm, seat::SeatData};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::{
-	backend::{allocator::dmabuf::Dmabuf, egl::EGLDevice, renderer::gles::GlesRenderer},
+	backend::{
+		allocator::{dmabuf::Dmabuf, Fourcc},
+		egl::EGLDevice,
+		renderer::gles::GlesRenderer,
+	},
 	delegate_dmabuf, delegate_output, delegate_shm,
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
@@ -31,8 +36,6 @@ use smithay::{
 use std::sync::{Arc, Weak};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{info, warn};
-
-use super::DisplayWrapper;
 
 pub struct ClientState {
 	pub id: OnceCell<ClientId>,
@@ -71,7 +74,8 @@ pub struct WaylandState {
 	pub kde_decoration_state: KdeDecorationState,
 	pub shm_state: ShmState,
 	dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
-	dmabuf_tx: UnboundedSender<(Dmabuf, dmabuf::ImportNotifier)>,
+	pub drm_formats: Vec<Fourcc>,
+	pub dmabuf_tx: UnboundedSender<(Dmabuf, Option<dmabuf::ImportNotifier>)>,
 	pub output: Output,
 }
 
@@ -79,7 +83,7 @@ impl WaylandState {
 	pub fn new(
 		display_handle: DisplayHandle,
 		renderer: &GlesRenderer,
-		dmabuf_tx: UnboundedSender<(Dmabuf, dmabuf::ImportNotifier)>,
+		dmabuf_tx: UnboundedSender<(Dmabuf, Option<dmabuf::ImportNotifier>)>,
 	) -> Arc<Mutex<Self>> {
 		let compositor_state = CompositorState::new::<Self>(&display_handle);
 		// let xdg_activation_state = XdgActivationState::new::<Self, _>(&display_handle);
@@ -88,13 +92,14 @@ impl WaylandState {
 		let shm_state = ShmState::new::<Self>(&display_handle, vec![]);
 		let render_node = EGLDevice::device_for_display(renderer.egl_context().display())
 			.and_then(|device| device.try_get_render_node());
-
 		let dmabuf_formats = renderer
 			.egl_context()
 			.dmabuf_render_formats()
 			.iter()
 			.cloned()
 			.collect::<Vec<_>>();
+		let drm_formats = dmabuf_formats.iter().map(|f| f.code).collect();
+
 		let dmabuf_default_feedback = match render_node {
 			Ok(Some(node)) => DmabufFeedbackBuilder::new(node.dev_id(), dmabuf_formats.clone())
 				.build()
@@ -148,6 +153,7 @@ impl WaylandState {
 		display_handle.create_global::<Self, WlDataDeviceManager, _>(3, ());
 		display_handle.create_global::<Self, XdgWmBase, _>(5, ());
 		display_handle.create_global::<Self, ZxdgDecorationManagerV1, _>(1, ());
+		display_handle.create_global::<Self, WlDrm, _>(2, ());
 
 		info!("Init Wayland compositor");
 
@@ -160,6 +166,7 @@ impl WaylandState {
 				// xdg_activation_state,
 				kde_decoration_state,
 				shm_state,
+				drm_formats,
 				dmabuf_state,
 				dmabuf_tx,
 				output,
@@ -191,7 +198,7 @@ impl DmabufHandler for WaylandState {
 		dmabuf: Dmabuf,
 		notifier: dmabuf::ImportNotifier,
 	) {
-		self.dmabuf_tx.send((dmabuf, notifier)).unwrap();
+		self.dmabuf_tx.send((dmabuf, Some(notifier))).unwrap();
 	}
 }
 delegate_dmabuf!(WaylandState);

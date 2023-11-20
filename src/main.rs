@@ -14,6 +14,7 @@ use crate::objects::input::mouse_pointer::MousePointer;
 use crate::objects::input::sk_controller::SkController;
 use crate::objects::input::sk_hand::SkHand;
 use crate::objects::play_space::PlaySpace;
+use crate::wayland::X_DISPLAY;
 
 use self::core::eventloop::EventLoop;
 use clap::Parser;
@@ -235,8 +236,10 @@ fn main() {
 			if let Some(wayland_socket) = wayland.socket_name.as_ref() {
 				startup_command.env("WAYLAND_DISPLAY", &wayland_socket);
 			}
-			#[cfg(feature = "xwayland")]
-			startup_command.env("DISPLAY", format!(":{}", wayland.xwayland_state.display));
+			startup_command.env(
+				"DISPLAY",
+				format!(":{}", X_DISPLAY.get().cloned().unwrap_or_default()),
+			);
 			startup_command.env("GDK_BACKEND", "wayland");
 			startup_command.env("QT_QPA_PLATFORM", "wayland");
 			startup_command.env("MOZ_ENABLE_WAYLAND", "1");

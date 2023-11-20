@@ -15,7 +15,8 @@ path = "src/main.rs"
 [features]
 default = ["wayland"]
 wayland = ["dep:smithay", "dep:xkbcommon"]
-xwayland = ["smithay/xwayland"]
+xwayland_rootful = []
+xwayland_rootless = ["smithay/xwayland"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy"]
 
@@ -63,6 +64,9 @@ ctrlc = "3.4.1"
 libc = "0.2.148"
 input-event-codes = "5.16.8"
 nix = "0.27.1"
+wayland-scanner = "0.31.0"
+wayland-backend = "0.3.2"
+cluFlock = "1.2.7"
 
 [dependencies.smithay]
 # git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures

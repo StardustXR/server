@@ -1,6 +1,6 @@
 use super::{
 	seat::{KeyboardEvent, PointerEvent, SeatData},
-	state::ClientState,
+	X_DISPLAY,
 };
 use crate::{
 	nodes::{
@@ -32,8 +32,6 @@ use std::{ffi::OsStr, iter::empty, sync::Arc, time::Duration};
 use tokio::sync::oneshot;
 use tracing::debug;
 
-pub static DISPLAY: OnceCell<String> = OnceCell::new();
-
 pub struct XWaylandState {
 	pub display: u32,
 	event_loop_signal: LoopSignal,
@@ -59,10 +57,14 @@ impl XWaylandState {
 							client_fd: _,
 							display: _,
 						} => {
-							handler.seat = client.get_data::<ClientState>().map(|s| s.seat.clone());
-							handler.wm =
-								X11Wm::start_wm(handle.clone(), dh.clone(), connection, client)
-									.ok();
+							handler.seat.client.set(client.id()).unwrap();
+							handler
+								.wm
+								.set(
+									X11Wm::start_wm(handle.clone(), dh.clone(), connection, client)
+										.unwrap(),
+								)
+								.unwrap();
 						}
 						XWaylandEvent::Exited => (),
 					}
@@ -81,15 +83,15 @@ impl XWaylandState {
 				event_loop_signal: event_loop.get_signal(),
 			});
 			let mut handler = XWaylandHandler {
+				wm: OnceCell::new(),
+				seat: SeatData::new(&dh),
 				wayland_display_handle: dh,
-				wm: None,
-				seat: None,
 			};
 			event_loop.run(Duration::from_millis(100), &mut handler, |_| ())
 		});
 
 		let state = rx.blocking_recv()?;
-		let _ = DISPLAY.set(format!(":{}", state.display));
+		let _ = X_DISPLAY.set(state.display);
 
 		Ok(state)
 	}
@@ -102,8 +104,8 @@ impl Drop for XWaylandState {
 
 struct XWaylandHandler {
 	wayland_display_handle: DisplayHandle,
-	wm: Option<X11Wm>,
-	seat: Option<Arc<SeatData>>,
+	wm: OnceCell<X11Wm>,
+	seat: Arc<SeatData>,
 }
 impl XWaylandHandler {
 	fn panel_item(&self, window: &X11Surface) -> Option<Arc<PanelItem<X11Backend>>> {
@@ -115,7 +117,7 @@ impl XWaylandHandler {
 
 impl XwmHandler for XWaylandHandler {
 	fn xwm_state(&mut self, _xwm: XwmId) -> &mut X11Wm {
-		self.wm.as_mut().unwrap()
+		self.wm.get_mut().unwrap()
 	}
 
 	fn new_window(&mut self, _xwm: XwmId, window: X11Surface) {
@@ -136,14 +138,16 @@ impl XwmHandler for XWaylandHandler {
 		let _ = window.set_maximized(true);
 
 		let dh = self.wayland_display_handle.clone();
-		let seat = self.seat.clone().unwrap();
+		let seat = self.seat.clone();
 		CoreSurface::add_to(
 			self.wayland_display_handle.clone(),
 			&window.wl_surface().unwrap(),
 			{
 				let window = window.clone();
 				move || {
-					let Some(wl_surface) = window.wl_surface() else {return};
+					let Some(wl_surface) = window.wl_surface() else {
+						return;
+					};
 					let seat = seat.clone();
 					window.user_data().insert_if_missing_threadsafe(|| {
 						let panel_item = PanelItem::create(
@@ -164,7 +168,10 @@ impl XwmHandler for XWaylandHandler {
 				}
 			},
 			move |_| {
-				let Some(panel_item) = window.user_data().get::<Arc<PanelItem<X11Backend>>>() else {return};
+				let Some(panel_item) = window.user_data().get::<Arc<PanelItem<X11Backend>>>()
+				else {
+					return;
+				};
 				panel_item.toplevel_size_changed(
 					[
 						window.geometry().size.w as u32,
@@ -181,6 +188,9 @@ impl XwmHandler for XWaylandHandler {
 
 	fn unmapped_window(&mut self, _xwm: XwmId, window: X11Surface) {
 		debug!(?window, "Unmap X window");
+		if let Some(panel_item) = window.user_data().get::<Arc<PanelItem<X11Backend>>>() {
+			panel_item.drop_toplevel();
+		}
 	}
 	fn destroyed_window(&mut self, _xwm: XwmId, window: X11Surface) {
 		debug!(?window, "Destroy X window");
@@ -210,7 +220,9 @@ impl XwmHandler for XWaylandHandler {
 	}
 
 	fn move_request(&mut self, _xwm: XwmId, window: X11Surface, button: u32) {
-		let Some(panel_item) = self.panel_item(&window) else {return};
+		let Some(panel_item) = self.panel_item(&window) else {
+			return;
+		};
 		debug!(?window, button, "X window requests move");
 		panel_item.toplevel_move_request();
 	}
@@ -221,7 +233,9 @@ impl XwmHandler for XWaylandHandler {
 		button: u32,
 		resize_edge: ResizeEdge,
 	) {
-		let Some(panel_item) = self.panel_item(&window) else {return};
+		let Some(panel_item) = self.panel_item(&window) else {
+			return;
+		};
 		debug!(?window, button, ?resize_edge, "X window requests resize");
 		let (up, down, left, right) = match resize_edge {
 			ResizeEdge::Top => (true, false, false, false),
@@ -239,12 +253,16 @@ impl XwmHandler for XWaylandHandler {
 
 	fn fullscreen_request(&mut self, _xwm: XwmId, window: X11Surface) {
 		let _ = window.set_fullscreen(true);
-		let Some(panel_item) = self.panel_item(&window) else {return};
+		let Some(panel_item) = self.panel_item(&window) else {
+			return;
+		};
 		panel_item.toplevel_fullscreen_active(true);
 	}
 	fn unfullscreen_request(&mut self, _xwm: XwmId, window: X11Surface) {
 		let _ = window.set_fullscreen(false);
-		let Some(panel_item) = self.panel_item(&window) else {return};
+		let Some(panel_item) = self.panel_item(&window) else {
+			return;
+		};
 		panel_item.toplevel_fullscreen_active(true);
 	}
 }
@@ -273,63 +291,6 @@ impl X11Backend {
 	// }
 }
 impl Backend for X11Backend {
-	// fn start_data(&self, id: &str) -> Result<Message> {
-	// 	let size = (
-	// 		self.toplevel.geometry().size.w as u32,
-	// 		self.toplevel.geometry().size.h as u32,
-	// 	);
-	// 	let toplevel_state = (
-	// 		None::<String>,
-	// 		self.toplevel.title(),
-	// 		None::<String>,
-	// 		(
-	// 			self.toplevel.geometry().size.w as u32,
-	// 			self.toplevel.geometry().size.h as u32,
-	// 		),
-	// 		self.toplevel.min_size().map(|s| (s.w as u32, s.h as u32)),
-	// 		self.toplevel.max_size().map(|s| (s.w as u32, s.w as u32)),
-	// 		((0_i32, 0_i32), size),
-	// 		vec![0_u32; 0],
-	// 	);
-	// 	let info = (
-	// 		None::<(Vector2<u32>, Vector2<i32>)>,
-	// 		toplevel_state,
-	// 		Vec::<PopupData>::new(),
-	// 		None::<SurfaceID>,
-	// 		None::<SurfaceID>,
-	// 	);
-	// 	Ok(serialize((id, info))?.into())
-	// }
-	// fn serialize_toplevel(&self) -> Result<Message> {
-	// 	let toplevel_state = (
-	// 		None::<String>,
-	// 		self.toplevel.title(),
-	// 		None::<String>,
-	// 		(
-	// 			self.toplevel.geometry().size.w,
-	// 			self.toplevel.geometry().size.h,
-	// 		),
-	// 		self.toplevel.min_size().map(|s| (s.w, s.h)),
-	// 		self.toplevel.max_size().map(|s| (s.w, s.w)),
-	// 	);
-	// 	let data = serialize(&toplevel_state)?;
-	// 	Ok(data.into())
-	// }
-
-	// fn set_toplevel_capabilities(&self, _capabilities: Vec<u8>) {}
-
-	// fn set_toplevel_size(
-	// 	&self,
-	// 	size: Option<Vector2<u32>>,
-	// 	states: Vec<u32>,
-	// 	_bounds: Option<Vector2<u32>>,
-	// ) {
-	// 	let _ = self.toplevel.configure(
-	// 		size.map(|s| Rectangle::from_loc_and_size((0, 0), (s.x as i32, s.y as i32))),
-	// 	);
-	// 	let _ = self.toplevel.set_maximized(states.contains(&1));
-	// }
-
 	fn start_data(&self) -> Result<PanelItemInitData> {
 		Ok(PanelItemInitData {
 			cursor: None,
@@ -364,7 +325,9 @@ impl Backend for X11Backend {
 			keyboard_grab: self._keyboard_grab.lock().clone(),
 		})
 	}
-	fn close_toplevel(&self) {}
+	fn close_toplevel(&self) {
+		let _ = self.toplevel.close();
+	}
 
 	fn auto_size_toplevel(&self) {
 		let _ = self.toplevel.configure(None);
@@ -380,19 +343,27 @@ impl Backend for X11Backend {
 	}
 
 	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>) {
-		let Some(wl_surface) = self.wl_surface_from_id(&surface) else {return};
-		let Some(core_surface) = CoreSurface::from_wl_surface(&wl_surface) else {return};
+		let Some(wl_surface) = self.wl_surface_from_id(&surface) else {
+			return;
+		};
+		let Some(core_surface) = CoreSurface::from_wl_surface(&wl_surface) else {
+			return;
+		};
 
 		core_surface.apply_material(model_part);
 	}
 
 	fn pointer_motion(&self, surface: &SurfaceID, position: Vector2<f32>) {
-		let Some(surface) = self.wl_surface_from_id(surface) else {return};
+		let Some(surface) = self.wl_surface_from_id(surface) else {
+			return;
+		};
 		self.seat
 			.pointer_event(&surface, PointerEvent::Motion(position));
 	}
 	fn pointer_button(&self, surface: &SurfaceID, button: u32, pressed: bool) {
-		let Some(surface) = self.wl_surface_from_id(surface) else {return};
+		let Some(surface) = self.wl_surface_from_id(surface) else {
+			return;
+		};
 		self.seat.pointer_event(
 			&surface,
 			PointerEvent::Button {
@@ -407,7 +378,9 @@ impl Backend for X11Backend {
 		scroll_distance: Option<Vector2<f32>>,
 		scroll_steps: Option<Vector2<f32>>,
 	) {
-		let Some(surface) = self.wl_surface_from_id(surface) else {return};
+		let Some(surface) = self.wl_surface_from_id(surface) else {
+			return;
+		};
 		self.seat.pointer_event(
 			&surface,
 			PointerEvent::Scroll {
@@ -418,9 +391,13 @@ impl Backend for X11Backend {
 	}
 
 	fn keyboard_keys(&self, surface: &SurfaceID, keymap_id: &str, keys: Vec<i32>) {
-		let Some(surface) = self.wl_surface_from_id(surface) else {return};
+		let Some(surface) = self.wl_surface_from_id(surface) else {
+			return;
+		};
 		let keymaps = KEYMAPS.lock();
-		let Some(keymap) = keymaps.get(keymap_id).cloned() else {return};
+		let Some(keymap) = keymaps.get(keymap_id).cloned() else {
+			return;
+		};
 		if self.seat.set_keymap(keymap, vec![surface.clone()]).is_err() {
 			return;
 		}
@@ -429,9 +406,25 @@ impl Backend for X11Backend {
 				&surface,
 				KeyboardEvent::Key {
 					key: key.abs() as u32,
-					state: if key < 0 { 1 } else { 0 },
+					state: key < 0,
 				},
 			);
 		}
+	}
+
+	fn touch_down(&self, surface: &SurfaceID, id: u32, position: Vector2<f32>) {
+		let Some(surface) = self.wl_surface_from_id(surface) else {
+			return;
+		};
+		self.seat.touch_down(&surface, id, position)
+	}
+	fn touch_move(&self, id: u32, position: Vector2<f32>) {
+		self.seat.touch_move(id, position)
+	}
+	fn touch_up(&self, id: u32) {
+		self.seat.touch_up(id)
+	}
+	fn reset_touches(&self) {
+		self.seat.reset_touches()
 	}
 }
