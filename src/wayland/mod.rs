@@ -5,9 +5,18 @@ mod seat;
 mod state;
 mod surface;
 // mod xdg_activation;
+mod drm;
 mod xdg_shell;
-#[cfg(feature = "xwayland")]
-pub mod xwayland;
+#[cfg(feature = "xwayland_rootful")]
+pub mod xwayland_rootful;
+#[cfg(feature = "xwayland_rootful")]
+use self::xwayland_rootful::X11Lock;
+#[cfg(feature = "xwayland_rootful")]
+use crate::wayland::xwayland_rootful::start_xwayland;
+#[cfg(feature = "xwayland_rootless")]
+pub mod xwayland_rootless;
+#[cfg(feature = "xwayland_rootless")]
+use self::xwayland_rootless::XWaylandState;
 
 use self::{state::WaylandState, surface::CORE_SURFACES};
 use crate::wayland::seat::SeatData;
@@ -40,6 +49,7 @@ use tokio::{
 };
 use tracing::{debug_span, info, instrument};
 
+pub static X_DISPLAY: OnceCell<u32> = OnceCell::new();
 pub static WAYLAND_DISPLAY: OnceCell<String> = OnceCell::new();
 pub static SERIAL_COUNTER: CounterU32 = CounterU32::new(0);
 
@@ -87,10 +97,12 @@ pub struct Wayland {
 	pub socket_name: Option<String>,
 	join_handle: JoinHandle<Result<()>>,
 	renderer: GlesRenderer,
-	dmabuf_rx: UnboundedReceiver<(Dmabuf, dmabuf::ImportNotifier)>,
+	dmabuf_rx: UnboundedReceiver<(Dmabuf, Option<dmabuf::ImportNotifier>)>,
 	wayland_state: Arc<Mutex<WaylandState>>,
-	#[cfg(feature = "xwayland")]
-	pub xwayland_state: xwayland::XWaylandState,
+	#[cfg(feature = "xwayland_rootful")]
+	pub x_lock: X11Lock,
+	#[cfg(feature = "xwayland_rootless")]
+	pub xwayland_state: XWaylandState,
 }
 impl Wayland {
 	pub fn new() -> Result<Self> {
@@ -108,8 +120,9 @@ impl Wayland {
 
 		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
 		let display = Arc::new(DisplayWrapper(Mutex::new(display), display_handle.clone()));
-		#[cfg(feature = "xwayland")]
-		let xwayland_state = xwayland::XWaylandState::create(&display_handle)?;
+
+		#[cfg(feature = "xwayland_rootless")]
+		let xwayland_state = XWaylandState::create(&display_handle)?;
 		let wayland_state = WaylandState::new(display_handle, &renderer, dmabuf_tx);
 
 		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
@@ -120,6 +133,8 @@ impl Wayland {
 		if let Some(socket_name) = &socket_name {
 			let _ = WAYLAND_DISPLAY.set(socket_name.clone());
 		}
+		#[cfg(feature = "xwayland_rootful")]
+		let x_display = start_xwayland(socket.as_raw_fd())?;
 		info!(socket_name, "Wayland active");
 
 		let join_handle = Wayland::start_loop(display.clone(), socket, wayland_state.clone())?;
@@ -131,7 +146,9 @@ impl Wayland {
 			renderer,
 			dmabuf_rx,
 			wayland_state,
-			#[cfg(feature = "xwayland")]
+			#[cfg(feature = "xwayland_rootful")]
+			x_lock: x_display,
+			#[cfg(feature = "xwayland_rootless")]
 			xwayland_state,
 		})
 	}
@@ -183,7 +200,9 @@ impl Wayland {
 	pub fn update(&mut self, sk: &impl StereoKitDraw) {
 		while let Ok((dmabuf, notifier)) = self.dmabuf_rx.try_recv() {
 			if self.renderer.import_dmabuf(&dmabuf, None).is_err() {
-				notifier.failed();
+				if let Some(notifier) = notifier {
+					notifier.failed();
+				}
 			}
 		}
 		for core_surface in CORE_SURFACES.get_valid_contents() {

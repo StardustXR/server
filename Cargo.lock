@@ -2053,6 +2053,7 @@ version = "0.43.0"
 dependencies = [
  "atty",
  "clap",
+ "cluFlock",
  "color-eyre",
  "console-subscriber",
  "ctrlc",
@@ -2081,6 +2082,8 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-tracy",
+ "wayland-backend",
+ "wayland-scanner",
  "xkbcommon",
 ]
 
