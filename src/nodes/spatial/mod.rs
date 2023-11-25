@@ -9,13 +9,14 @@ use color_eyre::eyre::{ensure, eyre, Result};
 use glam::{vec3a, Mat4, Quat};
 use mint::Vector3;
 use nanoid::nanoid;
+use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use stardust_xr::values::Transform;
 use std::fmt::Debug;
 use std::ptr;
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, Weak};
 use stereokit::{bounds_grow_to_fit_box, Bounds};
 
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
@@ -29,7 +30,7 @@ pub struct Spatial {
 	pub(super) transform: Mutex<Mat4>,
 	zone: Mutex<Weak<Zone>>,
 	children: Registry<Spatial>,
-	pub(super) bounding_box_calc: OnceLock<fn(&Node) -> Bounds>,
+	pub(super) bounding_box_calc: OnceCell<fn(&Node) -> Bounds>,
 }
 
 impl Spatial {
@@ -43,7 +44,7 @@ impl Spatial {
 			transform: Mutex::new(transform),
 			zone: Mutex::new(Weak::new()),
 			children: Registry::new(),
-			bounding_box_calc: OnceLock::default(),
+			bounding_box_calc: OnceCell::default(),
 		})
 	}
 	pub fn add_to(
@@ -56,7 +57,7 @@ impl Spatial {
 			node.spatial.get().is_none(),
 			"Internal: Node already has a Spatial aspect!"
 		);
-		let spatial = Spatial::new(Arc::downgrade(node), parent, transform);
+		let spatial = Spatial::new(Arc::downgrade(node), parent.clone(), transform);
 		node.add_local_method("get_bounding_box", Spatial::get_bounding_box_flex);
 		node.add_local_method("get_transform", Spatial::get_transform_flex);
 		node.add_local_signal("set_transform", Spatial::set_transform_flex);
@@ -71,6 +72,9 @@ impl Spatial {
 		node.add_local_method("field_closest_point", Spatial::field_closest_point_flex);
 		if zoneable {
 			ZONEABLE_REGISTRY.add_raw(&spatial);
+		}
+		if let Some(parent) = parent {
+			parent.children.add_raw(&spatial);
 		}
 		let _ = node.spatial.set(spatial.clone());
 		Ok(spatial)
@@ -88,7 +92,9 @@ impl Spatial {
 
 	// the output bounds are probably way bigger than they need to be
 	pub fn get_bounding_box(&self) -> Bounds {
-		let Some(node) = self.node() else {return Bounds::default()};
+		let Some(node) = self.node() else {
+			return Bounds::default();
+		};
 		let mut bounds = self
 			.bounding_box_calc
 			.get()
