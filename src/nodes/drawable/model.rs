@@ -23,10 +23,11 @@ use std::sync::{Arc, Weak};
 use stereokit::named_colors::WHITE;
 use stereokit::{
 	Bounds, Color128, Material, Model as SKModel, RenderLayer, Shader, StereoKitDraw,
-	StereoKitMultiThread,
+	StereoKitMultiThread, Transparency,
 };
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
+static HOLDOUT_MATERIAL: OnceCell<Arc<Material>> = OnceCell::new();
 
 #[derive(Deserialize, Debug)]
 #[serde(tag = "t", content = "c")]
@@ -106,7 +107,9 @@ impl MaterialParameter {
 				let Some(texture_path) = resource.get_file(
 					&client.base_resource_prefixes.lock().clone(),
 					&[OsStr::new("png"), OsStr::new("jpg")],
-				) else {return};
+				) else {
+					return;
+				};
 				if let Ok(tex) = sk.tex_create_file(texture_path, true, 0) {
 					sk.material_set_texture(material, parameter_name, &tex);
 				}
@@ -125,6 +128,22 @@ pub struct ModelPart {
 }
 impl ModelPart {
 	fn create_for_model(sk: &impl StereoKitMultiThread, model: &Arc<Model>, sk_model: &SKModel) {
+		HOLDOUT_MATERIAL.get_or_init(|| {
+			let mat = sk.material_copy(Material::UNLIT);
+			sk.material_set_transparency(&mat, Transparency::None);
+			sk.material_set_color(
+				&mat,
+				"color",
+				stereokit::sys::color128 {
+					r: 0.0,
+					g: 0.0,
+					b: 0.0,
+					a: 0.0,
+				},
+			);
+			Arc::new(mat)
+		});
+
 		let first_root_part = sk.model_node_get_root(sk_model);
 		let mut current_option_part = Some(first_root_part);
 
@@ -185,11 +204,21 @@ impl ModelPart {
 		.ok()?;
 
 		let _ = node.spatial.get().unwrap().bounding_box_calc.set(|node| {
-			let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {return Bounds::default()};
-			let Some(sk) = SK_MULTITHREAD.get() else {return Bounds::default()};
-			let Some(model) = model_part.model.upgrade() else {return Bounds::default()};
-			let Some(sk_model) = model.sk_model.get() else {return Bounds::default()};
-			let Some(sk_mesh) = sk.model_node_get_mesh(sk_model, model_part.id) else {return Bounds::default()};
+			let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {
+				return Bounds::default();
+			};
+			let Some(sk) = SK_MULTITHREAD.get() else {
+				return Bounds::default();
+			};
+			let Some(model) = model_part.model.upgrade() else {
+				return Bounds::default();
+			};
+			let Some(sk_model) = model.sk_model.get() else {
+				return Bounds::default();
+			};
+			let Some(sk_mesh) = sk.model_node_get_mesh(sk_model, model_part.id) else {
+				return Bounds::default();
+			};
 			sk.mesh_get_bounds(sk_mesh)
 		});
 
@@ -205,9 +234,25 @@ impl ModelPart {
 			"set_material_parameter",
 			ModelPart::set_material_parameter_flex,
 		);
+		node.add_local_signal(
+			"apply_holdout_material",
+			ModelPart::apply_holdout_material_flex,
+		);
 		let _ = node.drawable.set(Drawable::ModelPart(model_part.clone()));
 		model.parts.add(id, &node);
 		Some(model_part)
+	}
+
+	fn apply_holdout_material_flex(
+		node: &Node,
+		_calling_client: Arc<Client>,
+		_message: Message,
+	) -> Result<()> {
+		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {
+			bail!("Not a drawable??")
+		};
+		model_part.replace_material(HOLDOUT_MATERIAL.get().unwrap().clone());
+		Ok(())
 	}
 
 	fn set_material_parameter_flex(
@@ -215,7 +260,9 @@ impl ModelPart {
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {bail!("Not a drawable??")};
+		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {
+			bail!("Not a drawable??")
+		};
 
 		let (name, value): (String, MaterialParameter) = deserialize(message.as_ref())?;
 
@@ -234,17 +281,27 @@ impl ModelPart {
 	}
 
 	fn update(&self, sk: &impl StereoKitDraw) {
-		let Some(model) = self.model.upgrade() else {return};
-		let Some(sk_model) = model.sk_model.get() else {return};
-		let Some(node) = model.space.node() else {return};
-		let Some(client) = node.get_client() else {return};
+		let Some(model) = self.model.upgrade() else {
+			return;
+		};
+		let Some(sk_model) = model.sk_model.get() else {
+			return;
+		};
+		let Some(node) = model.space.node() else {
+			return;
+		};
+		let Some(client) = node.get_client() else {
+			return;
+		};
 		if let Some(material_replacement) = self.pending_material_replacement.lock().take() {
 			sk.model_node_set_material(sk_model, self.id, material_replacement.as_ref().as_ref());
 		}
 
 		let mut material_parameters = self.pending_material_parameters.lock();
 		for (parameter_name, parameter_value) in material_parameters.drain() {
-			let Some(material) = sk.model_node_get_material(sk_model, self.id) else {continue};
+			let Some(material) = sk.model_node_get_material(sk_model, self.id) else {
+				continue;
+			};
 			let new_material = sk.material_copy(material);
 			parameter_value.apply_to_material(&client, sk, &new_material, parameter_name.as_str());
 			sk.model_node_set_material(sk_model, self.id, &new_material);
@@ -313,9 +370,13 @@ impl Model {
 	}
 
 	fn draw(&self, sk: &impl StereoKitDraw) {
-		let Some(sk_model) = self.sk_model.get() else {return};
+		let Some(sk_model) = self.sk_model.get() else {
+			return;
+		};
 		for model_node_node in self.parts.nodes() {
-			let Some(Drawable::ModelPart(model_node)) = model_node_node.drawable.get() else {continue};
+			let Some(Drawable::ModelPart(model_node)) = model_node_node.drawable.get() else {
+				continue;
+			};
 			model_node.update(sk);
 		}
 
