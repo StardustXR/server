@@ -19,9 +19,12 @@ use xkbcommon::xkb::{Context, Keymap, FORMAT_TEXT_V1};
 #[derive(Default, Deserialize, Serialize)]
 struct MouseEvent {
 	select: f32,
+	middle: f32,
+	context: f32,
 	grab: f32,
 	scroll_continuous: Vec2,
 	scroll_discrete: Vec2,
+	raw_input_events: Vec<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -96,7 +99,22 @@ impl MousePointer {
 				} else {
 					0.0f32
 				};
-			self.mouse_datamap.grab = if sk.input_key(Key::MouseRight).contains(ButtonState::ACTIVE)
+			self.mouse_datamap.middle =
+				if sk.input_key(Key::MouseCenter).contains(ButtonState::ACTIVE) {
+					1.0f32
+				} else {
+					0.0f32
+				};
+			self.mouse_datamap.context =
+				if sk.input_key(Key::MouseRight).contains(ButtonState::ACTIVE) {
+					1.0f32
+				} else {
+					0.0f32
+				};
+			self.mouse_datamap.grab = if sk.input_key(Key::MouseBack).contains(ButtonState::ACTIVE)
+				|| sk
+					.input_key(Key::MouseForward)
+					.contains(ButtonState::ACTIVE)
 			{
 				1.0f32
 			} else {
