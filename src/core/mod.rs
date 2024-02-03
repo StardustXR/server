@@ -8,4 +8,3 @@ pub mod registry;
 pub mod resource;
 pub mod scenegraph;
 pub mod task;
-pub mod typed_datamap;

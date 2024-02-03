@@ -10,7 +10,7 @@ use color_eyre::eyre::Result;
 use glam::Mat4;
 use nanoid::nanoid;
 use serde::Serialize;
-use stardust_xr::schemas::{flat::Datamap, flex::flexbuffers};
+use stardust_xr::{schemas::flex::flexbuffers, values::Datamap};
 use std::sync::Arc;
 use stereokit::StereoKitMultiThread;
 
@@ -48,7 +48,7 @@ impl EyePointer {
 			let mut map = fbb.start_map();
 			map.push("eye", 2);
 			map.end_map();
-			*self.pointer.datamap.lock() = Datamap::new(fbb.take_buffer()).ok();
+			*self.pointer.datamap.lock() = Datamap::from_raw(fbb.take_buffer()).ok();
 		}
 	}
 }

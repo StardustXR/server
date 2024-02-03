@@ -12,20 +12,19 @@ use super::{
 	spatial::{find_spatial_parent, parse_transform, Spatial},
 	Message, Node,
 };
-use crate::core::registry::Registry;
 use crate::core::{client::Client, node_collections::LifeLinkedNodeMap};
+use crate::{core::registry::Registry, nodes::spatial::Transform};
 use color_eyre::eyre::{ensure, Result};
 use glam::Mat4;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::AtomicBool;
 use serde::Deserialize;
-use stardust_xr::schemas::{flat::InputData, flex::deserialize};
-use stardust_xr::schemas::{
-	flat::{Datamap, InputDataType},
-	flex::serialize,
+use stardust_xr::schemas::{flat::InputDataType, flex::serialize};
+use stardust_xr::{
+	schemas::{flat::InputData, flex::deserialize},
+	values::Datamap,
 };
-use stardust_xr::values::Transform;
 use std::ops::Deref;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
@@ -119,7 +118,10 @@ impl InputMethod {
 	}
 	fn set_datamap_flex(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
 		let method = InputMethod::get(node)?;
-		method.datamap.lock().replace(Datamap::new(message.data)?);
+		method
+			.datamap
+			.lock()
+			.replace(Datamap::from_raw(message.data)?);
 		Ok(())
 	}
 	fn set_handlers_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
@@ -139,9 +141,15 @@ impl InputMethod {
 	}
 
 	fn make_alias(&self, handler: &InputHandler) {
-		let Some(method_node) = self.node.upgrade() else {return};
-		let Some(handler_node) = handler.node.upgrade() else {return};
-		let Some(client) = handler_node.get_client() else {return};
+		let Some(method_node) = self.node.upgrade() else {
+			return;
+		};
+		let Some(handler_node) = handler.node.upgrade() else {
+			return;
+		};
+		let Some(client) = handler_node.get_client() else {
+			return;
+		};
 		let Ok(method_alias) = Alias::create(
 			&client,
 			handler_node.get_path(),
@@ -151,7 +159,9 @@ impl InputMethod {
 				server_signals: vec!["capture"],
 				..Default::default()
 			},
-		) else {return};
+		) else {
+			return;
+		};
 		method_alias.enabled.store(false, Ordering::Relaxed);
 		handler
 			.method_aliases
@@ -168,9 +178,15 @@ impl InputMethod {
 	}
 
 	fn handle_new_handler(&self, handler: &InputHandler) {
-		let Some(method_node) = self.node.upgrade() else {return};
-		let Some(method_client) = method_node.get_client() else {return};
-		let Some(handler_node) = handler.node.upgrade() else {return};
+		let Some(method_node) = self.node.upgrade() else {
+			return;
+		};
+		let Some(method_client) = method_node.get_client() else {
+			return;
+		};
+		let Some(handler_node) = handler.node.upgrade() else {
+			return;
+		};
 		// Receiver itself
 		let Ok(handler_alias) = Alias::create(
 			&method_client,
@@ -181,32 +197,40 @@ impl InputMethod {
 				server_methods: vec!["getTransform"],
 				..Default::default()
 			},
-		) else {return};
+		) else {
+			return;
+		};
 		self.handler_aliases
 			.add(handler.uid.clone(), &handler_alias);
 
 		if let Some(handler_field_node) = handler.field.spatial_ref().node.upgrade() {
 			// Handler's field
 			let Ok(rx_field_alias) = Alias::create(
-					&method_client,
-					handler_alias.get_path(),
-					"field",
-					&handler_field_node,
-					FIELD_ALIAS_INFO.clone(),
-				) else {return};
+				&method_client,
+				handler_alias.get_path(),
+				"field",
+				&handler_field_node,
+				FIELD_ALIAS_INFO.clone(),
+			) else {
+				return;
+			};
 			self.handler_aliases
 				.add(handler.uid.clone() + "-field", &rx_field_alias);
 		}
 
-		let Ok(data) = serialize(&handler.uid) else {return};
+		let Ok(data) = serialize(&handler.uid) else {
+			return;
+		};
 		let _ = method_node.send_remote_signal("handler_created", data);
 	}
 	fn handle_drop_handler(&self, handler: &InputHandler) {
 		let uid = handler.uid.as_str();
 		self.handler_aliases.remove(uid);
 		self.handler_aliases.remove(&(uid.to_string() + "-field"));
-		let Some(tx_node) = self.node.upgrade() else {return};
-		let Ok(data) = serialize(&uid) else {return};
+		let Some(tx_node) = self.node.upgrade() else {
+			return;
+		};
+		let Ok(data) = serialize(&uid) else { return };
 		let _ = tx_node.send_remote_signal("handler_destroyed", data);
 	}
 }
@@ -299,7 +323,9 @@ impl InputHandler {
 		distance_link: &DistanceLink,
 		datamap: Datamap,
 	) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("input", distance_link.serialize(order, captured, datamap));
 	}
 }

@@ -1,6 +1,6 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
+use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
 use crate::nodes::Message;
 use color_eyre::eyre::{ensure, Result};
 use glam::{vec3, vec3a, Vec3, Vec3A};
@@ -8,7 +8,7 @@ use mint::Vector3;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
-use stardust_xr::values::Transform;
+
 use std::sync::Arc;
 
 pub struct BoxField {
@@ -46,7 +46,9 @@ impl BoxField {
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Field::Box(box_field) = node.field.get().unwrap().as_ref() else { return Ok(()) };
+		let Field::Box(box_field) = node.field.get().unwrap().as_ref() else {
+			return Ok(());
+		};
 		box_field.set_size(deserialize(message.as_ref())?);
 
 		Ok(())

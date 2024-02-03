@@ -3,7 +3,7 @@ use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
+use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
 use color_eyre::eyre::{ensure, eyre, Result};
 use glam::{vec3, Vec4Swizzles};
 use once_cell::sync::OnceCell;
@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
-use stardust_xr::values::Transform;
+
 use std::ops::DerefMut;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
 use stereokit::{Sound as SkSound, SoundInstance, StereoKitDraw};

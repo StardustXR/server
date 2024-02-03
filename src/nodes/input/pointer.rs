@@ -2,13 +2,14 @@ use super::{DistanceLink, InputSpecialization};
 use crate::core::client::Client;
 use crate::nodes::fields::{Field, Ray, RayMarchResult};
 use crate::nodes::input::{InputMethod, InputType};
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
+use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
 use crate::nodes::{Message, Node};
 use glam::{vec3, Mat4};
 use serde::Deserialize;
-use stardust_xr::schemas::flat::{Datamap, InputDataType, Pointer as FlatPointer};
+use stardust_xr::schemas::flat::{InputDataType, Pointer as FlatPointer};
 use stardust_xr::schemas::flex::deserialize;
-use stardust_xr::values::Transform;
+use stardust_xr::values::Datamap;
+
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -86,7 +87,8 @@ pub fn create_pointer_flex(
 	InputMethod::add_to(
 		&node,
 		InputType::Pointer(Pointer),
-		info.datamap.and_then(|datamap| Datamap::new(datamap).ok()),
+		info.datamap
+			.and_then(|datamap| Datamap::from_raw(datamap).ok()),
 	)?;
 	Ok(())
 }

@@ -13,6 +13,7 @@ use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
 use crate::nodes::fields::find_field;
+use crate::nodes::spatial::Transform;
 use color_eyre::eyre::{ensure, eyre, Result};
 use lazy_static::lazy_static;
 use nanoid::nanoid;
@@ -20,7 +21,7 @@ use parking_lot::Mutex;
 use portable_atomic::Ordering;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, serialize};
-use stardust_xr::values::Transform;
+
 use std::hash::Hash;
 use std::sync::{Arc, Weak};
 
@@ -230,7 +231,9 @@ impl ItemUI {
 		Ok(())
 	}
 	fn send_state(&self, state: &str, name: &str) {
-		let Ok(serialized_data) = serialize(name) else {return};
+		let Ok(serialized_data) = serialize(name) else {
+			return;
+		};
 		let _ = self
 			.node
 			.upgrade()
@@ -239,14 +242,20 @@ impl ItemUI {
 	}
 
 	fn handle_create_item(&self, item: &Item) {
-		let Some(node) = self.node.upgrade() else {return};
-		let Some(client) = node.get_client() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
+		let Some(client) = node.get_client() else {
+			return;
+		};
 
 		if let Ok(alias_node) = item.make_alias(&client, &(node.get_path().to_string() + "/item")) {
 			self.item_aliases.add(item.uid.clone(), &alias_node);
 		}
 
-		let Ok(serialized_data) =  item.specialization.serialize_start_data(&item.uid) else {return};
+		let Ok(serialized_data) = item.specialization.serialize_start_data(&item.uid) else {
+			return;
+		};
 		let _ = node.send_remote_signal("create_item", serialized_data);
 	}
 	fn handle_destroy_item(&self, item: &Item) {
@@ -254,29 +263,45 @@ impl ItemUI {
 		self.send_state("destroy_item", item.uid.as_str());
 	}
 	fn handle_capture_item(&self, item: &Item, acceptor: &ItemAcceptor) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 
-		let Ok(message) = serialize((item.uid.as_str(), acceptor.uid.as_str())) else {return};
+		let Ok(message) = serialize((item.uid.as_str(), acceptor.uid.as_str())) else {
+			return;
+		};
 		let _ = node.send_remote_signal("capture_item", message);
 	}
 	fn handle_release_item(&self, item: &Item, acceptor: &ItemAcceptor) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 
-		let Ok(message) = serialize((item.uid.as_str(), acceptor.uid.as_str())) else {return};
+		let Ok(message) = serialize((item.uid.as_str(), acceptor.uid.as_str())) else {
+			return;
+		};
 		let _ = node.send_remote_signal("release_item", message);
 	}
 	fn handle_create_acceptor(&self, acceptor: &ItemAcceptor) {
-		let Some(node) = self.node.upgrade() else {return};
-		let Some(client) = node.get_client() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
+		let Some(client) = node.get_client() else {
+			return;
+		};
 
 		let Ok((alias, field_alias)) = acceptor.make_aliases(
 			&client,
 			&format!("/item/{}/acceptor", self.type_info.type_name),
-		) else {return};
+		) else {
+			return;
+		};
 		self.acceptor_aliases.add(acceptor.uid.clone(), &alias);
 		self.acceptor_field_aliases
 			.add(acceptor.uid.clone(), &field_alias);
-		let Ok(message) = serialize(&acceptor.uid) else {return};
+		let Ok(message) = serialize(&acceptor.uid) else {
+			return;
+		};
 		let _ = node.send_remote_signal("create_acceptor", message);
 	}
 	fn handle_destroy_acceptor(&self, acceptor: &ItemAcceptor) {
@@ -354,23 +379,33 @@ impl ItemAcceptor {
 		Ok((acceptor_alias, acceptor_field_alias))
 	}
 	fn handle_capture(&self, item: &Arc<Item>) {
-		let Some(node) = self.node.upgrade() else {return};
-		let Some(client) = node.get_client() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
+		let Some(client) = node.get_client() else {
+			return;
+		};
 
 		self.accepted_registry.add_raw(item);
 		if let Ok(alias_node) = item.make_alias(&client, &node.path) {
 			self.accepted_aliases.add(item.uid.clone(), &alias_node);
 		}
 
-		let Ok(serialized_data) =  item.specialization.serialize_start_data(&item.uid) else {return};
+		let Ok(serialized_data) = item.specialization.serialize_start_data(&item.uid) else {
+			return;
+		};
 		let _ = node.send_remote_signal("capture", serialized_data);
 	}
 	fn handle_release(&self, item: &Item) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 
 		self.accepted_registry.remove(item);
 		self.accepted_aliases.remove(&item.uid);
-		let Ok(message) = serialize(&item.uid) else {return};
+		let Ok(message) = serialize(&item.uid) else {
+			return;
+		};
 		let _ = node.send_remote_signal("release", message);
 	}
 }

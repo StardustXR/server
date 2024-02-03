@@ -1,5 +1,5 @@
 use crate::{
-	core::{client::INTERNAL_CLIENT, typed_datamap::TypedDatamap},
+	core::client::INTERNAL_CLIENT,
 	nodes::{
 		data::{mask_matches, Mask, PulseSender, KEYMAPS, PULSE_RECEIVER_REGISTRY},
 		fields::Ray,
@@ -12,6 +12,7 @@ use color_eyre::eyre::Result;
 use glam::{vec2, vec3, Mat4, Vec2, Vec3};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
+use stardust_xr::values::Datamap;
 use std::{convert::TryFrom, sync::Arc};
 use stereokit::{ray_from_mouse, ButtonState, Key, StereoKitMultiThread};
 use xkbcommon::xkb::{Context, Keymap, FORMAT_TEXT_V1};
@@ -49,8 +50,8 @@ pub struct MousePointer {
 	node: Arc<Node>,
 	spatial: Arc<Spatial>,
 	pointer: Arc<InputMethod>,
-	mouse_datamap: TypedDatamap<MouseEvent>,
-	keyboard_datamap: TypedDatamap<KeyboardEvent>,
+	mouse_datamap: MouseEvent,
+	keyboard_datamap: KeyboardEvent,
 	keyboard_sender: Arc<PulseSender>,
 }
 impl MousePointer {
@@ -122,7 +123,7 @@ impl MousePointer {
 			};
 			self.mouse_datamap.scroll_continuous = vec2(0.0, mouse.scroll_change / 120.0);
 			self.mouse_datamap.scroll_discrete = vec2(0.0, mouse.scroll_change / 120.0);
-			*self.pointer.datamap.lock() = self.mouse_datamap.to_datamap().ok();
+			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).ok();
 		}
 		self.send_keyboard_input(sk);
 	}
@@ -169,8 +170,14 @@ impl MousePointer {
 
 			self.keyboard_datamap.keys = keys;
 			if !self.keyboard_datamap.keys.is_empty() {
-				rx.send_data(&self.node.uid, self.keyboard_datamap.serialize().unwrap())
-					.unwrap();
+				rx.send_data(
+					&self.node.uid,
+					Datamap::from_typed(&self.keyboard_datamap)
+						.unwrap()
+						.raw()
+						.clone(),
+				)
+				.unwrap();
 			}
 		}
 	}

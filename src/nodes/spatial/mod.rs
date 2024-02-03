@@ -13,11 +13,12 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, serialize};
-use stardust_xr::values::Transform;
 use std::fmt::Debug;
 use std::ptr;
 use std::sync::{Arc, Weak};
 use stereokit::{bounds_grow_to_fit_box, Bounds};
+
+stardust_xr_server_codegen::codegen_spatial_protocol!();
 
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
@@ -143,7 +144,7 @@ impl Spatial {
 		let (mut reference_space_scl, mut reference_space_rot, mut reference_space_pos) =
 			local_transform_in_reference_space.to_scale_rotation_translation();
 
-		if let Some(pos) = transform.position {
+		if let Some(pos) = transform.translation {
 			reference_space_pos = pos.into()
 		}
 		if let Some(rot) = transform.rotation {
@@ -467,7 +468,7 @@ impl Drop for Spatial {
 
 pub fn parse_transform(transform: Transform, position: bool, rotation: bool, scale: bool) -> Mat4 {
 	let position = position
-		.then_some(transform.position)
+		.then_some(transform.translation)
 		.flatten()
 		.unwrap_or_else(|| Vector3::from([0.0; 3]));
 	let rotation = rotation

@@ -1,5 +1,5 @@
 use crate::{
-	core::{client::INTERNAL_CLIENT, typed_datamap::TypedDatamap},
+	core::client::INTERNAL_CLIENT,
 	nodes::{
 		input::{tip::Tip, InputMethod, InputType},
 		spatial::Spatial,
@@ -9,6 +9,7 @@ use crate::{
 use color_eyre::eyre::Result;
 use glam::{Mat4, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
+use stardust_xr::values::Datamap;
 use std::sync::Arc;
 use stereokit::{
 	named_colors::WHITE, ButtonState, Handed, Model, RenderLayer, StereoKitDraw,
@@ -27,7 +28,7 @@ pub struct SkController {
 	input: Arc<InputMethod>,
 	model: Model,
 	handed: Handed,
-	datamap: TypedDatamap<ControllerDatamap>,
+	datamap: ControllerDatamap,
 }
 impl SkController {
 	pub fn new(sk: &impl StereoKitMultiThread, handed: Handed) -> Result<Self> {
@@ -73,6 +74,6 @@ impl SkController {
 		self.datamap.select = controller.trigger;
 		self.datamap.grab = controller.grip;
 		self.datamap.scroll = controller.stick;
-		*self.input.datamap.lock() = self.datamap.to_datamap().ok();
+		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).ok();
 	}
 }

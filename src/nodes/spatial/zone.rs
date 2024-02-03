@@ -4,7 +4,7 @@ use crate::{
 	nodes::{
 		alias::{Alias, AliasInfo},
 		fields::{find_field, Field},
-		spatial::{find_spatial_parent, parse_transform},
+		spatial::{find_spatial_parent, parse_transform, Transform},
 		Message, Node,
 	},
 };
@@ -13,10 +13,7 @@ use glam::vec3a;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
-use stardust_xr::{
-	schemas::flex::{deserialize, serialize},
-	values::Transform,
-};
+use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::{Arc, Weak};
 
 pub fn capture(spatial: &Arc<Spatial>, zone: &Arc<Zone>) {
@@ -31,8 +28,12 @@ pub fn capture(spatial: &Arc<Spatial>, zone: &Arc<Zone>) {
 		*spatial.old_parent.lock() = spatial.get_parent();
 		*spatial.zone.lock() = Arc::downgrade(zone);
 		zone.captured.add_raw(spatial);
-		let Some(node) = zone.spatial.node.upgrade() else {return};
-		let Ok(message) = serialize(&spatial.uid) else {return};
+		let Some(node) = zone.spatial.node.upgrade() else {
+			return;
+		};
+		let Ok(message) = serialize(&spatial.uid) else {
+			return;
+		};
 		let _ = node.send_remote_signal("capture", message);
 	}
 }
@@ -40,9 +41,13 @@ pub fn release(spatial: &Spatial) {
 	let _ = spatial.set_spatial_parent_in_place(spatial.old_parent.lock().take());
 	let mut spatial_zone = spatial.zone.lock();
 	if let Some(spatial_zone) = spatial_zone.upgrade() {
-		let Some(node) = spatial_zone.spatial.node.upgrade() else {return};
+		let Some(node) = spatial_zone.spatial.node.upgrade() else {
+			return;
+		};
 		spatial_zone.captured.remove(spatial);
-		let Ok(message) = serialize(&spatial.uid) else {return};
+		let Ok(message) = serialize(&spatial.uid) else {
+			return;
+		};
 		let _ = node.send_remote_signal("release", message);
 	}
 	*spatial_zone = Weak::new();
@@ -83,12 +88,17 @@ impl Zone {
 	}
 	fn update(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
 		let zone = node.zone.get().unwrap();
-		let Some(field) = zone.field.upgrade() else { return Err(color_eyre::eyre::eyre!("Zone's field has been destroyed")) };
+		let Some(field) = zone.field.upgrade() else {
+			return Err(color_eyre::eyre::eyre!("Zone's field has been destroyed"));
+		};
 		let Some((zone_client, zone_node)) = zone
 			.spatial
 			.node
 			.upgrade()
-			.and_then(|n| n.get_client().zip(Some(n))) else { return Err(color_eyre::eyre::eyre!("No client on node?")) };
+			.and_then(|n| n.get_client().zip(Some(n)))
+		else {
+			return Err(color_eyre::eyre::eyre!("No client on node?"));
+		};
 		let mut old_zoneables = zone.zoneables.lock();
 		for (_uid, zoneable) in old_zoneables.iter() {
 			zoneable.destroy();

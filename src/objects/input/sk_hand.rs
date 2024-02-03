@@ -1,5 +1,5 @@
 use crate::{
-	core::{client::INTERNAL_CLIENT, typed_datamap::TypedDatamap},
+	core::client::INTERNAL_CLIENT,
 	nodes::{
 		input::{hand::Hand, InputMethod, InputType},
 		spatial::Spatial,
@@ -10,7 +10,10 @@ use color_eyre::eyre::Result;
 use glam::Mat4;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
-use stardust_xr::schemas::flat::{Hand as FlatHand, Joint};
+use stardust_xr::{
+	schemas::flat::{Hand as FlatHand, Joint},
+	values::Datamap,
+};
 use std::sync::Arc;
 use stereokit::{ButtonState, HandJoint, Handed, StereoKitMultiThread};
 
@@ -33,7 +36,7 @@ pub struct SkHand {
 	_node: Arc<Node>,
 	input: Arc<InputMethod>,
 	handed: Handed,
-	datamap: TypedDatamap<HandDatamap>,
+	datamap: HandDatamap,
 }
 impl SkHand {
 	pub fn new(handed: Handed) -> Result<Self> {
@@ -98,6 +101,6 @@ impl SkHand {
 		}
 		self.datamap.pinch_strength = sk_hand.pinch_activation;
 		self.datamap.grab_strength = sk_hand.grip_activation;
-		*self.input.datamap.lock() = self.datamap.to_datamap().ok();
+		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).ok();
 	}
 }

@@ -7,7 +7,7 @@ use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::core::scenegraph::MethodResponseSender;
 use crate::nodes::fields::{find_field, FIELD_ALIAS_INFO};
-use crate::nodes::spatial::find_spatial_parent;
+use crate::nodes::spatial::{find_spatial_parent, Transform};
 use color_eyre::eyre::{bail, ensure, eyre, Result};
 use glam::vec3a;
 use lazy_static::lazy_static;
@@ -17,7 +17,7 @@ use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use stardust_xr::schemas::flex::{deserialize, flexbuffers, serialize};
-use stardust_xr::values::Transform;
+
 use std::fmt::Display;
 use std::sync::{Arc, Weak};
 
@@ -111,9 +111,15 @@ impl PulseSender {
 		if !mask_matches(&self.mask, &receiver.mask) {
 			return;
 		}
-		let Some(tx_node) = self.node.upgrade() else {return};
-		let Some(tx_client) = tx_node.get_client() else {return};
-		let Some(rx_node) = receiver.node.upgrade() else {return};
+		let Some(tx_node) = self.node.upgrade() else {
+			return;
+		};
+		let Some(tx_client) = tx_node.get_client() else {
+			return;
+		};
+		let Some(rx_node) = receiver.node.upgrade() else {
+			return;
+		};
 		// Receiver itself
 		let rx_alias = Alias::create(
 			&tx_client,
@@ -167,7 +173,7 @@ impl PulseSender {
 			rotation: rotation.into(),
 		};
 
-		let Ok(data) = serialize(info) else {return};
+		let Ok(data) = serialize(info) else { return };
 		let _ = tx_node.send_remote_signal("new_receiver", data);
 	}
 
@@ -175,8 +181,10 @@ impl PulseSender {
 		let uid = receiver.uid.as_str();
 		self.aliases.remove(uid);
 		self.aliases.remove(&(uid.to_string() + "-field"));
-		let Some(tx_node) = self.node.upgrade() else {return};
-		let Ok(data) = serialize(&uid) else {return};
+		let Some(tx_node) = self.node.upgrade() else {
+			return;
+		};
+		let Ok(data) = serialize(&uid) else { return };
 		let _ = tx_node.send_remote_signal("drop_receiver", data);
 	}
 
@@ -348,7 +356,9 @@ pub fn get_keymap_flex(
 	response.wrap_sync(move || {
 		let keymap_id: &str = deserialize(message.as_ref())?;
 		let keymaps = KEYMAPS.lock();
-		let Some(keymap) = keymaps.get(keymap_id) else {bail!("Could not find keymap. Try registering it")};
+		let Some(keymap) = keymaps.get(keymap_id) else {
+			bail!("Could not find keymap. Try registering it")
+		};
 
 		Ok(serialize(keymap)?.into())
 	});

@@ -1,7 +1,7 @@
 use crate::{
 	core::{client::Client, registry::Registry},
 	nodes::{
-		spatial::{find_spatial_parent, parse_transform, Spatial},
+		spatial::{find_spatial_parent, parse_transform, Spatial, Transform},
 		Message, Node,
 	},
 };
@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use prisma::{Flatten, Lerp, Rgba};
 use serde::Deserialize;
-use stardust_xr::{schemas::flex::deserialize, values::Transform};
+use stardust_xr::schemas::flex::deserialize;
 use std::{collections::VecDeque, sync::Arc};
 use stereokit::{bounds_grow_to_fit_pt, Bounds, Color128, LinePoint as SkLinePoint, StereoKitDraw};
 

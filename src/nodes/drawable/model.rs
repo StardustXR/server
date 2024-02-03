@@ -4,7 +4,7 @@ use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::core::resource::ResourceID;
 use crate::nodes::drawable::Drawable;
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
+use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
 use crate::nodes::Message;
 use crate::SK_MULTITHREAD;
 use color_eyre::eyre::{bail, ensure, eyre, Result};
@@ -16,7 +16,7 @@ use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
-use stardust_xr::values::Transform;
+
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
