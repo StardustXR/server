@@ -2,7 +2,7 @@ use crate::{
 	core::{client::Client, destroy_queue, registry::Registry, resource::ResourceID},
 	nodes::{
 		drawable::Drawable,
-		spatial::{find_spatial_parent, parse_transform, Spatial},
+		spatial::{find_spatial_parent, parse_transform, Spatial, Transform},
 		Message, Node,
 	},
 };
@@ -14,7 +14,7 @@ use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use prisma::{Flatten, Rgba};
 use serde::Deserialize;
-use stardust_xr::{schemas::flex::deserialize, values::Transform};
+use stardust_xr::schemas::flex::deserialize;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
 use stereokit::{named_colors::WHITE, Color128, StereoKitDraw, TextAlign, TextFit, TextStyle};
 
@@ -150,7 +150,9 @@ impl Text {
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Some(Drawable::Text(text)) = node.drawable.get() else {bail!("Not a drawable??")};
+		let Some(Drawable::Text(text)) = node.drawable.get() else {
+			bail!("Not a drawable??")
+		};
 
 		text.data.lock().character_height = deserialize(message.as_ref())?;
 		Ok(())
@@ -161,7 +163,9 @@ impl Text {
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Some(Drawable::Text(text)) = node.drawable.get() else {bail!("Not a drawable??")};
+		let Some(Drawable::Text(text)) = node.drawable.get() else {
+			bail!("Not a drawable??")
+		};
 
 		text.data.lock().text = deserialize(message.as_ref())?;
 		Ok(())

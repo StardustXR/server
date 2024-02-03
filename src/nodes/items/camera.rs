@@ -8,7 +8,7 @@ use crate::{
 	nodes::{
 		drawable::{model::ModelPart, shaders::UNLIT_SHADER_BYTES, Drawable},
 		items::TypeInfo,
-		spatial::{find_spatial_parent, parse_transform, Spatial},
+		spatial::{find_spatial_parent, parse_transform, Spatial, Transform},
 		Message, Node,
 	},
 };
@@ -20,10 +20,7 @@ use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use serde::Deserialize;
-use stardust_xr::{
-	schemas::flex::{deserialize, serialize},
-	values::Transform,
-};
+use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::Arc;
 use stereokit::{
 	Color128, Material, Rect, RenderLayer, StereoKitDraw, Tex, TextureType, Transparency,
@@ -87,7 +84,7 @@ impl CameraItem {
 	) {
 		response.wrap_sync(move || {
 			let ItemType::Camera(_camera) = &node.item.get().unwrap().specialization else {
-				return Err(eyre!("Wrong item type?"))
+				return Err(eyre!("Wrong item type?"));
 			};
 			Ok(serialize(())?.into())
 		});
@@ -103,7 +100,11 @@ impl CameraItem {
 		};
 		let model_part_node =
 			calling_client.get_node("Model part", deserialize(&message.data).unwrap())?;
-		let Drawable::ModelPart(model_part) = model_part_node.get_aspect("Model part", "model part", |n| &n.drawable)? else {bail!("Drawable is not a model node")};
+		let Drawable::ModelPart(model_part) =
+			model_part_node.get_aspect("Model part", "model part", |n| &n.drawable)?
+		else {
+			bail!("Drawable is not a model node")
+		};
 		camera.applied_to.add_raw(model_part);
 		camera.apply_to.add_raw(model_part);
 		Ok(())
@@ -155,7 +156,9 @@ impl CameraItem {
 
 pub fn update(sk: &impl StereoKitDraw) {
 	for camera in ITEM_TYPE_INFO_CAMERA.items.get_valid_contents() {
-		let ItemType::Camera(camera) = &camera.specialization else {continue};
+		let ItemType::Camera(camera) = &camera.specialization else {
+			continue;
+		};
 		camera.update(sk);
 	}
 }

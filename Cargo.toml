@@ -8,6 +8,9 @@ license = "GPLv2"
 repository = "https://github.com/StardustXR/stardust-xr-server/"
 homepage = "https://stardustxr.org"
 
+[workspace]
+members = ["codegen"]
+
 [[bin]]
 name = "stardust-xr-server"
 path = "src/main.rs"
@@ -98,6 +101,10 @@ optional = true
 
 [dependencies.stardust-xr]
 git = "https://github.com/StardustXR/core.git"
+branch = "feat/idl"
+
+[dependencies.stardust-xr-server-codegen]
+path = "codegen"
 
 # [patch.crates-io.stereokit]
 # path = "../stereokit-rs"

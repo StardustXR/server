@@ -2,14 +2,15 @@ use super::{DistanceLink, InputSpecialization};
 use crate::core::client::Client;
 use crate::nodes::fields::Field;
 use crate::nodes::input::{InputMethod, InputType};
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
+use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
 use crate::nodes::{Message, Node};
 use color_eyre::eyre::Result;
 use glam::{vec3a, Mat4};
 use serde::Deserialize;
-use stardust_xr::schemas::flat::{Datamap, InputDataType, Tip as FlatTip};
+use stardust_xr::schemas::flat::{InputDataType, Tip as FlatTip};
 use stardust_xr::schemas::flex::deserialize;
-use stardust_xr::values::Transform;
+use stardust_xr::values::Datamap;
+
 use std::sync::Arc;
 
 #[derive(Default)]
@@ -66,7 +67,8 @@ pub fn create_tip_flex(_node: &Node, calling_client: Arc<Client>, message: Messa
 		InputType::Tip(Tip {
 			radius: info.radius,
 		}),
-		info.datamap.and_then(|datamap| Datamap::new(datamap).ok()),
+		info.datamap
+			.and_then(|datamap| Datamap::from_raw(datamap).ok()),
 	)?;
 	node.add_local_signal("set_radius", Tip::set_radius);
 	Ok(())

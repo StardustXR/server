@@ -1,13 +1,12 @@
 use super::{Field, FieldTrait, Node};
 use crate::core::client::Client;
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial};
+use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
 use crate::nodes::Message;
 use color_eyre::eyre::{ensure, Result};
 use glam::{swizzles::*, vec2, Vec3A};
 use portable_atomic::AtomicF32;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
-use stardust_xr::values::Transform;
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -49,7 +48,9 @@ impl TorusField {
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Field::Torus(torus_field) = node.field.get().unwrap().as_ref() else { return Ok(()) };
+		let Field::Torus(torus_field) = node.field.get().unwrap().as_ref() else {
+			return Ok(());
+		};
 		let (radius_a, radius_b) = deserialize(message.as_ref())?;
 		torus_field.set_size(radius_a, radius_b);
 

@@ -7,7 +7,7 @@ use crate::{
 	},
 	nodes::{
 		items::TypeInfo,
-		spatial::{find_spatial_parent, parse_transform, Spatial},
+		spatial::{find_spatial_parent, parse_transform, Spatial, Transform},
 		Message, Node,
 	},
 };
@@ -15,10 +15,7 @@ use color_eyre::eyre::{eyre, Result};
 use lazy_static::lazy_static;
 use nanoid::nanoid;
 use serde::Deserialize;
-use stardust_xr::{
-	schemas::flex::{deserialize, serialize},
-	values::Transform,
-};
+use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::Arc;
 
 lazy_static! {
@@ -54,9 +51,10 @@ impl EnvironmentItem {
 		response: MethodResponseSender,
 	) {
 		response.wrap_sync(move || {
-			let ItemType::Environment(environment_item) = &node.item.get().unwrap().specialization else {
-			return Err(eyre!("Wrong item type?"))
-		};
+			let ItemType::Environment(environment_item) = &node.item.get().unwrap().specialization
+			else {
+				return Err(eyre!("Wrong item type?"));
+			};
 			Ok(serialize(environment_item.path.as_str())?.into())
 		});
 	}
