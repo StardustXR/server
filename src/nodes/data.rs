@@ -188,7 +188,11 @@ impl PulseSender {
 		let _ = tx_node.send_remote_signal("drop_receiver", data);
 	}
 
-	fn send_data_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+	fn send_data_flex(
+		node: Arc<Node>,
+		calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
 		let info: SendDataInfo = deserialize(message.as_ref())?;
 		let receiver_node = calling_client.get_node("Pulse receiver", info.uid)?;
 		let receiver =
@@ -271,7 +275,7 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 }
 
 pub fn create_pulse_sender_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {
@@ -297,7 +301,7 @@ pub fn create_pulse_sender_flex(
 }
 
 pub fn create_pulse_receiver_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {
@@ -324,7 +328,7 @@ pub fn create_pulse_receiver_flex(
 }
 
 pub fn register_keymap_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	_calling_client: Arc<Client>,
 	message: Message,
 	response: MethodResponseSender,
@@ -348,7 +352,7 @@ pub fn register_keymap_flex(
 	});
 }
 pub fn get_keymap_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	_calling_client: Arc<Client>,
 	message: Message,
 	response: MethodResponseSender,

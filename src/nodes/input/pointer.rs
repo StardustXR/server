@@ -66,7 +66,7 @@ impl InputSpecialization for Pointer {
 }
 
 pub fn create_pointer_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> color_eyre::eyre::Result<()> {

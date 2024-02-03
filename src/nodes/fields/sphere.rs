@@ -41,11 +41,13 @@ impl SphereField {
 	}
 
 	pub fn set_radius_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Field::Sphere(sphere_field) = node.field.get().unwrap().as_ref() else { return Ok(()) };
+		let Field::Sphere(sphere_field) = node.field.get().unwrap().as_ref() else {
+			return Ok(());
+		};
 		sphere_field.set_radius(deserialize(message.as_ref())?);
 		Ok(())
 	}
@@ -67,7 +69,7 @@ impl FieldTrait for SphereField {
 }
 
 pub fn create_sphere_field_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {

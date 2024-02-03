@@ -137,7 +137,7 @@ const MAX_RAY_MARCH: f32 = f32::MAX;
 const MAX_RAY_LENGTH: f32 = 1000_f32;
 
 fn field_distance_flex(
-	node: &Node,
+	node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 	response: MethodResponseSender,
@@ -160,7 +160,7 @@ fn field_distance_flex(
 	});
 }
 fn field_normal_flex(
-	node: &Node,
+	node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 	response: MethodResponseSender,
@@ -183,7 +183,7 @@ fn field_normal_flex(
 	});
 }
 fn field_closest_point_flex(
-	node: &Node,
+	node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 	response: MethodResponseSender,
@@ -206,7 +206,7 @@ fn field_closest_point_flex(
 	});
 }
 fn field_ray_march_flex(
-	node: &Node,
+	node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 	response: MethodResponseSender,

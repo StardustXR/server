@@ -44,7 +44,7 @@ impl CylinderField {
 	}
 
 	pub fn set_size_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
@@ -71,7 +71,7 @@ impl FieldTrait for CylinderField {
 }
 
 pub fn create_cylinder_field_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {

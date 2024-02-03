@@ -73,20 +73,20 @@ impl Zone {
 		let _ = node.zone.set(zone.clone());
 		zone
 	}
-	fn capture_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+	fn capture_flex(node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
 		let zone = node.zone.get().unwrap();
 		let capture_path: &str = deserialize(message.as_ref())?;
 		let spatial = find_spatial(&calling_client, "Spatial", capture_path)?;
 		capture(&spatial, zone);
 		Ok(())
 	}
-	fn release_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+	fn release_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
 		let capture_path: &str = deserialize(message.as_ref())?;
 		let spatial = find_spatial(&calling_client, "Spatial", capture_path)?;
 		release(&spatial);
 		Ok(())
 	}
-	fn update(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
+	fn update(node: Arc<Node>, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
 		let zone = node.zone.get().unwrap();
 		let Some(field) = zone.field.upgrade() else {
 			return Err(color_eyre::eyre::eyre!("Zone's field has been destroyed"));
@@ -160,7 +160,11 @@ impl Drop for Zone {
 	}
 }
 
-pub fn create_zone_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+pub fn create_zone_flex(
+	_node: Arc<Node>,
+	calling_client: Arc<Client>,
+	message: Message,
+) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateZoneInfo<'a> {
 		name: &'a str,

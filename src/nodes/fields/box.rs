@@ -42,7 +42,7 @@ impl BoxField {
 	}
 
 	pub fn set_size_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
@@ -72,7 +72,7 @@ impl FieldTrait for BoxField {
 }
 
 pub fn create_box_field_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {

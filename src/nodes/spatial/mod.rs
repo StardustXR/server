@@ -4,7 +4,6 @@ use self::zone::{create_zone_flex, Zone};
 use super::{Message, Node};
 use crate::core::client::Client;
 use crate::core::registry::Registry;
-use crate::core::scenegraph::MethodResponseSender;
 use color_eyre::eyre::{ensure, eyre, Result};
 use glam::{vec3a, Mat4, Quat};
 use mint::Vector3;
@@ -12,13 +11,32 @@ use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use serde::Deserialize;
-use stardust_xr::schemas::flex::{deserialize, serialize};
+use stardust_xr::schemas::flex::deserialize;
 use std::fmt::Debug;
+use std::os::fd::OwnedFd;
 use std::ptr;
 use std::sync::{Arc, Weak};
 use stereokit::{bounds_grow_to_fit_box, Bounds};
 
 stardust_xr_server_codegen::codegen_spatial_protocol!();
+// impl Transform {
+// 	pub fn to_mat4(self, position: bool, rotation: bool, scale: bool) -> Mat4 {
+// 		let position = position
+// 			.then_some(self.translation)
+// 			.flatten()
+// 			.unwrap_or_else(|| Vector3::from([0.0; 3]));
+// 		let rotation = rotation
+// 			.then_some(self.rotation)
+// 			.flatten()
+// 			.unwrap_or_else(|| Quat::IDENTITY.into());
+// 		let scale = scale
+// 			.then_some(self.scale)
+// 			.flatten()
+// 			.unwrap_or_else(|| Vector3::from([1.0; 3]));
+
+// 		Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
+// 	}
+// }
 
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
@@ -59,18 +77,7 @@ impl Spatial {
 			"Internal: Node already has a Spatial aspect!"
 		);
 		let spatial = Spatial::new(Arc::downgrade(node), parent.clone(), transform);
-		node.add_local_method("get_bounding_box", Spatial::get_bounding_box_flex);
-		node.add_local_method("get_transform", Spatial::get_transform_flex);
-		node.add_local_signal("set_transform", Spatial::set_transform_flex);
-		node.add_local_signal("set_spatial_parent", Spatial::set_spatial_parent_flex);
-		node.add_local_signal(
-			"set_spatial_parent_in_place",
-			Spatial::set_spatial_parent_in_place_flex,
-		);
-		node.add_local_signal("set_zoneable", Spatial::set_zoneable_flex);
-		node.add_local_method("field_distance", Spatial::field_distance_flex);
-		node.add_local_method("field_normal", Spatial::field_normal_flex);
-		node.add_local_method("field_closest_point", Spatial::field_closest_point_flex);
+		<Spatial as SpatialAspect>::add_node_members(node);
 		if zoneable {
 			ZONEABLE_REGISTRY.add_raw(&spatial);
 		}
@@ -209,7 +216,6 @@ impl Spatial {
 
 		Ok(())
 	}
-
 	pub fn set_spatial_parent_in_place(&self, parent: Option<Arc<Spatial>>) -> Result<()> {
 		let is_ancestor = parent
 			.as_ref()
@@ -228,61 +234,84 @@ impl Spatial {
 		Ok(())
 	}
 
-	pub fn get_bounding_box_flex(
-		node: &Node,
-		calling_client: Arc<Client>,
-		message: Message,
-		response: MethodResponseSender,
-	) {
-		response.wrap_sync(move || {
+	pub(self) fn zone_distance(&self) -> f32 {
+		self.zone
+			.lock()
+			.upgrade()
+			.and_then(|zone| zone.field.upgrade())
+			.map(|field| field.distance(self, vec3a(0.0, 0.0, 0.0)))
+			.unwrap_or(f32::MAX)
+	}
+}
+impl SpatialAspect for Spatial {
+	fn get_local_bounding_box(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		_fds: Vec<OwnedFd>,
+	) -> impl std::future::Future<Output = Result<(BoundingBox, Vec<OwnedFd>)>> + Send + 'static {
+		async move {
 			let this_spatial = node
 				.spatial
 				.get()
 				.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-			let relative_spatial_path: Option<&str> = deserialize(message.as_ref())?;
-			let bounds = if let Some(relative_spatial_path) = relative_spatial_path {
-				let relative_spatial =
-					find_reference_space(&calling_client, relative_spatial_path)?;
-				let center =
-					Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
-						.transform_point3([0.0; 3].into());
-				let bounds: Bounds = Bounds {
-					center,
-					dimensions: [0.0; 3].into(),
-				};
-				bounds_grow_to_fit_box(
-					bounds,
-					this_spatial.get_bounding_box(),
-					Some(Spatial::space_to_space_matrix(
-						Some(&this_spatial),
-						Some(&relative_spatial),
-					)),
-				)
-			} else {
-				this_spatial.get_bounding_box()
-			};
+			let bounds = this_spatial.get_bounding_box();
 
-			Ok(serialize((
-				mint::Vector3::from(bounds.center),
-				mint::Vector3::from(bounds.dimensions),
-			))?
-			.into())
-		});
+			let return_value = BoundingBox {
+				center: mint::Vector3::from(bounds.center),
+				size: mint::Vector3::from(bounds.dimensions),
+			};
+			Ok((return_value, Vec::new()))
+		}
 	}
 
-	pub fn get_transform_flex(
-		node: &Node,
-		calling_client: Arc<Client>,
-		message: Message,
-		response: MethodResponseSender,
-	) {
-		response.wrap_sync(move || {
+	fn get_relative_bounding_box(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		_fds: Vec<OwnedFd>,
+		relative_to: Arc<Node>,
+	) -> impl std::future::Future<Output = Result<(BoundingBox, Vec<OwnedFd>)>> + Send + 'static {
+		async move {
 			let this_spatial = node
 				.spatial
 				.get()
 				.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-			let relative_spatial =
-				find_reference_space(&calling_client, deserialize(message.as_ref())?)?;
+			let relative_spatial = get_spatial(&relative_to, "Relative node", "Spatial")?;
+			let center =
+				Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
+					.transform_point3([0.0; 3].into());
+			let bounds = Bounds {
+				center,
+				dimensions: [0.0; 3].into(),
+			};
+			bounds_grow_to_fit_box(
+				bounds,
+				this_spatial.get_bounding_box(),
+				Some(Spatial::space_to_space_matrix(
+					Some(&this_spatial),
+					Some(&relative_spatial),
+				)),
+			);
+
+			let return_value = BoundingBox {
+				center: mint::Vector3::from(bounds.center),
+				size: mint::Vector3::from(bounds.dimensions),
+			};
+			Ok((return_value, Vec::new()))
+		}
+	}
+
+	fn get_transform(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		_fds: Vec<OwnedFd>,
+		relative_to: Arc<Node>,
+	) -> impl std::future::Future<Output = Result<(Transform, Vec<OwnedFd>)>> + Send + 'static {
+		async move {
+			let this_spatial = node
+				.spatial
+				.get()
+				.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+			let relative_spatial = get_spatial(&relative_to, "Relative node", "Spatial")?;
 
 			let (scale, rotation, position) = Spatial::space_to_space_matrix(
 				Some(this_spatial.as_ref()),
@@ -290,62 +319,83 @@ impl Spatial {
 			)
 			.to_scale_rotation_translation();
 
-			Ok(serialize((
-				mint::Vector3::from(position),
-				mint::Quaternion::from(rotation),
-				mint::Vector3::from(scale),
-			))?
-			.into())
-		});
-	}
-	pub fn set_transform_flex(
-		node: &Node,
-		calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		#[derive(Deserialize)]
-		struct TransformArgs<'a> {
-			reference_space_path: Option<&'a str>,
-			transform: Transform,
+			let return_value = Transform {
+				translation: Some(position.into()),
+				rotation: Some(rotation.into()),
+				scale: Some(scale.into()),
+			};
+			Ok((return_value, Vec::new()))
 		}
-		let transform_args: TransformArgs = deserialize(message.as_ref())?;
-		let reference_space_transform = transform_args
-			.reference_space_path
-			.map(|path| find_reference_space(&calling_client, path))
-			.transpose()?;
+	}
 
-		node.spatial.get().unwrap().set_local_transform_components(
-			reference_space_transform.as_deref(),
-			transform_args.transform,
-		);
-		Ok(())
-	}
-	pub fn set_spatial_parent_flex(
-		node: &Node,
-		calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let parent = find_spatial_parent(&calling_client, deserialize(message.as_ref())?)?;
-		node.spatial.get().unwrap().set_spatial_parent(Some(parent))
-	}
-	pub fn set_spatial_parent_in_place_flex(
-		node: &Node,
-		calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let parent = find_spatial_parent(&calling_client, deserialize(message.as_ref())?)?;
-		node.spatial
-			.get()
-			.unwrap()
-			.set_spatial_parent_in_place(Some(parent))?;
-		Ok(())
-	}
-	pub fn set_zoneable_flex(
-		node: &Node,
+	fn set_local_transform(
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		message: Message,
+		_fds: Vec<OwnedFd>,
+		transform: Transform,
 	) -> Result<()> {
-		let zoneable: bool = deserialize(message.as_ref())?;
+		let this_spatial = node
+			.spatial
+			.get()
+			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+		this_spatial.set_local_transform_components(None, transform);
+		Ok(())
+	}
+	fn set_relative_transform(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		_fds: Vec<OwnedFd>,
+		relative_to: Arc<Node>,
+		transform: Transform,
+	) -> Result<()> {
+		let this_spatial = node
+			.spatial
+			.get()
+			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+		let relative_spatial = get_spatial(&relative_to, "Relative node", "Spatial")?;
+
+		this_spatial.set_local_transform_components(Some(&relative_spatial), transform);
+		Ok(())
+	}
+
+	fn set_spatial_parent(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		_fds: Vec<OwnedFd>,
+		parent: Arc<Node>,
+	) -> Result<()> {
+		let this_spatial = node
+			.spatial
+			.get()
+			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+		let parent = get_spatial(&parent, "Parent", "Spatial")?;
+
+		this_spatial.set_spatial_parent(Some(parent))?;
+		Ok(())
+	}
+
+	fn set_spatial_parent_in_place(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		_fds: Vec<OwnedFd>,
+		parent: Arc<Node>,
+	) -> Result<()> {
+		let this_spatial = node
+			.spatial
+			.get()
+			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+		let parent = get_spatial(&parent, "Parent", "Spatial")?;
+
+		this_spatial.set_spatial_parent_in_place(Some(parent))?;
+		Ok(())
+	}
+
+	fn set_zoneable(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		_fds: Vec<OwnedFd>,
+		zoneable: bool,
+	) -> Result<()> {
 		let spatial = node.spatial.get().unwrap();
 		if zoneable {
 			ZONEABLE_REGISTRY.add_raw(spatial);
@@ -354,94 +404,6 @@ impl Spatial {
 			zone::release(spatial);
 		}
 		Ok(())
-	}
-
-	pub fn field_distance_flex(
-		node: &Node,
-		calling_client: Arc<Client>,
-		message: Message,
-		response: MethodResponseSender,
-	) {
-		response.wrap_sync(move || {
-			let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
-			let spatial = node.spatial.get().unwrap();
-
-			let output = fields
-				.into_iter()
-				.map(|f| {
-					calling_client
-						.get_node("Field", f?)
-						.ok()?
-						.get_aspect("Field", "field", |n| &n.field)
-						.ok()
-						.cloned()
-				})
-				.map(|f| f.map(|f| f.distance(spatial, point.into())))
-				.collect::<Vec<Option<f32>>>();
-
-			Ok(serialize(output)?.into())
-		});
-	}
-	pub fn field_normal_flex(
-		node: &Node,
-		calling_client: Arc<Client>,
-		message: Message,
-		response: MethodResponseSender,
-	) {
-		response.wrap_sync(move || {
-			let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
-			let spatial = node.spatial.get().unwrap();
-
-			let output = fields
-				.into_iter()
-				.map(|f| {
-					calling_client
-						.get_node("Field", f?)
-						.ok()?
-						.get_aspect("Field", "field", |n| &n.field)
-						.ok()
-						.cloned()
-				})
-				.map(|f| f.map(|f| Vector3::from(f.normal(spatial, point.into(), 0.001))))
-				.collect::<Vec<_>>();
-
-			Ok(serialize(output)?.into())
-		});
-	}
-	pub fn field_closest_point_flex(
-		node: &Node,
-		calling_client: Arc<Client>,
-		message: Message,
-		response: MethodResponseSender,
-	) {
-		response.wrap_sync(move || {
-			let (point, fields): (Vector3<f32>, Vec<Option<&str>>) = deserialize(message.as_ref())?;
-			let spatial = node.spatial.get().unwrap();
-
-			let output = fields
-				.into_iter()
-				.map(|f| {
-					calling_client
-						.get_node("Field", f?)
-						.ok()?
-						.get_aspect("Field", "field", |n| &n.field)
-						.ok()
-						.cloned()
-				})
-				.map(|f| f.map(|f| Vector3::from(f.closest_point(spatial, point.into(), 0.001))))
-				.collect::<Vec<_>>();
-
-			Ok(serialize(output)?.into())
-		});
-	}
-
-	pub(self) fn zone_distance(&self) -> f32 {
-		self.zone
-			.lock()
-			.upgrade()
-			.and_then(|zone| zone.field.upgrade())
-			.map(|field| field.distance(self, vec3a(0.0, 0.0, 0.0)))
-			.unwrap_or(f32::MAX)
 	}
 }
 impl PartialEq for Spatial {
@@ -487,23 +449,21 @@ pub fn find_spatial(
 	calling_client: &Arc<Client>,
 	node_name: &'static str,
 	node_path: &str,
-) -> color_eyre::eyre::Result<Arc<Spatial>> {
+) -> Result<Arc<Spatial>> {
 	calling_client
 		.get_node(node_name, node_path)?
 		.get_aspect(node_name, "spatial", |n| &n.spatial)
 		.cloned()
 }
-pub fn find_spatial_parent(
-	calling_client: &Arc<Client>,
-	node_path: &str,
-) -> color_eyre::eyre::Result<Arc<Spatial>> {
+pub fn find_spatial_parent(calling_client: &Arc<Client>, node_path: &str) -> Result<Arc<Spatial>> {
 	find_spatial(calling_client, "Spatial parent", node_path)
 }
-pub fn find_reference_space(
-	calling_client: &Arc<Client>,
-	node_path: &str,
-) -> color_eyre::eyre::Result<Arc<Spatial>> {
+pub fn find_reference_space(calling_client: &Arc<Client>, node_path: &str) -> Result<Arc<Spatial>> {
 	find_spatial(calling_client, "Reference space", node_path)
+}
+pub fn get_spatial(node: &Arc<Node>, node_name: &str, aspect_name: &str) -> Result<Arc<Spatial>> {
+	node.get_aspect(node_name, aspect_name, |n| &n.spatial)
+		.cloned()
 }
 
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
@@ -514,7 +474,7 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 }
 
 pub fn create_spatial_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {
