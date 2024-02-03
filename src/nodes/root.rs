@@ -45,7 +45,7 @@ impl Root {
 	}
 
 	fn subscribe_frame_flex(
-		_node: &Node,
+		_node: Arc<Node>,
 		calling_client: Arc<Client>,
 		_message: Message,
 	) -> Result<()> {
@@ -70,7 +70,7 @@ impl Root {
 	}
 
 	fn set_base_prefixes_flex(
-		_node: &Node,
+		_node: Arc<Node>,
 		calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
@@ -79,7 +79,7 @@ impl Root {
 	}
 
 	fn state_token_flex(
-		_node: &Node,
+		_node: Arc<Node>,
 		calling_client: Arc<Client>,
 		message: Message,
 		response: MethodResponseSender,
@@ -116,7 +116,7 @@ macro_rules! var_env_insert {
 	};
 }
 pub fn get_connection_environment_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	_calling_client: Arc<Client>,
 	_message: Message,
 	response: MethodResponseSender,

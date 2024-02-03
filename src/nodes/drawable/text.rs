@@ -146,7 +146,7 @@ impl Text {
 	}
 
 	pub fn set_character_height_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
@@ -159,7 +159,7 @@ impl Text {
 	}
 
 	pub fn set_text_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
@@ -188,7 +188,7 @@ pub fn draw_all(sk: &impl StereoKitDraw) {
 	}
 }
 
-pub fn create_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateTextInfo<'a> {
 		name: &'a str,

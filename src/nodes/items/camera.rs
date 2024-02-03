@@ -77,7 +77,7 @@ impl CameraItem {
 	}
 
 	fn frame_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		_message: Message,
 		response: MethodResponseSender,
@@ -91,7 +91,7 @@ impl CameraItem {
 	}
 
 	fn apply_preview_material_flex(
-		node: &Node,
+		node: Arc<Node>,
 		calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
@@ -164,7 +164,7 @@ pub fn update(sk: &impl StereoKitDraw) {
 }
 
 pub(super) fn create_camera_item_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {

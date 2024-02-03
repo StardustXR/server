@@ -83,13 +83,17 @@ impl Sound {
 		}
 	}
 
-	fn play_flex(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
+	fn play_flex(node: Arc<Node>, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
 		let sound = node.sound.get().unwrap();
 		sound.play.lock().replace(());
 		Ok(())
 	}
 
-	pub fn stop_flex(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
+	pub fn stop_flex(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		_message: Message,
+	) -> Result<()> {
 		let sound = node.sound.get().unwrap();
 		sound.stop.lock().replace(());
 		Ok(())
@@ -108,7 +112,7 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	node.add_to_scenegraph().map(|_| ())
 }
 
-pub fn create_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateSoundInfo<'a> {
 		name: &'a str,

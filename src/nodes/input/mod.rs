@@ -109,23 +109,31 @@ impl InputMethod {
 			.cloned()
 	}
 
-	fn capture_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
-		let method = InputMethod::get(node)?;
+	fn capture_flex(node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
+		let method = InputMethod::get(&node)?;
 		let handler = InputHandler::find(&calling_client, deserialize(message.as_ref())?)?;
 
 		method.captures.add_raw(&handler);
 		node.send_remote_signal("capture", message)
 	}
-	fn set_datamap_flex(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
-		let method = InputMethod::get(node)?;
+	fn set_datamap_flex(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
+		let method = InputMethod::get(&node)?;
 		method
 			.datamap
 			.lock()
 			.replace(Datamap::from_raw(message.data)?);
 		Ok(())
 	}
-	fn set_handlers_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
-		let method = InputMethod::get(node)?;
+	fn set_handlers_flex(
+		node: Arc<Node>,
+		calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
+		let method = InputMethod::get(&node)?;
 		let handler_paths: Vec<&str> = deserialize(message.as_ref())?;
 		let handlers: Vec<Weak<InputHandler>> = handler_paths
 			.into_iter()
@@ -352,7 +360,7 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 }
 
 pub fn create_input_handler_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {

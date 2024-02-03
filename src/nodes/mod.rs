@@ -57,8 +57,8 @@ impl AsRef<[u8]> for Message {
 	}
 }
 
-pub type Signal = fn(&Node, Arc<Client>, Message) -> Result<()>;
-pub type Method = fn(&Node, Arc<Client>, Message, MethodResponseSender);
+pub type Signal = fn(Arc<Node>, Arc<Client>, Message) -> Result<()>;
+pub type Method = fn(Arc<Node>, Arc<Client>, Message, MethodResponseSender);
 
 pub struct Node {
 	pub enabled: Arc<AtomicBool>,
@@ -158,7 +158,7 @@ impl Node {
 	}
 
 	pub fn set_enabled_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
@@ -168,7 +168,7 @@ impl Node {
 	}
 	// very much up for debate if we should allow this, as you can match objects using this
 	// pub fn get_client_pid_flex(
-	// 	node: &Node,
+	// 	node: Arc<Node>,
 	// 	_calling_client: Arc<Client>,
 	// 	_message: Message,
 	// ) -> Result<Message> {
@@ -180,7 +180,7 @@ impl Node {
 	// 	Ok(serialize(pid)?.into())
 	// }
 	pub fn destroy_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		_message: Message,
 	) -> Result<()> {
@@ -197,12 +197,7 @@ impl Node {
 		self.local_methods.lock().insert(name.to_string(), method);
 	}
 
-	pub fn get_aspect<F, T>(
-		&self,
-		node_name: &'static str,
-		aspect_type: &'static str,
-		aspect_fn: F,
-	) -> Result<&T>
+	pub fn get_aspect<F, T>(&self, node_name: &str, aspect_type: &str, aspect_fn: F) -> Result<&T>
 	where
 		F: FnOnce(&Node) -> &OnceCell<T>,
 	{
@@ -212,7 +207,7 @@ impl Node {
 	}
 
 	pub fn send_local_signal(
-		&self,
+		self: Arc<Self>,
 		calling_client: Arc<Client>,
 		method: &str,
 		message: Message,
@@ -239,7 +234,7 @@ impl Node {
 		}
 	}
 	pub fn execute_local_method(
-		&self,
+		self: Arc<Self>,
 		calling_client: Arc<Client>,
 		method: &str,
 		message: Message,

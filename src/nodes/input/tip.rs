@@ -18,7 +18,7 @@ pub struct Tip {
 	pub radius: f32,
 }
 impl Tip {
-	fn set_radius(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
+	fn set_radius(node: Arc<Node>, _calling_client: Arc<Client>, message: Message) -> Result<()> {
 		if let InputType::Tip(tip) = &mut *node.input_method.get().unwrap().specialization.lock() {
 			tip.radius = deserialize(message.as_ref())?;
 		}
@@ -46,7 +46,11 @@ impl InputSpecialization for Tip {
 	}
 }
 
-pub fn create_tip_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+pub fn create_tip_flex(
+	_node: Arc<Node>,
+	calling_client: Arc<Client>,
+	message: Message,
+) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateTipInfo<'a> {
 		name: &'a str,

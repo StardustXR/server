@@ -119,7 +119,7 @@ impl Lines {
 	}
 
 	pub fn set_lines_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
@@ -149,7 +149,7 @@ pub fn draw_all(draw_ctx: &impl StereoKitDraw) {
 	}
 }
 
-pub fn create_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateLinesInfo<'a> {
 		name: &'a str,

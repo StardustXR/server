@@ -95,8 +95,8 @@ impl<'de> Visitor<'de> for SurfaceIDVisitor {
 
 	fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
 		let Some(discrim) = seq.next_element()? else {
-            return Err(A::Error::missing_field("discrim"));
-        };
+			return Err(A::Error::missing_field("discrim"));
+		};
 
 		// idk if you wanna check for extraneous elements
 		// I didn't bother
@@ -106,8 +106,8 @@ impl<'de> Visitor<'de> for SurfaceIDVisitor {
 			"Toplevel" => Ok(SurfaceID::Toplevel),
 			"Child" => {
 				let Some(text) = seq.next_element()? else {
-                    return Err(A::Error::missing_field("child_text"));
-                };
+					return Err(A::Error::missing_field("child_text"));
+				};
 				Ok(SurfaceID::Child(text))
 			}
 			_ => Err(A::Error::unknown_variant(
@@ -203,7 +203,9 @@ pub trait Backend: Send + Sync + 'static {
 }
 
 pub fn panel_item_from_node(node: &Node) -> Option<Arc<dyn PanelItemTrait>> {
-	let ItemType::Panel(panel_item) = &node.item.get()?.specialization else {return None};
+	let ItemType::Panel(panel_item) = &node.item.get()?.specialization else {
+		return None;
+	};
 	Some(panel_item.clone())
 }
 
@@ -270,7 +272,9 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		panel_item
 	}
 	pub fn drop_toplevel(&self) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		node.destroy();
 	}
 }
@@ -278,60 +282,88 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 // Remote signals
 impl<B: Backend + ?Sized> PanelItem<B> {
 	pub fn toplevel_parent_changed(&self, parent: &str) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("toplevel_parent_changed", serialize(parent).unwrap());
 	}
 	pub fn toplevel_title_changed(&self, title: &str) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("toplevel_title_changed", serialize(title).unwrap());
 	}
 	pub fn toplevel_app_id_changed(&self, app_id: &str) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("toplevel_app_id_changed", serialize(app_id).unwrap());
 	}
 	pub fn toplevel_fullscreen_active(&self, active: bool) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("toplevel_fullscreen_active", serialize(active).unwrap());
 	}
 	pub fn toplevel_move_request(&self) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("toplevel_move_request", Vec::<u8>::new());
 	}
 	pub fn toplevel_resize_request(&self, up: bool, down: bool, left: bool, right: bool) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal(
 			"toplevel_resize_request",
 			serialize((up, down, left, right)).unwrap(),
 		);
 	}
 	pub fn toplevel_size_changed(&self, size: Vector2<u32>) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("toplevel_size_changed", serialize(size).unwrap());
 	}
 
 	pub fn set_cursor(&self, geometry: Option<Geometry>) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("set_cursor", serialize(geometry).unwrap());
 	}
 
 	pub fn new_child(&self, uid: &str, info: ChildInfo) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("new_child", serialize((uid, info)).unwrap());
 	}
 	pub fn reposition_child(&self, uid: &str, geometry: Geometry) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("reposition_child", serialize((uid, geometry)).unwrap());
 	}
 	pub fn drop_child(&self, uid: &str) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 		let _ = node.send_remote_signal("drop_child", serialize(uid).unwrap());
 	}
 }
 // Local signals
 macro_rules! flex_no_args {
 	($fn_name: ident, $trait_fn: ident) => {
-		fn $fn_name(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
-			let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+		fn $fn_name(
+			node: Arc<Node>,
+			_calling_client: Arc<Client>,
+			_message: Message,
+		) -> Result<()> {
+			let Some(panel_item) = panel_item_from_node(&node) else {
+				return Ok(());
+			};
 			panel_item.$trait_fn();
 			Ok(())
 		}
@@ -339,8 +371,10 @@ macro_rules! flex_no_args {
 }
 macro_rules! flex_deserialize {
 	($fn_name: ident, $trait_fn: ident) => {
-		fn $fn_name(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
-			let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+		fn $fn_name(node: Arc<Node>, _calling_client: Arc<Client>, message: Message) -> Result<()> {
+			let Some(panel_item) = panel_item_from_node(&node) else {
+				return Ok(());
+			};
 			panel_item.$trait_fn(deserialize(message.as_ref())?);
 			Ok(())
 		}
@@ -348,11 +382,13 @@ macro_rules! flex_deserialize {
 }
 impl<B: Backend + ?Sized> PanelItem<B> {
 	fn apply_surface_material_flex(
-		node: &Node,
+		node: Arc<Node>,
 		calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+		let Some(panel_item) = panel_item_from_node(&node) else {
+			return Ok(());
+		};
 
 		#[derive(Debug, Deserialize)]
 		struct SurfaceMaterialInfo<'a> {
@@ -366,7 +402,9 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			.scenegraph
 			.get_node(info.model_node_path)
 			.ok_or_else(|| eyre!("Model node not found"))?;
-		let Some(Drawable::ModelPart(model_part)) = model_node.drawable.get() else {bail!("Node is not a model")};
+		let Some(Drawable::ModelPart(model_part)) = model_node.drawable.get() else {
+			bail!("Node is not a model")
+		};
 		debug!(?info, "Apply surface material");
 
 		panel_item.apply_surface_material(info.surface, model_part);
@@ -379,11 +417,13 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 	flex_deserialize!(set_toplevel_size_changed_flex, set_toplevel_size);
 
 	fn pointer_motion_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+		let Some(panel_item) = panel_item_from_node(&node) else {
+			return Ok(());
+		};
 
 		let (surface_id, position): (SurfaceID, Vector2<f32>) = deserialize(message.as_ref())?;
 		debug!(?surface_id, ?position, "Pointer deactivate");
@@ -393,11 +433,13 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		Ok(())
 	}
 	fn pointer_button_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+		let Some(panel_item) = panel_item_from_node(&node) else {
+			return Ok(());
+		};
 
 		let (surface_id, button, state): (SurfaceID, u32, u32) = deserialize(message.as_ref())?;
 		debug!(?surface_id, button, state, "Pointer button");
@@ -406,11 +448,13 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		Ok(())
 	}
 	fn pointer_scroll_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+		let Some(panel_item) = panel_item_from_node(&node) else {
+			return Ok(());
+		};
 
 		#[derive(Debug, Deserialize)]
 		struct PointerScrollInfo {
@@ -427,11 +471,13 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 	}
 
 	fn keyboard_keys_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+		let Some(panel_item) = panel_item_from_node(&node) else {
+			return Ok(());
+		};
 		let (surface_id, keymap_id, keys): (SurfaceID, &str, Vec<i32>) =
 			deserialize(message.as_ref())?;
 		debug!(?keys, "Set keyboard key state");
@@ -441,14 +487,22 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		Ok(())
 	}
 	pub fn grab_keyboard(&self, sid: Option<SurfaceID>) {
-		let Some(node) = self.node.upgrade() else {return};
+		let Some(node) = self.node.upgrade() else {
+			return;
+		};
 
-		let Ok(message) = serialize(sid) else {return};
+		let Ok(message) = serialize(sid) else { return };
 		let _ = node.send_remote_signal("grab_keyboard", message);
 	}
 
-	fn touch_down_flex(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+	fn touch_down_flex(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
+		let Some(panel_item) = panel_item_from_node(&node) else {
+			return Ok(());
+		};
 
 		let (surface_id, id, position): (SurfaceID, u32, Vector2<f32>) =
 			deserialize(message.as_ref())?;
@@ -458,8 +512,14 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 
 		Ok(())
 	}
-	fn touch_move_flex(node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
-		let Some(panel_item) = panel_item_from_node(node) else { return Ok(()) };
+	fn touch_move_flex(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		message: Message,
+	) -> Result<()> {
+		let Some(panel_item) = panel_item_from_node(&node) else {
+			return Ok(());
+		};
 
 		let (id, position): (u32, Vector2<f32>) = deserialize(message.as_ref())?;
 		debug!(?position, "Touch move");

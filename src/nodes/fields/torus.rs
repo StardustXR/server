@@ -44,7 +44,7 @@ impl TorusField {
 	}
 
 	pub fn set_size_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
@@ -71,7 +71,7 @@ impl FieldTrait for TorusField {
 }
 
 pub fn create_torus_field_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {

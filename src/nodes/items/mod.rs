@@ -156,7 +156,11 @@ impl Item {
 		self.make_alias_named(client, parent, &self.uid)
 	}
 
-	fn release_flex(node: &Node, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
+	fn release_flex(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		_message: Message,
+	) -> Result<()> {
 		let item = node.get_aspect("Item", "item", |n| &n.item)?;
 		release(item);
 
@@ -341,7 +345,7 @@ impl ItemAcceptor {
 		let _ = node.item_acceptor.set(acceptor);
 	}
 
-	fn capture_flex(node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+	fn capture_flex(node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
 		if !node.enabled.load(Ordering::Relaxed) {
 			return Ok(());
 		}
@@ -443,7 +447,7 @@ fn type_info(name: &str) -> Result<&'static TypeInfo> {
 }
 
 pub fn register_item_ui_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {
@@ -460,7 +464,7 @@ pub fn register_item_ui_flex(
 }
 
 fn create_item_acceptor_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {

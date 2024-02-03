@@ -244,7 +244,7 @@ impl ModelPart {
 	}
 
 	fn apply_holdout_material_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		_message: Message,
 	) -> Result<()> {
@@ -256,7 +256,7 @@ impl ModelPart {
 	}
 
 	fn set_material_parameter_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
@@ -403,7 +403,7 @@ pub fn draw_all(sk: &impl StereoKitDraw) {
 	}
 }
 
-pub fn create_flex(_node: &Node, calling_client: Arc<Client>, message: Message) -> Result<()> {
+pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
 	#[derive(Deserialize)]
 	struct CreateModelInfo<'a> {
 		name: &'a str,

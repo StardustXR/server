@@ -56,7 +56,11 @@ pub fn draw(sk: &impl StereoKitDraw) {
 static QUEUED_SKYLIGHT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static QUEUED_SKYTEX: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-fn set_sky_file_flex(_node: &Node, _calling_client: Arc<Client>, message: Message) -> Result<()> {
+fn set_sky_file_flex(
+	_node: Arc<Node>,
+	_calling_client: Arc<Client>,
+	message: Message,
+) -> Result<()> {
 	#[derive(Deserialize)]
 	struct SkyFileInfo {
 		path: PathBuf,

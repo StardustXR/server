@@ -5,8 +5,11 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::Ordering;
 use rustc_hash::FxHashMap;
+use serde::Serialize;
 use stardust_xr::scenegraph;
 use stardust_xr::scenegraph::ScenegraphError;
+use stardust_xr::schemas::flex::serialize;
+use std::future::Future;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
 use tokio::sync::oneshot;
@@ -57,11 +60,35 @@ impl MethodResponseSender {
 	pub fn send(self, t: Result<Message, ScenegraphError>) {
 		let _ = self.0.send(t.map(|m| (m.data, m.fds)));
 	}
+	// pub fn send_method_return<T: Serialize>(
+	// 	self,
+	// 	result: color_eyre::eyre::Result<(T, Vec<OwnedFd>)>,
+	// ) {
+	// 	let _ = self.0.send(map_method_return(result));
+	// }
 	pub fn wrap_sync<F: FnOnce() -> color_eyre::eyre::Result<Message>>(self, f: F) {
 		self.send(f().map_err(|e| ScenegraphError::MethodError {
 			error: e.to_string(),
 		}))
 	}
+	pub fn wrap_async<T: Serialize>(
+		self,
+		f: impl Future<Output = color_eyre::eyre::Result<(T, Vec<OwnedFd>)>> + Send + 'static,
+	) {
+		tokio::task::spawn(async move { self.0.send(map_method_return(f.await)) });
+	}
+}
+fn map_method_return<T: Serialize>(
+	result: color_eyre::eyre::Result<(T, Vec<OwnedFd>)>,
+) -> Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError> {
+	let (value, fds) = result.map_err(|e| ScenegraphError::MethodError {
+		error: e.to_string(),
+	})?;
+
+	let serialized_value = serialize(value).map_err(|e| ScenegraphError::MethodError {
+		error: format!("Internal: Serialization failed: {e}"),
+	})?;
+	Ok((serialized_value, fds))
 }
 impl scenegraph::Scenegraph for Scenegraph {
 	fn send_signal(

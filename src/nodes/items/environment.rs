@@ -45,7 +45,7 @@ impl EnvironmentItem {
 	}
 
 	fn get_path_flex(
-		node: &Node,
+		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		_message: Message,
 		response: MethodResponseSender,
@@ -65,7 +65,7 @@ impl EnvironmentItem {
 }
 
 pub(super) fn create_environment_item_flex(
-	_node: &Node,
+	_node: Arc<Node>,
 	calling_client: Arc<Client>,
 	message: Message,
 ) -> Result<()> {
