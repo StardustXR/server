@@ -105,7 +105,8 @@ fn generate_custom_enum(custom_enum: &CustomEnum) -> TokenStream {
 
 	quote! {
 		#[doc = #description]
-		#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+		#[derive(Debug, Clone, Copy, serde_repr::Deserialize_repr, serde_repr::Serialize_repr)]
+		#[repr(u32)]
 		pub enum #name {#argument_decls}
 	}
 }
@@ -139,7 +140,7 @@ fn generate_union_option(union_option: &UnionOption) -> TokenStream {
 		.map(|d| quote!(#[doc = #d]))
 		.unwrap_or_default();
 	let identifier = Ident::new(&name, Span::call_site());
-	let _type = generate_argument_type(&union_option._type, true);
+	let _type = generate_argument_type(&union_option._type, false, true);
 	quote! (#description #identifier(#_type))
 }
 fn generate_custom_struct(custom_struct: &CustomStruct) -> TokenStream {
@@ -161,44 +162,44 @@ fn generate_custom_struct(custom_struct: &CustomStruct) -> TokenStream {
 	}
 }
 
-fn generate_node(node: &Node) -> TokenStream {
-	let node_name = Ident::new(&node.name, Span::call_site());
-	let description = &node.description;
+// fn generate_node(node: &Node) -> TokenStream {
+// 	let node_name = Ident::new(&node.name, Span::call_site());
+// 	let description = &node.description;
 
-	let aspects = node
-		.aspects
-		.iter()
-		.map(|a| {
-			let aspect_name = Ident::new(&format!("{a}Aspect"), Span::call_site());
-			quote!(impl #aspect_name for #node_name {})
-		})
-		.reduce(fold_tokens)
-		.unwrap_or_default();
+// 	let aspects = node
+// 		.aspects
+// 		.iter()
+// 		.map(|a| {
+// 			let aspect_name = Ident::new(&format!("{a}Aspect"), Span::call_site());
+// 			quote!(impl #aspect_name for #node_name {})
+// 		})
+// 		.reduce(fold_tokens)
+// 		.unwrap_or_default();
 
-	quote! {
-		#[doc = #description]
-		#[derive(Debug)]
-		pub struct #node_name (crate::node::Node);
-		impl crate::node::NodeType for #node_name {
-			fn node(&self) -> &crate::node::Node {
-				&self.0
-			}
-			fn alias(&self) -> Self {
-				#node_name(self.0.alias())
-			}
-			fn from_path(client: &std::sync::Arc<crate::client::Client>, path: String, destroyable: bool) -> Self {
-				#node_name(crate::node::Node::from_path(client, path, destroyable))
-			}
-		}
-		impl serde::Serialize for #node_name {
-			fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-				let node_path = self.0.get_path().map_err(|e| serde::ser::Error::custom(e))?;
-				serializer.serialize_str(&node_path)
-			}
-		}
-		#aspects
-	}
-}
+// 	quote! {
+// 		#[doc = #description]
+// 		#[derive(Debug)]
+// 		pub struct #node_name (crate::node::Node);
+// 		impl crate::node::NodeType for #node_name {
+// 			fn node(&self) -> &crate::node::Node {
+// 				&self.0
+// 			}
+// 			fn alias(&self) -> Self {
+// 				#node_name(self.0.alias())
+// 			}
+// 			fn from_path(client: &std::sync::Arc<crate::client::Client>, path: String, destroyable: bool) -> Self {
+// 				#node_name(crate::node::Node::from_path(client, path, destroyable))
+// 			}
+// 		}
+// 		impl serde::Serialize for #node_name {
+// 			fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+// 				let node_path = self.0.get_path().map_err(|e| serde::ser::Error::custom(e))?;
+// 				serializer.serialize_str(&node_path)
+// 			}
+// 		}
+// 		#aspects
+// 	}
+// }
 
 fn generate_aspect(aspect: &Aspect) -> TokenStream {
 	let description = &aspect.description;
@@ -252,10 +253,6 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 	quote!(#client_side_members #server_side_members)
 }
 
-fn generate_interface_member(interface_path: &str, member: &Member) -> TokenStream {
-	Default::default()
-}
-
 fn generate_member(member: &Member) -> TokenStream {
 	let name_str = &member.name;
 	let name = Ident::new(&member.name.to_case(Case::Snake), Span::call_site());
@@ -285,7 +282,7 @@ fn generate_member(member: &Member) -> TokenStream {
 	let return_type = member
 		.return_type
 		.as_ref()
-		.map(|r| generate_argument_type(&r, true))
+		.map(|r| generate_argument_type(&r, false, true))
 		.unwrap_or_else(|| quote!(()));
 
 	match (side, _type) {
@@ -348,9 +345,10 @@ fn generate_handler(member: &Member) -> TokenStream {
 	let argument_types = member
 		.arguments
 		.iter()
-		.map(|a| &a._type)
-		.map(convert_deserializeable_argument_type)
-		.map(|a| generate_argument_type(&a, true))
+		.map(|a| {
+			let _type = convert_deserializeable_argument_type(&a._type);
+			generate_argument_type(&_type, a.optional, true)
+		})
 		.reduce(|a, b| quote!(#a, #b));
 	// dbg!(&argument_types);
 	let deserialize = argument_names
@@ -408,11 +406,11 @@ fn generate_argument_deserialize(
 		ArgumentType::Color => quote!(color::rgba_linear!(#name[0], #name[1], #name[2], #name[3])),
 		ArgumentType::Vec(v) => {
 			let mapping = generate_argument_deserialize("a", v, false);
-			quote!(#name.iter().map(|a| Ok(#mapping)).collect::<color_eyre::eyre::Result<Vec<_>>>()?)
+			quote!(#name.into_iter().map(|a| Ok(#mapping)).collect::<color_eyre::eyre::Result<Vec<_>>>()?)
 		}
 		ArgumentType::Map(v) => {
 			let mapping = generate_argument_deserialize("a", v, false);
-			quote!(#name.iter().map(|(k, a)| Ok((k, #mapping))).collect::<color_eyre::eyre::Result<rustc_hash::FxHashMap<String, _>>>()?)
+			quote!(#name.into_iter().map(|(k, a)| Ok((k, #mapping))).collect::<color_eyre::eyre::Result<rustc_hash::FxHashMap<String, _>>>()?)
 		}
 		_ => quote!(#name),
 	}
@@ -434,21 +432,18 @@ fn generate_argument_serialize(
 		ArgumentType::Color => quote!([#name.c.r, #name.c.g, #name.c.b, #name.a]),
 		ArgumentType::Vec(v) => {
 			let mapping = generate_argument_serialize("a", v, false);
-			quote!(#name.iter().map(|a| Ok(#mapping)).collect::<color_eyre::eyre::Result<Vec<_>>>()?)
+			quote!(#name.into_iter().map(|a| Ok(#mapping)).collect::<color_eyre::eyre::Result<Vec<_>>>()?)
 		}
 		ArgumentType::Map(v) => {
 			let mapping = generate_argument_serialize("a", v, false);
-			quote!(#name.iter().map(|(k, a)| Ok((k, #mapping))).collect::<color_eyre::eyre::Result<rustc_hash::FxHashMap<String, _>>>()?)
+			quote!(#name.into_iter().map(|(k, a)| Ok((k, #mapping))).collect::<color_eyre::eyre::Result<rustc_hash::FxHashMap<String, _>>>()?)
 		}
 		_ => quote!(#name),
 	}
 }
 fn generate_argument_decl(argument: &Argument, owned_values: bool) -> TokenStream {
 	let name = Ident::new(&argument.name.to_case(Case::Snake), Span::call_site());
-	let mut _type = generate_argument_type(&argument._type, owned_values);
-	if argument.optional {
-		_type = quote!(Option<#_type>);
-	}
+	let mut _type = generate_argument_type(&argument._type, argument.optional, owned_values);
 	quote!(#name: #_type)
 }
 fn argument_type_option_name(argument_type: &ArgumentType) -> String {
@@ -473,8 +468,12 @@ fn argument_type_option_name(argument_type: &ArgumentType) -> String {
 		ArgumentType::Node { _type, .. } => _type.clone(),
 	}
 }
-fn generate_argument_type(argument_type: &ArgumentType, owned: bool) -> TokenStream {
-	match argument_type {
+fn generate_argument_type(
+	argument_type: &ArgumentType,
+	optional: bool,
+	owned: bool,
+) -> TokenStream {
+	let _type = match argument_type {
 		ArgumentType::Bool => quote!(bool),
 		ArgumentType::Int => quote!(i32),
 		ArgumentType::UInt => quote!(u32),
@@ -498,7 +497,7 @@ fn generate_argument_type(argument_type: &ArgumentType, owned: bool) -> TokenStr
 			}
 		}
 		ArgumentType::Vec(t) => {
-			let t = generate_argument_type(&t, true);
+			let t = generate_argument_type(&t, false, true);
 			if !owned {
 				quote!(&[#t])
 			} else {
@@ -506,7 +505,7 @@ fn generate_argument_type(argument_type: &ArgumentType, owned: bool) -> TokenStr
 			}
 		}
 		ArgumentType::Map(t) => {
-			let t = generate_argument_type(&t, true);
+			let t = generate_argument_type(&t, false, true);
 
 			if !owned {
 				quote!(&rustc_hash::FxHashMap<String, #t>)
@@ -538,7 +537,11 @@ fn generate_argument_type(argument_type: &ArgumentType, owned: bool) -> TokenStr
 		}
 		ArgumentType::Struct(s) => {
 			let struct_name = Ident::new(&s.to_case(Case::Pascal), Span::call_site());
-			quote!(#struct_name)
+			if !owned {
+				quote!(&#struct_name)
+			} else {
+				quote!(#struct_name)
+			}
 		}
 		ArgumentType::Node {
 			_type,
@@ -550,5 +553,11 @@ fn generate_argument_type(argument_type: &ArgumentType, owned: bool) -> TokenStr
 				quote!(std::sync::Arc<crate::nodes::Node>)
 			}
 		}
+	};
+
+	if optional {
+		quote!(Option<#_type>)
+	} else {
+		_type
 	}
 }
