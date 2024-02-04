@@ -1,24 +1,20 @@
 use super::alias::AliasInfo;
-use super::fields::Field;
-use super::spatial::{parse_transform, Spatial};
-use super::{Alias, Message, Node};
+use super::fields::get_field;
+use super::spatial::{get_spatial, parse_transform, Spatial};
+use super::{Alias, Node};
 use crate::core::client::Client;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
-use crate::core::scenegraph::MethodResponseSender;
-use crate::nodes::fields::{find_field, FIELD_ALIAS_INFO};
-use crate::nodes::spatial::{find_spatial_parent, Transform};
+use crate::create_interface;
+use crate::nodes::fields::FIELD_ALIAS_INFO;
+use crate::nodes::spatial::Transform;
 use color_eyre::eyre::{bail, ensure, eyre, Result};
-use glam::vec3a;
 use lazy_static::lazy_static;
-use mint::{Quaternion, Vector3};
 use nanoid::nanoid;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use serde::{Deserialize, Serialize};
-use stardust_xr::schemas::flex::{deserialize, flexbuffers, serialize};
-
-use std::fmt::Display;
+use stardust_xr::schemas::flex::flexbuffers;
+use stardust_xr::values::Datamap;
 use std::sync::{Arc, Weak};
 
 lazy_static! {
@@ -28,11 +24,17 @@ lazy_static! {
 static PULSE_SENDER_REGISTRY: Registry<PulseSender> = Registry::new();
 pub static PULSE_RECEIVER_REGISTRY: Registry<PulseReceiver> = Registry::new();
 
-pub fn mask_matches(mask_map_lesser: &Mask, mask_map_greater: &Mask) -> bool {
+pub fn get_mask(datamap: &Datamap) -> Result<flexbuffers::MapReader<&[u8]>> {
+	flexbuffers::Reader::get_root(datamap.raw().as_slice())
+		.map_err(|_| eyre!("Mask is not a valid flexbuffer"))?
+		.get_map()
+		.map_err(|_| eyre!("Mask is not a valid map"))
+}
+pub fn mask_matches(mask_map_lesser: &Datamap, mask_map_greater: &Datamap) -> bool {
 	(|| -> Result<_> {
-		for key in mask_map_lesser.get_mask()?.iter_keys() {
-			let lesser_key = mask_map_lesser.get_mask()?.index(key)?;
-			let greater_key = mask_map_greater.get_mask()?.index(key)?;
+		for key in get_mask(mask_map_lesser)?.iter_keys() {
+			let lesser_key = get_mask(mask_map_lesser)?.index(key)?;
+			let greater_key = get_mask(mask_map_greater)?.index(key)?;
 			// otherwise zero-length vectors don't count the same as a single type vector
 			if lesser_key.flexbuffer_type().is_heterogenous_vector()
 				&& lesser_key.as_vector().len() == 0
@@ -51,57 +53,27 @@ pub fn mask_matches(mask_map_lesser: &Mask, mask_map_greater: &Mask) -> bool {
 	.is_ok()
 }
 
-pub struct Mask(pub Vec<u8>);
-impl Mask {
-	pub fn from_struct<T: Default + Serialize>() -> Self {
-		let mut serializer = flexbuffers::FlexbufferSerializer::new();
-		T::default().serialize(&mut serializer).unwrap();
-		Mask(serializer.take_buffer())
-	}
-	pub fn get_mask(&self) -> Result<flexbuffers::MapReader<&[u8]>> {
-		flexbuffers::Reader::get_root(self.0.as_slice())
-			.map_err(|_| eyre!("Mask is not a valid flexbuffer"))?
-			.get_map()
-			.map_err(|_| eyre!("Mask is not a valid map"))
-	}
-}
-impl Display for Mask {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		flexbuffers::Reader::get_root(self.0.as_slice())
-			.unwrap()
-			.to_string()
-			.fmt(f)
-	}
-}
-
-#[derive(Serialize, Deserialize)]
-struct SendDataInfo<'a> {
-	uid: &'a str,
-	data: Vec<u8>,
-}
+stardust_xr_server_codegen::codegen_data_protocol!();
 
 pub struct PulseSender {
-	uid: String,
 	node: Weak<Node>,
-	pub mask: Mask,
+	pub mask: Datamap,
 	aliases: LifeLinkedNodeMap<String>,
 }
 impl PulseSender {
-	pub fn add_to(node: &Arc<Node>, mask: Mask) -> Result<Arc<PulseSender>> {
+	pub fn add_to(node: &Arc<Node>, mask: Datamap) -> Result<Arc<PulseSender>> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
 		);
 
 		let sender = PulseSender {
-			uid: nanoid!(),
 			node: Arc::downgrade(node),
 			mask,
 			aliases: LifeLinkedNodeMap::default(),
 		};
 		let sender = PULSE_SENDER_REGISTRY.add(sender);
 		let _ = node.pulse_sender.set(sender.clone());
-		node.add_local_signal("send_data", PulseSender::send_data_flex);
 		for receiver in PULSE_RECEIVER_REGISTRY.get_valid_contents() {
 			sender.handle_new_receiver(&receiver);
 		}
@@ -127,54 +99,28 @@ impl PulseSender {
 			receiver.uid.as_str(),
 			&rx_node,
 			AliasInfo {
-				server_methods: vec!["sendData", "getTransform"],
+				server_methods: vec!["send_data"],
 				..Default::default()
 			},
 		);
-		if let Ok(rx_alias) = rx_alias {
-			self.aliases.add(receiver.uid.clone(), &rx_alias);
+		let Ok(rx_alias) = rx_alias else { return };
+		self.aliases.add(receiver.uid.clone(), &rx_alias);
 
-			if let Some(rx_field_node) = receiver.field.spatial_ref().node.upgrade() {
-				// Receiver's field
-				let rx_field_alias = Alias::create(
-					&tx_client,
-					rx_alias.get_path(),
-					"field",
-					&rx_field_node,
-					FIELD_ALIAS_INFO.clone(),
-				);
-				if let Ok(rx_field_alias) = rx_field_alias {
-					self.aliases
-						.add(receiver.uid.clone() + "-field", &rx_field_alias);
-				}
-			}
-		}
-
-		#[derive(Serialize)]
-		struct NewReceiverInfo<'a> {
-			uid: &'a str,
-			distance: f32,
-			position: Vector3<f32>,
-			rotation: Quaternion<f32>,
-		}
-
-		let (_, rotation, position) = Spatial::space_to_space_matrix(
-			rx_node.spatial.get().map(|s| s.as_ref()),
-			tx_node.spatial.get().map(|s| s.as_ref()),
-		)
-		.to_scale_rotation_translation();
-
-		let info = NewReceiverInfo {
-			uid: &receiver.uid,
-			distance: receiver
-				.field
-				.distance(tx_node.spatial.get().unwrap(), vec3a(0.0, 0.0, 0.0)),
-			position: position.into(),
-			rotation: rotation.into(),
+		// Receiver's field
+		let Ok(rx_field_alias) = Alias::create(
+			&tx_client,
+			rx_alias.get_path(),
+			"field",
+			&rx_node.pulse_receiver.get().unwrap().field_node,
+			FIELD_ALIAS_INFO.clone(),
+		) else {
+			return;
 		};
+		self.aliases
+			.add(receiver.uid.clone() + "-field", &rx_field_alias);
 
-		let Ok(data) = serialize(info) else { return };
-		let _ = tx_node.send_remote_signal("new_receiver", data);
+		let _ =
+			pulse_sender_client::new_receiver(&tx_node, &receiver.uid, &rx_alias, &rx_field_alias);
 	}
 
 	fn handle_drop_receiver(&self, receiver: &PulseReceiver) {
@@ -184,36 +130,10 @@ impl PulseSender {
 		let Some(tx_node) = self.node.upgrade() else {
 			return;
 		};
-		let Ok(data) = serialize(&uid) else { return };
-		let _ = tx_node.send_remote_signal("drop_receiver", data);
-	}
-
-	fn send_data_flex(
-		node: Arc<Node>,
-		calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let info: SendDataInfo = deserialize(message.as_ref())?;
-		let receiver_node = calling_client.get_node("Pulse receiver", info.uid)?;
-		let receiver =
-			receiver_node.get_aspect("Pulse Receiver", "pulse receiver", |n| &n.pulse_receiver)?;
-		let receiver_mask = &receiver_node
-			.get_aspect("Pulse receiver", "pulse receiver", |node| {
-				&node.pulse_receiver
-			})?
-			.mask;
-
-		let data_mask = Mask(info.data);
-		data_mask.get_mask()?;
-		ensure!(
-			mask_matches(receiver_mask, &data_mask),
-			"Message ({}) does not contain the same keys as the receiver's mask ({})",
-			data_mask,
-			receiver_mask
-		);
-		receiver.send_data(&node.pulse_sender.get().unwrap().uid, data_mask.0)
+		let _ = pulse_sender_client::drop_receiver(&tx_node, uid);
 	}
 }
+impl PulseSenderAspect for PulseSender {}
 impl Drop for PulseSender {
 	fn drop(&mut self) {
 		PULSE_SENDER_REGISTRY.remove(self);
@@ -223,11 +143,15 @@ impl Drop for PulseSender {
 pub struct PulseReceiver {
 	uid: String,
 	pub node: Weak<Node>,
-	pub field: Arc<Field>,
-	pub mask: Mask,
+	pub field_node: Arc<Node>,
+	pub mask: Datamap,
 }
 impl PulseReceiver {
-	pub fn add_to(node: &Arc<Node>, field: Arc<Field>, mask: Mask) -> Result<Arc<PulseReceiver>> {
+	pub fn add_to(
+		node: &Arc<Node>,
+		field_node: Arc<Node>,
+		mask: Datamap,
+	) -> Result<Arc<PulseReceiver>> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
@@ -236,7 +160,7 @@ impl PulseReceiver {
 		let receiver = PulseReceiver {
 			uid: nanoid!(),
 			node: Arc::downgrade(node),
-			field,
+			field_node,
 			mask,
 		};
 		let receiver = PULSE_RECEIVER_REGISTRY.add(receiver);
@@ -247,15 +171,25 @@ impl PulseReceiver {
 		let _ = node.pulse_receiver.set(receiver.clone());
 		Ok(receiver)
 	}
+}
+impl PulseReceiverAspect for PulseReceiver {
+	fn send_data(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		sender: Arc<Node>,
+		data: Datamap,
+	) -> Result<()> {
+		let this_receiver = node.pulse_receiver.get().unwrap();
 
-	pub fn send_data(&self, uid: &str, data: Vec<u8>) -> Result<()> {
-		if let Some(node) = self.node.upgrade() {
-			node.send_remote_signal("data", serialize(SendDataInfo { uid, data })?)?;
-		}
+		ensure!(
+			mask_matches(&this_receiver.mask, &data),
+			"Message ({data:?}) does not contain the same keys as the receiver's mask ({:?})",
+			this_receiver.mask
+		);
+		pulse_receiver_client::data(&node, &sender.uid, &data)?;
 		Ok(())
 	}
 }
-
 impl Drop for PulseReceiver {
 	fn drop(&mut self) {
 		PULSE_RECEIVER_REGISTRY.remove(self);
@@ -265,76 +199,64 @@ impl Drop for PulseReceiver {
 	}
 }
 
-pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create_parent_name(client, "", "data", false);
-	node.add_local_signal("create_pulse_sender", create_pulse_sender_flex);
-	node.add_local_signal("create_pulse_receiver", create_pulse_receiver_flex);
-	node.add_local_method("register_keymap", register_keymap_flex);
-	node.add_local_method("get_keymap", get_keymap_flex);
-	node.add_to_scenegraph().map(|_| ())
-}
-
-pub fn create_pulse_sender_flex(
-	_node: Arc<Node>,
-	calling_client: Arc<Client>,
-	message: Message,
-) -> Result<()> {
-	#[derive(Deserialize)]
-	struct CreatePulseSenderInfo<'a> {
-		name: &'a str,
-		parent_path: &'a str,
+create_interface!(DataInterface, DataInterfaceAspect, "/data");
+struct DataInterface;
+impl DataInterfaceAspect for DataInterface {
+	fn create_pulse_sender(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
 		transform: Transform,
-		mask: Vec<u8>,
+		mask: Datamap,
+	) -> Result<()> {
+		get_mask(&mask)?;
+		let node = Node::create_parent_name(
+			&calling_client,
+			Self::CREATE_PULSE_SENDER_PARENT_PATH,
+			&name,
+			true,
+		);
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let transform = transform.to_mat4(true, true, false);
+
+		let node = node.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent), transform, false)?;
+		PulseSender::add_to(&node, mask)?;
+		Ok(())
 	}
-	let info: CreatePulseSenderInfo = deserialize(message.as_ref())?;
-	let node = Node::create_parent_name(&calling_client, "/data/sender", info.name, true);
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, false);
 
-	let mask = Mask(info.mask);
-	mask.get_mask()?;
-
-	let node = node.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, false)?;
-	PulseSender::add_to(&node, mask)?;
-	Ok(())
-}
-
-pub fn create_pulse_receiver_flex(
-	_node: Arc<Node>,
-	calling_client: Arc<Client>,
-	message: Message,
-) -> Result<()> {
-	#[derive(Deserialize)]
-	struct CreatePulseReceiverInfo<'a> {
-		name: &'a str,
-		parent_path: &'a str,
+	fn create_pulse_receiver(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
 		transform: Transform,
-		field_path: &'a str,
-		mask: Vec<u8>,
+		field: Arc<Node>,
+		mask: Datamap,
+	) -> Result<()> {
+		get_mask(&mask)?;
+		let node = Node::create_parent_name(
+			&calling_client,
+			Self::CREATE_PULSE_RECEIVER_PARENT_PATH,
+			&name,
+			true,
+		);
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let transform = parse_transform(transform, true, true, false);
+		get_field(&field)?;
+
+		let node = node.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent), transform, false)?;
+		PulseReceiver::add_to(&node, field, mask)?;
+		Ok(())
 	}
-	let info: CreatePulseReceiverInfo = deserialize(message.as_ref())?;
-	let node = Node::create_parent_name(&calling_client, "/data/receiver", info.name, true);
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, false);
-	let field = find_field(&calling_client, info.field_path)?;
-	let mask = Mask(info.mask);
-	mask.get_mask()?;
 
-	let node = node.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, false)?;
-	PulseReceiver::add_to(&node, field, mask)?;
-	Ok(())
-}
-
-pub fn register_keymap_flex(
-	_node: Arc<Node>,
-	_calling_client: Arc<Client>,
-	message: Message,
-	response: MethodResponseSender,
-) {
-	response.wrap_sync(move || {
-		let keymap: String = deserialize(message.as_ref())?;
+	async fn register_keymap(
+		_node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		keymap: String,
+	) -> Result<String> {
 		let mut keymaps = KEYMAPS.lock();
 		if let Some(found_keymap_id) = keymaps
 			.iter()
@@ -342,28 +264,25 @@ pub fn register_keymap_flex(
 			.map(|(k, _v)| k)
 			.last()
 		{
-			return Ok(serialize(found_keymap_id)?.into());
+			return Ok(found_keymap_id.clone());
 		}
 
 		let generated_id = nanoid!();
 		keymaps.insert(generated_id.clone(), keymap);
 
-		Ok(serialize(generated_id)?.into())
-	});
-}
-pub fn get_keymap_flex(
-	_node: Arc<Node>,
-	_calling_client: Arc<Client>,
-	message: Message,
-	response: MethodResponseSender,
-) {
-	response.wrap_sync(move || {
-		let keymap_id: &str = deserialize(message.as_ref())?;
+		Ok(generated_id)
+	}
+
+	async fn get_keymap(
+		_node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		keymap_id: String,
+	) -> Result<String> {
 		let keymaps = KEYMAPS.lock();
-		let Some(keymap) = keymaps.get(keymap_id) else {
+		let Some(keymap) = keymaps.get(&keymap_id) else {
 			bail!("Could not find keymap. Try registering it")
 		};
 
-		Ok(serialize(keymap)?.into())
-	});
+		Ok(keymap.clone())
+	}
 }

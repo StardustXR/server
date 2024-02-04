@@ -5,12 +5,13 @@ use glam::Mat4;
 use mint::Vector2;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
+use stardust_xr::values::Datamap;
 use stereokit::StereoKitMultiThread;
 
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		data::{Mask, PulseReceiver},
+		data::PulseReceiver,
 		fields::{r#box::BoxField, Field},
 		spatial::Spatial,
 		Node,
@@ -44,8 +45,11 @@ impl PlaySpace {
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false)?;
 		let field = BoxField::add_to(&node, [0.0; 3].into())?;
 
-		let pulse_rx =
-			PulseReceiver::add_to(&node, field.clone(), Mask::from_struct::<PlaySpaceMap>())?;
+		let pulse_rx = PulseReceiver::add_to(
+			&node,
+			node.clone(),
+			Datamap::from_typed(PlaySpaceMap::default())?,
+		)?;
 
 		Ok(PlaySpace {
 			_node: node,

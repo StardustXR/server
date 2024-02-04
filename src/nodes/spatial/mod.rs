@@ -13,7 +13,6 @@ use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use std::fmt::Debug;
-use std::os::fd::OwnedFd;
 use std::ptr;
 use std::sync::{Arc, Weak};
 use stereokit::{bounds_grow_to_fit_box, Bounds};
@@ -244,85 +243,75 @@ impl Spatial {
 	}
 }
 impl SpatialAspect for Spatial {
-	fn get_local_bounding_box(
+	async fn get_local_bounding_box(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-	) -> impl std::future::Future<Output = Result<(BoundingBox, Vec<OwnedFd>)>> + Send + 'static {
-		async move {
-			let this_spatial = node
-				.spatial
-				.get()
-				.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-			let bounds = this_spatial.get_bounding_box();
+	) -> Result<BoundingBox> {
+		let this_spatial = node
+			.spatial
+			.get()
+			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+		let bounds = this_spatial.get_bounding_box();
 
-			let return_value = BoundingBox {
-				center: mint::Vector3::from(bounds.center),
-				size: mint::Vector3::from(bounds.dimensions),
-			};
-			Ok((return_value, Vec::new()))
-		}
+		Ok(BoundingBox {
+			center: mint::Vector3::from(bounds.center),
+			size: mint::Vector3::from(bounds.dimensions),
+		})
 	}
 
-	fn get_relative_bounding_box(
+	async fn get_relative_bounding_box(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		relative_to: Arc<Node>,
-	) -> impl std::future::Future<Output = Result<(BoundingBox, Vec<OwnedFd>)>> + Send + 'static {
-		async move {
-			let this_spatial = node
-				.spatial
-				.get()
-				.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-			let relative_spatial = get_spatial(&relative_to, "Relative node")?;
-			let center =
-				Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
-					.transform_point3([0.0; 3].into());
-			let bounds = Bounds {
-				center,
-				dimensions: [0.0; 3].into(),
-			};
-			bounds_grow_to_fit_box(
-				bounds,
-				this_spatial.get_bounding_box(),
-				Some(Spatial::space_to_space_matrix(
-					Some(&this_spatial),
-					Some(&relative_spatial),
-				)),
-			);
+	) -> Result<BoundingBox> {
+		let this_spatial = node
+			.spatial
+			.get()
+			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+		let relative_spatial = get_spatial(&relative_to, "Relative node")?;
+		let center = Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
+			.transform_point3([0.0; 3].into());
+		let bounds = Bounds {
+			center,
+			dimensions: [0.0; 3].into(),
+		};
+		bounds_grow_to_fit_box(
+			bounds,
+			this_spatial.get_bounding_box(),
+			Some(Spatial::space_to_space_matrix(
+				Some(&this_spatial),
+				Some(&relative_spatial),
+			)),
+		);
 
-			let return_value = BoundingBox {
-				center: mint::Vector3::from(bounds.center),
-				size: mint::Vector3::from(bounds.dimensions),
-			};
-			Ok((return_value, Vec::new()))
-		}
+		Ok(BoundingBox {
+			center: mint::Vector3::from(bounds.center),
+			size: mint::Vector3::from(bounds.dimensions),
+		})
 	}
 
-	fn get_transform(
+	async fn get_transform(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		relative_to: Arc<Node>,
-	) -> impl std::future::Future<Output = Result<(Transform, Vec<OwnedFd>)>> + Send + 'static {
-		async move {
-			let this_spatial = node
-				.spatial
-				.get()
-				.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-			let relative_spatial = get_spatial(&relative_to, "Relative node")?;
+	) -> Result<Transform> {
+		let this_spatial = node
+			.spatial
+			.get()
+			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
+		let relative_spatial = get_spatial(&relative_to, "Relative node")?;
 
-			let (scale, rotation, position) = Spatial::space_to_space_matrix(
-				Some(this_spatial.as_ref()),
-				Some(relative_spatial.as_ref()),
-			)
-			.to_scale_rotation_translation();
+		let (scale, rotation, position) = Spatial::space_to_space_matrix(
+			Some(this_spatial.as_ref()),
+			Some(relative_spatial.as_ref()),
+		)
+		.to_scale_rotation_translation();
 
-			let return_value = Transform {
-				translation: Some(position.into()),
-				rotation: Some(rotation.into()),
-				scale: Some(scale.into()),
-			};
-			Ok((return_value, Vec::new()))
-		}
+		Ok(Transform {
+			translation: Some(position.into()),
+			rotation: Some(rotation.into()),
+			scale: Some(scale.into()),
+		})
 	}
 
 	fn set_local_transform(

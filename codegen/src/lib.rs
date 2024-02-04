@@ -306,7 +306,7 @@ fn generate_member(member: &Member) -> TokenStream {
 		(Side::Server, MemberType::Method) => {
 			quote! {
 				#[doc = #description]
-				fn #name(#argument_decls) -> impl std::future::Future<Output = color_eyre::eyre::Result<(#return_type, Vec<std::os::fd::OwnedFd>)>> + Send + 'static;
+				fn #name(#argument_decls) -> impl std::future::Future<Output = color_eyre::eyre::Result<#return_type>> + Send + 'static;
 			}
 		}
 		(Side::Server, MemberType::Signal) => {
@@ -375,7 +375,7 @@ fn generate_handler(member: &Member) -> TokenStream {
 			node.add_local_method(#member_name, |_node, _calling_client, _message, _method_response| {
 				_method_response.wrap_async(async move {
 					#deserialize
-					Self::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await
+					Ok((Self::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await?, Vec::new()))
 				});
 			});
 		},
