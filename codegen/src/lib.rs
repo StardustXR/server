@@ -150,6 +150,7 @@ fn generate_custom_struct(custom_struct: &CustomStruct) -> TokenStream {
 		.fields
 		.iter()
 		.map(|a| generate_argument_decl(a, true))
+		.map(|d| quote!(pub #d))
 		.reduce(|a, b| quote!(#a, #b))
 		.unwrap_or_default();
 
@@ -265,7 +266,7 @@ fn generate_member(member: &Member) -> TokenStream {
 
 	let first_args = match member.side {
 		Side::Server => {
-			quote!(_node: std::sync::Arc<crate::nodes::Node>, _calling_client: std::sync::Arc<crate::core::client::Client>, _fds: Vec<std::os::fd::OwnedFd>)
+			quote!(_node: std::sync::Arc<crate::nodes::Node>, _calling_client: std::sync::Arc<crate::core::client::Client>)
 		}
 		Side::Client => quote!(_node: &crate::nodes::Node),
 	};
@@ -312,7 +313,23 @@ fn generate_member(member: &Member) -> TokenStream {
 			}
 		}
 		(Side::Server, MemberType::Signal) => {
+			let prefix =
+				if let Some(ArgumentType::Node { _type, return_info }) = &member.return_type {
+					if let Some(return_info) = return_info {
+						let parent_name = Ident::new(
+							&(name_str.to_case(Case::ScreamingSnake) + "_PARENT_PATH"),
+							Span::call_site(),
+						);
+						let parent_path = &return_info.parent;
+						quote!(const #parent_name: &'static str = #parent_path;)
+					} else {
+						TokenStream::default()
+					}
+				} else {
+					TokenStream::default()
+				};
 			quote! {
+				#prefix
 				#[doc = #description]
 				fn #name(#argument_decls) -> color_eyre::eyre::Result<()>;
 			}
@@ -353,16 +370,14 @@ fn generate_handler(member: &Member) -> TokenStream {
 		MemberType::Signal => quote! {
 			node.add_local_signal(#member_name, |_node, _calling_client, _message| {
 				#deserialize
-				let _fds = _message.fds;
-				Self::#member_name_ident(_node, _calling_client.clone(), _fds, #argument_uses)
+				Self::#member_name_ident(_node, _calling_client.clone(), #argument_uses)
 			});
 		},
 		MemberType::Method => quote! {
 			node.add_local_method(#member_name, |_node, _calling_client, _message, _method_response| {
 				_method_response.wrap_async(async move {
 					#deserialize
-					let _fds = _message.fds;
-					Self::#member_name_ident(_node, _calling_client.clone(), _fds, #argument_uses).await
+					Self::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await
 				});
 			});
 		},

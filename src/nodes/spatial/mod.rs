@@ -19,24 +19,24 @@ use std::sync::{Arc, Weak};
 use stereokit::{bounds_grow_to_fit_box, Bounds};
 
 stardust_xr_server_codegen::codegen_spatial_protocol!();
-// impl Transform {
-// 	pub fn to_mat4(self, position: bool, rotation: bool, scale: bool) -> Mat4 {
-// 		let position = position
-// 			.then_some(self.translation)
-// 			.flatten()
-// 			.unwrap_or_else(|| Vector3::from([0.0; 3]));
-// 		let rotation = rotation
-// 			.then_some(self.rotation)
-// 			.flatten()
-// 			.unwrap_or_else(|| Quat::IDENTITY.into());
-// 		let scale = scale
-// 			.then_some(self.scale)
-// 			.flatten()
-// 			.unwrap_or_else(|| Vector3::from([1.0; 3]));
+impl Transform {
+	pub fn to_mat4(self, position: bool, rotation: bool, scale: bool) -> Mat4 {
+		let position = position
+			.then_some(self.translation)
+			.flatten()
+			.unwrap_or_else(|| Vector3::from([0.0; 3]));
+		let rotation = rotation
+			.then_some(self.rotation)
+			.flatten()
+			.unwrap_or_else(|| Quat::IDENTITY.into());
+		let scale = scale
+			.then_some(self.scale)
+			.flatten()
+			.unwrap_or_else(|| Vector3::from([1.0; 3]));
 
-// 		Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
-// 	}
-// }
+		Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
+	}
+}
 
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
@@ -247,7 +247,6 @@ impl SpatialAspect for Spatial {
 	fn get_local_bounding_box(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 	) -> impl std::future::Future<Output = Result<(BoundingBox, Vec<OwnedFd>)>> + Send + 'static {
 		async move {
 			let this_spatial = node
@@ -267,7 +266,6 @@ impl SpatialAspect for Spatial {
 	fn get_relative_bounding_box(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 		relative_to: Arc<Node>,
 	) -> impl std::future::Future<Output = Result<(BoundingBox, Vec<OwnedFd>)>> + Send + 'static {
 		async move {
@@ -303,7 +301,6 @@ impl SpatialAspect for Spatial {
 	fn get_transform(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 		relative_to: Arc<Node>,
 	) -> impl std::future::Future<Output = Result<(Transform, Vec<OwnedFd>)>> + Send + 'static {
 		async move {
@@ -331,7 +328,6 @@ impl SpatialAspect for Spatial {
 	fn set_local_transform(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 		transform: Transform,
 	) -> Result<()> {
 		let this_spatial = node
@@ -344,7 +340,6 @@ impl SpatialAspect for Spatial {
 	fn set_relative_transform(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 		relative_to: Arc<Node>,
 		transform: Transform,
 	) -> Result<()> {
@@ -361,7 +356,6 @@ impl SpatialAspect for Spatial {
 	fn set_spatial_parent(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 		parent: Arc<Node>,
 	) -> Result<()> {
 		let this_spatial = node
@@ -377,7 +371,6 @@ impl SpatialAspect for Spatial {
 	fn set_spatial_parent_in_place(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 		parent: Arc<Node>,
 	) -> Result<()> {
 		let this_spatial = node
@@ -390,12 +383,7 @@ impl SpatialAspect for Spatial {
 		Ok(())
 	}
 
-	fn set_zoneable(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
-		zoneable: bool,
-	) -> Result<()> {
+	fn set_zoneable(node: Arc<Node>, _calling_client: Arc<Client>, zoneable: bool) -> Result<()> {
 		let spatial = node.spatial.get().unwrap();
 		if zoneable {
 			ZONEABLE_REGISTRY.add_raw(spatial);
@@ -458,9 +446,6 @@ pub fn find_spatial(
 pub fn find_spatial_parent(calling_client: &Arc<Client>, node_path: &str) -> Result<Arc<Spatial>> {
 	find_spatial(calling_client, "Spatial parent", node_path)
 }
-pub fn find_reference_space(calling_client: &Arc<Client>, node_path: &str) -> Result<Arc<Spatial>> {
-	find_spatial(calling_client, "Reference space", node_path)
-}
 pub fn get_spatial(node: &Arc<Node>, node_name: &str) -> Result<Arc<Spatial>> {
 	node.get_aspect(node_name, "spatial", |n| &n.spatial)
 		.cloned()
@@ -471,7 +456,6 @@ impl SpatialInterfaceAspect for SpatialInterface {
 	fn create_spatial(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 		name: String,
 		parent: Arc<Node>,
 		transform: Transform,
@@ -487,7 +471,6 @@ impl SpatialInterfaceAspect for SpatialInterface {
 	fn create_zone(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 		name: String,
 		parent: Arc<Node>,
 		transform: Transform,

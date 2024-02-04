@@ -1,14 +1,11 @@
-use super::{Field, FieldTrait, Node};
+use super::{get_field, BoxFieldAspect, Field, FieldTrait, Node};
 use crate::core::client::Client;
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
-use crate::nodes::Message;
+use crate::nodes::fields::FieldAspect;
+use crate::nodes::spatial::Spatial;
 use color_eyre::eyre::{ensure, Result};
 use glam::{vec3, vec3a, Vec3, Vec3A};
 use mint::Vector3;
 use parking_lot::Mutex;
-use serde::Deserialize;
-use stardust_xr::schemas::flex::deserialize;
-
 use std::sync::Arc;
 
 pub struct BoxField {
@@ -30,8 +27,8 @@ impl BoxField {
 			space: node.spatial.get().unwrap().clone(),
 			size: Mutex::new(size.into()),
 		};
-		box_field.add_field_methods(node);
-		node.add_local_signal("set_size", BoxField::set_size_flex);
+		<BoxField as FieldAspect>::add_node_members(node);
+		<BoxField as BoxFieldAspect>::add_node_members(node);
 		let field = Arc::new(Field::Box(box_field));
 		let _ = node.field.set(field.clone());
 		Ok(field)
@@ -39,19 +36,6 @@ impl BoxField {
 
 	pub fn set_size(&self, size: Vector3<f32>) {
 		*self.size.lock() = size.into();
-	}
-
-	pub fn set_size_flex(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let Field::Box(box_field) = node.field.get().unwrap().as_ref() else {
-			return Ok(());
-		};
-		box_field.set_size(deserialize(message.as_ref())?);
-
-		Ok(())
 	}
 }
 
@@ -70,25 +54,16 @@ impl FieldTrait for BoxField {
 		self.space.as_ref()
 	}
 }
-
-pub fn create_box_field_flex(
-	_node: Arc<Node>,
-	calling_client: Arc<Client>,
-	message: Message,
-) -> Result<()> {
-	#[derive(Deserialize)]
-	struct CreateFieldInfo<'a> {
-		name: &'a str,
-		parent_path: &'a str,
-		transform: Transform,
-		size: Vector3<f32>,
+impl BoxFieldAspect for BoxField {
+	fn set_size(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		size: mint::Vector3<f32>,
+	) -> Result<()> {
+		let Field::Box(this_field) = &*get_field(&node)? else {
+			return Ok(());
+		};
+		this_field.set_size(size.into());
+		Ok(())
 	}
-	let info: CreateFieldInfo = deserialize(message.as_ref())?;
-	let node = Node::create_parent_name(&calling_client, "/field", info.name, true);
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, false);
-	let node = node.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, false)?;
-	BoxField::add_to(&node, info.size)?;
-	Ok(())
 }

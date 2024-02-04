@@ -10,10 +10,7 @@ use crate::{
 use glam::vec3a;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use std::{
-	os::fd::OwnedFd,
-	sync::{Arc, Weak},
-};
+use std::sync::{Arc, Weak};
 
 pub fn capture(spatial: &Arc<Spatial>, zone: &Arc<Zone>) {
 	let old_distance = spatial.zone_distance();
@@ -66,12 +63,7 @@ impl Zone {
 	}
 }
 impl ZoneAspect for Zone {
-	#[doc = ""]
-	fn update(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
-	) -> color_eyre::eyre::Result<()> {
+	fn update(node: Arc<Node>, _calling_client: Arc<Client>) -> color_eyre::eyre::Result<()> {
 		let zone = node.zone.get().unwrap();
 		let Some(field) = zone.field.upgrade() else {
 			return Err(color_eyre::eyre::eyre!("Zone's field has been destroyed"));
@@ -140,11 +132,9 @@ impl ZoneAspect for Zone {
 		Ok(())
 	}
 
-	#[doc = ""]
 	fn capture(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 		spatial: Arc<Node>,
 	) -> color_eyre::eyre::Result<()> {
 		let zone = node.zone.get().unwrap();
@@ -153,11 +143,9 @@ impl ZoneAspect for Zone {
 		Ok(())
 	}
 
-	#[doc = ""]
 	fn release(
 		_node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		_fds: Vec<OwnedFd>,
 		spatial: Arc<Node>,
 	) -> color_eyre::eyre::Result<()> {
 		let spatial = get_spatial(&spatial, "Spatial")?;

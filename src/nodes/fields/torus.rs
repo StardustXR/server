@@ -1,11 +1,11 @@
-use super::{Field, FieldTrait, Node};
+use super::{get_field, Field, FieldTrait, Node, TorusFieldAspect};
 use crate::core::client::Client;
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
+use crate::nodes::fields::FieldAspect;
+use crate::nodes::spatial::Spatial;
 use crate::nodes::Message;
 use color_eyre::eyre::{ensure, Result};
 use glam::{swizzles::*, vec2, Vec3A};
 use portable_atomic::AtomicF32;
-use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
 
 use std::sync::atomic::Ordering;
@@ -32,7 +32,8 @@ impl TorusField {
 			radius_a: AtomicF32::new(radius_a.abs()),
 			radius_b: AtomicF32::new(radius_b.abs()),
 		};
-		torus_field.add_field_methods(node);
+		<TorusField as FieldAspect>::add_node_members(node);
+		<TorusField as TorusFieldAspect>::add_node_members(node);
 		node.add_local_signal("set_size", TorusField::set_size_flex);
 		let _ = node.field.set(Arc::new(Field::Torus(torus_field)));
 		Ok(())
@@ -57,7 +58,6 @@ impl TorusField {
 		Ok(())
 	}
 }
-
 impl FieldTrait for TorusField {
 	fn local_distance(&self, p: Vec3A) -> f32 {
 		let radius_a = self.radius_a.load(Ordering::Relaxed);
@@ -69,26 +69,17 @@ impl FieldTrait for TorusField {
 		self.space.as_ref()
 	}
 }
-
-pub fn create_torus_field_flex(
-	_node: Arc<Node>,
-	calling_client: Arc<Client>,
-	message: Message,
-) -> Result<()> {
-	#[derive(Deserialize)]
-	struct CreateFieldInfo<'a> {
-		name: &'a str,
-		parent_path: &'a str,
-		transform: Transform,
+impl TorusFieldAspect for TorusField {
+	fn set_size(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
 		radius_a: f32,
 		radius_b: f32,
+	) -> Result<()> {
+		let Field::Torus(this_field) = &*get_field(&node)? else {
+			return Ok(());
+		};
+		this_field.set_size(radius_a, radius_b);
+		Ok(())
 	}
-	let info: CreateFieldInfo = deserialize(message.as_ref())?;
-	let node = Node::create_parent_name(&calling_client, "/field", info.name, true);
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, false);
-	let node = node.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, false)?;
-	TorusField::add_to(&node, info.radius_a, info.radius_b)?;
-	Ok(())
 }
