@@ -264,3 +264,6 @@ pub fn find_field(client: &Client, path: &str) -> Result<Arc<Field>> {
 		.get_aspect("Field", "info", |n| &n.field)
 		.cloned()
 }
+pub fn get_field(node: &Node) -> Result<Arc<Field>> {
+	node.get_aspect("Field", "info", |n| &n.field).cloned()
+}
