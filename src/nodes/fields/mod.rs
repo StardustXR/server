@@ -16,10 +16,9 @@ use crate::create_interface;
 use crate::nodes::spatial::Transform;
 use color_eyre::eyre::Result;
 use glam::{vec2, vec3a, Mat4, Vec3, Vec3A};
+use mint::Vector3;
 use once_cell::sync::Lazy;
-
 use std::ops::Deref;
-use std::os::fd::OwnedFd;
 use std::sync::Arc;
 
 // TODO: get SDFs working properly with non-uniform scale and so on, output distance relative to the spatial it's compared against
@@ -108,74 +107,58 @@ pub trait FieldTrait {
 		result
 	}
 }
-impl<Fi: FieldTrait> FieldAspect for Fi {
-	fn distance(
+impl<Fi: FieldTrait + 'static> FieldAspect for Fi {
+	async fn distance(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		space: Arc<Node>,
 		point: mint::Vector3<f32>,
-	) -> impl std::future::Future<Output = Result<(f32, Vec<OwnedFd>)>> + Send + 'static {
-		async move {
-			let reference_space = get_spatial(&space, "Reference space")?;
-			let this_field = node.field.get().unwrap();
-
-			let distance = this_field.distance(reference_space.as_ref(), point.into());
-			Ok((distance, Vec::new()))
-		}
+	) -> Result<f32> {
+		let reference_space = get_spatial(&space, "Reference space")?;
+		let this_field = node.field.get().unwrap();
+		Ok(this_field.distance(reference_space.as_ref(), point.into()))
 	}
 
-	fn normal(
+	async fn normal(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		space: Arc<Node>,
 		point: mint::Vector3<f32>,
-	) -> impl std::future::Future<Output = Result<(mint::Vector3<f32>, Vec<OwnedFd>)>> + Send + 'static
-	{
-		async move {
-			let reference_space = get_spatial(&space, "Reference space")?;
-			let this_field = node.field.get().unwrap();
-
-			let normal = this_field.normal(reference_space.as_ref(), point.into(), 0.001);
-			Ok((normal.into(), Vec::new()))
-		}
+	) -> Result<Vector3<f32>> {
+		let reference_space = get_spatial(&space, "Reference space")?;
+		let this_field = node.field.get().unwrap();
+		Ok(this_field
+			.normal(reference_space.as_ref(), point.into(), 0.001)
+			.into())
 	}
 
-	fn closest_point(
+	async fn closest_point(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		space: Arc<Node>,
 		point: mint::Vector3<f32>,
-	) -> impl std::future::Future<Output = Result<(mint::Vector3<f32>, Vec<OwnedFd>)>> + Send + 'static
-	{
-		async move {
-			let reference_space = get_spatial(&space, "Reference space")?;
-			let this_field = node.field.get().unwrap();
-
-			let closest_point =
-				this_field.closest_point(reference_space.as_ref(), point.into(), 0.001);
-			Ok((closest_point.into(), Vec::new()))
-		}
+	) -> Result<Vector3<f32>> {
+		let reference_space = get_spatial(&space, "Reference space")?;
+		let this_field = node.field.get().unwrap();
+		Ok(this_field
+			.closest_point(reference_space.as_ref(), point.into(), 0.001)
+			.into())
 	}
 
-	fn ray_march(
+	async fn ray_march(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		space: Arc<Node>,
 		ray_origin: mint::Vector3<f32>,
 		ray_direction: mint::Vector3<f32>,
-	) -> impl std::future::Future<Output = Result<(RayMarchResult, Vec<OwnedFd>)>> + Send + 'static
-	{
-		async move {
-			let reference_space = get_spatial(&space, "Reference space")?;
-			let this_field = node.field.get().unwrap();
-
-			let ray_march = this_field.ray_march(Ray {
-				origin: ray_origin.into(),
-				direction: ray_direction.into(),
-				space: reference_space,
-			});
-			Ok((ray_march, Vec::new()))
-		}
+	) -> Result<RayMarchResult> {
+		let reference_space = get_spatial(&space, "Reference space")?;
+		let this_field = node.field.get().unwrap();
+		Ok(this_field.ray_march(Ray {
+			origin: ray_origin.into(),
+			direction: ray_direction.into(),
+			space: reference_space,
+		}))
 	}
 }
 

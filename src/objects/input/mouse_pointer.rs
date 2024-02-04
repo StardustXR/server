@@ -1,7 +1,9 @@
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		data::{mask_matches, Mask, PulseSender, KEYMAPS, PULSE_RECEIVER_REGISTRY},
+		data::{
+			mask_matches, pulse_receiver_client, PulseSender, KEYMAPS, PULSE_RECEIVER_REGISTRY,
+		},
 		fields::Ray,
 		input::{pointer::Pointer, InputMethod, InputType},
 		spatial::Spatial,
@@ -69,8 +71,11 @@ impl MousePointer {
 				.get_as_string(FORMAT_TEXT_V1),
 		);
 
-		let keyboard_sender =
-			PulseSender::add_to(&node, Mask::from_struct::<KeyboardEvent>()).unwrap();
+		let keyboard_sender = PulseSender::add_to(
+			&node,
+			Datamap::from_typed(KeyboardEvent::default()).unwrap(),
+		)
+		.unwrap();
 
 		Ok(MousePointer {
 			node,
@@ -135,7 +140,7 @@ impl MousePointer {
 			.into_iter()
 			.filter(|rx| mask_matches(&rx.mask, &self.keyboard_sender.mask))
 			.map(|rx| {
-				let result = rx.field.ray_march(Ray {
+				let result = rx.field_node.field.get().unwrap().ray_march(Ray {
 					origin: vec3(0.0, 0.0, 0.0),
 					direction: vec3(0.0, 0.0, -1.0),
 					space: self.spatial.clone(),
@@ -171,12 +176,10 @@ impl MousePointer {
 
 			self.keyboard_datamap.keys = keys;
 			if !self.keyboard_datamap.keys.is_empty() {
-				rx.send_data(
+				pulse_receiver_client::data(
+					&rx.node.upgrade().unwrap(),
 					&self.node.uid,
-					Datamap::from_typed(&self.keyboard_datamap)
-						.unwrap()
-						.raw()
-						.clone(),
+					&Datamap::from_typed(&self.keyboard_datamap).unwrap(),
 				)
 				.unwrap();
 			}
