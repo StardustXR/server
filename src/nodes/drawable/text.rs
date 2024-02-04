@@ -1,56 +1,47 @@
 use crate::{
-	core::{client::Client, destroy_queue, registry::Registry, resource::ResourceID},
-	nodes::{
-		drawable::Drawable,
-		spatial::{find_spatial_parent, parse_transform, Spatial, Transform},
-		Message, Node,
-	},
+	core::{client::Client, destroy_queue, registry::Registry, resource::get_resource_file},
+	nodes::{drawable::Drawable, spatial::Spatial, Node},
 };
 use color_eyre::eyre::{bail, ensure, eyre, Result};
 use glam::{vec3, Mat4, Vec2};
-use mint::Vector2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
-use prisma::{Flatten, Rgba};
-use serde::Deserialize;
-use stardust_xr::schemas::flex::deserialize;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
-use stereokit::{named_colors::WHITE, Color128, StereoKitDraw, TextAlign, TextFit, TextStyle};
+use stereokit::{
+	named_colors::WHITE, Color128, StereoKitDraw, TextAlign, TextFit, TextStyle as SkTextStyle,
+};
+
+use super::{TextAspect, TextStyle};
 
 static TEXT_REGISTRY: Registry<Text> = Registry::new();
 
-struct TextData {
-	text: String,
-	character_height: f32,
-	text_align: TextAlign,
-	bounds: Option<Vec2>,
-	fit: TextFit,
-	bounds_align: TextAlign,
-	color: Rgba<f32>,
+fn convert_align(x_align: super::XAlign, y_align: super::YAlign) -> TextAlign {
+	let x_align = match x_align {
+		super::XAlign::Left => TextAlign::XLeft,
+		super::XAlign::Center => TextAlign::XCenter,
+		super::XAlign::Right => TextAlign::XRight,
+	} as u32;
+	let y_align = match y_align {
+		super::YAlign::Top => TextAlign::YTop,
+		super::YAlign::Center => TextAlign::YCenter,
+		super::YAlign::Bottom => TextAlign::YBottom,
+	} as u32;
+
+	unsafe { std::mem::transmute(x_align | y_align) }
 }
 
 pub struct Text {
 	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
 	font_path: Option<PathBuf>,
-	style: OnceCell<TextStyle>,
+	style: OnceCell<SkTextStyle>,
 
-	data: Mutex<TextData>,
+	text: Mutex<String>,
+	data: Mutex<TextStyle>,
 }
 impl Text {
-	#[allow(clippy::too_many_arguments)]
-	pub fn add_to(
-		node: &Arc<Node>,
-		font_resource_id: Option<ResourceID>,
-		text: String,
-		character_height: f32,
-		text_align: TextAlign,
-		bounds: Option<Vector2<f32>>,
-		fit: TextFit,
-		bounds_align: TextAlign,
-		color: Rgba<f32>,
-	) -> Result<Arc<Text>> {
+	pub fn add_to(node: &Arc<Node>, text: String, style: TextStyle) -> Result<Arc<Text>> {
 		ensure!(
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
@@ -64,44 +55,34 @@ impl Text {
 		let text = TEXT_REGISTRY.add(Text {
 			enabled: node.enabled.clone(),
 			space: node.spatial.get().unwrap().clone(),
-			font_path: font_resource_id.and_then(|res| {
-				res.get_file(
-					&client.base_resource_prefixes.lock().clone(),
-					&[OsStr::new("ttf"), OsStr::new("otf")],
-				)
+			font_path: style.font.as_ref().and_then(|res| {
+				get_resource_file(&res, &client, &[OsStr::new("ttf"), OsStr::new("otf")])
 			}),
 			style: OnceCell::new(),
 
-			data: Mutex::new(TextData {
-				text,
-				character_height,
-				text_align,
-				bounds: bounds.map(|b| b.into()),
-				fit,
-				bounds_align,
-				color,
-			}),
+			text: Mutex::new(text),
+			data: Mutex::new(style),
 		});
-		node.add_local_signal("set_character_height", Text::set_character_height_flex);
-		node.add_local_signal("set_text", Text::set_text_flex);
+		<Text as TextAspect>::add_node_members(node);
 		let _ = node.drawable.set(Drawable::Text(text.clone()));
 
 		Ok(text)
 	}
 
 	fn draw(&self, sk: &impl StereoKitDraw) {
-		let style = self
-			.style
-			.get_or_try_init(|| -> Result<TextStyle, color_eyre::eyre::Error> {
-				let font = self
-					.font_path
-					.as_deref()
-					.and_then(|path| sk.font_create(path).ok())
-					.unwrap_or_else(|| sk.font_find("default/font").unwrap());
-				Ok(unsafe { sk.text_make_style(font, 1.0, WHITE) })
-			});
+		let style =
+			self.style
+				.get_or_try_init(|| -> Result<SkTextStyle, color_eyre::eyre::Error> {
+					let font = self
+						.font_path
+						.as_deref()
+						.and_then(|path| sk.font_create(path).ok())
+						.unwrap_or_else(|| sk.font_find("default/font").unwrap());
+					Ok(unsafe { sk.text_make_style(font, 1.0, WHITE) })
+				});
 
 		if let Ok(style) = style {
+			let text = self.text.lock();
 			let data = self.data.lock();
 			let transform = self.space.global_transform()
 				* Mat4::from_scale(vec3(
@@ -109,65 +90,58 @@ impl Text {
 					data.character_height,
 					data.character_height,
 				));
-			if let Some(bounds) = data.bounds {
+			if let Some(bounds) = &data.bounds {
 				sk.text_add_in(
-					&data.text,
+					&*text,
 					transform,
-					bounds / data.character_height,
-					data.fit,
+					Vec2::from(bounds.bounds) / data.character_height,
+					match bounds.fit {
+						super::TextFit::Wrap => TextFit::Wrap,
+						super::TextFit::Clip => TextFit::Clip,
+						super::TextFit::Squeeze => TextFit::Squeeze,
+						super::TextFit::Exact => TextFit::Exact,
+						super::TextFit::Overflow => TextFit::Overflow,
+					},
 					*style,
-					data.bounds_align,
-					data.text_align,
+					convert_align(bounds.anchor_align_x.clone(), bounds.anchor_align_y.clone()),
+					convert_align(data.text_align_x.clone(), data.text_align_y.clone()),
 					vec3(0.0, 0.0, 0.0),
-					Color128::from([
-						data.color.red(),
-						data.color.green(),
-						data.color.blue(),
-						data.color.alpha(),
-					]),
+					Color128::from([data.color.c.r, data.color.c.g, data.color.c.b, data.color.a]),
 				);
 			} else {
 				sk.text_add_at(
-					&data.text,
+					&*text,
 					transform,
 					*style,
-					data.bounds_align,
-					data.text_align,
+					TextAlign::Center,
+					convert_align(data.text_align_x.clone(), data.text_align_y.clone()),
 					vec3(0.0, 0.0, 0.0),
-					Color128::from([
-						data.color.red(),
-						data.color.green(),
-						data.color.blue(),
-						data.color.alpha(),
-					]),
+					Color128::from([data.color.c.r, data.color.c.g, data.color.c.b, data.color.a]),
 				);
 			}
 		}
 	}
-
-	pub fn set_character_height_flex(
+}
+impl TextAspect for Text {
+	fn set_character_height(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		message: Message,
+		height: f32,
 	) -> Result<()> {
 		let Some(Drawable::Text(text)) = node.drawable.get() else {
 			bail!("Not a drawable??")
 		};
 
-		text.data.lock().character_height = deserialize(message.as_ref())?;
+		text.data.lock().character_height = height;
 		Ok(())
 	}
 
-	pub fn set_text_flex(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let Some(Drawable::Text(text)) = node.drawable.get() else {
+	fn set_text(node: Arc<Node>, _calling_client: Arc<Client>, text: String) -> Result<()> {
+		let Some(Drawable::Text(text_aspect)) = node.drawable.get() else {
 			bail!("Not a drawable??")
 		};
 
-		text.data.lock().text = deserialize(message.as_ref())?;
+		*text_aspect.text.lock() = text;
 		Ok(())
 	}
 }
@@ -186,41 +160,4 @@ pub fn draw_all(sk: &impl StereoKitDraw) {
 			text.draw(sk);
 		}
 	}
-}
-
-pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
-	#[derive(Deserialize)]
-	struct CreateTextInfo<'a> {
-		name: &'a str,
-		parent_path: &'a str,
-		transform: Transform,
-		text: String,
-		font_resource: Option<ResourceID>,
-		character_height: f32,
-		text_align: TextAlign,
-		bounds: Option<Vector2<f32>>,
-		fit: TextFit,
-		bounds_align: TextAlign,
-		color: [f32; 4],
-	}
-	let info: CreateTextInfo = deserialize(message.as_ref())?;
-	let node = Node::create_parent_name(&calling_client, "/drawable/text", info.name, true);
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, true);
-	let color = Rgba::from_slice(&info.color);
-
-	let node = node.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, false)?;
-	Text::add_to(
-		&node,
-		info.font_resource,
-		info.text,
-		info.character_height,
-		info.text_align,
-		info.bounds,
-		info.fit,
-		info.bounds_align,
-		color,
-	)?;
-	Ok(())
 }

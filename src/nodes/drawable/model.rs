@@ -1,21 +1,17 @@
-use super::Node;
+use super::{MaterialParameter, ModelAspect, ModelPartAspect, Node};
 use crate::core::client::Client;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
-use crate::core::resource::ResourceID;
+use crate::core::resource::get_resource_file;
 use crate::nodes::drawable::Drawable;
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
-use crate::nodes::Message;
+use crate::nodes::spatial::Spatial;
 use crate::SK_MULTITHREAD;
 use color_eyre::eyre::{bail, ensure, eyre, Result};
-use glam::Mat4;
-use mint::{ColumnMatrix4, Vector2, Vector3, Vector4};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
-use serde::Deserialize;
-use stardust_xr::schemas::flex::deserialize;
+use stardust_xr::values::ResourceID;
 
 use std::ffi::OsStr;
 use std::path::PathBuf;
@@ -29,26 +25,6 @@ use stereokit::{
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
 static HOLDOUT_MATERIAL: OnceCell<Arc<Material>> = OnceCell::new();
 
-#[derive(Deserialize, Debug)]
-#[serde(tag = "t", content = "c")]
-pub enum MaterialParameter {
-	Float(f32),
-	Vector2(Vector2<f32>),
-	Vector3(Vector3<f32>),
-	Vector4(Vector4<f32>),
-	Color([f32; 4]),
-	Int(i32),
-	Int2(Vector2<i32>),
-	Int3(Vector3<i32>),
-	Int4(Vector4<i32>),
-	Bool(bool),
-	UInt(u32),
-	UInt2(Vector2<u32>),
-	UInt3(Vector3<u32>),
-	UInt4(Vector4<u32>),
-	Matrix(ColumnMatrix4<f32>),
-	Texture(ResourceID),
-}
 impl MaterialParameter {
 	fn apply_to_material(
 		&self,
@@ -58,56 +34,35 @@ impl MaterialParameter {
 		parameter_name: &str,
 	) {
 		match self {
-			MaterialParameter::Float(val) => {
-				sk.material_set_float(material, parameter_name, *val);
-			}
-			MaterialParameter::Vector2(val) => {
-				sk.material_set_vector2(material, parameter_name, *val);
-			}
-			MaterialParameter::Vector3(val) => {
-				sk.material_set_vector3(material, parameter_name, *val);
-			}
-			MaterialParameter::Vector4(val) => {
-				sk.material_set_vector4(material, parameter_name, *val);
-			}
-			MaterialParameter::Color(val) => {
-				sk.material_set_color(material, parameter_name, Color128::from(val.clone()));
+			MaterialParameter::Bool(val) => {
+				sk.material_set_bool(material, parameter_name, *val);
 			}
 			MaterialParameter::Int(val) => {
 				sk.material_set_int(material, parameter_name, *val);
 			}
-			MaterialParameter::Int2(val) => {
-				sk.material_set_int2(material, parameter_name, val.x, val.y);
-			}
-			MaterialParameter::Int3(val) => {
-				sk.material_set_int3(material, parameter_name, val.x, val.y, val.z);
-			}
-			MaterialParameter::Int4(val) => {
-				sk.material_set_int4(material, parameter_name, val.w, val.x, val.y, val.z);
-			}
-			MaterialParameter::Bool(val) => {
-				sk.material_set_bool(material, parameter_name, *val);
-			}
 			MaterialParameter::UInt(val) => {
 				sk.material_set_uint(material, parameter_name, *val);
 			}
-			MaterialParameter::UInt2(val) => {
-				sk.material_set_uint2(material, parameter_name, val.x, val.y);
+			MaterialParameter::Float(val) => {
+				sk.material_set_float(material, parameter_name, *val);
 			}
-			MaterialParameter::UInt3(val) => {
-				sk.material_set_uint3(material, parameter_name, val.x, val.y, val.z);
+			MaterialParameter::Vec2(val) => {
+				sk.material_set_vector2(material, parameter_name, *val);
 			}
-			MaterialParameter::UInt4(val) => {
-				sk.material_set_uint4(material, parameter_name, val.w, val.x, val.y, val.z);
+			MaterialParameter::Vec3(val) => {
+				sk.material_set_vector3(material, parameter_name, *val);
 			}
-			MaterialParameter::Matrix(val) => {
-				sk.material_set_matrix(material, parameter_name, Mat4::from(*val));
+			MaterialParameter::Color(val) => {
+				sk.material_set_color(
+					material,
+					parameter_name,
+					Color128::new(val.c.r, val.c.g, val.c.b, val.a),
+				);
 			}
 			MaterialParameter::Texture(resource) => {
-				let Some(texture_path) = resource.get_file(
-					&client.base_resource_prefixes.lock().clone(),
-					&[OsStr::new("png"), OsStr::new("jpg")],
-				) else {
+				let Some(texture_path) =
+					get_resource_file(&resource, &client, &[OsStr::new("png"), OsStr::new("jpg")])
+				else {
 					return;
 				};
 				if let Ok(tex) = sk.tex_create_file(texture_path, true, 0) {
@@ -230,48 +185,10 @@ impl ModelPart {
 			pending_material_parameters: Mutex::new(FxHashMap::default()),
 			pending_material_replacement: Mutex::new(None),
 		});
-		node.add_local_signal(
-			"set_material_parameter",
-			ModelPart::set_material_parameter_flex,
-		);
-		node.add_local_signal(
-			"apply_holdout_material",
-			ModelPart::apply_holdout_material_flex,
-		);
+		<ModelPart as ModelPartAspect>::add_node_members(&node);
 		let _ = node.drawable.set(Drawable::ModelPart(model_part.clone()));
 		model.parts.add(id, &node);
 		Some(model_part)
-	}
-
-	fn apply_holdout_material_flex(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		_message: Message,
-	) -> Result<()> {
-		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {
-			bail!("Not a drawable??")
-		};
-		model_part.replace_material(HOLDOUT_MATERIAL.get().unwrap().clone());
-		Ok(())
-	}
-
-	fn set_material_parameter_flex(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {
-			bail!("Not a drawable??")
-		};
-
-		let (name, value): (String, MaterialParameter) = deserialize(message.as_ref())?;
-
-		model_part
-			.pending_material_parameters
-			.lock()
-			.insert(name, value);
-
-		Ok(())
 	}
 
 	pub fn replace_material(&self, replacement: Arc<Material>) {
@@ -314,6 +231,35 @@ impl ModelPart {
 		);
 	}
 }
+impl ModelPartAspect for ModelPart {
+	#[doc = "Set this model part's material to one that cuts a hole in the world. Often used for overlays/passthrough where you want to show the background through an object."]
+	fn apply_holdout_material(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
+		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {
+			bail!("Not a drawable??")
+		};
+		model_part.replace_material(HOLDOUT_MATERIAL.get().unwrap().clone());
+		Ok(())
+	}
+
+	#[doc = "Set the material parameter with `parameter_name` to `value`"]
+	fn set_material_parameter(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		parameter_name: String,
+		value: MaterialParameter,
+	) -> Result<()> {
+		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {
+			bail!("Not a drawable??")
+		};
+
+		model_part
+			.pending_material_parameters
+			.lock()
+			.insert(parameter_name, value);
+
+		Ok(())
+	}
+}
 
 pub struct Model {
 	self_ref: Weak<Model>,
@@ -337,17 +283,12 @@ impl Model {
 			"Internal: Node already has a drawable attached!"
 		);
 
-		let pending_model_path = resource_id
-			.get_file(
-				&node
-					.get_client()
-					.ok_or_else(|| eyre!("Client not found"))?
-					.base_resource_prefixes
-					.lock()
-					.clone(),
-				&[OsStr::new("glb"), OsStr::new("gltf")],
-			)
-			.ok_or_else(|| eyre!("Resource not found"))?;
+		let pending_model_path = get_resource_file(
+			&resource_id,
+			&*node.get_client().ok_or_else(|| eyre!("Client not found"))?,
+			&[OsStr::new("glb"), OsStr::new("gltf")],
+		)
+		.ok_or_else(|| eyre!("Resource not found"))?;
 
 		let model = Arc::new_cyclic(|self_ref| Model {
 			self_ref: self_ref.clone(),
@@ -388,7 +329,7 @@ impl Model {
 		);
 	}
 }
-
+impl ModelAspect for Model {}
 impl Drop for Model {
 	fn drop(&mut self) {
 		MODEL_REGISTRY.remove(self);
@@ -401,22 +342,4 @@ pub fn draw_all(sk: &impl StereoKitDraw) {
 			model.draw(sk);
 		}
 	}
-}
-
-pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
-	#[derive(Deserialize)]
-	struct CreateModelInfo<'a> {
-		name: &'a str,
-		parent_path: &'a str,
-		transform: Transform,
-		resource: ResourceID,
-	}
-	let info: CreateModelInfo = deserialize(message.as_ref())?;
-	let node = Node::create_parent_name(&calling_client, "/drawable/model", info.name, true);
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, true);
-	let node = node.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, false)?;
-	Model::add_to(&node, info.resource)?;
-	Ok(())
 }
