@@ -228,7 +228,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			.and_then(|env| state(&env));
 
 		let uid = nanoid!();
-		let node = Node::create(&INTERNAL_CLIENT, "/item/panel/item", &uid, true)
+		let node = Node::create_parent_name(&INTERNAL_CLIENT, "/item/panel/item", &uid, true)
 			.add_to_scenegraph()
 			.unwrap();
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();

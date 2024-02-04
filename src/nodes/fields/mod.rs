@@ -250,7 +250,7 @@ impl Deref for Field {
 }
 
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create(client, "", "field", false);
+	let node = Node::create_parent_name(client, "", "field", false);
 	node.add_local_signal("create_box_field", create_box_field_flex);
 	node.add_local_signal("create_cylinder_field", create_cylinder_field_flex);
 	node.add_local_signal("create_sphere_field", create_sphere_field_flex);

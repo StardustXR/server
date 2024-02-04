@@ -181,8 +181,8 @@ pub(super) fn create_camera_item_flex(
 	let space = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
 
-	let node =
-		Node::create(&INTERNAL_CLIENT, &parent_name, info.name, false).add_to_scenegraph()?;
+	let node = Node::create_parent_name(&INTERNAL_CLIENT, &parent_name, info.name, false)
+		.add_to_scenegraph()?;
 	Spatial::add_to(&node, None, transform * space.global_transform(), false)?;
 	CameraItem::add_to(&node, info.proj_matrix.into(), info.px_size);
 	node.item

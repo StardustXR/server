@@ -56,7 +56,8 @@ pub struct MousePointer {
 }
 impl MousePointer {
 	pub fn new() -> Result<Self> {
-		let node = Node::create(&INTERNAL_CLIENT, "", &nanoid!(), false).add_to_scenegraph()?;
+		let node = Node::create_parent_name(&INTERNAL_CLIENT, "", &nanoid!(), false)
+			.add_to_scenegraph()?;
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
 		let pointer =
 			InputMethod::add_to(&node, InputType::Pointer(Pointer::default()), None).unwrap();

@@ -5,6 +5,7 @@ use super::fields::get_field;
 use super::Node;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
+use crate::create_interface;
 use color_eyre::eyre::{ensure, eyre, Result};
 use glam::{vec3a, Mat4, Quat};
 use mint::Vector3;
@@ -478,8 +479,8 @@ impl SpatialInterfaceAspect for SpatialInterface {
 	) -> Result<()> {
 		let parent = get_spatial(&parent, "Spatial parent")?;
 		let transform = parse_transform(transform, true, true, true);
-		let node =
-			Node::create(&calling_client, "/spatial/spatial", &name, true).add_to_scenegraph()?;
+		let node = Node::create_parent_name(&calling_client, "/spatial/spatial", &name, true)
+			.add_to_scenegraph()?;
 		Spatial::add_to(&node, Some(parent), transform, zoneable)?;
 		Ok(())
 	}
@@ -496,16 +497,12 @@ impl SpatialInterfaceAspect for SpatialInterface {
 		let transform = parse_transform(transform, true, true, false);
 		let field = get_field(&field)?;
 
-		let node =
-			Node::create(&calling_client, "/spatial/zone", &name, true).add_to_scenegraph()?;
+		let node = Node::create_parent_name(&calling_client, "/spatial/zone", &name, true)
+			.add_to_scenegraph()?;
 		let space = Spatial::add_to(&node, Some(parent), transform, false)?;
 		Zone::add_to(&node, space, &field);
 		Ok(())
 	}
 }
 
-pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create(client, "", "spatial", false);
-	<SpatialInterface as SpatialInterfaceAspect>::add_node_members(&node);
-	node.add_to_scenegraph().map(|_| ())
-}
+create_interface!(SpatialInterface, SpatialInterfaceAspect, "/spatial");

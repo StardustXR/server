@@ -109,16 +109,24 @@ impl Node {
 		self.path.as_str()
 	}
 
-	pub fn create(client: &Arc<Client>, parent: &str, name: &str, destroyable: bool) -> Self {
+	pub fn create_parent_name(
+		client: &Arc<Client>,
+		parent: &str,
+		name: &str,
+		destroyable: bool,
+	) -> Self {
 		let mut path = parent.to_string();
 		path.push('/');
 		path.push_str(name);
+		Self::create_path(client, path, destroyable)
+	}
+	pub fn create_path(client: &Arc<Client>, path: impl ToString, destroyable: bool) -> Self {
 		let node = Node {
 			enabled: Arc::new(AtomicBool::new(true)),
 			uid: nanoid!(),
 			client: Arc::downgrade(client),
 			message_sender_handle: client.message_sender_handle.clone(),
-			path,
+			path: path.to_string(),
 			// trailing_slash_pos: parent.len(),
 			local_signals: Default::default(),
 			local_methods: Default::default(),

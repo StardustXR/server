@@ -40,7 +40,8 @@ pub struct SkHand {
 }
 impl SkHand {
 	pub fn new(handed: Handed) -> Result<Self> {
-		let _node = Node::create(&INTERNAL_CLIENT, "", &nanoid!(), false).add_to_scenegraph()?;
+		let _node = Node::create_parent_name(&INTERNAL_CLIENT, "", &nanoid!(), false)
+			.add_to_scenegraph()?;
 		Spatial::add_to(&_node, None, Mat4::IDENTITY, false)?;
 		let hand = InputType::Hand(Box::new(Hand {
 			base: FlatHand {

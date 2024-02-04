@@ -81,7 +81,7 @@ pub fn create_sphere_field_flex(
 		radius: f32,
 	}
 	let info: CreateFieldInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/field", info.name, true);
+	let node = Node::create_parent_name(&calling_client, "/field", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = Mat4::from_translation(
 		info.origin
