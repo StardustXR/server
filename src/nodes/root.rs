@@ -13,11 +13,9 @@ use color_eyre::eyre::Result;
 use glam::Mat4;
 use rustc_hash::FxHashMap;
 use stardust_xr::schemas::flex::{deserialize, serialize};
-use tracing::instrument;
-
-use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use tracing::instrument;
 
 static ROOT_REGISTRY: Registry<Root> = Registry::new();
 
@@ -96,11 +94,12 @@ impl Root {
 		spatial.set_spatial_parent(None).unwrap();
 		spatial.set_local_transform(transform);
 	}
-	pub fn save_state(&self) -> impl Future<Output = Result<ClientStateInternal>> {
-		let future = self
+	pub async fn save_state(&self) -> Result<ClientStateInternal> {
+		Ok(self
 			.node
-			.execute_remote_method("save_state", Message::default());
-		async move { Ok(deserialize(&future?.await?.data)?) }
+			.execute_remote_method_typed("save_state", (), Vec::new())
+			.await?
+			.0)
 	}
 }
 

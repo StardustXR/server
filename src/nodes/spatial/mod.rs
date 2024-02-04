@@ -1,7 +1,8 @@
 pub mod zone;
 
-use self::zone::{create_zone_flex, Zone};
-use super::{Message, Node};
+use self::zone::Zone;
+use super::fields::get_field;
+use super::Node;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use color_eyre::eyre::{ensure, eyre, Result};
@@ -10,8 +11,6 @@ use mint::Vector3;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use serde::Deserialize;
-use stardust_xr::schemas::flex::deserialize;
 use std::fmt::Debug;
 use std::os::fd::OwnedFd;
 use std::ptr;
@@ -123,7 +122,7 @@ impl Spatial {
 	}
 	pub fn global_transform(&self) -> Mat4 {
 		match self.get_parent() {
-			Some(value) => value.global_transform() * *self.transform.lock(),
+			Some(parent) => parent.global_transform() * *self.transform.lock(),
 			None => *self.transform.lock(),
 		}
 	}
@@ -275,7 +274,7 @@ impl SpatialAspect for Spatial {
 				.spatial
 				.get()
 				.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-			let relative_spatial = get_spatial(&relative_to, "Relative node", "Spatial")?;
+			let relative_spatial = get_spatial(&relative_to, "Relative node")?;
 			let center =
 				Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
 					.transform_point3([0.0; 3].into());
@@ -311,7 +310,7 @@ impl SpatialAspect for Spatial {
 				.spatial
 				.get()
 				.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-			let relative_spatial = get_spatial(&relative_to, "Relative node", "Spatial")?;
+			let relative_spatial = get_spatial(&relative_to, "Relative node")?;
 
 			let (scale, rotation, position) = Spatial::space_to_space_matrix(
 				Some(this_spatial.as_ref()),
@@ -352,7 +351,7 @@ impl SpatialAspect for Spatial {
 			.spatial
 			.get()
 			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-		let relative_spatial = get_spatial(&relative_to, "Relative node", "Spatial")?;
+		let relative_spatial = get_spatial(&relative_to, "Relative node")?;
 
 		this_spatial.set_local_transform_components(Some(&relative_spatial), transform);
 		Ok(())
@@ -368,7 +367,7 @@ impl SpatialAspect for Spatial {
 			.spatial
 			.get()
 			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-		let parent = get_spatial(&parent, "Parent", "Spatial")?;
+		let parent = get_spatial(&parent, "Parent")?;
 
 		this_spatial.set_spatial_parent(Some(parent))?;
 		Ok(())
@@ -384,7 +383,7 @@ impl SpatialAspect for Spatial {
 			.spatial
 			.get()
 			.ok_or_else(|| eyre!("Node doesn't have a spatial?"))?;
-		let parent = get_spatial(&parent, "Parent", "Spatial")?;
+		let parent = get_spatial(&parent, "Parent")?;
 
 		this_spatial.set_spatial_parent_in_place(Some(parent))?;
 		Ok(())
@@ -461,35 +460,52 @@ pub fn find_spatial_parent(calling_client: &Arc<Client>, node_path: &str) -> Res
 pub fn find_reference_space(calling_client: &Arc<Client>, node_path: &str) -> Result<Arc<Spatial>> {
 	find_spatial(calling_client, "Reference space", node_path)
 }
-pub fn get_spatial(node: &Arc<Node>, node_name: &str, aspect_name: &str) -> Result<Arc<Spatial>> {
-	node.get_aspect(node_name, aspect_name, |n| &n.spatial)
+pub fn get_spatial(node: &Arc<Node>, node_name: &str) -> Result<Arc<Spatial>> {
+	node.get_aspect(node_name, "spatial", |n| &n.spatial)
 		.cloned()
+}
+
+pub struct SpatialInterface;
+impl SpatialInterfaceAspect for SpatialInterface {
+	fn create_spatial(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		_fds: Vec<OwnedFd>,
+		name: String,
+		parent: Arc<Node>,
+		transform: Transform,
+		zoneable: bool,
+	) -> Result<()> {
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let transform = parse_transform(transform, true, true, true);
+		let node =
+			Node::create(&calling_client, "/spatial/spatial", &name, true).add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent), transform, zoneable)?;
+		Ok(())
+	}
+	fn create_zone(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		_fds: Vec<OwnedFd>,
+		name: String,
+		parent: Arc<Node>,
+		transform: Transform,
+		field: Arc<Node>,
+	) -> Result<()> {
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let transform = parse_transform(transform, true, true, false);
+		let field = get_field(&field)?;
+
+		let node =
+			Node::create(&calling_client, "/spatial/zone", &name, true).add_to_scenegraph()?;
+		let space = Spatial::add_to(&node, Some(parent), transform, false)?;
+		Zone::add_to(&node, space, &field);
+		Ok(())
+	}
 }
 
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	let node = Node::create(client, "", "spatial", false);
-	node.add_local_signal("create_spatial", create_spatial_flex);
-	node.add_local_signal("create_zone", create_zone_flex);
+	<SpatialInterface as SpatialInterfaceAspect>::add_node_members(&node);
 	node.add_to_scenegraph().map(|_| ())
-}
-
-pub fn create_spatial_flex(
-	_node: Arc<Node>,
-	calling_client: Arc<Client>,
-	message: Message,
-) -> Result<()> {
-	#[derive(Deserialize)]
-	struct CreateSpatialInfo<'a> {
-		name: &'a str,
-		parent_path: &'a str,
-		transform: Transform,
-		zoneable: bool,
-	}
-	let info: CreateSpatialInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/spatial/spatial", info.name, true);
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, true);
-	let node = node.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, info.zoneable)?;
-	Ok(())
 }

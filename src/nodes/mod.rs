@@ -15,11 +15,11 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
+use serde::{de::DeserializeOwned, Serialize};
 use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
-use stardust_xr::schemas::flex::deserialize;
+use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::fmt::Debug;
-use std::future::Future;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
@@ -290,29 +290,26 @@ impl Node {
 		}
 		Ok(())
 	}
-	pub fn execute_remote_method(
+	pub async fn execute_remote_method_typed<S: Serialize, D: DeserializeOwned>(
 		&self,
 		method: &str,
-		message: impl Into<Message>,
-	) -> Result<impl Future<Output = Result<Message>>> {
-		let message = message.into();
+		input: S,
+		fds: Vec<OwnedFd>,
+	) -> Result<(D, Vec<OwnedFd>)> {
 		let message_sender_handle = self
 			.message_sender_handle
 			.as_ref()
 			.ok_or(eyre!("Messenger does not exist for this node"))?;
 
-		let future =
-			message_sender_handle.method(self.path.as_str(), method, &message.data, message.fds)?;
+		let serialized = serialize(input)?;
+		let result = message_sender_handle
+			.method(self.path.as_str(), method, &serialized, fds)?
+			.await
+			.map_err(|e| eyre!(e))?;
 
-		Ok(async {
-			match future.await {
-				Ok(m) => {
-					let (data, fds) = m.into_components();
-					Ok(Message { data, fds })
-				}
-				Err(e) => Err(eyre!(e)),
-			}
-		})
+		let (message, fds) = result.into_components();
+		let deserialized: D = deserialize(&message)?;
+		Ok((deserialized, fds))
 	}
 }
 impl Debug for Node {
