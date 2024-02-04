@@ -78,7 +78,7 @@ pub fn create_pointer_flex(
 		datamap: Option<Vec<u8>>,
 	}
 	let info: CreatePointerInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/input/method/pointer", info.name, true);
+	let node = Node::create_parent_name(&calling_client, "/input/method/pointer", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
 

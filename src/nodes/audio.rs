@@ -107,7 +107,7 @@ pub fn update(sk: &impl StereoKitDraw) {
 }
 
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create(client, "", "audio", false);
+	let node = Node::create_parent_name(client, "", "audio", false);
 	node.add_local_signal("create_sound", create_flex);
 	node.add_to_scenegraph().map(|_| ())
 }
@@ -121,7 +121,7 @@ pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Messa
 		resource: ResourceID,
 	}
 	let info: CreateSoundInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/audio/sound", info.name, true);
+	let node = Node::create_parent_name(&calling_client, "/audio/sound", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);
 	let node = node.add_to_scenegraph()?;

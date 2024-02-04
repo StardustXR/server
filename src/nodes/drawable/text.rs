@@ -204,7 +204,7 @@ pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Messa
 		color: [f32; 4],
 	}
 	let info: CreateTextInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/drawable/text", info.name, true);
+	let node = Node::create_parent_name(&calling_client, "/drawable/text", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);
 	let color = Rgba::from_slice(&info.color);

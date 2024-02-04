@@ -25,7 +25,7 @@ pub struct Root {
 }
 impl Root {
 	pub fn create(client: &Arc<Client>) -> Result<Arc<Self>> {
-		let node = Node::create(client, "", "", false);
+		let node = Node::create_parent_name(client, "", "", false);
 		node.add_local_signal("subscribe_frame", Root::subscribe_frame_flex);
 		node.add_local_signal("set_base_prefixes", Root::set_base_prefixes_flex);
 		node.add_local_method("state_token", Root::state_token_flex);

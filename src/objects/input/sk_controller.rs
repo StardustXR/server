@@ -32,7 +32,7 @@ pub struct SkController {
 }
 impl SkController {
 	pub fn new(sk: &impl StereoKitMultiThread, handed: Handed) -> Result<Self> {
-		let _node = Node::create(
+		let _node = Node::create_parent_name(
 			&INTERNAL_CLIENT,
 			"",
 			if handed == Handed::Left {

@@ -186,7 +186,7 @@ impl ModelPart {
 		let client = stardust_model_part.get_client()?;
 		let mut part_path = parent_part.map(|n| n.path.clone()).unwrap_or_default();
 		part_path.push(sk.model_node_get_name(sk_model, id)?);
-		let node = client.scenegraph.add_node(Node::create(
+		let node = client.scenegraph.add_node(Node::create_parent_name(
 			&client,
 			stardust_model_part.get_path(),
 			part_path.to_str()?,
@@ -412,7 +412,7 @@ pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Messa
 		resource: ResourceID,
 	}
 	let info: CreateModelInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/drawable/model", info.name, true);
+	let node = Node::create_parent_name(&calling_client, "/drawable/model", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);
 	let node = node.add_to_scenegraph()?;

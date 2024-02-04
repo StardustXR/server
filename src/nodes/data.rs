@@ -266,7 +266,7 @@ impl Drop for PulseReceiver {
 }
 
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create(client, "", "data", false);
+	let node = Node::create_parent_name(client, "", "data", false);
 	node.add_local_signal("create_pulse_sender", create_pulse_sender_flex);
 	node.add_local_signal("create_pulse_receiver", create_pulse_receiver_flex);
 	node.add_local_method("register_keymap", register_keymap_flex);
@@ -287,7 +287,7 @@ pub fn create_pulse_sender_flex(
 		mask: Vec<u8>,
 	}
 	let info: CreatePulseSenderInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/data/sender", info.name, true);
+	let node = Node::create_parent_name(&calling_client, "/data/sender", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
 
@@ -314,7 +314,7 @@ pub fn create_pulse_receiver_flex(
 		mask: Vec<u8>,
 	}
 	let info: CreatePulseReceiverInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/data/receiver", info.name, true);
+	let node = Node::create_parent_name(&calling_client, "/data/receiver", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
 	let field = find_field(&calling_client, info.field_path)?;

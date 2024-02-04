@@ -20,7 +20,7 @@ use stereokit::StereoKitDraw;
 use tracing::instrument;
 
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create(client, "", "drawable", false);
+	let node = Node::create_parent_name(client, "", "drawable", false);
 	node.add_local_signal("create_lines", lines::create_flex);
 	node.add_local_signal("create_model", model::create_flex);
 	node.add_local_signal("create_text", text::create_flex);

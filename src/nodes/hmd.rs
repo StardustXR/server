@@ -13,7 +13,7 @@ lazy_static::lazy_static! {
 }
 
 fn create() -> Arc<Node> {
-	let node = Arc::new(Node::create(&INTERNAL_CLIENT, "", "hmd", false));
+	let node = Arc::new(Node::create_parent_name(&INTERNAL_CLIENT, "", "hmd", false));
 	Spatial::add_to(&node, None, Mat4::IDENTITY, false).expect("Unable to make spatial for HMD");
 
 	node

@@ -60,7 +60,7 @@ pub fn create_tip_flex(
 		datamap: Option<Vec<u8>>,
 	}
 	let info: CreateTipInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/input/method/tip", info.name, true);
+	let node = Node::create_parent_name(&calling_client, "/input/method/tip", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
 

@@ -81,8 +81,8 @@ pub(super) fn create_environment_item_flex(
 	let space = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
 
-	let node =
-		Node::create(&INTERNAL_CLIENT, &parent_name, info.name, false).add_to_scenegraph()?;
+	let node = Node::create_parent_name(&INTERNAL_CLIENT, &parent_name, info.name, false)
+		.add_to_scenegraph()?;
 	Spatial::add_to(&node, None, transform * space.global_transform(), false)?;
 	EnvironmentItem::add_to(&node, info.item_data);
 	node.item

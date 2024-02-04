@@ -84,7 +84,7 @@ pub fn create_torus_field_flex(
 		radius_b: f32,
 	}
 	let info: CreateFieldInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/field", info.name, true);
+	let node = Node::create_parent_name(&calling_client, "/field", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, false);
 	let node = node.add_to_scenegraph()?;

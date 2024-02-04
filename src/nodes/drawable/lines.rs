@@ -158,7 +158,7 @@ pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Messa
 		lines: Vec<Line>,
 	}
 	let mut info: CreateLinesInfo = deserialize(message.as_ref())?;
-	let node = Node::create(&calling_client, "/drawable/lines", info.name, true);
+	let node = Node::create_parent_name(&calling_client, "/drawable/lines", info.name, true);
 	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
 	let transform = parse_transform(info.transform, true, true, true);
 

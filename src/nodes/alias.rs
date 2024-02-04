@@ -35,7 +35,7 @@ impl Alias {
 			"Node already exists"
 		);
 
-		let node = Node::create(client, parent, name, true).add_to_scenegraph()?;
+		let node = Node::create_parent_name(client, parent, name, true).add_to_scenegraph()?;
 		let alias = Alias {
 			enabled: Arc::new(AtomicBool::new(true)),
 			node: Arc::downgrade(&node),

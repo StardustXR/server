@@ -426,7 +426,7 @@ impl Drop for ItemAcceptor {
 }
 
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create(client, "", "item", false);
+	let node = Node::create_parent_name(client, "", "item", false);
 	node.add_local_signal("create_camera_item", camera::create_camera_item_flex);
 	node.add_local_signal(
 		"create_environment_item",
@@ -457,8 +457,8 @@ pub fn register_item_ui_flex(
 	}
 	let info: RegisterItemUIInfo = deserialize(message.as_ref())?;
 	let type_info = type_info(info.item_type)?;
-	let ui =
-		Node::create(&calling_client, "/item", type_info.type_name, true).add_to_scenegraph()?;
+	let ui = Node::create_parent_name(&calling_client, "/item", type_info.type_name, true)
+		.add_to_scenegraph()?;
 	ItemUI::add_to(&ui, type_info)?;
 	Ok(())
 }
@@ -482,7 +482,7 @@ fn create_item_acceptor_flex(
 	let field = find_field(&calling_client, info.field_path)?;
 	let type_info = type_info(info.item_type)?;
 
-	let node = Node::create(
+	let node = Node::create_parent_name(
 		&calling_client,
 		&format!("/item/{}/acceptor", type_info.type_name),
 		info.name,

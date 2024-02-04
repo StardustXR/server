@@ -352,7 +352,7 @@ impl Drop for InputHandler {
 }
 
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create(client, "", "input", false);
+	let node = Node::create_parent_name(client, "", "input", false);
 	node.add_local_signal("create_input_handler", create_input_handler_flex);
 	node.add_local_signal("create_input_method_pointer", pointer::create_pointer_flex);
 	node.add_local_signal("create_input_method_tip", tip::create_tip_flex);
@@ -376,8 +376,8 @@ pub fn create_input_handler_flex(
 	let transform = parse_transform(info.transform, true, true, true);
 	let field = find_field(&calling_client, info.field_path)?;
 
-	let node =
-		Node::create(&calling_client, "/input/handler", info.name, true).add_to_scenegraph()?;
+	let node = Node::create_parent_name(&calling_client, "/input/handler", info.name, true)
+		.add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(parent), transform, false)?;
 	InputHandler::add_to(&node, &field)?;
 	Ok(())

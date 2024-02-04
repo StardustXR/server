@@ -78,7 +78,7 @@ impl ClientState {
 				.iter()
 				.map(|(k, v)| {
 					(k.clone(), {
-						let node = Node::create(client, "/spatial/anchor", k, true)
+						let node = Node::create_parent_name(client, "/spatial/anchor", k, true)
 							.add_to_scenegraph()
 							.unwrap();
 						Spatial::add_to(&node, None, *v, false).unwrap();
