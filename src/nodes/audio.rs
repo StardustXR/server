@@ -1,24 +1,26 @@
+use super::spatial::get_spatial;
 use super::{Message, Node};
 use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
+use crate::create_interface;
+use crate::nodes::spatial::{Spatial, Transform};
 use color_eyre::eyre::{ensure, eyre, Result};
 use glam::{vec3, Vec4Swizzles};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
-use serde::Deserialize;
-use stardust_xr::schemas::flex::deserialize;
 use stardust_xr::values::ResourceID;
 
 use std::ops::DerefMut;
-use std::{ffi::OsStr, path::PathBuf, sync::Arc};
+use std::sync::Arc;
+use std::{ffi::OsStr, path::PathBuf};
 use stereokit::{Sound as SkSound, SoundInstance, StereoKitDraw};
 
 static SOUND_REGISTRY: Registry<Sound> = Registry::new();
 
+stardust_xr_server_codegen::codegen_audio_protocol!();
 pub struct Sound {
 	space: Arc<Spatial>,
 
@@ -29,7 +31,6 @@ pub struct Sound {
 	stop: Mutex<Option<()>>,
 	play: Mutex<Option<()>>,
 }
-
 impl Sound {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Sound>> {
 		ensure!(
@@ -95,6 +96,25 @@ impl Sound {
 		Ok(())
 	}
 }
+impl SoundAspect for Sound {
+	#[doc = "Play sound effect"]
+	fn play(_node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
+		todo!()
+	}
+
+	#[doc = "Stop sound effect"]
+	fn stop(_node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
+		todo!()
+	}
+}
+impl Drop for Sound {
+	fn drop(&mut self) {
+		if let Some(instance) = self.instance.lock().take() {
+			destroy_queue::add(instance);
+		}
+		SOUND_REGISTRY.remove(self);
+	}
+}
 
 pub fn update(sk: &impl StereoKitDraw) {
 	for sound in SOUND_REGISTRY.get_valid_contents() {
@@ -102,35 +122,25 @@ pub fn update(sk: &impl StereoKitDraw) {
 	}
 }
 
-pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create_parent_name(client, "", "audio", false);
-	node.add_local_signal("create_sound", create_flex);
-	node.add_to_scenegraph().map(|_| ())
-}
-
-pub fn create_flex(_node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
-	#[derive(Deserialize)]
-	struct CreateSoundInfo<'a> {
-		name: &'a str,
-		parent_path: &'a str,
+create_interface!(AudioInterface, AudioInterfaceAspect, "/audio");
+struct AudioInterface;
+impl AudioInterfaceAspect for AudioInterface {
+	#[doc = "Create a sound node. WAV and MP3 are supported."]
+	fn create_sound(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
 		transform: Transform,
 		resource: ResourceID,
-	}
-	let info: CreateSoundInfo = deserialize(message.as_ref())?;
-	let node = Node::create_parent_name(&calling_client, "/audio/sound", info.name, true);
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
-	let transform = parse_transform(info.transform, true, true, true);
-	let node = node.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, false)?;
-	Sound::add_to(&node, info.resource)?;
-	Ok(())
-}
-
-impl Drop for Sound {
-	fn drop(&mut self) {
-		if let Some(instance) = self.instance.lock().take() {
-			destroy_queue::add(instance);
-		}
-		SOUND_REGISTRY.remove(self);
+	) -> Result<()> {
+		let node =
+			Node::create_parent_name(&calling_client, Self::CREATE_SOUND_PARENT_PATH, &name, true);
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let transform = transform.to_mat4(true, true, true);
+		let node = node.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent), transform, false)?;
+		Sound::add_to(&node, resource)?;
+		Ok(())
 	}
 }
