@@ -9,24 +9,19 @@ use self::{
 	text::Text,
 };
 
-use super::{Message, Node};
-use crate::core::client::Client;
-use color_eyre::eyre::Result;
+use super::{
+	spatial::{get_spatial, Spatial, Transform},
+	Node,
+};
+use crate::{
+	core::{client::Client, resource::get_resource_file},
+	create_interface,
+};
+use color_eyre::eyre::{self, Result};
 use parking_lot::Mutex;
-use serde::Deserialize;
-use stardust_xr::schemas::flex::deserialize;
-use std::{path::PathBuf, sync::Arc};
+use stardust_xr::values::ResourceID;
+use std::{ffi::OsStr, path::PathBuf, sync::Arc};
 use stereokit::StereoKitDraw;
-use tracing::instrument;
-
-pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create_parent_name(client, "", "drawable", false);
-	node.add_local_signal("create_lines", lines::create_flex);
-	node.add_local_signal("create_model", model::create_flex);
-	node.add_local_signal("create_text", text::create_flex);
-	node.add_local_signal("set_sky_file", set_sky_file_flex);
-	node.add_to_scenegraph().map(|_| ())
-}
 
 pub enum Drawable {
 	Lines(Arc<Lines>),
@@ -35,7 +30,7 @@ pub enum Drawable {
 	Text(Arc<Text>),
 }
 
-#[instrument(level = "debug", skip(sk))]
+// #[instrument(level = "debug", skip(sk))]
 pub fn draw(sk: &impl StereoKitDraw) {
 	lines::draw_all(sk);
 	model::draw_all(sk);
@@ -56,25 +51,88 @@ pub fn draw(sk: &impl StereoKitDraw) {
 static QUEUED_SKYLIGHT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static QUEUED_SKYTEX: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-fn set_sky_file_flex(
-	_node: Arc<Node>,
-	_calling_client: Arc<Client>,
-	message: Message,
-) -> Result<()> {
-	#[derive(Deserialize)]
-	struct SkyFileInfo {
-		path: PathBuf,
-		skytex: Option<bool>,
-		skylight: Option<bool>,
-	}
-	let info: SkyFileInfo = deserialize(message.as_ref())?;
-	info.path.metadata()?;
-	if info.skytex.unwrap_or_default() {
-		QUEUED_SKYTEX.lock().replace(info.path.clone());
-	}
-	if info.skylight.unwrap_or_default() {
-		QUEUED_SKYLIGHT.lock().replace(info.path);
+stardust_xr_server_codegen::codegen_drawable_protocol!();
+create_interface!(DrawableInterface, DrawableInterfaceAspect, "/drawable");
+
+pub struct DrawableInterface;
+impl DrawableInterfaceAspect for DrawableInterface {
+	#[doc = "Set the sky lignt/texture to a given HDRI file."]
+	fn set_sky(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		tex: Option<ResourceID>,
+		light: Option<ResourceID>,
+	) -> Result<()> {
+		if let Some(tex) = tex {
+			let resource_path = get_resource_file(&tex, &calling_client, &[OsStr::new("hdr")])
+				.ok_or(eyre::eyre!("Could not find resource"))?;
+			QUEUED_SKYTEX.lock().replace(resource_path);
+		}
+		if let Some(light) = light {
+			let resource_path = get_resource_file(&light, &calling_client, &[OsStr::new("hdr")])
+				.ok_or(eyre::eyre!("Could not find resource"))?;
+			QUEUED_SKYLIGHT.lock().replace(resource_path);
+		}
+		Ok(())
 	}
 
-	Ok(())
+	#[doc = "Create a lines node"]
+	fn create_lines(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
+		transform: Transform,
+		lines: Vec<Line>,
+	) -> Result<()> {
+		let node =
+			Node::create_parent_name(&calling_client, Self::CREATE_LINES_PARENT_PATH, &name, true);
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let transform = transform.to_mat4(true, true, true);
+
+		let node = node.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent), transform, false)?;
+		Lines::add_to(&node, lines)?;
+		Ok(())
+	}
+
+	#[doc = "Load a GLTF model into a Model node"]
+	fn load_model(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
+		transform: Transform,
+		model: ResourceID,
+	) -> Result<()> {
+		let node =
+			Node::create_parent_name(&calling_client, Self::LOAD_MODEL_PARENT_PATH, &name, true);
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let transform = transform.to_mat4(true, true, true);
+		let node = node.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent), transform, false)?;
+		Model::add_to(&node, model)?;
+		Ok(())
+	}
+
+	#[doc = "Create a text node"]
+	fn create_text(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
+		transform: Transform,
+		text: String,
+		style: TextStyle,
+	) -> Result<()> {
+		let node =
+			Node::create_parent_name(&calling_client, Self::CREATE_TEXT_PARENT_PATH, &name, true);
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let transform = transform.to_mat4(true, true, true);
+
+		let node = node.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent), transform, false)?;
+		Text::add_to(&node, text, style)?;
+		Ok(())
+	}
 }

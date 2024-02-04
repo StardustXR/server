@@ -2,7 +2,7 @@ use super::{Message, Node};
 use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
-use crate::core::resource::ResourceID;
+use crate::core::resource::get_resource_file;
 use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
 use color_eyre::eyre::{ensure, eyre, Result};
 use glam::{vec3, Vec4Swizzles};
@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::deserialize;
+use stardust_xr::values::ResourceID;
 
 use std::ops::DerefMut;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
@@ -35,17 +36,12 @@ impl Sound {
 			node.spatial.get().is_some(),
 			"Internal: Node does not have a spatial attached!"
 		);
-		let pending_audio_path = resource_id
-			.get_file(
-				&node
-					.get_client()
-					.ok_or_else(|| eyre!("Client not found"))?
-					.base_resource_prefixes
-					.lock()
-					.clone(),
-				&[OsStr::new("wav"), OsStr::new("mp3")],
-			)
-			.ok_or_else(|| eyre!("Resource not found"))?;
+		let pending_audio_path = get_resource_file(
+			&resource_id,
+			&*node.get_client().ok_or_else(|| eyre!("Client not found"))?,
+			&[OsStr::new("wav"), OsStr::new("mp3")],
+		)
+		.ok_or_else(|| eyre!("Resource not found"))?;
 		let sound = Sound {
 			space: node.spatial.get().unwrap().clone(),
 			volume: 1.0,
