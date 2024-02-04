@@ -3,25 +3,23 @@ mod cylinder;
 mod sphere;
 mod torus;
 
-use self::cylinder::{create_cylinder_field_flex, CylinderField};
-use self::r#box::{create_box_field_flex, BoxField};
-use self::sphere::{create_sphere_field_flex, SphereField};
-use self::torus::{create_torus_field_flex, TorusField};
+use self::cylinder::CylinderField;
+use self::r#box::BoxField;
+use self::sphere::SphereField;
+use self::torus::TorusField;
 
 use super::alias::AliasInfo;
-use super::spatial::Spatial;
-use super::{Message, Node};
+use super::spatial::{get_spatial, Spatial};
+use super::Node;
 use crate::core::client::Client;
-use crate::core::scenegraph::MethodResponseSender;
-use crate::nodes::spatial::find_reference_space;
+use crate::create_interface;
+use crate::nodes::spatial::Transform;
 use color_eyre::eyre::Result;
-use glam::{vec2, vec3a, Vec3, Vec3A};
-use mint::Vector3;
+use glam::{vec2, vec3a, Mat4, Vec3, Vec3A};
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Serialize};
-use stardust_xr::schemas::flex::{deserialize, serialize};
 
 use std::ops::Deref;
+use std::os::fd::OwnedFd;
 use std::sync::Arc;
 
 // TODO: get SDFs working properly with non-uniform scale and so on, output distance relative to the spatial it's compared against
@@ -31,13 +29,9 @@ pub static FIELD_ALIAS_INFO: Lazy<AliasInfo> = Lazy::new(|| AliasInfo {
 	..Default::default()
 });
 
+stardust_xr_server_codegen::codegen_field_protocol!();
+
 pub trait FieldTrait {
-	fn add_field_methods(&self, node: &Arc<Node>) {
-		node.add_local_method("distance", field_distance_flex);
-		node.add_local_method("normal", field_normal_flex);
-		node.add_local_method("closest_point", field_closest_point_flex);
-		node.add_local_method("ray_march", field_ray_march_flex);
-	}
 	fn spatial_ref(&self) -> &Spatial;
 
 	fn local_distance(&self, p: Vec3A) -> f32;
@@ -83,6 +77,8 @@ pub trait FieldTrait {
 
 	fn ray_march(&self, ray: Ray) -> RayMarchResult {
 		let mut result = RayMarchResult {
+			ray_origin: ray.origin.into(),
+			ray_direction: ray.direction.into(),
 			min_distance: f32::MAX,
 			deepest_point_distance: 0_f32,
 			ray_length: 0_f32,
@@ -112,19 +108,81 @@ pub trait FieldTrait {
 		result
 	}
 }
+impl<Fi: FieldTrait> FieldAspect for Fi {
+	fn distance(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		space: Arc<Node>,
+		point: mint::Vector3<f32>,
+	) -> impl std::future::Future<Output = Result<(f32, Vec<OwnedFd>)>> + Send + 'static {
+		async move {
+			let reference_space = get_spatial(&space, "Reference space")?;
+			let this_field = node.field.get().unwrap();
+
+			let distance = this_field.distance(reference_space.as_ref(), point.into());
+			Ok((distance, Vec::new()))
+		}
+	}
+
+	fn normal(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		space: Arc<Node>,
+		point: mint::Vector3<f32>,
+	) -> impl std::future::Future<Output = Result<(mint::Vector3<f32>, Vec<OwnedFd>)>> + Send + 'static
+	{
+		async move {
+			let reference_space = get_spatial(&space, "Reference space")?;
+			let this_field = node.field.get().unwrap();
+
+			let normal = this_field.normal(reference_space.as_ref(), point.into(), 0.001);
+			Ok((normal.into(), Vec::new()))
+		}
+	}
+
+	fn closest_point(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		space: Arc<Node>,
+		point: mint::Vector3<f32>,
+	) -> impl std::future::Future<Output = Result<(mint::Vector3<f32>, Vec<OwnedFd>)>> + Send + 'static
+	{
+		async move {
+			let reference_space = get_spatial(&space, "Reference space")?;
+			let this_field = node.field.get().unwrap();
+
+			let closest_point =
+				this_field.closest_point(reference_space.as_ref(), point.into(), 0.001);
+			Ok((closest_point.into(), Vec::new()))
+		}
+	}
+
+	fn ray_march(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		space: Arc<Node>,
+		ray_origin: mint::Vector3<f32>,
+		ray_direction: mint::Vector3<f32>,
+	) -> impl std::future::Future<Output = Result<(RayMarchResult, Vec<OwnedFd>)>> + Send + 'static
+	{
+		async move {
+			let reference_space = get_spatial(&space, "Reference space")?;
+			let this_field = node.field.get().unwrap();
+
+			let ray_march = this_field.ray_march(Ray {
+				origin: ray_origin.into(),
+				direction: ray_direction.into(),
+				space: reference_space,
+			});
+			Ok((ray_march, Vec::new()))
+		}
+	}
+}
 
 pub struct Ray {
 	pub origin: Vec3,
 	pub direction: Vec3,
 	pub space: Arc<Spatial>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct RayMarchResult {
-	pub min_distance: f32,
-	pub deepest_point_distance: f32,
-	pub ray_length: f32,
-	pub ray_steps: u32,
 }
 
 // const MIN_RAY_STEPS: u32 = 0;
@@ -136,107 +194,12 @@ const MAX_RAY_MARCH: f32 = f32::MAX;
 // const MIN_RAY_LENGTH: f32 = 0_f32;
 const MAX_RAY_LENGTH: f32 = 1000_f32;
 
-fn field_distance_flex(
-	node: Arc<Node>,
-	calling_client: Arc<Client>,
-	message: Message,
-	response: MethodResponseSender,
-) {
-	response.wrap_sync(move || {
-		#[derive(Deserialize)]
-		struct FieldInfoArgs<'a> {
-			reference_space_path: &'a str,
-			point: Vector3<f32>,
-		}
-		let args: FieldInfoArgs = deserialize(message.as_ref())?;
-		let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
-
-		let distance = node
-			.field
-			.get()
-			.unwrap()
-			.distance(reference_space.as_ref(), args.point.into());
-		Ok(serialize(distance)?.into())
-	});
-}
-fn field_normal_flex(
-	node: Arc<Node>,
-	calling_client: Arc<Client>,
-	message: Message,
-	response: MethodResponseSender,
-) {
-	response.wrap_sync(move || {
-		#[derive(Deserialize)]
-		struct FieldInfoArgs<'a> {
-			reference_space_path: &'a str,
-			point: Vector3<f32>,
-		}
-		let args: FieldInfoArgs = deserialize(message.as_ref())?;
-		let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
-
-		let normal = node.field.get().as_ref().unwrap().normal(
-			reference_space.as_ref(),
-			args.point.into(),
-			0.001,
-		);
-		Ok(serialize(mint::Vector3::from(normal))?.into())
-	});
-}
-fn field_closest_point_flex(
-	node: Arc<Node>,
-	calling_client: Arc<Client>,
-	message: Message,
-	response: MethodResponseSender,
-) {
-	response.wrap_sync(move || {
-		#[derive(Deserialize)]
-		struct FieldInfoArgs<'a> {
-			reference_space_path: &'a str,
-			point: Vector3<f32>,
-		}
-		let args: FieldInfoArgs = deserialize(message.as_ref())?;
-		let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
-
-		let closest_point = node.field.get().as_ref().unwrap().closest_point(
-			reference_space.as_ref(),
-			args.point.into(),
-			0.001,
-		);
-		Ok(serialize(mint::Vector3::from(closest_point))?.into())
-	});
-}
-fn field_ray_march_flex(
-	node: Arc<Node>,
-	calling_client: Arc<Client>,
-	message: Message,
-	response: MethodResponseSender,
-) {
-	response.wrap_sync(move || {
-		#[derive(Deserialize)]
-		struct FieldInfoArgs<'a> {
-			reference_space_path: &'a str,
-			ray_origin: Vector3<f32>,
-			ray_direction: Vector3<f32>,
-		}
-		let args: FieldInfoArgs = deserialize(message.as_ref())?;
-		let reference_space = find_reference_space(&calling_client, args.reference_space_path)?;
-
-		let ray_march_result = node.field.get().unwrap().ray_march(Ray {
-			origin: args.ray_origin.into(),
-			direction: args.ray_direction.into(),
-			space: reference_space,
-		});
-		Ok(serialize(ray_march_result)?.into())
-	});
-}
-
 pub enum Field {
 	Box(BoxField),
 	Cylinder(CylinderField),
 	Sphere(SphereField),
 	Torus(TorusField),
 }
-
 impl Deref for Field {
 	type Target = dyn FieldTrait;
 	fn deref(&self) -> &Self::Target {
@@ -249,13 +212,102 @@ impl Deref for Field {
 	}
 }
 
-pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create_parent_name(client, "", "field", false);
-	node.add_local_signal("create_box_field", create_box_field_flex);
-	node.add_local_signal("create_cylinder_field", create_cylinder_field_flex);
-	node.add_local_signal("create_sphere_field", create_sphere_field_flex);
-	node.add_local_signal("create_torus_field", create_torus_field_flex);
-	node.add_to_scenegraph().map(|_| ())
+create_interface!(FieldInterface, FieldInterfaceAspect, "/field");
+pub struct FieldInterface;
+impl FieldInterfaceAspect for FieldInterface {
+	fn create_box_field(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
+		transform: Transform,
+		size: mint::Vector3<f32>,
+	) -> Result<()> {
+		let transform = transform.to_mat4(true, true, false);
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let node = Node::create_parent_name(
+			&calling_client,
+			Self::CREATE_BOX_FIELD_PARENT_PATH,
+			&name,
+			true,
+		)
+		.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent), transform, false)?;
+		BoxField::add_to(&node, size)?;
+		Ok(())
+	}
+
+	fn create_cylinder_field(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
+		transform: Transform,
+		length: f32,
+		radius: f32,
+	) -> Result<()> {
+		let transform = transform.to_mat4(true, true, false);
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let node = Node::create_parent_name(
+			&calling_client,
+			Self::CREATE_CYLINDER_FIELD_PARENT_PATH,
+			&name,
+			true,
+		)
+		.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent), transform, false)?;
+		CylinderField::add_to(&node, length, radius)?;
+		Ok(())
+	}
+
+	fn create_sphere_field(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
+		position: mint::Vector3<f32>,
+		radius: f32,
+	) -> Result<()> {
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let node = Node::create_parent_name(
+			&calling_client,
+			Self::CREATE_SPHERE_FIELD_PARENT_PATH,
+			&name,
+			true,
+		)
+		.add_to_scenegraph()?;
+		Spatial::add_to(
+			&node,
+			Some(parent),
+			Mat4::from_translation(position.into()),
+			false,
+		)?;
+		SphereField::add_to(&node, radius)?;
+		Ok(())
+	}
+
+	fn create_torus_field(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
+		transform: Transform,
+		radius_a: f32,
+		radius_b: f32,
+	) -> Result<()> {
+		let transform = transform.to_mat4(true, true, false);
+		let parent = get_spatial(&parent, "Spatial parent")?;
+		let node = Node::create_parent_name(
+			&calling_client,
+			Self::CREATE_TORUS_FIELD_PARENT_PATH,
+			&name,
+			true,
+		)
+		.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent), transform, false)?;
+		TorusField::add_to(&node, radius_a, radius_b)?;
+		Ok(())
+	}
 }
 
 pub fn find_field(client: &Client, path: &str) -> Result<Arc<Field>> {
