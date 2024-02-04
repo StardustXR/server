@@ -60,6 +60,8 @@ impl AsRef<[u8]> for Message {
 pub type Signal = fn(Arc<Node>, Arc<Client>, Message) -> Result<()>;
 pub type Method = fn(Arc<Node>, Arc<Client>, Message, MethodResponseSender);
 
+stardust_xr_server_codegen::codegen_node_protocol!();
+
 pub struct Node {
 	pub enabled: Arc<AtomicBool>,
 	pub(super) uid: String,
@@ -97,7 +99,6 @@ pub struct Node {
 	// Sound
 	pub sound: OnceCell<Arc<Sound>>,
 }
-
 impl Node {
 	pub fn get_client(&self) -> Option<Arc<Client>> {
 		self.client.upgrade()
@@ -148,8 +149,7 @@ impl Node {
 			item_ui: OnceCell::new(),
 			sound: OnceCell::new(),
 		};
-		node.add_local_signal("set_enabled", Node::set_enabled_flex);
-		node.add_local_signal("destroy", Node::destroy_flex);
+		<Node as NodeAspect>::add_node_members(&node);
 		node
 	}
 	pub fn add_to_scenegraph(self) -> Result<Arc<Node>> {
@@ -165,15 +165,6 @@ impl Node {
 		}
 	}
 
-	pub fn set_enabled_flex(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		node.enabled
-			.store(deserialize(message.as_ref())?, Ordering::Relaxed);
-		Ok(())
-	}
 	// very much up for debate if we should allow this, as you can match objects using this
 	// pub fn get_client_pid_flex(
 	// 	node: Arc<Node>,
@@ -187,16 +178,6 @@ impl Node {
 	// 	let pid = client.pid.ok_or_else(|| eyre!("Client PID is unknown"))?;
 	// 	Ok(serialize(pid)?.into())
 	// }
-	pub fn destroy_flex(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		_message: Message,
-	) -> Result<()> {
-		if node.destroyable {
-			node.destroy();
-		}
-		Ok(())
-	}
 
 	pub fn add_local_signal(&self, name: &str, signal: Signal) {
 		self.local_signals.lock().insert(name.to_string(), signal);
@@ -326,6 +307,19 @@ impl Debug for Node {
 			.field("uid", &self.uid)
 			.field("path", &self.path)
 			.finish()
+	}
+}
+impl NodeAspect for Node {
+	fn set_enabled(node: Arc<Node>, _calling_client: Arc<Client>, enabled: bool) -> Result<()> {
+		node.enabled.store(enabled, Ordering::Relaxed);
+		Ok(())
+	}
+
+	fn destroy(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
+		if node.destroyable {
+			node.destroy();
+		}
+		Ok(())
 	}
 }
 impl Drop for Node {
