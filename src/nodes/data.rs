@@ -72,6 +72,8 @@ impl PulseSender {
 			mask,
 			aliases: LifeLinkedNodeMap::default(),
 		};
+
+		// <PulseSender as PulseSenderAspect>::add_node_members(node);
 		let sender = PULSE_SENDER_REGISTRY.add(sender);
 		let _ = node.pulse_sender.set(sender.clone());
 		for receiver in PULSE_RECEIVER_REGISTRY.get_valid_contents() {
@@ -93,7 +95,7 @@ impl PulseSender {
 			return;
 		};
 		// Receiver itself
-		let rx_alias = Alias::create(
+		let Ok(rx_alias) = Alias::create(
 			&tx_client,
 			tx_node.get_path(),
 			receiver.uid.as_str(),
@@ -102,8 +104,9 @@ impl PulseSender {
 				server_methods: vec!["send_data"],
 				..Default::default()
 			},
-		);
-		let Ok(rx_alias) = rx_alias else { return };
+		) else {
+			return;
+		};
 		self.aliases.add(receiver.uid.clone(), &rx_alias);
 
 		// Receiver's field
@@ -165,10 +168,11 @@ impl PulseReceiver {
 		};
 		let receiver = PULSE_RECEIVER_REGISTRY.add(receiver);
 
+		<PulseReceiver as PulseReceiverAspect>::add_node_members(node);
+		let _ = node.pulse_receiver.set(receiver.clone());
 		for sender in PULSE_SENDER_REGISTRY.get_valid_contents() {
 			sender.handle_new_receiver(&receiver);
 		}
-		let _ = node.pulse_receiver.set(receiver.clone());
 		Ok(receiver)
 	}
 }
