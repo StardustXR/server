@@ -43,7 +43,7 @@ impl SkController {
 			false,
 		)
 		.add_to_scenegraph()?;
-		Spatial::add_to(&_node, None, Mat4::IDENTITY, false)?;
+		Spatial::add_to(&_node, None, Mat4::IDENTITY, false);
 		let model = sk.model_create_mem("cursor.glb", include_bytes!("cursor.glb"), None)?;
 		let tip = InputType::Tip(Tip::default());
 		let input = InputMethod::add_to(&_node, tip, None)?;

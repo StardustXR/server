@@ -7,7 +7,7 @@ use crate::{
 	},
 	nodes::{
 		items::TypeInfo,
-		spatial::{find_spatial_parent, parse_transform, Spatial, Transform},
+		spatial::{parse_transform, Spatial, Transform},
 		Message, Node,
 	},
 };
@@ -51,7 +51,8 @@ impl EnvironmentItem {
 		response: MethodResponseSender,
 	) {
 		response.wrap_sync(move || {
-			let ItemType::Environment(environment_item) = &node.item.get().unwrap().specialization
+			let ItemType::Environment(environment_item) =
+				&node.get_aspect::<Item>().unwrap().specialization
 			else {
 				return Err(eyre!("Wrong item type?"));
 			};
@@ -78,16 +79,19 @@ pub(super) fn create_environment_item_flex(
 	}
 	let info: CreateEnvironmentItemInfo = deserialize(message.as_ref())?;
 	let parent_name = format!("/item/{}/item", ITEM_TYPE_INFO_ENVIRONMENT.type_name);
-	let space = find_spatial_parent(&calling_client, info.parent_path)?;
+	let space = calling_client
+		.get_node("Spatial parent", info.parent_path)?
+		.get_aspect::<Spatial>()?;
 	let transform = parse_transform(info.transform, true, true, false);
 
 	let node = Node::create_parent_name(&INTERNAL_CLIENT, &parent_name, info.name, false)
 		.add_to_scenegraph()?;
-	Spatial::add_to(&node, None, transform * space.global_transform(), false)?;
+	Spatial::add_to(&node, None, transform * space.global_transform(), false);
 	EnvironmentItem::add_to(&node, info.item_data);
-	node.item
-		.get()
-		.unwrap()
-		.make_alias_named(&calling_client, &parent_name, info.name)?;
+	node.get_aspect::<Item>().unwrap().make_alias_named(
+		&calling_client,
+		&parent_name,
+		info.name,
+	)?;
 	Ok(())
 }

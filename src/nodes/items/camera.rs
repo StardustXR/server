@@ -6,9 +6,9 @@ use crate::{
 		scenegraph::MethodResponseSender,
 	},
 	nodes::{
-		drawable::{model::ModelPart, shaders::UNLIT_SHADER_BYTES, Drawable},
+		drawable::{model::ModelPart, shaders::UNLIT_SHADER_BYTES},
 		items::TypeInfo,
-		spatial::{find_spatial_parent, parse_transform, Spatial, Transform},
+		spatial::{parse_transform, Spatial, Transform},
 		Message, Node,
 	},
 };
@@ -58,7 +58,7 @@ impl CameraItem {
 			nanoid!(),
 			&ITEM_TYPE_INFO_CAMERA,
 			ItemType::Camera(CameraItem {
-				space: node.spatial.get().unwrap().clone(),
+				space: node.get_aspect::<Spatial>().unwrap().clone(),
 				frame_info: Mutex::new(FrameInfo {
 					proj_matrix,
 					px_size,
@@ -83,7 +83,8 @@ impl CameraItem {
 		response: MethodResponseSender,
 	) {
 		response.wrap_sync(move || {
-			let ItemType::Camera(_camera) = &node.item.get().unwrap().specialization else {
+			let ItemType::Camera(_camera) = &node.get_aspect::<Item>().unwrap().specialization
+			else {
 				return Err(eyre!("Wrong item type?"));
 			};
 			Ok(serialize(())?.into())
@@ -95,18 +96,14 @@ impl CameraItem {
 		calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		let ItemType::Camera(camera) = &node.item.get().unwrap().specialization else {
+		let ItemType::Camera(camera) = &node.get_aspect::<Item>().unwrap().specialization else {
 			bail!("Wrong item type?")
 		};
 		let model_part_node =
 			calling_client.get_node("Model part", deserialize(&message.data).unwrap())?;
-		let Drawable::ModelPart(model_part) =
-			model_part_node.get_aspect("Model part", "model part", |n| &n.drawable)?
-		else {
-			bail!("Drawable is not a model node")
-		};
-		camera.applied_to.add_raw(model_part);
-		camera.apply_to.add_raw(model_part);
+		let model_part = model_part_node.get_aspect::<ModelPart>()?;
+		camera.applied_to.add_raw(&model_part);
+		camera.apply_to.add_raw(&model_part);
 		Ok(())
 	}
 
@@ -178,16 +175,19 @@ pub(super) fn create_camera_item_flex(
 	}
 	let info: CreateCameraItemInfo = deserialize(message.as_ref())?;
 	let parent_name = format!("/item/{}/item", ITEM_TYPE_INFO_CAMERA.type_name);
-	let space = find_spatial_parent(&calling_client, info.parent_path)?;
+	let space = calling_client
+		.get_node("Spatial parent", info.parent_path)?
+		.get_aspect::<Spatial>()?;
 	let transform = parse_transform(info.transform, true, true, false);
 
 	let node = Node::create_parent_name(&INTERNAL_CLIENT, &parent_name, info.name, false)
 		.add_to_scenegraph()?;
-	Spatial::add_to(&node, None, transform * space.global_transform(), false)?;
+	Spatial::add_to(&node, None, transform * space.global_transform(), false);
 	CameraItem::add_to(&node, info.proj_matrix.into(), info.px_size);
-	node.item
-		.get()
-		.unwrap()
-		.make_alias_named(&calling_client, &parent_name, info.name)?;
+	node.get_aspect::<Item>().unwrap().make_alias_named(
+		&calling_client,
+		&parent_name,
+		info.name,
+	)?;
 	Ok(())
 }

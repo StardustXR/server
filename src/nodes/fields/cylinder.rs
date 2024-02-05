@@ -1,8 +1,8 @@
-use super::{get_field, CylinderFieldAspect, Field, FieldTrait, Node};
+use super::{CylinderFieldAspect, Field, FieldTrait, Node};
 use crate::core::client::Client;
 use crate::nodes::fields::FieldAspect;
 use crate::nodes::spatial::Spatial;
-use color_eyre::eyre::{ensure, Result};
+use color_eyre::eyre::Result;
 use glam::{swizzles::*, vec2, Vec3A};
 use portable_atomic::AtomicF32;
 
@@ -16,24 +16,15 @@ pub struct CylinderField {
 }
 
 impl CylinderField {
-	pub fn add_to(node: &Arc<Node>, length: f32, radius: f32) -> Result<()> {
-		ensure!(
-			node.spatial.get().is_some(),
-			"Internal: Node does not have a spatial attached!"
-		);
-		ensure!(
-			node.field.get().is_none(),
-			"Internal: Node already has a field attached!"
-		);
+	pub fn add_to(node: &Arc<Node>, length: f32, radius: f32) {
 		let cylinder_field = CylinderField {
-			space: node.spatial.get().unwrap().clone(),
+			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			length: AtomicF32::new(length.abs()),
 			radius: AtomicF32::new(radius.abs()),
 		};
 		<CylinderField as FieldAspect>::add_node_members(node);
 		<CylinderField as CylinderFieldAspect>::add_node_members(node);
-		let _ = node.field.set(Arc::new(Field::Cylinder(cylinder_field)));
-		Ok(())
+		node.add_aspect(Field::Cylinder(cylinder_field));
 	}
 
 	pub fn set_size(&self, length: f32, radius: f32) {
@@ -60,7 +51,8 @@ impl CylinderFieldAspect for CylinderField {
 		length: f32,
 		radius: f32,
 	) -> Result<()> {
-		let Field::Cylinder(this_field) = &*get_field(&node)? else {
+		let this_field = node.get_aspect::<Field>()?;
+		let Field::Cylinder(this_field) = &*this_field else {
 			return Ok(());
 		};
 		this_field.set_size(length, radius);

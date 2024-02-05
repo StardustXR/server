@@ -49,7 +49,7 @@ impl ClientState {
 	}
 	fn spatial_transform(client: &Client, path: &str) -> Option<Mat4> {
 		let node = client.scenegraph.get_node(path)?;
-		let spatial = node.spatial.get()?;
+		let spatial = node.get_aspect::<Spatial>().ok()?;
 		Some(spatial.global_transform())
 	}
 
@@ -81,7 +81,7 @@ impl ClientState {
 						let node = Node::create_parent_name(client, "/spatial/anchor", k, true)
 							.add_to_scenegraph()
 							.unwrap();
-						Spatial::add_to(&node, None, *v, false).unwrap();
+						Spatial::add_to(&node, None, *v, false);
 						k.clone()
 					})
 				})

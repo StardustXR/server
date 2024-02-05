@@ -9,12 +9,12 @@ use self::tip::Tip;
 use super::{
 	alias::{Alias, AliasInfo},
 	fields::{find_field, Field, FIELD_ALIAS_INFO},
-	spatial::{find_spatial_parent, parse_transform, Spatial},
-	Message, Node,
+	spatial::{parse_transform, Spatial},
+	Aspect, Message, Node,
 };
 use crate::core::{client::Client, node_collections::LifeLinkedNodeMap};
 use crate::{core::registry::Registry, nodes::spatial::Transform};
-use color_eyre::eyre::{ensure, Result};
+use color_eyre::eyre::Result;
 use glam::Mat4;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -76,11 +76,6 @@ impl InputMethod {
 		specialization: InputType,
 		datamap: Option<Datamap>,
 	) -> Result<Arc<InputMethod>> {
-		ensure!(
-			node.spatial.get().is_some(),
-			"Internal: Node does not have a spatial attached!"
-		);
-
 		node.add_local_signal("capture", InputMethod::capture_flex);
 		node.add_local_signal("set_datamap", InputMethod::set_datamap_flex);
 		node.add_local_signal("set_handlers", InputMethod::set_handlers_flex);
@@ -89,7 +84,7 @@ impl InputMethod {
 			node: Arc::downgrade(node),
 			uid: node.uid.clone(),
 			enabled: Mutex::new(true),
-			spatial: node.spatial.get().unwrap().clone(),
+			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
 			specialization: Mutex::new(specialization),
 			captures: Registry::new(),
 			datamap: Mutex::new(datamap),
@@ -101,12 +96,11 @@ impl InputMethod {
 			method.make_alias(&handler);
 		}
 		let method = INPUT_METHOD_REGISTRY.add(method);
-		let _ = node.input_method.set(method.clone());
+		node.add_aspect_raw(method.clone());
 		Ok(method)
 	}
 	fn get(node: &Node) -> Result<Arc<Self>> {
-		node.get_aspect("Input Method", "input method", |n| &n.input_method)
-			.cloned()
+		node.get_aspect::<Self>()
 	}
 
 	fn capture_flex(node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
@@ -242,6 +236,9 @@ impl InputMethod {
 		let _ = tx_node.send_remote_signal("handler_destroyed", data);
 	}
 }
+impl Aspect for InputMethod {
+	const NAME: &'static str = "InputMethod";
+}
 impl Drop for InputMethod {
 	fn drop(&mut self) {
 		INPUT_METHOD_REGISTRY.remove(self);
@@ -294,16 +291,11 @@ pub struct InputHandler {
 }
 impl InputHandler {
 	pub fn add_to(node: &Arc<Node>, field: &Arc<Field>) -> Result<()> {
-		ensure!(
-			node.spatial.get().is_some(),
-			"Internal: Node does not have a spatial attached!"
-		);
-
 		let handler = InputHandler {
 			enabled: node.enabled.clone(),
 			uid: node.uid.clone(),
 			node: Arc::downgrade(node),
-			spatial: node.spatial.get().unwrap().clone(),
+			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
 			field: field.clone(),
 			method_aliases: LifeLinkedNodeMap::default(),
 		};
@@ -312,15 +304,11 @@ impl InputHandler {
 			method.handle_new_handler(&handler);
 		}
 		let handler = INPUT_HANDLER_REGISTRY.add(handler);
-		let _ = node.input_handler.set(handler);
+		node.add_aspect_raw(handler);
 		Ok(())
 	}
 	fn find(client: &Client, path: &str) -> Result<Arc<Self>> {
-		InputHandler::get(&*client.get_node("Input Handler", path)?)
-	}
-	fn get(node: &Node) -> Result<Arc<Self>> {
-		node.get_aspect("Input Handler", "input handler", |n| &n.input_handler)
-			.cloned()
+		client.get_node("Input Handler", path)?.get_aspect::<Self>()
 	}
 
 	#[instrument(level = "debug", skip(self, distance_link))]
@@ -336,6 +324,9 @@ impl InputHandler {
 		};
 		let _ = node.send_remote_signal("input", distance_link.serialize(order, captured, datamap));
 	}
+}
+impl Aspect for InputHandler {
+	const NAME: &'static str = "InputHandler";
 }
 impl PartialEq for InputHandler {
 	fn eq(&self, other: &Self) -> bool {
@@ -372,13 +363,15 @@ pub fn create_input_handler_flex(
 		field_path: &'a str,
 	}
 	let info: CreateInputHandlerInfo = deserialize(message.as_ref())?;
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
+	let parent = calling_client
+		.get_node("Spatial parent", info.parent_path)?
+		.get_aspect::<Spatial>()?;
 	let transform = parse_transform(info.transform, true, true, true);
 	let field = find_field(&calling_client, info.field_path)?;
 
 	let node = Node::create_parent_name(&calling_client, "/input/handler", info.name, true)
 		.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, false)?;
+	Spatial::add_to(&node, Some(parent.clone()), transform, false);
 	InputHandler::add_to(&node, &field)?;
 	Ok(())
 }
@@ -441,7 +434,7 @@ pub fn process_input() {
 					.handler
 					.method_aliases
 					.get(&(Arc::as_ptr(&distance_link.method) as usize))
-					.and_then(|a| a.alias.get().cloned())
+					.and_then(|a| a.get_aspect::<Alias>().ok())
 				{
 					method_alias.enabled.store(true, Ordering::Release);
 				}

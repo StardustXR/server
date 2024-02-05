@@ -1,8 +1,8 @@
 use crate::{
 	core::{client::Client, destroy_queue, registry::Registry, resource::get_resource_file},
-	nodes::{drawable::Drawable, spatial::Spatial, Node},
+	nodes::{spatial::Spatial, Aspect, Node},
 };
-use color_eyre::eyre::{bail, ensure, eyre, Result};
+use color_eyre::eyre::{eyre, Result};
 use glam::{vec3, Mat4, Vec2};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -42,19 +42,10 @@ pub struct Text {
 }
 impl Text {
 	pub fn add_to(node: &Arc<Node>, text: String, style: TextStyle) -> Result<Arc<Text>> {
-		ensure!(
-			node.spatial.get().is_some(),
-			"Internal: Node does not have a spatial attached!"
-		);
-		ensure!(
-			node.drawable.get().is_none(),
-			"Internal: Node already has a drawable attached!"
-		);
-
 		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
 		let text = TEXT_REGISTRY.add(Text {
 			enabled: node.enabled.clone(),
-			space: node.spatial.get().unwrap().clone(),
+			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			font_path: style.font.as_ref().and_then(|res| {
 				get_resource_file(&res, &client, &[OsStr::new("ttf"), OsStr::new("otf")])
 			}),
@@ -64,7 +55,7 @@ impl Text {
 			data: Mutex::new(style),
 		});
 		<Text as TextAspect>::add_node_members(node);
-		let _ = node.drawable.set(Drawable::Text(text.clone()));
+		node.add_aspect_raw(text.clone());
 
 		Ok(text)
 	}
@@ -122,26 +113,23 @@ impl Text {
 		}
 	}
 }
+impl Aspect for Text {
+	const NAME: &'static str = "Text";
+}
 impl TextAspect for Text {
 	fn set_character_height(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		height: f32,
 	) -> Result<()> {
-		let Some(Drawable::Text(text)) = node.drawable.get() else {
-			bail!("Not a drawable??")
-		};
-
-		text.data.lock().character_height = height;
+		let this_text = node.get_aspect::<Text>()?;
+		this_text.data.lock().character_height = height;
 		Ok(())
 	}
 
 	fn set_text(node: Arc<Node>, _calling_client: Arc<Client>, text: String) -> Result<()> {
-		let Some(Drawable::Text(text_aspect)) = node.drawable.get() else {
-			bail!("Not a drawable??")
-		};
-
-		*text_aspect.text.lock() = text;
+		let this_text = node.get_aspect::<Text>()?;
+		*this_text.text.lock() = text;
 		Ok(())
 	}
 }

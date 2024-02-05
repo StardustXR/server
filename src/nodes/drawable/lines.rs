@@ -1,9 +1,9 @@
-use super::{Drawable, Line, LinesAspect};
+use super::{Line, LinesAspect};
 use crate::{
 	core::{client::Client, registry::Registry},
-	nodes::{spatial::Spatial, Node},
+	nodes::{spatial::Spatial, Aspect, Node},
 };
-use color_eyre::eyre::{bail, ensure, Result};
+use color_eyre::eyre::Result;
 use glam::Vec3A;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
@@ -20,31 +20,29 @@ pub struct Lines {
 }
 impl Lines {
 	pub fn add_to(node: &Arc<Node>, lines: Vec<Line>) -> Result<Arc<Lines>> {
-		ensure!(
-			node.drawable.get().is_none(),
-			"Internal: Node already has a drawable attached!"
-		);
-
-		let _ = node.spatial.get().unwrap().bounding_box_calc.set(|node| {
-			let mut bounds = Bounds::default();
-			let Some(Drawable::Lines(lines)) = node.drawable.get() else {
-				return bounds;
-			};
-			for line in &*lines.data.lock() {
-				for point in &line.points {
-					bounds = bounds_grow_to_fit_pt(bounds, point.point);
+		let _ = node
+			.get_aspect::<Spatial>()
+			.unwrap()
+			.bounding_box_calc
+			.set(|node| {
+				let mut bounds = Bounds::default();
+				if let Ok(lines) = node.get_aspect::<Lines>() {
+					for line in &*lines.data.lock() {
+						for point in &line.points {
+							bounds = bounds_grow_to_fit_pt(bounds, point.point);
+						}
+					}
 				}
-			}
-			bounds
-		});
+				bounds
+			});
 
 		let lines = LINES_REGISTRY.add(Lines {
 			enabled: node.enabled.clone(),
-			space: node.get_aspect("Lines", "spatial", |n| &n.spatial)?.clone(),
+			space: node.get_aspect::<Spatial>()?.clone(),
 			data: Mutex::new(lines),
 		});
 		<Lines as LinesAspect>::add_node_members(node);
-		let _ = node.drawable.set(Drawable::Lines(lines.clone()));
+		node.add_aspect_raw(lines.clone());
 
 		Ok(lines)
 	}
@@ -94,12 +92,12 @@ impl Lines {
 		}
 	}
 }
+impl Aspect for Lines {
+	const NAME: &'static str = "Lines";
+}
 impl LinesAspect for Lines {
 	fn set_lines(node: Arc<Node>, _calling_client: Arc<Client>, lines: Vec<Line>) -> Result<()> {
-		let Some(Drawable::Lines(lines_aspect)) = node.drawable.get() else {
-			bail!("Not a drawable??")
-		};
-
+		let lines_aspect = node.get_aspect::<Lines>()?;
 		*lines_aspect.data.lock() = lines;
 		Ok(())
 	}

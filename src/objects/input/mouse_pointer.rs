@@ -4,7 +4,7 @@ use crate::{
 		data::{
 			mask_matches, pulse_receiver_client, PulseSender, KEYMAPS, PULSE_RECEIVER_REGISTRY,
 		},
-		fields::Ray,
+		fields::{Field, Ray},
 		input::{pointer::Pointer, InputMethod, InputType},
 		spatial::Spatial,
 		Node,
@@ -60,7 +60,7 @@ impl MousePointer {
 	pub fn new() -> Result<Self> {
 		let node = Node::create_parent_name(&INTERNAL_CLIENT, "", &nanoid!(), false)
 			.add_to_scenegraph()?;
-		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
+		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 		let pointer =
 			InputMethod::add_to(&node, InputType::Pointer(Pointer::default()), None).unwrap();
 
@@ -140,7 +140,7 @@ impl MousePointer {
 			.into_iter()
 			.filter(|rx| mask_matches(&rx.mask, &self.keyboard_sender.mask))
 			.map(|rx| {
-				let result = rx.field_node.field.get().unwrap().ray_march(Ray {
+				let result = rx.field_node.get_aspect::<Field>().unwrap().ray_march(Ray {
 					origin: vec3(0.0, 0.0, 0.0),
 					direction: vec3(0.0, 0.0, -1.0),
 					space: self.spatial.clone(),

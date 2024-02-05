@@ -1,4 +1,4 @@
-use super::Node;
+use super::{Aspect, Node};
 use crate::core::client::Client;
 use color_eyre::eyre::{ensure, Result};
 use portable_atomic::AtomicBool;
@@ -43,7 +43,10 @@ impl Alias {
 			info,
 		};
 		let alias = original.aliases.add(alias);
-		let _ = node.alias.set(alias);
+		node.add_aspect_raw(alias);
 		Ok(node)
 	}
+}
+impl Aspect for Alias {
+	const NAME: &'static str = "Alias";
 }

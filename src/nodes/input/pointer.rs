@@ -2,7 +2,7 @@ use super::{DistanceLink, InputSpecialization};
 use crate::core::client::Client;
 use crate::nodes::fields::{Field, Ray, RayMarchResult};
 use crate::nodes::input::{InputMethod, InputType};
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
+use crate::nodes::spatial::{parse_transform, Spatial, Transform};
 use crate::nodes::{Message, Node};
 use glam::{vec3, Mat4};
 use serde::Deserialize;
@@ -79,11 +79,13 @@ pub fn create_pointer_flex(
 	}
 	let info: CreatePointerInfo = deserialize(message.as_ref())?;
 	let node = Node::create_parent_name(&calling_client, "/input/method/pointer", info.name, true);
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
+	let parent = calling_client
+		.get_node("Spatial parent", info.parent_path)?
+		.get_aspect::<Spatial>()?;
 	let transform = parse_transform(info.transform, true, true, false);
 
 	let node = node.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, false)?;
+	Spatial::add_to(&node, Some(parent.clone()), transform, false);
 	InputMethod::add_to(
 		&node,
 		InputType::Pointer(Pointer),

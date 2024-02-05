@@ -2,7 +2,7 @@ use super::{DistanceLink, InputSpecialization};
 use crate::core::client::Client;
 use crate::nodes::fields::Field;
 use crate::nodes::input::{InputMethod, InputType};
-use crate::nodes::spatial::{find_spatial_parent, parse_transform, Spatial, Transform};
+use crate::nodes::spatial::{parse_transform, Spatial, Transform};
 use crate::nodes::{Message, Node};
 use color_eyre::eyre::Result;
 use glam::{vec3a, Mat4};
@@ -19,7 +19,8 @@ pub struct Tip {
 }
 impl Tip {
 	fn set_radius(node: Arc<Node>, _calling_client: Arc<Client>, message: Message) -> Result<()> {
-		if let InputType::Tip(tip) = &mut *node.input_method.get().unwrap().specialization.lock() {
+		let input_method = node.get_aspect::<InputMethod>()?;
+		if let InputType::Tip(tip) = &mut *input_method.specialization.lock() {
 			tip.radius = deserialize(message.as_ref())?;
 		}
 		Ok(())
@@ -61,11 +62,13 @@ pub fn create_tip_flex(
 	}
 	let info: CreateTipInfo = deserialize(message.as_ref())?;
 	let node = Node::create_parent_name(&calling_client, "/input/method/tip", info.name, true);
-	let parent = find_spatial_parent(&calling_client, info.parent_path)?;
+	let parent = calling_client
+		.get_node("Spatial parent", info.parent_path)?
+		.get_aspect::<Spatial>()?;
 	let transform = parse_transform(info.transform, true, true, false);
 
 	let node = node.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent), transform, false)?;
+	Spatial::add_to(&node, Some(parent.clone()), transform, false);
 	InputMethod::add_to(
 		&node,
 		InputType::Tip(Tip {

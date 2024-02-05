@@ -11,7 +11,6 @@ pub mod spatial;
 
 use color_eyre::eyre::{eyre, Result};
 use nanoid::nanoid;
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
@@ -19,6 +18,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::{deserialize, serialize};
+use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
@@ -29,14 +29,6 @@ use crate::core::registry::Registry;
 use crate::core::scenegraph::MethodResponseSender;
 
 use self::alias::Alias;
-use self::audio::Sound;
-use self::data::{PulseReceiver, PulseSender};
-use self::drawable::Drawable;
-use self::fields::Field;
-use self::input::{InputHandler, InputMethod};
-use self::items::{Item, ItemAcceptor, ItemUI};
-use self::spatial::zone::Zone;
-use self::spatial::Spatial;
 
 #[derive(Default)]
 pub struct Message {
@@ -71,33 +63,9 @@ pub struct Node {
 	// trailing_slash_pos: usize,
 	local_signals: Mutex<FxHashMap<String, Signal>>,
 	local_methods: Mutex<FxHashMap<String, Method>>,
-	destroyable: bool,
-
-	pub alias: OnceCell<Arc<Alias>>,
 	aliases: Registry<Alias>,
-
-	pub spatial: OnceCell<Arc<Spatial>>,
-	pub field: OnceCell<Arc<Field>>,
-	pub zone: OnceCell<Arc<Zone>>,
-
-	// Data
-	pub pulse_sender: OnceCell<Arc<PulseSender>>,
-	pub pulse_receiver: OnceCell<Arc<PulseReceiver>>,
-
-	// Drawable
-	pub drawable: OnceCell<Drawable>,
-
-	// Input
-	pub input_method: OnceCell<Arc<InputMethod>>,
-	pub input_handler: OnceCell<Arc<InputHandler>>,
-
-	// Item
-	pub item: OnceCell<Arc<Item>>,
-	pub item_acceptor: OnceCell<Arc<ItemAcceptor>>,
-	pub item_ui: OnceCell<Arc<ItemUI>>,
-
-	// Sound
-	pub sound: OnceCell<Arc<Sound>>,
+	aspects: Aspects,
+	destroyable: bool,
 }
 impl Node {
 	pub fn get_client(&self) -> Option<Arc<Client>> {
@@ -131,23 +99,9 @@ impl Node {
 			// trailing_slash_pos: parent.len(),
 			local_signals: Default::default(),
 			local_methods: Default::default(),
+			aliases: Default::default(),
+			aspects: Default::default(),
 			destroyable,
-
-			alias: OnceCell::new(),
-			aliases: Registry::new(),
-
-			spatial: OnceCell::new(),
-			field: OnceCell::new(),
-			zone: OnceCell::new(),
-			pulse_sender: OnceCell::new(),
-			pulse_receiver: OnceCell::new(),
-			drawable: OnceCell::new(),
-			input_method: OnceCell::new(),
-			input_handler: OnceCell::new(),
-			item: OnceCell::new(),
-			item_acceptor: OnceCell::new(),
-			item_ui: OnceCell::new(),
-			sound: OnceCell::new(),
 		};
 		<Node as NodeAspect>::add_node_members(&node);
 		node
@@ -186,13 +140,14 @@ impl Node {
 		self.local_methods.lock().insert(name.to_string(), method);
 	}
 
-	pub fn get_aspect<F, T>(&self, node_name: &str, aspect_type: &str, aspect_fn: F) -> Result<&T>
-	where
-		F: FnOnce(&Node) -> &OnceCell<T>,
-	{
-		aspect_fn(self)
-			.get()
-			.ok_or_else(|| eyre!("{} is not a {} node", node_name, aspect_type))
+	pub fn add_aspect<A: Aspect>(&self, aspect: A) -> Arc<A> {
+		self.aspects.add(aspect)
+	}
+	pub fn add_aspect_raw<A: Aspect>(&self, aspect: Arc<A>) {
+		self.aspects.add_raw(aspect)
+	}
+	pub fn get_aspect<A: Aspect>(&self) -> Result<Arc<A>> {
+		self.aspects.get()
 	}
 
 	pub fn send_local_signal(
@@ -201,7 +156,7 @@ impl Node {
 		method: &str,
 		message: Message,
 	) -> Result<(), ScenegraphError> {
-		if let Some(alias) = self.alias.get() {
+		if let Ok(alias) = self.get_aspect::<Alias>() {
 			if !alias.info.server_signals.iter().any(|e| e == &method) {
 				return Err(ScenegraphError::SignalNotFound);
 			}
@@ -229,7 +184,7 @@ impl Node {
 		message: Message,
 		response: MethodResponseSender,
 	) {
-		if let Some(alias) = self.alias.get() {
+		if let Ok(alias) = self.get_aspect::<Alias>() {
 			if !alias.info.server_methods.iter().any(|e| e == &method) {
 				response.send(Err(ScenegraphError::MethodNotFound));
 				return;
@@ -325,5 +280,38 @@ impl NodeAspect for Node {
 impl Drop for Node {
 	fn drop(&mut self) {
 		// Debug breakpoint
+	}
+}
+
+pub trait Aspect: Any + Send + Sync + 'static {
+	const NAME: &'static str;
+}
+
+#[derive(Default)]
+struct Aspects(Mutex<FxHashMap<TypeId, Arc<dyn Any + Send + Sync + 'static>>>);
+impl Aspects {
+	fn add<A: Aspect>(&self, t: A) -> Arc<A> {
+		let aspect = Arc::new(t);
+		self.add_raw(aspect.clone());
+		aspect
+	}
+	fn add_raw<A: Aspect>(&self, aspect: Arc<A>) {
+		self.0.lock().insert(Self::type_key::<A>(), aspect);
+	}
+	fn get<A: Aspect + Any + Send + Sync + 'static>(&self) -> Result<Arc<A>> {
+		self.0
+			.lock()
+			.get(&Self::type_key::<A>())
+			.and_then(|a| Arc::downcast(a.clone()).ok())
+			.ok_or(eyre!("Couldn't get aspect {}", A::NAME.to_lowercase()))
+	}
+
+	fn type_key<A: 'static>() -> TypeId {
+		TypeId::of::<A>()
+	}
+}
+impl Drop for Aspects {
+	fn drop(&mut self) {
+		self.0.lock().clear()
 	}
 }

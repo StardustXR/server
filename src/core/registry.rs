@@ -5,6 +5,7 @@ use rustc_hash::FxHashMap;
 use std::ptr;
 use std::sync::{Arc, Weak};
 
+#[derive(Debug)]
 pub struct Registry<T: Send + Sync + ?Sized>(Mutex<Option<FxHashMap<usize, Weak<T>>>>);
 
 impl<T: Send + Sync + ?Sized> Registry<T> {
@@ -56,7 +57,9 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 	}
 	pub fn is_empty(&self) -> bool {
 		let registry = self.0.lock();
-		let Some(registry) = &*registry else {return true};
+		let Some(registry) = &*registry else {
+			return true;
+		};
 		if registry.is_empty() {
 			return true;
 		}
@@ -66,6 +69,11 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 impl<T: Send + Sync + ?Sized> Clone for Registry<T> {
 	fn clone(&self) -> Self {
 		Self(Mutex::new(self.0.lock().clone()))
+	}
+}
+impl<T: Send + Sync + ?Sized> Default for Registry<T> {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 
@@ -98,9 +106,12 @@ impl<T: Send + Sync + ?Sized> OwnedRegistry<T> {
 		self.lock()
 			.contains_key(&(ptr::addr_of!(*t) as *const () as usize))
 	}
-	pub fn remove(&self, t: &T) {
+	pub fn remove(&self, t: &T) -> Option<Arc<T>>
+	where
+		T: Sized,
+	{
 		self.lock()
-			.remove(&(ptr::addr_of!(*t) as *const () as usize));
+			.remove(&(ptr::addr_of!(*t) as *const () as usize))
 	}
 	pub fn clear(&self) {
 		self.lock().clear();

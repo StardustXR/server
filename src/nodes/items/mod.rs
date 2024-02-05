@@ -6,8 +6,8 @@ use self::camera::CameraItem;
 use self::environment::{EnvironmentItem, ITEM_TYPE_INFO_ENVIRONMENT};
 use self::panel::{PanelItemTrait, ITEM_TYPE_INFO_PANEL};
 use super::fields::Field;
-use super::spatial::{find_spatial_parent, parse_transform, Spatial};
-use super::{Alias, Message, Node};
+use super::spatial::{parse_transform, Spatial};
+use super::{Alias, Aspect, Message, Node};
 use crate::core::client::Client;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
@@ -108,7 +108,7 @@ impl Item {
 		if let Some(ui) = type_info.ui.lock().upgrade() {
 			ui.handle_create_item(&item);
 		}
-		let _ = node.item.set(item.clone());
+		node.add_aspect_raw(item.clone());
 
 		// if let Some(auto_acceptor) = node.get_client().and_then(|client| {
 		// 	client
@@ -161,11 +161,14 @@ impl Item {
 		_calling_client: Arc<Client>,
 		_message: Message,
 	) -> Result<()> {
-		let item = node.get_aspect("Item", "item", |n| &n.item)?;
-		release(item);
+		let item = node.get_aspect::<Item>()?;
+		release(&item);
 
 		Ok(())
 	}
+}
+impl Aspect for Item {
+	const NAME: &'static str = "Item";
 }
 impl Drop for Item {
 	fn drop(&mut self) {
@@ -224,7 +227,7 @@ impl ItemUI {
 			acceptor_field_aliases: Default::default(),
 		});
 		*type_info.ui.lock() = Arc::downgrade(&ui);
-		let _ = node.item_ui.set(ui.clone());
+		node.add_aspect_raw(ui.clone());
 
 		for item in type_info.items.get_valid_contents() {
 			ui.handle_create_item(&item);
@@ -314,6 +317,9 @@ impl ItemUI {
 		self.acceptor_field_aliases.remove(&acceptor.uid);
 	}
 }
+impl Aspect for ItemUI {
+	const NAME: &'static str = "Item";
+}
 impl Drop for ItemUI {
 	fn drop(&mut self) {
 		*self.type_info.ui.lock() = Weak::new();
@@ -342,7 +348,7 @@ impl ItemAcceptor {
 		if let Some(ui) = type_info.ui.lock().upgrade() {
 			ui.handle_create_acceptor(&acceptor);
 		}
-		let _ = node.item_acceptor.set(acceptor);
+		node.add_aspect_raw(acceptor);
 	}
 
 	fn capture_flex(node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
@@ -350,11 +356,11 @@ impl ItemAcceptor {
 			return Ok(());
 		}
 
-		let acceptor = node.item_acceptor.get().unwrap();
+		let acceptor = node.get_aspect::<ItemAcceptor>().unwrap();
 		let item_path: &str = deserialize(message.as_ref())?;
 		let item_node = calling_client.get_node("Item", item_path)?;
-		let item = item_node.get_aspect("Item", "item", |n| &n.item)?;
-		capture(item, acceptor);
+		let item = item_node.get_aspect::<Item>()?;
+		capture(&item, &acceptor);
 
 		Ok(())
 	}
@@ -412,6 +418,9 @@ impl ItemAcceptor {
 		};
 		let _ = node.send_remote_signal("release", message);
 	}
+}
+impl Aspect for ItemAcceptor {
+	const NAME: &'static str = "ItemAcceptor";
 }
 impl Drop for ItemAcceptor {
 	fn drop(&mut self) {
@@ -477,7 +486,9 @@ fn create_item_acceptor_flex(
 		item_type: &'a str,
 	}
 	let info: CreateItemAcceptorInfo = deserialize(message.as_ref())?;
-	let space = find_spatial_parent(&calling_client, info.parent_path)?;
+	let space = calling_client
+		.get_node("Reference space", info.parent_path)?
+		.get_aspect::<Spatial>()?;
 	let transform = parse_transform(info.transform, true, true, false);
 	let field = find_field(&calling_client, info.field_path)?;
 	let type_info = type_info(info.item_type)?;
@@ -489,7 +500,7 @@ fn create_item_acceptor_flex(
 		true,
 	)
 	.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(space), transform, false)?;
+	Spatial::add_to(&node, Some(space.clone()), transform, false);
 	ItemAcceptor::add_to(&node, type_info, field);
 	Ok(())
 }

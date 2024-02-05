@@ -14,16 +14,13 @@ lazy_static::lazy_static! {
 
 fn create() -> Arc<Node> {
 	let node = Arc::new(Node::create_parent_name(&INTERNAL_CLIENT, "", "hmd", false));
-	Spatial::add_to(&node, None, Mat4::IDENTITY, false).expect("Unable to make spatial for HMD");
+	Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 
 	node
 }
 
 pub fn frame(sk: &impl StereoKitMultiThread) {
-	let spatial = HMD
-		.spatial
-		.get()
-		.expect("Unable to get spatial to update HMD");
+	let spatial = HMD.get_aspect::<Spatial>().unwrap();
 	let hmd_pose = sk.input_head();
 	*spatial.transform.lock() = Mat4::from_scale_rotation_translation(
 		vec3(1.0, 1.0, 1.0),

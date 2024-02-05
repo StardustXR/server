@@ -4,10 +4,10 @@ use crate::core::destroy_queue;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
-use crate::nodes::drawable::Drawable;
 use crate::nodes::spatial::Spatial;
+use crate::nodes::Aspect;
 use crate::SK_MULTITHREAD;
-use color_eyre::eyre::{bail, ensure, eyre, Result};
+use color_eyre::eyre::{eyre, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
@@ -133,10 +133,7 @@ impl ModelPart {
 			.and_then(|id| model.parts.get(&id));
 		let parent_part = parent_node
 			.as_ref()
-			.and_then(|node| match node.drawable.get() {
-				Some(Drawable::ModelPart(model_part)) => Some(model_part),
-				_ => None,
-			});
+			.and_then(|node| node.get_aspect::<ModelPart>().ok());
 
 		let stardust_model_part = model.space.node()?;
 		let client = stardust_model_part.get_client()?;
@@ -149,34 +146,37 @@ impl ModelPart {
 			false,
 		));
 		let spatial_parent = parent_node
-			.and_then(|n| n.spatial.get().cloned())
+			.and_then(|n| n.get_aspect::<Spatial>().ok())
 			.unwrap_or_else(|| model.space.clone());
 		let space = Spatial::add_to(
 			&node,
 			Some(spatial_parent),
 			sk.model_node_get_transform_local(sk_model, id),
 			false,
-		)
-		.ok()?;
+		);
 
-		let _ = node.spatial.get().unwrap().bounding_box_calc.set(|node| {
-			let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {
-				return Bounds::default();
-			};
-			let Some(sk) = SK_MULTITHREAD.get() else {
-				return Bounds::default();
-			};
-			let Some(model) = model_part.model.upgrade() else {
-				return Bounds::default();
-			};
-			let Some(sk_model) = model.sk_model.get() else {
-				return Bounds::default();
-			};
-			let Some(sk_mesh) = sk.model_node_get_mesh(sk_model, model_part.id) else {
-				return Bounds::default();
-			};
-			sk.mesh_get_bounds(sk_mesh)
-		});
+		let _ = node
+			.get_aspect::<Spatial>()
+			.unwrap()
+			.bounding_box_calc
+			.set(|node| {
+				let Ok(model_part) = node.get_aspect::<ModelPart>() else {
+					return Bounds::default();
+				};
+				let Some(sk) = SK_MULTITHREAD.get() else {
+					return Bounds::default();
+				};
+				let Some(model) = model_part.model.upgrade() else {
+					return Bounds::default();
+				};
+				let Some(sk_model) = model.sk_model.get() else {
+					return Bounds::default();
+				};
+				let Some(sk_mesh) = sk.model_node_get_mesh(sk_model, model_part.id) else {
+					return Bounds::default();
+				};
+				sk.mesh_get_bounds(sk_mesh)
+			});
 
 		let model_part = Arc::new(ModelPart {
 			id,
@@ -187,7 +187,7 @@ impl ModelPart {
 			pending_material_replacement: Mutex::new(None),
 		});
 		<ModelPart as ModelPartAspect>::add_node_members(&node);
-		let _ = node.drawable.set(Drawable::ModelPart(model_part.clone()));
+		node.add_aspect_raw(model_part.clone());
 		model.parts.add(id, &node);
 		Some(model_part)
 	}
@@ -232,12 +232,13 @@ impl ModelPart {
 		);
 	}
 }
+impl Aspect for ModelPart {
+	const NAME: &'static str = "ModelPart";
+}
 impl ModelPartAspect for ModelPart {
 	#[doc = "Set this model part's material to one that cuts a hole in the world. Often used for overlays/passthrough where you want to show the background through an object."]
 	fn apply_holdout_material(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
-		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {
-			bail!("Not a drawable??")
-		};
+		let model_part = node.get_aspect::<ModelPart>()?;
 		model_part.replace_material(HOLDOUT_MATERIAL.get().unwrap().clone());
 		Ok(())
 	}
@@ -249,10 +250,7 @@ impl ModelPartAspect for ModelPart {
 		parameter_name: String,
 		value: MaterialParameter,
 	) -> Result<()> {
-		let Some(Drawable::ModelPart(model_part)) = node.drawable.get() else {
-			bail!("Not a drawable??")
-		};
-
+		let model_part = node.get_aspect::<ModelPart>()?;
 		model_part
 			.pending_material_parameters
 			.lock()
@@ -275,15 +273,6 @@ unsafe impl Sync for Model {}
 
 impl Model {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Model>> {
-		ensure!(
-			node.spatial.get().is_some(),
-			"Internal: Node does not have a spatial attached!"
-		);
-		ensure!(
-			node.drawable.get().is_none(),
-			"Internal: Node already has a drawable attached!"
-		);
-
 		let pending_model_path = get_resource_file(
 			&resource_id,
 			&*node.get_client().ok_or_else(|| eyre!("Client not found"))?,
@@ -294,7 +283,7 @@ impl Model {
 		let model = Arc::new_cyclic(|self_ref| Model {
 			self_ref: self_ref.clone(),
 			enabled: node.enabled.clone(),
-			space: node.spatial.get().unwrap().clone(),
+			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			_resource_id: resource_id,
 			sk_model: OnceCell::new(),
 			parts: LifeLinkedNodeMap::default(),
@@ -307,7 +296,7 @@ impl Model {
 		);
 		ModelPart::create_for_model(sk, &model.self_ref.upgrade().unwrap(), &sk_model);
 		let _ = model.sk_model.set(sk_model);
-		let _ = node.drawable.set(Drawable::Model(model.clone()));
+		node.add_aspect_raw(model.clone());
 		Ok(model)
 	}
 
@@ -316,10 +305,9 @@ impl Model {
 			return;
 		};
 		for model_node_node in self.parts.nodes() {
-			let Some(Drawable::ModelPart(model_node)) = model_node_node.drawable.get() else {
-				continue;
+			if let Ok(model_node) = model_node_node.get_aspect::<ModelPart>() {
+				model_node.update(sk);
 			};
-			model_node.update(sk);
 		}
 
 		sk.model_draw(
@@ -329,6 +317,9 @@ impl Model {
 			RenderLayer::LAYER0,
 		);
 	}
+}
+impl Aspect for Model {
+	const NAME: &'static str = "Model";
 }
 impl ModelAspect for Model {}
 impl Drop for Model {
