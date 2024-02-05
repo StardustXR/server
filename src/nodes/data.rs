@@ -1,7 +1,7 @@
 use super::alias::AliasInfo;
-use super::fields::get_field;
-use super::spatial::{get_spatial, parse_transform, Spatial};
-use super::{Alias, Node};
+use super::fields::Field;
+use super::spatial::{parse_transform, Spatial};
+use super::{Alias, Aspect, Node};
 use crate::core::client::Client;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
@@ -62,11 +62,6 @@ pub struct PulseSender {
 }
 impl PulseSender {
 	pub fn add_to(node: &Arc<Node>, mask: Datamap) -> Result<Arc<PulseSender>> {
-		ensure!(
-			node.spatial.get().is_some(),
-			"Internal: Node does not have a spatial attached!"
-		);
-
 		let sender = PulseSender {
 			node: Arc::downgrade(node),
 			mask,
@@ -75,7 +70,7 @@ impl PulseSender {
 
 		// <PulseSender as PulseSenderAspect>::add_node_members(node);
 		let sender = PULSE_SENDER_REGISTRY.add(sender);
-		let _ = node.pulse_sender.set(sender.clone());
+		node.add_aspect_raw(sender.clone());
 		for receiver in PULSE_RECEIVER_REGISTRY.get_valid_contents() {
 			sender.handle_new_receiver(&receiver);
 		}
@@ -114,7 +109,7 @@ impl PulseSender {
 			&tx_client,
 			rx_alias.get_path(),
 			"field",
-			&rx_node.pulse_receiver.get().unwrap().field_node,
+			&rx_node.get_aspect::<PulseReceiver>().unwrap().field_node,
 			FIELD_ALIAS_INFO.clone(),
 		) else {
 			return;
@@ -136,6 +131,9 @@ impl PulseSender {
 		let _ = pulse_sender_client::drop_receiver(&tx_node, uid);
 	}
 }
+impl Aspect for PulseSender {
+	const NAME: &'static str = "PulseSender";
+}
 impl PulseSenderAspect for PulseSender {}
 impl Drop for PulseSender {
 	fn drop(&mut self) {
@@ -155,11 +153,6 @@ impl PulseReceiver {
 		field_node: Arc<Node>,
 		mask: Datamap,
 	) -> Result<Arc<PulseReceiver>> {
-		ensure!(
-			node.spatial.get().is_some(),
-			"Internal: Node does not have a spatial attached!"
-		);
-
 		let receiver = PulseReceiver {
 			uid: nanoid!(),
 			node: Arc::downgrade(node),
@@ -169,12 +162,15 @@ impl PulseReceiver {
 		let receiver = PULSE_RECEIVER_REGISTRY.add(receiver);
 
 		<PulseReceiver as PulseReceiverAspect>::add_node_members(node);
-		let _ = node.pulse_receiver.set(receiver.clone());
+		node.add_aspect_raw(receiver.clone());
 		for sender in PULSE_SENDER_REGISTRY.get_valid_contents() {
 			sender.handle_new_receiver(&receiver);
 		}
 		Ok(receiver)
 	}
+}
+impl Aspect for PulseReceiver {
+	const NAME: &'static str = "PulseReceiver";
 }
 impl PulseReceiverAspect for PulseReceiver {
 	fn send_data(
@@ -183,7 +179,7 @@ impl PulseReceiverAspect for PulseReceiver {
 		sender: Arc<Node>,
 		data: Datamap,
 	) -> Result<()> {
-		let this_receiver = node.pulse_receiver.get().unwrap();
+		let this_receiver = node.get_aspect::<PulseReceiver>().unwrap();
 
 		ensure!(
 			mask_matches(&this_receiver.mask, &data),
@@ -221,11 +217,11 @@ impl DataInterfaceAspect for DataInterface {
 			&name,
 			true,
 		);
-		let parent = get_spatial(&parent, "Spatial parent")?;
+		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, false);
 
 		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent), transform, false)?;
+		Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		PulseSender::add_to(&node, mask)?;
 		Ok(())
 	}
@@ -246,12 +242,12 @@ impl DataInterfaceAspect for DataInterface {
 			&name,
 			true,
 		);
-		let parent = get_spatial(&parent, "Spatial parent")?;
+		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = parse_transform(transform, true, true, false);
-		get_field(&field)?;
+		let _ = field.get_aspect::<Field>()?;
 
 		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent), transform, false)?;
+		Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		PulseReceiver::add_to(&node, field, mask)?;
 		Ok(())
 	}

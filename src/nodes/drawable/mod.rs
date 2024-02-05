@@ -3,14 +3,9 @@ pub mod model;
 pub mod shaders;
 pub mod text;
 
-use self::{
-	lines::Lines,
-	model::{Model, ModelPart},
-	text::Text,
-};
-
+use self::{lines::Lines, model::Model, text::Text};
 use super::{
-	spatial::{get_spatial, Spatial, Transform},
+	spatial::{Spatial, Transform},
 	Node,
 };
 use crate::{
@@ -22,13 +17,6 @@ use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
 use stereokit::StereoKitDraw;
-
-pub enum Drawable {
-	Lines(Arc<Lines>),
-	Model(Arc<Model>),
-	ModelPart(Arc<ModelPart>),
-	Text(Arc<Text>),
-}
 
 // #[instrument(level = "debug", skip(sk))]
 pub fn draw(sk: &impl StereoKitDraw) {
@@ -87,11 +75,11 @@ impl DrawableInterfaceAspect for DrawableInterface {
 	) -> Result<()> {
 		let node =
 			Node::create_parent_name(&calling_client, Self::CREATE_LINES_PARENT_PATH, &name, true);
-		let parent = get_spatial(&parent, "Spatial parent")?;
+		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 
 		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent), transform, false)?;
+		Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		Lines::add_to(&node, lines)?;
 		Ok(())
 	}
@@ -107,10 +95,10 @@ impl DrawableInterfaceAspect for DrawableInterface {
 	) -> Result<()> {
 		let node =
 			Node::create_parent_name(&calling_client, Self::LOAD_MODEL_PARENT_PATH, &name, true);
-		let parent = get_spatial(&parent, "Spatial parent")?;
+		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent), transform, false)?;
+		Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		Model::add_to(&node, model)?;
 		Ok(())
 	}
@@ -127,11 +115,11 @@ impl DrawableInterfaceAspect for DrawableInterface {
 	) -> Result<()> {
 		let node =
 			Node::create_parent_name(&calling_client, Self::CREATE_TEXT_PARENT_PATH, &name, true);
-		let parent = get_spatial(&parent, "Spatial parent")?;
+		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 
 		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent), transform, false)?;
+		Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		Text::add_to(&node, text, style)?;
 		Ok(())
 	}

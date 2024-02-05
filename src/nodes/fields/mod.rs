@@ -9,8 +9,8 @@ use self::sphere::SphereField;
 use self::torus::TorusField;
 
 use super::alias::AliasInfo;
-use super::spatial::{get_spatial, Spatial};
-use super::Node;
+use super::spatial::Spatial;
+use super::{Aspect, Node};
 use crate::core::client::Client;
 use crate::create_interface;
 use crate::nodes::spatial::Transform;
@@ -30,7 +30,7 @@ pub static FIELD_ALIAS_INFO: Lazy<AliasInfo> = Lazy::new(|| AliasInfo {
 
 stardust_xr_server_codegen::codegen_field_protocol!();
 
-pub trait FieldTrait {
+pub trait FieldTrait: Send + Sync + 'static {
 	fn spatial_ref(&self) -> &Spatial;
 
 	fn local_distance(&self, p: Vec3A) -> f32;
@@ -114,9 +114,9 @@ impl<Fi: FieldTrait + 'static> FieldAspect for Fi {
 		space: Arc<Node>,
 		point: mint::Vector3<f32>,
 	) -> Result<f32> {
-		let reference_space = get_spatial(&space, "Reference space")?;
-		let this_field = node.field.get().unwrap();
-		Ok(this_field.distance(reference_space.as_ref(), point.into()))
+		let reference_space = space.get_aspect::<Spatial>()?;
+		let this_field = node.get_aspect::<Field>()?;
+		Ok((*this_field).distance(reference_space.as_ref(), point.into()))
 	}
 
 	async fn normal(
@@ -125,8 +125,8 @@ impl<Fi: FieldTrait + 'static> FieldAspect for Fi {
 		space: Arc<Node>,
 		point: mint::Vector3<f32>,
 	) -> Result<Vector3<f32>> {
-		let reference_space = get_spatial(&space, "Reference space")?;
-		let this_field = node.field.get().unwrap();
+		let reference_space = space.get_aspect::<Spatial>()?;
+		let this_field = node.get_aspect::<Field>()?;
 		Ok(this_field
 			.normal(reference_space.as_ref(), point.into(), 0.001)
 			.into())
@@ -138,8 +138,8 @@ impl<Fi: FieldTrait + 'static> FieldAspect for Fi {
 		space: Arc<Node>,
 		point: mint::Vector3<f32>,
 	) -> Result<Vector3<f32>> {
-		let reference_space = get_spatial(&space, "Reference space")?;
-		let this_field = node.field.get().unwrap();
+		let reference_space = space.get_aspect::<Spatial>()?;
+		let this_field = node.get_aspect::<Field>()?;
 		Ok(this_field
 			.closest_point(reference_space.as_ref(), point.into(), 0.001)
 			.into())
@@ -152,12 +152,12 @@ impl<Fi: FieldTrait + 'static> FieldAspect for Fi {
 		ray_origin: mint::Vector3<f32>,
 		ray_direction: mint::Vector3<f32>,
 	) -> Result<RayMarchResult> {
-		let reference_space = get_spatial(&space, "Reference space")?;
-		let this_field = node.field.get().unwrap();
+		let reference_space = space.get_aspect::<Spatial>()?;
+		let this_field = node.get_aspect::<Field>()?;
 		Ok(this_field.ray_march(Ray {
 			origin: ray_origin.into(),
 			direction: ray_direction.into(),
-			space: reference_space,
+			space: reference_space.clone(),
 		}))
 	}
 }
@@ -183,6 +183,9 @@ pub enum Field {
 	Sphere(SphereField),
 	Torus(TorusField),
 }
+impl Aspect for Field {
+	const NAME: &'static str = "Field";
+}
 impl Deref for Field {
 	type Target = dyn FieldTrait;
 	fn deref(&self) -> &Self::Target {
@@ -194,6 +197,72 @@ impl Deref for Field {
 		}
 	}
 }
+// impl FieldTrait for Field {
+// 	fn spatial_ref(&self) -> &Spatial {
+// 		match self {
+// 			Field::Box(field) => field.spatial_ref(),
+// 			Field::Cylinder(field) => field.spatial_ref(),
+// 			Field::Sphere(field) => field.spatial_ref(),
+// 			Field::Torus(field) => field.spatial_ref(),
+// 		}
+// 	}
+// 	fn local_distance(&self, p: Vec3A) -> f32 {
+// 		match self {
+// 			Field::Box(field) => field.local_distance(p),
+// 			Field::Cylinder(field) => field.local_distance(p),
+// 			Field::Sphere(field) => field.local_distance(p),
+// 			Field::Torus(field) => field.local_distance(p),
+// 		}
+// 	}
+// 	fn local_normal(&self, p: Vec3A, r: f32) -> Vec3A {
+// 		match self {
+// 			Field::Box(field) => field.local_normal(p, r),
+// 			Field::Cylinder(field) => field.local_normal(p, r),
+// 			Field::Sphere(field) => field.local_normal(p, r),
+// 			Field::Torus(field) => field.local_normal(p, r),
+// 		}
+// 	}
+// 	fn local_closest_point(&self, p: Vec3A, r: f32) -> Vec3A {
+// 		match self {
+// 			Field::Box(field) => field.local_closest_point(p, r),
+// 			Field::Cylinder(field) => field.local_closest_point(p, r),
+// 			Field::Sphere(field) => field.local_closest_point(p, r),
+// 			Field::Torus(field) => field.local_closest_point(p, r),
+// 		}
+// 	}
+// 	fn distance(&self, reference_space: &Spatial, p: Vec3A) -> f32 {
+// 		match self {
+// 			Field::Box(field) => field.distance(reference_space, p),
+// 			Field::Cylinder(field) => field.distance(reference_space, p),
+// 			Field::Sphere(field) => field.distance(reference_space, p),
+// 			Field::Torus(field) => field.distance(reference_space, p),
+// 		}
+// 	}
+// 	fn normal(&self, reference_space: &Spatial, p: Vec3A, r: f32) -> Vec3A {
+// 		match self {
+// 			Field::Box(field) => field.normal(reference_space, p, r),
+// 			Field::Cylinder(field) => field.normal(reference_space, p, r),
+// 			Field::Sphere(field) => field.normal(reference_space, p, r),
+// 			Field::Torus(field) => field.normal(reference_space, p, r),
+// 		}
+// 	}
+// 	fn closest_point(&self, reference_space: &Spatial, p: Vec3A, r: f32) -> Vec3A {
+// 		match self {
+// 			Field::Box(field) => field.closest_point(reference_space, p, r),
+// 			Field::Cylinder(field) => field.closest_point(reference_space, p, r),
+// 			Field::Sphere(field) => field.closest_point(reference_space, p, r),
+// 			Field::Torus(field) => field.closest_point(reference_space, p, r),
+// 		}
+// 	}
+// 	fn ray_march(&self, ray: Ray) -> RayMarchResult {
+// 		match self {
+// 			Field::Box(field) => field.ray_march(ray),
+// 			Field::Cylinder(field) => field.ray_march(ray),
+// 			Field::Sphere(field) => field.ray_march(ray),
+// 			Field::Torus(field) => field.ray_march(ray),
+// 		}
+// 	}
+// }
 
 create_interface!(FieldInterface, FieldInterfaceAspect, "/field");
 pub struct FieldInterface;
@@ -207,7 +276,7 @@ impl FieldInterfaceAspect for FieldInterface {
 		size: mint::Vector3<f32>,
 	) -> Result<()> {
 		let transform = transform.to_mat4(true, true, false);
-		let parent = get_spatial(&parent, "Spatial parent")?;
+		let parent = parent.get_aspect::<Spatial>()?;
 		let node = Node::create_parent_name(
 			&calling_client,
 			Self::CREATE_BOX_FIELD_PARENT_PATH,
@@ -215,8 +284,8 @@ impl FieldInterfaceAspect for FieldInterface {
 			true,
 		)
 		.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent), transform, false)?;
-		BoxField::add_to(&node, size)?;
+		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		BoxField::add_to(&node, size);
 		Ok(())
 	}
 
@@ -230,7 +299,7 @@ impl FieldInterfaceAspect for FieldInterface {
 		radius: f32,
 	) -> Result<()> {
 		let transform = transform.to_mat4(true, true, false);
-		let parent = get_spatial(&parent, "Spatial parent")?;
+		let parent = parent.get_aspect::<Spatial>()?;
 		let node = Node::create_parent_name(
 			&calling_client,
 			Self::CREATE_CYLINDER_FIELD_PARENT_PATH,
@@ -238,8 +307,8 @@ impl FieldInterfaceAspect for FieldInterface {
 			true,
 		)
 		.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent), transform, false)?;
-		CylinderField::add_to(&node, length, radius)?;
+		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		CylinderField::add_to(&node, length, radius);
 		Ok(())
 	}
 
@@ -251,7 +320,7 @@ impl FieldInterfaceAspect for FieldInterface {
 		position: mint::Vector3<f32>,
 		radius: f32,
 	) -> Result<()> {
-		let parent = get_spatial(&parent, "Spatial parent")?;
+		let parent = parent.get_aspect::<Spatial>()?;
 		let node = Node::create_parent_name(
 			&calling_client,
 			Self::CREATE_SPHERE_FIELD_PARENT_PATH,
@@ -261,11 +330,11 @@ impl FieldInterfaceAspect for FieldInterface {
 		.add_to_scenegraph()?;
 		Spatial::add_to(
 			&node,
-			Some(parent),
+			Some(parent.clone()),
 			Mat4::from_translation(position.into()),
 			false,
-		)?;
-		SphereField::add_to(&node, radius)?;
+		);
+		SphereField::add_to(&node, radius);
 		Ok(())
 	}
 
@@ -279,7 +348,7 @@ impl FieldInterfaceAspect for FieldInterface {
 		radius_b: f32,
 	) -> Result<()> {
 		let transform = transform.to_mat4(true, true, false);
-		let parent = get_spatial(&parent, "Spatial parent")?;
+		let parent = parent.get_aspect::<Spatial>()?;
 		let node = Node::create_parent_name(
 			&calling_client,
 			Self::CREATE_TORUS_FIELD_PARENT_PATH,
@@ -287,18 +356,12 @@ impl FieldInterfaceAspect for FieldInterface {
 			true,
 		)
 		.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent), transform, false)?;
-		TorusField::add_to(&node, radius_a, radius_b)?;
+		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		TorusField::add_to(&node, radius_a, radius_b);
 		Ok(())
 	}
 }
 
 pub fn find_field(client: &Client, path: &str) -> Result<Arc<Field>> {
-	client
-		.get_node("Field", path)?
-		.get_aspect("Field", "info", |n| &n.field)
-		.cloned()
-}
-pub fn get_field(node: &Node) -> Result<Arc<Field>> {
-	node.get_aspect("Field", "info", |n| &n.field).cloned()
+	client.get_node("Field", path)?.get_aspect::<Field>()
 }

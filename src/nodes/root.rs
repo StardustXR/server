@@ -90,7 +90,7 @@ impl Root {
 	}
 
 	pub fn set_transform(&self, transform: Mat4) {
-		let spatial = self.node.spatial.get().unwrap();
+		let spatial = self.node.get_aspect::<Spatial>().unwrap();
 		spatial.set_spatial_parent(None).unwrap();
 		spatial.set_local_transform(transform);
 	}

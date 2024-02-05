@@ -1,10 +1,10 @@
-use super::{get_spatial, Spatial, ZoneAspect, ZONEABLE_REGISTRY};
+use super::{Spatial, ZoneAspect, ZONEABLE_REGISTRY};
 use crate::{
 	core::{client::Client, registry::Registry},
 	nodes::{
 		alias::{Alias, AliasInfo},
 		fields::Field,
-		Node,
+		Aspect, Node,
 	},
 };
 use glam::vec3a;
@@ -30,8 +30,8 @@ pub fn capture(spatial: &Arc<Spatial>, zone: &Arc<Zone>) {
 		let _ = super::zone_client::capture(&node, &spatial.uid);
 	}
 }
-pub fn release(spatial: &Spatial) {
-	let _ = spatial.set_spatial_parent_in_place(spatial.old_parent.lock().take());
+pub fn release(spatial: &Arc<Spatial>) {
+	let _ = spatial.set_spatial_parent_in_place(spatial.old_parent.lock().take().as_ref());
 	let mut spatial_zone = spatial.zone.lock();
 	if let Some(spatial_zone) = spatial_zone.upgrade() {
 		let Some(node) = spatial_zone.spatial.node.upgrade() else {
@@ -41,6 +41,16 @@ pub fn release(spatial: &Spatial) {
 		let _ = super::zone_client::release(&node, &spatial.uid);
 	}
 	*spatial_zone = Weak::new();
+}
+pub(super) fn release_drop(spatial: &Spatial) {
+	let spatial_zone = spatial.zone.lock();
+	if let Some(spatial_zone) = spatial_zone.upgrade() {
+		let Some(node) = spatial_zone.spatial.node.upgrade() else {
+			return;
+		};
+		spatial_zone.captured.remove(spatial);
+		let _ = super::zone_client::release(&node, &spatial.uid);
+	}
 }
 
 pub struct Zone {
@@ -58,13 +68,16 @@ impl Zone {
 			captured: Registry::new(),
 		});
 		<Zone as ZoneAspect>::add_node_members(node);
-		let _ = node.zone.set(zone.clone());
+		node.add_aspect_raw(zone.clone());
 		zone
 	}
 }
+impl Aspect for Zone {
+	const NAME: &'static str = "Zone";
+}
 impl ZoneAspect for Zone {
 	fn update(node: Arc<Node>, _calling_client: Arc<Client>) -> color_eyre::eyre::Result<()> {
-		let zone = node.zone.get().unwrap();
+		let zone = node.get_aspect::<Zone>()?;
 		let Some(field) = zone.field.upgrade() else {
 			return Err(color_eyre::eyre::eyre!("Zone's field has been destroyed"));
 		};
@@ -137,9 +150,9 @@ impl ZoneAspect for Zone {
 		_calling_client: Arc<Client>,
 		spatial: Arc<Node>,
 	) -> color_eyre::eyre::Result<()> {
-		let zone = node.zone.get().unwrap();
-		let spatial = get_spatial(&spatial, "Spatial")?;
-		capture(&spatial, zone);
+		let zone = node.get_aspect::<Zone>()?;
+		let spatial = spatial.get_aspect()?;
+		capture(&spatial, &zone);
 		Ok(())
 	}
 
@@ -148,7 +161,7 @@ impl ZoneAspect for Zone {
 		_calling_client: Arc<Client>,
 		spatial: Arc<Node>,
 	) -> color_eyre::eyre::Result<()> {
-		let spatial = get_spatial(&spatial, "Spatial")?;
+		let spatial = spatial.get_aspect()?;
 		release(&spatial);
 		Ok(())
 	}

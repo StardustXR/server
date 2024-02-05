@@ -787,6 +787,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
+name = "fxtypemap"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c11c87c936dd5cbf3389179749cf020d886f32cc577fc214a7a65eaac5c569db"
+dependencies = [
+ "fxhash",
+]
+
+[[package]]
 name = "generator"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2108,6 +2126,7 @@ dependencies = [
  "console-subscriber",
  "ctrlc",
  "directories",
+ "fxtypemap",
  "glam 0.23.0",
  "global_counter",
  "input-event-codes",

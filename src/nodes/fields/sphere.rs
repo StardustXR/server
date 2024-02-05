@@ -1,8 +1,8 @@
-use super::{get_field, Field, FieldTrait, Node, SphereFieldAspect};
+use super::{Field, FieldTrait, Node, SphereFieldAspect};
 use crate::core::client::Client;
 use crate::nodes::fields::FieldAspect;
 use crate::nodes::spatial::Spatial;
-use color_eyre::eyre::{ensure, Result};
+use color_eyre::eyre::Result;
 use glam::Vec3A;
 use portable_atomic::AtomicF32;
 use std::sync::atomic::Ordering;
@@ -14,23 +14,14 @@ pub struct SphereField {
 }
 
 impl SphereField {
-	pub fn add_to(node: &Arc<Node>, radius: f32) -> Result<()> {
-		ensure!(
-			node.spatial.get().is_some(),
-			"Internal: Node does not have a spatial attached!"
-		);
-		ensure!(
-			node.field.get().is_none(),
-			"Internal: Node already has a field attached!"
-		);
+	pub fn add_to(node: &Arc<Node>, radius: f32) {
 		let sphere_field = SphereField {
-			space: node.spatial.get().unwrap().clone(),
+			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			radius: AtomicF32::new(radius),
 		};
 		<SphereField as FieldAspect>::add_node_members(node);
 		<SphereField as SphereFieldAspect>::add_node_members(node);
-		let _ = node.field.set(Arc::new(Field::Sphere(sphere_field)));
-		Ok(())
+		node.add_aspect(Field::Sphere(sphere_field));
 	}
 
 	pub fn set_radius(&self, radius: f32) {
@@ -54,7 +45,8 @@ impl FieldTrait for SphereField {
 }
 impl SphereFieldAspect for SphereField {
 	fn set_radius(node: Arc<Node>, _calling_client: Arc<Client>, radius: f32) -> Result<()> {
-		let Field::Sphere(this_field) = &*get_field(&node)? else {
+		let this_field = node.get_aspect::<Field>()?;
+		let Field::Sphere(this_field) = &*this_field else {
 			return Ok(());
 		};
 		this_field.set_radius(radius);

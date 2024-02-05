@@ -1,8 +1,8 @@
-use super::{get_field, BoxFieldAspect, Field, FieldTrait, Node};
-use crate::core::client::Client;
+use super::{BoxFieldAspect, FieldTrait, Node};
 use crate::nodes::fields::FieldAspect;
 use crate::nodes::spatial::Spatial;
-use color_eyre::eyre::{ensure, Result};
+use crate::{core::client::Client, nodes::fields::Field};
+use color_eyre::eyre::Result;
 use glam::{vec3, vec3a, Vec3, Vec3A};
 use mint::Vector3;
 use parking_lot::Mutex;
@@ -14,24 +14,14 @@ pub struct BoxField {
 }
 
 impl BoxField {
-	pub fn add_to(node: &Arc<Node>, size: Vector3<f32>) -> Result<Arc<Field>> {
-		ensure!(
-			node.spatial.get().is_some(),
-			"Internal: Node does not have a spatial attached!"
-		);
-		ensure!(
-			node.field.get().is_none(),
-			"Internal: Node already has a field attached!"
-		);
+	pub fn add_to(node: &Arc<Node>, size: Vector3<f32>) {
 		let box_field = BoxField {
-			space: node.spatial.get().unwrap().clone(),
+			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			size: Mutex::new(size.into()),
 		};
 		<BoxField as FieldAspect>::add_node_members(node);
 		<BoxField as BoxFieldAspect>::add_node_members(node);
-		let field = Arc::new(Field::Box(box_field));
-		let _ = node.field.set(field.clone());
-		Ok(field)
+		node.add_aspect(Field::Box(box_field));
 	}
 
 	pub fn set_size(&self, size: Vector3<f32>) {
@@ -60,7 +50,8 @@ impl BoxFieldAspect for BoxField {
 		_calling_client: Arc<Client>,
 		size: mint::Vector3<f32>,
 	) -> Result<()> {
-		let Field::Box(this_field) = &*get_field(&node)? else {
+		let this_field = node.get_aspect::<Field>()?;
+		let Field::Box(this_field) = &*this_field else {
 			return Ok(());
 		};
 		this_field.set_size(size.into());

@@ -4,13 +4,13 @@ use crate::{
 		registry::Registry,
 	},
 	nodes::{
-		drawable::{model::ModelPart, Drawable},
+		drawable::model::ModelPart,
 		items::{Item, ItemType, TypeInfo},
 		spatial::Spatial,
 		Message, Node,
 	},
 };
-use color_eyre::eyre::{bail, eyre, Result};
+use color_eyre::eyre::{eyre, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::Vector2;
@@ -203,7 +203,7 @@ pub trait Backend: Send + Sync + 'static {
 }
 
 pub fn panel_item_from_node(node: &Node) -> Option<Arc<dyn PanelItemTrait>> {
-	let ItemType::Panel(panel_item) = &node.item.get()?.specialization else {
+	let ItemType::Panel(panel_item) = &node.get_aspect::<Item>().ok()?.specialization else {
 		return None;
 	};
 	Some(panel_item.clone())
@@ -231,7 +231,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		let node = Node::create_parent_name(&INTERNAL_CLIENT, "/item/panel/item", &uid, true)
 			.add_to_scenegraph()
 			.unwrap();
-		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false).unwrap();
+		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 		if let Some(startup_settings) = &startup_settings {
 			spatial.set_local_transform(startup_settings.root);
 		}
@@ -402,12 +402,10 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			.scenegraph
 			.get_node(info.model_node_path)
 			.ok_or_else(|| eyre!("Model node not found"))?;
-		let Some(Drawable::ModelPart(model_part)) = model_node.drawable.get() else {
-			bail!("Node is not a model")
-		};
+		let model_part = model_node.get_aspect::<ModelPart>()?;
 		debug!(?info, "Apply surface material");
 
-		panel_item.apply_surface_material(info.surface, model_part);
+		panel_item.apply_surface_material(info.surface, &model_part);
 
 		Ok(())
 	}
