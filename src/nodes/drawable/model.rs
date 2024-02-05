@@ -1,5 +1,6 @@
 use super::{MaterialParameter, ModelAspect, ModelPartAspect, Node};
 use crate::core::client::Client;
+use crate::core::destroy_queue;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
@@ -332,6 +333,9 @@ impl Model {
 impl ModelAspect for Model {}
 impl Drop for Model {
 	fn drop(&mut self) {
+		if let Some(sk_model) = self.sk_model.take() {
+			destroy_queue::add(sk_model);
+		}
 		MODEL_REGISTRY.remove(self);
 	}
 }
