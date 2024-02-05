@@ -1,5 +1,5 @@
 use super::spatial::get_spatial;
-use super::{Message, Node};
+use super::Node;
 use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
@@ -53,9 +53,8 @@ impl Sound {
 			play: Mutex::new(None),
 		};
 		let sound_arc = SOUND_REGISTRY.add(sound);
-		node.add_local_signal("play", Sound::play_flex);
-		node.add_local_signal("stop", Sound::stop_flex);
 		let _ = node.sound.set(sound_arc.clone());
+		<Sound as SoundAspect>::add_node_members(node);
 		Ok(sound_arc)
 	}
 
@@ -68,7 +67,7 @@ impl Sound {
 				sk.sound_inst_stop(instance);
 			}
 		}
-		if self.play.lock().is_some() && self.instance.lock().is_none() {
+		if self.instance.lock().is_none() && self.play.lock().take().is_some() {
 			self.instance.lock().replace(sk.sound_play(
 				sound.as_ref(),
 				vec3(0.0, 0.0, 0.0),
@@ -79,38 +78,23 @@ impl Sound {
 			sk.sound_inst_set_pos(*instance, self.space.global_transform().w_axis.xyz());
 		}
 	}
-
-	fn play_flex(node: Arc<Node>, _calling_client: Arc<Client>, _message: Message) -> Result<()> {
+}
+impl SoundAspect for Sound {
+	fn play(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
 		let sound = node.sound.get().unwrap();
 		sound.play.lock().replace(());
 		Ok(())
 	}
-
-	pub fn stop_flex(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		_message: Message,
-	) -> Result<()> {
+	fn stop(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
 		let sound = node.sound.get().unwrap();
 		sound.stop.lock().replace(());
 		Ok(())
 	}
 }
-impl SoundAspect for Sound {
-	#[doc = "Play sound effect"]
-	fn play(_node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
-		todo!()
-	}
-
-	#[doc = "Stop sound effect"]
-	fn stop(_node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
-		todo!()
-	}
-}
 impl Drop for Sound {
 	fn drop(&mut self) {
-		if let Some(instance) = self.instance.lock().take() {
-			destroy_queue::add(instance);
+		if let Some(sk_sound) = self.sk_sound.take() {
+			destroy_queue::add(sk_sound);
 		}
 		SOUND_REGISTRY.remove(self);
 	}
