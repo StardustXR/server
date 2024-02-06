@@ -266,12 +266,11 @@ impl SpatialAspect for Spatial {
 		let relative_spatial = relative_to.get_aspect::<Spatial>()?;
 		let center = Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
 			.transform_point3([0.0; 3].into());
-		let bounds = Bounds {
-			center,
-			dimensions: [0.0; 3].into(),
-		};
-		bounds_grow_to_fit_box(
-			bounds,
+		let bounds = bounds_grow_to_fit_box(
+			Bounds {
+				center,
+				dimensions: [0.0; 3].into(),
+			},
 			this_spatial.get_bounding_box(),
 			Some(Spatial::space_to_space_matrix(
 				Some(&this_spatial),
