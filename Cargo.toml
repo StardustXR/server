@@ -1,5 +1,6 @@
 [package]
 edition = "2021"
+rust-version = "1.75"
 name = "stardust-xr-server"
 version = "0.43.0"
 authors = ["Nova King <technobaboo@proton.me>"]
