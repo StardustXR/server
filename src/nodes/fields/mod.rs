@@ -87,7 +87,9 @@ pub trait FieldTrait: Send + Sync + 'static {
 		let ray_to_field_matrix =
 			Spatial::space_to_space_matrix(Some(&ray.space), Some(self.spatial_ref()));
 		let mut ray_point = ray_to_field_matrix.transform_point3a(ray.origin.into());
-		let ray_direction = ray_to_field_matrix.transform_vector3a(ray.direction.into());
+		let ray_direction = ray_to_field_matrix
+			.transform_vector3a(ray.direction.into())
+			.normalize();
 
 		while result.ray_steps < MAX_RAY_STEPS && result.ray_length < MAX_RAY_LENGTH {
 			let distance = self.local_distance(ray_point);
