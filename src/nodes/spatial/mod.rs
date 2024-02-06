@@ -116,10 +116,12 @@ impl Spatial {
 		*self.transform.lock()
 	}
 	pub fn global_transform(&self) -> Mat4 {
-		match self.get_parent() {
-			Some(parent) => parent.global_transform() * *self.transform.lock(),
-			None => *self.transform.lock(),
-		}
+		let parent_transform = self
+			.get_parent()
+			.as_deref()
+			.map(Self::global_transform)
+			.unwrap_or_default();
+		parent_transform * self.local_transform()
 	}
 	pub fn set_local_transform(&self, transform: Mat4) {
 		*self.transform.lock() = transform;
