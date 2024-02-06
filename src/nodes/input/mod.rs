@@ -196,7 +196,7 @@ impl InputMethod {
 			handler.uid.as_str(),
 			&handler_node,
 			AliasInfo {
-				server_methods: vec!["getTransform"],
+				server_methods: vec!["get_transform"],
 				..Default::default()
 			},
 		) else {
@@ -343,7 +343,7 @@ impl Drop for InputHandler {
 }
 
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create_parent_name(client, "", "input", false);
+	let node = Node::create_path(client, "/input", false);
 	node.add_local_signal("create_input_handler", create_input_handler_flex);
 	node.add_local_signal("create_input_method_pointer", pointer::create_pointer_flex);
 	node.add_local_signal("create_input_method_tip", tip::create_tip_flex);
