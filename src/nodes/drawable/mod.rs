@@ -44,27 +44,24 @@ create_interface!(DrawableInterface, DrawableInterfaceAspect, "/drawable");
 
 pub struct DrawableInterface;
 impl DrawableInterfaceAspect for DrawableInterface {
-	#[doc = "Set the sky lignt/texture to a given HDRI file."]
-	fn set_sky(
-		_node: Arc<Node>,
-		calling_client: Arc<Client>,
-		tex: Option<ResourceID>,
-		light: Option<ResourceID>,
-	) -> Result<()> {
-		if let Some(tex) = tex {
-			let resource_path = get_resource_file(&tex, &calling_client, &[OsStr::new("hdr")])
-				.ok_or(eyre::eyre!("Could not find resource"))?;
-			QUEUED_SKYTEX.lock().replace(resource_path);
-		}
-		if let Some(light) = light {
-			let resource_path = get_resource_file(&light, &calling_client, &[OsStr::new("hdr")])
-				.ok_or(eyre::eyre!("Could not find resource"))?;
-			QUEUED_SKYLIGHT.lock().replace(resource_path);
-		}
+	fn set_sky_tex(_node: Arc<Node>, calling_client: Arc<Client>, tex: ResourceID) -> Result<()> {
+		let resource_path = get_resource_file(&tex, &calling_client, &[OsStr::new("hdr")])
+			.ok_or(eyre::eyre!("Could not find resource"))?;
+		QUEUED_SKYTEX.lock().replace(resource_path);
 		Ok(())
 	}
 
-	#[doc = "Create a lines node"]
+	fn set_sky_light(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		light: ResourceID,
+	) -> Result<()> {
+		let resource_path = get_resource_file(&light, &calling_client, &[OsStr::new("hdr")])
+			.ok_or(eyre::eyre!("Could not find resource"))?;
+		QUEUED_SKYLIGHT.lock().replace(resource_path);
+		Ok(())
+	}
+
 	fn create_lines(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
@@ -84,7 +81,6 @@ impl DrawableInterfaceAspect for DrawableInterface {
 		Ok(())
 	}
 
-	#[doc = "Load a GLTF model into a Model node"]
 	fn load_model(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
@@ -103,7 +99,6 @@ impl DrawableInterfaceAspect for DrawableInterface {
 		Ok(())
 	}
 
-	#[doc = "Create a text node"]
 	fn create_text(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,

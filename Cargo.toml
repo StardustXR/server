@@ -103,7 +103,6 @@ optional = true
 
 [dependencies.stardust-xr]
 git = "https://github.com/StardustXR/core.git"
-branch = "feat/idl"
 
 [dependencies.stardust-xr-server-codegen]
 path = "codegen"

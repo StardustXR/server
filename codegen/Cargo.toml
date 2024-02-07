@@ -15,4 +15,3 @@ split-iter = "0.1.0"
 
 [dependencies.stardust-xr-schemas]
 git = "https://github.com/StardustXR/core.git"
-branch = "feat/idl"
