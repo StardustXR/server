@@ -253,10 +253,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		node.add_local_signal("apply_surface_material", Self::apply_surface_material_flex);
 		node.add_local_signal("close_toplevel", Self::close_toplevel_flex);
 		node.add_local_signal("auto_size_toplevel", Self::auto_size_toplevel_flex);
-		node.add_local_signal(
-			"set_toplevel_size_changed",
-			Self::set_toplevel_size_changed_flex,
-		);
+		node.add_local_signal("set_toplevel_size", Self::set_toplevel_size_flex);
 
 		node.add_local_signal("pointer_motion", Self::pointer_motion_flex);
 		node.add_local_signal("pointer_button", Self::pointer_button_flex);
@@ -412,7 +409,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 
 	flex_no_args!(close_toplevel_flex, close_toplevel);
 	flex_no_args!(auto_size_toplevel_flex, auto_size_toplevel);
-	flex_deserialize!(set_toplevel_size_changed_flex, set_toplevel_size);
+	flex_deserialize!(set_toplevel_size_flex, set_toplevel_size);
 
 	fn pointer_motion_flex(
 		node: Arc<Node>,
