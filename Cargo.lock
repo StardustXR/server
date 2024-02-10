@@ -2117,7 +2117,7 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr-server"
-version = "0.43.0"
+version = "0.44.0"
 dependencies = [
  "atty",
  "clap",
