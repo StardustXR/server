@@ -170,10 +170,16 @@ impl InputMethod {
 			.add(self as *const InputMethod as usize, &method_alias);
 	}
 
-	fn compare_distance(&self, to: &Field) -> f32 {
-		self.specialization
+	fn compare_distance(&self, to: &InputHandler) -> f32 {
+		let distance = self
+			.specialization
 			.lock()
-			.compare_distance(&self.spatial, to)
+			.compare_distance(&self.spatial, &to.field);
+		if self.captures.contains(to) {
+			distance * 0.5
+		} else {
+			distance
+		}
 	}
 	fn true_distance(&self, to: &Field) -> f32 {
 		self.specialization.lock().true_distance(&self.spatial, to)
@@ -253,7 +259,7 @@ pub struct DistanceLink {
 impl DistanceLink {
 	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Self {
 		DistanceLink {
-			distance: method.compare_distance(&handler.field),
+			distance: method.compare_distance(&handler),
 			method,
 			handler,
 		}
