@@ -349,8 +349,8 @@ fn adaptive_sleep(
 	});
 }
 
-#[tokio::main]
-// #[tokio::main(flavor = "current_thread")]
+// #[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn event_loop(info_sender: oneshot::Sender<EventLoopInfo>) -> color_eyre::eyre::Result<()> {
 	let socket_path =
 		server::get_free_socket_path().expect("Unable to find a free stardust socket path");

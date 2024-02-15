@@ -23,7 +23,7 @@ use serde::{
 };
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::{Arc, Weak};
-use tracing::debug;
+use tracing::{debug, info};
 
 lazy_static! {
 	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
@@ -220,7 +220,7 @@ pub struct PanelItem<B: Backend + ?Sized> {
 	pub backend: Box<B>,
 }
 impl<B: Backend + ?Sized> PanelItem<B> {
-	pub fn create(backend: Box<B>, pid: Option<i32>) -> Arc<PanelItem<B>> {
+	pub fn create(backend: Box<B>, pid: Option<i32>) -> (Arc<Node>, Arc<PanelItem<B>>) {
 		debug!(?pid, "Create panel item");
 
 		let startup_settings = pid
@@ -228,9 +228,12 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			.and_then(|env| state(&env));
 
 		let uid = nanoid!();
-		let node = Node::create_parent_name(&INTERNAL_CLIENT, "/item/panel/item", &uid, true)
-			.add_to_scenegraph()
-			.unwrap();
+		let node = Arc::new(Node::create_parent_name(
+			&INTERNAL_CLIENT,
+			"/item/panel/item",
+			&uid,
+			true,
+		));
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 		if let Some(startup_settings) = &startup_settings {
 			spatial.set_local_transform(startup_settings.root);
@@ -266,7 +269,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		node.add_local_signal("touch_up", Self::touch_up_flex);
 		node.add_local_signal("reset_touches", Self::reset_touches_flex);
 
-		panel_item
+		(node, panel_item)
 	}
 	pub fn drop_toplevel(&self) {
 		let Some(node) = self.node.upgrade() else {
@@ -593,5 +596,6 @@ impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 impl<B: Backend + ?Sized> Drop for PanelItem<B> {
 	fn drop(&mut self) {
 		// Dropped panel item, basically just a debug breakpoint place
+		info!("Dropped panel item {}", self.uid);
 	}
 }

@@ -6,6 +6,7 @@ mod state;
 mod surface;
 // mod xdg_activation;
 mod drm;
+mod utils;
 mod xdg_shell;
 #[cfg(feature = "xwayland_rootful")]
 pub mod xwayland_rootful;
@@ -30,6 +31,7 @@ use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::egl::EGLContext;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::ImportDma;
+use smithay::output::Output;
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::{Display, ListeningSocket};
@@ -97,8 +99,8 @@ pub struct Wayland {
 	pub socket_name: Option<String>,
 	join_handle: JoinHandle<Result<()>>,
 	renderer: GlesRenderer,
+	output: Output,
 	dmabuf_rx: UnboundedReceiver<(Dmabuf, Option<dmabuf::ImportNotifier>)>,
-	wayland_state: Arc<Mutex<WaylandState>>,
 	#[cfg(feature = "xwayland_rootful")]
 	pub x_lock: X11Lock,
 	#[cfg(feature = "xwayland_rootless")]
@@ -124,6 +126,7 @@ impl Wayland {
 		#[cfg(feature = "xwayland_rootless")]
 		let xwayland_state = XWaylandState::create(&display_handle)?;
 		let wayland_state = WaylandState::new(display_handle, &renderer, dmabuf_tx);
+		let output = wayland_state.lock().output.clone();
 
 		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
 		let socket_name = socket
@@ -137,15 +140,14 @@ impl Wayland {
 		let x_display = start_xwayland(socket.as_raw_fd())?;
 		info!(socket_name, "Wayland active");
 
-		let join_handle = Wayland::start_loop(display.clone(), socket, wayland_state.clone())?;
-
+		let join_handle = Wayland::start_loop(display.clone(), socket, wayland_state)?;
 		Ok(Wayland {
 			display,
 			socket_name,
 			join_handle,
 			renderer,
+			output,
 			dmabuf_rx,
-			wayland_state,
 			#[cfg(feature = "xwayland_rootful")]
 			x_lock: x_display,
 			#[cfg(feature = "xwayland_rootless")]
@@ -185,7 +187,7 @@ impl Wayland {
 					e = dispatch_poll_listener.readable() => { // Dispatch
 						let mut guard = e?;
 						debug_span!("Dispatch wayland event").in_scope(|| -> Result<(), color_eyre::Report> {
-							display.dispatch_clients(&mut *state.lock())?;
+							display.dispatch_clients(&mut state.lock())?;
 							display.flush_clients(None);
 							Ok(())
 						})?;
@@ -213,10 +215,8 @@ impl Wayland {
 	}
 
 	pub fn frame_event(&self, sk: &impl StereoKitDraw) {
-		let output = self.wayland_state.lock().output.clone();
-
 		for core_surface in CORE_SURFACES.get_valid_contents() {
-			core_surface.frame(sk, output.clone());
+			core_surface.frame(sk, self.output.clone());
 		}
 	}
 

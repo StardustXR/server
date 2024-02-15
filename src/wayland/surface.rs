@@ -1,4 +1,4 @@
-use super::state::WaylandState;
+use super::{state::WaylandState, utils::get_data};
 use crate::{
 	core::{delta::Delta, destroy_queue, registry::Registry},
 	nodes::drawable::{model::ModelPart, shaders::PANEL_SHADER_BYTES},
@@ -77,13 +77,13 @@ impl CoreSurface {
 	}
 
 	pub fn from_wl_surface(surf: &WlSurface) -> Option<Arc<CoreSurface>> {
-		compositor::with_states(surf, |data| {
-			data.data_map.get::<Arc<CoreSurface>>().cloned()
-		})
+		get_data(surf)
 	}
 
 	pub fn process(&self, sk: &impl StereoKitDraw, renderer: &mut GlesRenderer) {
-		let Some(wl_surface) = self.wl_surface() else {return};
+		let Some(wl_surface) = self.wl_surface() else {
+			return;
+		};
 
 		let sk_tex = self
 			.sk_tex
@@ -124,13 +124,23 @@ impl CoreSurface {
 			let Some(renderer_surface_state) = data
 				.data_map
 				.get::<RendererSurfaceStateUserData>()
-				.map(RefCell::borrow) else {return};
+				.map(RefCell::borrow)
+			else {
+				return;
+			};
 			let Some(smithay_tex) = renderer_surface_state
 				.texture::<GlesRenderer>(renderer.id())
-				.cloned() else {return};
+				.cloned()
+			else {
+				return;
+			};
 
-			let Some(sk_tex) = self.sk_tex.get() else {return};
-			let Some(sk_mat) = self.sk_mat.get() else {return};
+			let Some(sk_tex) = self.sk_tex.get() else {
+				return;
+			};
+			let Some(sk_mat) = self.sk_mat.get() else {
+				return;
+			};
 			unsafe {
 				sk.tex_set_surface(
 					sk_tex.as_ref(),
@@ -149,7 +159,9 @@ impl CoreSurface {
 				sk.material_set_queue_offset(sk_mat.as_ref().as_ref(), *material_offset as i32);
 			}
 
-			let Some(surface_size) = renderer_surface_state.surface_size() else {return};
+			let Some(surface_size) = renderer_surface_state.surface_size() else {
+				return;
+			};
 			let new_mapped_data = CoreSurfaceData {
 				size: Vector2::from([surface_size.w as u32, surface_size.h as u32]),
 				wl_tex: Some(SendWrapper::new(smithay_tex)),
@@ -164,7 +176,9 @@ impl CoreSurface {
 	}
 
 	pub fn frame(&self, sk: &impl StereoKitDraw, output: Output) {
-		let Some(wl_surface) = self.wl_surface() else {return};
+		let Some(wl_surface) = self.wl_surface() else {
+			return;
+		};
 
 		send_frames_surface_tree(
 			&wl_surface,
@@ -196,10 +210,7 @@ impl CoreSurface {
 		self.weak_surface.upgrade().ok()
 	}
 
-	pub fn with_states<F, T>(&self, f: F) -> Option<T>
-	where
-		F: FnOnce(&SurfaceData) -> T,
-	{
+	pub fn with_states<T, F: FnOnce(&SurfaceData) -> T>(&self, f: F) -> Option<T> {
 		self.wl_surface()
 			.map(|wl_surface| compositor::with_states(&wl_surface, f))
 	}

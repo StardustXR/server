@@ -18,7 +18,10 @@ use smithay::{
 		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as DecorationMode,
 		wayland_server::{
 			backend::{ClientData, ClientId, DisconnectReason},
-			protocol::{wl_buffer::WlBuffer, wl_data_device_manager::WlDataDeviceManager},
+			protocol::{
+				wl_buffer::WlBuffer, wl_data_device_manager::WlDataDeviceManager,
+				wl_output::WlOutput,
+			},
 			DisplayHandle,
 		},
 	},
@@ -29,6 +32,7 @@ use smithay::{
 		dmabuf::{
 			self, DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState,
 		},
+		output::OutputHandler,
 		shell::kde::decoration::KdeDecorationState,
 		shm::{ShmHandler, ShmState},
 	},
@@ -200,6 +204,9 @@ impl DmabufHandler for WaylandState {
 	) {
 		self.dmabuf_tx.send((dmabuf, Some(notifier))).unwrap();
 	}
+}
+impl OutputHandler for WaylandState {
+	fn output_bound(&mut self, _output: Output, _wl_output: WlOutput) {}
 }
 delegate_dmabuf!(WaylandState);
 delegate_shm!(WaylandState);
