@@ -33,7 +33,7 @@ impl LaunchInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClientState {
 	pub launch_info: Option<LaunchInfo>,
-	pub data: Option<Vec<u8>>,
+	pub data: Vec<u8>,
 	pub root: Mat4,
 	pub spatial_anchors: FxHashMap<String, Mat4>,
 }
@@ -41,7 +41,7 @@ impl ClientState {
 	pub fn from_deserialized(client: &Client, state: ClientStateInternal) -> Self {
 		ClientState {
 			launch_info: LaunchInfo::from_client(client),
-			data: state.data,
+			data: state.data.unwrap_or_default(),
 			root: Self::spatial_transform(client, &state.root.unwrap_or_default())
 				.unwrap_or_default(),
 			spatial_anchors: state
@@ -84,7 +84,7 @@ impl ClientState {
 			root.set_transform(self.root)
 		}
 		ClientStateInternal {
-			data: self.data.clone(),
+			data: Some(self.data.clone()),
 			root: Some("/".to_string()),
 			spatial_anchors: self
 				.spatial_anchors
@@ -116,7 +116,7 @@ impl Default for ClientState {
 	fn default() -> Self {
 		Self {
 			launch_info: None,
-			data: None,
+			data: Default::default(),
 			root: Mat4::IDENTITY,
 			spatial_anchors: Default::default(),
 		}
