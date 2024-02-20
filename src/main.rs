@@ -5,7 +5,6 @@ mod objects;
 mod wayland;
 
 use crate::core::client::CLIENTS;
-use crate::core::client_state::ClientState;
 use crate::core::destroy_queue;
 use crate::nodes::items::camera;
 use crate::nodes::{audio, drawable, hmd, input};
@@ -18,12 +17,13 @@ use crate::wayland::X_DISPLAY;
 
 use self::core::eventloop::EventLoop;
 use clap::Parser;
+use core::client_state::ClientState;
 use directories::ProjectDirs;
 use once_cell::sync::OnceCell;
 use stardust_xr::server;
-use std::os::unix::process::CommandExt;
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
 use stereokit::{
@@ -56,6 +56,10 @@ struct CliArgs {
 	/// Run a script when ready for clients to connect. If this is not set the script at $HOME/.config/stardust/startup will be ran if it exists.
 	#[clap(id = "PATH", short = 'e', long = "execute-startup-script", action)]
 	startup_script: Option<PathBuf>,
+
+	/// Restore the session with the given ID (or `latest`), ignoring the startup script. Sessions are stored in directories at `~/.local/state/stardust/`.
+	#[clap(id = "SESSION_ID", long = "restore", action)]
+	restore: Option<String>,
 }
 
 static STARDUST_INSTANCE: OnceCell<String> = OnceCell::new();
@@ -197,7 +201,10 @@ fn main() {
 	let (info_sender, info_receiver) = oneshot::channel::<EventLoopInfo>();
 	let event_thread = std::thread::Builder::new()
 		.name("event_loop".to_owned())
-		.spawn(move || event_loop(info_sender))
+		.spawn({
+			let project_dirs = project_dirs.clone();
+			move || event_loop(info_sender, project_dirs.clone())
+		})
 		.unwrap();
 	let event_loop_info = info_receiver.blocking_recv().unwrap();
 	let _tokio_handle = event_loop_info.tokio_handle.enter();
@@ -206,56 +213,18 @@ fn main() {
 	let mut wayland = wayland::Wayland::new().expect("Could not initialize wayland");
 	info!("Stardust ready!");
 
-	let mut startup_child = (|| {
-		let project_dirs = project_dirs.as_ref()?;
-		let startup_script_path = cli_args
-			.startup_script
-			.clone()
-			.and_then(|p| p.canonicalize().ok())
-			.unwrap_or_else(|| project_dirs.config_dir().join("startup"));
-		let mut startup_command = Command::new("bash");
-		startup_command.arg(startup_script_path);
-		startup_command.arg("&");
-
-		startup_command.stdin(Stdio::null());
-		startup_command.stdout(Stdio::null());
-		startup_command.stderr(Stdio::null());
-		startup_command.env(
-			"FLAT_WAYLAND_DISPLAY",
-			std::env::var_os("WAYLAND_DISPLAY").unwrap_or_default(),
-		);
-		startup_command.env(
-			"STARDUST_INSTANCE",
-			event_loop_info
-				.socket_path
-				.file_name()
-				.expect("Stardust socket path not found"),
-		);
-		#[cfg(feature = "wayland")]
-		{
-			if let Some(wayland_socket) = wayland.socket_name.as_ref() {
-				startup_command.env("WAYLAND_DISPLAY", &wayland_socket);
-			}
-			startup_command.env(
-				"DISPLAY",
-				format!(":{}", X_DISPLAY.get().cloned().unwrap_or_default()),
-			);
-			startup_command.env("GDK_BACKEND", "wayland");
-			startup_command.env("QT_QPA_PLATFORM", "wayland");
-			startup_command.env("MOZ_ENABLE_WAYLAND", "1");
-			startup_command.env("CLUTTER_BACKEND", "wayland");
-			startup_command.env("SDL_VIDEODRIVER", "wayland");
-		}
-		unsafe {
-			startup_command.pre_exec(|| {
-				nix::unistd::setsid()
-					.map(|_| ())
-					.map_err(|_| std::io::ErrorKind::Other.into())
-			})
-		};
-		let child = startup_command.spawn().ok()?;
-		Some(child)
-	})();
+	let mut startup_children = project_dirs
+		.as_ref()
+		.map(|project_dirs| {
+			launch_start(
+				&cli_args,
+				project_dirs,
+				&event_loop_info,
+				#[cfg(feature = "wayland")]
+				&wayland,
+			)
+		})
+		.unwrap_or_default();
 
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
@@ -306,10 +275,6 @@ fn main() {
 			},
 			|_sk| {
 				info!("Cleanly shut down StereoKit");
-
-				if let Some(mut startup_child) = startup_child.take() {
-					let _ = startup_child.kill();
-				}
 			},
 		)
 	});
@@ -322,6 +287,9 @@ fn main() {
 		.join()
 		.expect("Failed to cleanly shut down event loop")
 		.unwrap();
+	for mut startup_child in startup_children.drain(..) {
+		let _ = startup_child.kill();
+	}
 
 	info!("Cleanly shut down Stardust");
 }
@@ -351,7 +319,10 @@ fn adaptive_sleep(
 
 // #[tokio::main]
 #[tokio::main(flavor = "current_thread")]
-async fn event_loop(info_sender: oneshot::Sender<EventLoopInfo>) -> color_eyre::eyre::Result<()> {
+async fn event_loop(
+	info_sender: oneshot::Sender<EventLoopInfo>,
+	project_dirs: Option<ProjectDirs>,
+) -> color_eyre::eyre::Result<()> {
 	let socket_path =
 		server::get_free_socket_path().expect("Unable to find a free stardust socket path");
 	STARDUST_INSTANCE.set(socket_path.file_name().unwrap().to_string_lossy().into_owned()).expect("Someone hasn't done their job, yell at Nova because how is this set multiple times what the hell");
@@ -368,7 +339,9 @@ async fn event_loop(info_sender: oneshot::Sender<EventLoopInfo>) -> color_eyre::
 
 	STOP_NOTIFIER.notified().await;
 	println!("Stopping...");
-	save_clients().await;
+	if let Some(project_dirs) = project_dirs {
+		save_session(&project_dirs).await;
+	}
 
 	info!("Cleanly shut down event loop");
 
@@ -379,16 +352,121 @@ async fn event_loop(info_sender: oneshot::Sender<EventLoopInfo>) -> color_eyre::
 	Ok(())
 }
 
-async fn save_clients() {
+fn launch_start(
+	cli_args: &CliArgs,
+	project_dirs: &ProjectDirs,
+	event_loop_info: &EventLoopInfo,
+	#[cfg(feature = "wayland")] wayland: &wayland::Wayland,
+) -> Vec<Child> {
+	if let Some(session_id) = &cli_args.restore {
+		let session_dir = project_dirs.state_dir().unwrap().join(session_id);
+		return restore_session(&session_dir, event_loop_info, wayland);
+	}
+	let startup_script_path = cli_args
+		.startup_script
+		.clone()
+		.and_then(|p| p.canonicalize().ok())
+		.unwrap_or_else(|| project_dirs.config_dir().join("startup"));
+	run_script(&startup_script_path, event_loop_info, wayland)
+}
+
+fn restore_session(
+	session_dir: &Path,
+	event_loop_info: &EventLoopInfo,
+	#[cfg(feature = "wayland")] wayland: &wayland::Wayland,
+) -> Vec<Child> {
+	let Ok(clients) = session_dir.read_dir() else {
+		return Vec::new();
+	};
+	clients
+		.filter_map(Result::ok)
+		.filter_map(|c| ClientState::from_file(&c.path()))
+		.filter_map(ClientState::launch_command)
+		.filter_map(|startup_command| {
+			run_client(
+				startup_command,
+				event_loop_info,
+				#[cfg(feature = "wayland")]
+				wayland,
+			)
+		})
+		.collect()
+}
+
+fn run_script(
+	script_path: &Path,
+	event_loop_info: &EventLoopInfo,
+	#[cfg(feature = "wayland")] wayland: &wayland::Wayland,
+) -> Vec<Child> {
+	let _ = std::fs::set_permissions(script_path, std::fs::Permissions::from_mode(0o755));
+	let startup_command = Command::new(script_path);
+	run_client(
+		startup_command,
+		event_loop_info,
+		#[cfg(feature = "wayland")]
+		wayland,
+	)
+	.map(|c| vec![c])
+	.unwrap_or_default()
+}
+
+fn run_client(
+	mut command: Command,
+	event_loop_info: &EventLoopInfo,
+	#[cfg(feature = "wayland")] wayland: &wayland::Wayland,
+) -> Option<Child> {
+	command.stdin(Stdio::null());
+	command.stdout(Stdio::null());
+	command.stderr(Stdio::null());
+	command.env(
+		"FLAT_WAYLAND_DISPLAY",
+		std::env::var_os("WAYLAND_DISPLAY").unwrap_or_default(),
+	);
+	command.env(
+		"STARDUST_INSTANCE",
+		event_loop_info
+			.socket_path
+			.file_name()
+			.expect("Stardust socket path not found"),
+	);
+	#[cfg(feature = "wayland")]
+	{
+		if let Some(wayland_socket) = wayland.socket_name.as_ref() {
+			command.env("WAYLAND_DISPLAY", &wayland_socket);
+		}
+		command.env(
+			"DISPLAY",
+			format!(":{}", X_DISPLAY.get().cloned().unwrap_or_default()),
+		);
+		command.env("GDK_BACKEND", "wayland");
+		command.env("QT_QPA_PLATFORM", "wayland");
+		command.env("MOZ_ENABLE_WAYLAND", "1");
+		command.env("CLUTTER_BACKEND", "wayland");
+		command.env("SDL_VIDEODRIVER", "wayland");
+	}
+	let child = command.spawn().ok()?;
+	Some(child)
+}
+
+async fn save_session(project_dirs: &ProjectDirs) {
+	let session_id = nanoid::nanoid!();
+	let state_dir = project_dirs.state_dir().unwrap();
+	let session_dir = state_dir.join(&session_id);
+	std::fs::create_dir_all(&session_dir).unwrap();
+	let _ = std::fs::remove_dir_all(state_dir.join("latest"));
+	std::os::unix::fs::symlink(&session_dir, state_dir.join("latest")).unwrap();
+
 	let local_set = LocalSet::new();
 	for client in CLIENTS.get_vec() {
+		let session_dir = session_dir.clone();
 		local_set.spawn_local(async move {
 			tokio::select! {
 				biased;
-				s = client.save_state() => {s.map(ClientState::to_file);},
+				s = client.save_state() => {s.map(|s| s.to_file(&session_dir));},
 				_ = tokio::time::sleep(Duration::from_millis(100)) => (),
 			}
 		});
 	}
 	local_set.await;
+	println!("Session ID for restore is {session_id}");
 }

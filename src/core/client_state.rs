@@ -4,7 +4,11 @@ use glam::Mat4;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use std::{io::Write, path::PathBuf, sync::Arc};
+use std::{
+	path::{Path, PathBuf},
+	process::Command,
+	sync::Arc,
+};
 
 lazy_static::lazy_static! {
 	pub static ref CLIENT_STATES: Mutex<FxHashMap<String, Arc<ClientState>>> = Default::default();
@@ -58,14 +62,23 @@ impl ClientState {
 		CLIENT_STATES.lock().insert(token.clone(), Arc::new(self));
 		token
 	}
-	pub fn to_file(self) {
-		let project_dirs = directories::ProjectDirs::from("", "", "stardust").unwrap();
-		let state_dir = project_dirs.state_dir().unwrap();
-		std::fs::create_dir_all(state_dir).unwrap();
-		let mut file = std::fs::File::create(state_dir.join(nanoid::nanoid!())).unwrap();
-		file.write_all(&stardust_xr::schemas::flex::flexbuffers::to_vec(self).unwrap())
-			.unwrap();
+	pub fn from_file(file: &Path) -> Option<Self> {
+		let file_string = std::fs::read_to_string(file).ok()?;
+		toml::from_str(&file_string).ok()
 	}
+	pub fn to_file(self, directory: &Path) {
+		let app_name = self
+			.launch_info
+			.as_ref()
+			.map(|l| l.cmdline.get(0).unwrap().split('/').last().unwrap())
+			.unwrap_or("unknown");
+		let state_file_path = directory
+			.join(format!("{app_name}-{}", nanoid::nanoid!()))
+			.with_extension("toml");
+
+		std::fs::write(state_file_path, toml::to_string(&self).unwrap()).unwrap();
+	}
+
 	pub fn apply_to(&self, client: &Arc<Client>) -> ClientStateInternal {
 		if let Some(root) = client.root.get() {
 			root.set_transform(self.root)
@@ -87,6 +100,16 @@ impl ClientState {
 				})
 				.collect(),
 		}
+	}
+	pub fn launch_command(self) -> Option<Command> {
+		let launch_info = self.launch_info.as_ref()?;
+		let mut cmdline = launch_info.cmdline.iter();
+		let mut command = Command::new(cmdline.next()?);
+		command.args(cmdline);
+		command.current_dir(&launch_info.cwd);
+		command.envs(launch_info.env.iter());
+		command.env("STARDUST_STARTUP_TOKEN", self.token());
+		Some(command)
 	}
 }
 impl Default for ClientState {

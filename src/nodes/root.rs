@@ -95,11 +95,10 @@ impl Root {
 		spatial.set_local_transform(transform);
 	}
 	pub async fn save_state(&self) -> Result<ClientStateInternal> {
-		Ok(self
-			.node
+		self.node
 			.execute_remote_method_typed("save_state", (), Vec::new())
-			.await?
-			.0)
+			.await
+			.map(|(m, _)| m)
 	}
 }
 

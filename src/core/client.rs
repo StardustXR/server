@@ -16,7 +16,7 @@ use stardust_xr::{
 	messenger::{self, MessageSenderHandle},
 	schemas::flex::serialize,
 };
-use std::{fs, iter::FromIterator, path::PathBuf, sync::Arc};
+use std::{fmt::Debug, fs, iter::FromIterator, path::PathBuf, sync::Arc};
 use tokio::{net::UnixStream, task::JoinHandle};
 use tracing::info;
 
@@ -213,6 +213,19 @@ impl Client {
 		if let Some(client) = CLIENTS.remove(self) {
 			destroy_queue::add(client);
 		}
+	}
+}
+impl Debug for Client {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Client")
+			.field("pid", &self.pid)
+			.field("exe", &self.exe)
+			.field("dispatch_join_handle", &self.dispatch_join_handle)
+			.field("flush_join_handle", &self.flush_join_handle)
+			.field("disconnect_status", &self.disconnect_status)
+			.field("base_resource_prefixes", &self.base_resource_prefixes)
+			.field("state", &self.state)
+			.finish()
 	}
 }
 impl Drop for Client {
