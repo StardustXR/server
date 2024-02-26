@@ -1,7 +1,7 @@
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		input::{pointer::Pointer, InputMethod, InputType},
+		input::{InputDataType, InputMethod, Pointer},
 		spatial::Spatial,
 		Node,
 	},
@@ -9,10 +9,15 @@ use crate::{
 use color_eyre::eyre::Result;
 use glam::Mat4;
 use nanoid::nanoid;
-use serde::Serialize;
-use stardust_xr::{schemas::flex::flexbuffers, values::Datamap};
+use serde::{Deserialize, Serialize};
+use stardust_xr::values::Datamap;
 use std::sync::Arc;
 use stereokit::StereoKitMultiThread;
+
+#[derive(Default, Deserialize, Serialize)]
+pub struct EyeDatamap {
+	eye: u32,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct KeyboardEvent {
@@ -31,8 +36,12 @@ impl EyePointer {
 		let node = Node::create_parent_name(&INTERNAL_CLIENT, "", &nanoid!(), false)
 			.add_to_scenegraph()?;
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
-		let pointer =
-			InputMethod::add_to(&node, InputType::Pointer(Pointer::default()), None).unwrap();
+		let pointer = InputMethod::add_to(
+			&node,
+			InputDataType::Pointer(Pointer::default()),
+			Datamap::from_typed(EyeDatamap::default())?,
+		)
+		.unwrap();
 
 		Ok(EyePointer { spatial, pointer })
 	}
@@ -45,11 +54,7 @@ impl EyePointer {
 			));
 		{
 			// Set pointer input datamap
-			let mut fbb = flexbuffers::Builder::default();
-			let mut map = fbb.start_map();
-			map.push("eye", 2);
-			map.end_map();
-			*self.pointer.datamap.lock() = Datamap::from_raw(fbb.take_buffer()).ok();
+			*self.pointer.datamap.lock() = Datamap::from_typed(EyeDatamap { eye: 2 }).unwrap();
 		}
 	}
 }

@@ -1,255 +1,29 @@
-pub mod hand;
-pub mod pointer;
-pub mod tip;
+mod hand;
+mod handler;
+mod method;
+mod pointer;
+mod tip;
 
-use self::hand::Hand;
-use self::pointer::Pointer;
-use self::tip::Tip;
+pub use handler::*;
+pub use method::*;
 
-use super::{
-	alias::{Alias, AliasInfo},
-	fields::{find_field, Field, FIELD_ALIAS_INFO},
-	spatial::{parse_transform, Spatial},
-	Aspect, Message, Node,
-};
-use crate::core::{client::Client, node_collections::LifeLinkedNodeMap};
+use super::fields::Field;
+use super::spatial::Spatial;
+use crate::create_interface;
+use crate::nodes::alias::Alias;
+use crate::{core::client::Client, nodes::Node};
 use crate::{core::registry::Registry, nodes::spatial::Transform};
 use color_eyre::eyre::Result;
 use glam::Mat4;
-use once_cell::sync::OnceCell;
-use parking_lot::Mutex;
-use portable_atomic::AtomicBool;
-use serde::Deserialize;
-use stardust_xr::schemas::{flat::InputDataType, flex::serialize};
-use stardust_xr::{
-	schemas::{flat::InputData, flex::deserialize},
-	values::Datamap,
-};
-use std::ops::Deref;
-use std::sync::atomic::Ordering;
+use portable_atomic::Ordering;
+use stardust_xr::values::Datamap;
 use std::sync::{Arc, Weak};
 use tracing::{debug_span, instrument};
 
 static INPUT_METHOD_REGISTRY: Registry<InputMethod> = Registry::new();
 static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
 
-pub trait InputSpecialization: Send + Sync {
-	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
-	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
-	fn serialize(
-		&self,
-		distance_link: &DistanceLink,
-		local_to_handler_matrix: Mat4,
-	) -> InputDataType;
-}
-pub enum InputType {
-	Pointer(Pointer),
-	Hand(Box<Hand>),
-	Tip(Tip),
-}
-impl Deref for InputType {
-	type Target = dyn InputSpecialization;
-	fn deref(&self) -> &Self::Target {
-		match self {
-			InputType::Pointer(p) => p,
-			InputType::Hand(h) => h.as_ref(),
-			InputType::Tip(t) => t,
-		}
-	}
-}
-
-pub struct InputMethod {
-	node: Weak<Node>,
-	uid: String,
-	pub enabled: Mutex<bool>,
-	pub spatial: Arc<Spatial>,
-	pub specialization: Mutex<InputType>,
-	captures: Registry<InputHandler>,
-	pub datamap: Mutex<Option<Datamap>>,
-	handler_aliases: LifeLinkedNodeMap<String>,
-	handler_order: OnceCell<Mutex<Vec<Weak<InputHandler>>>>,
-}
-impl InputMethod {
-	#[allow(dead_code)]
-	pub fn add_to(
-		node: &Arc<Node>,
-		specialization: InputType,
-		datamap: Option<Datamap>,
-	) -> Result<Arc<InputMethod>> {
-		node.add_local_signal("capture", InputMethod::capture_flex);
-		node.add_local_signal("set_datamap", InputMethod::set_datamap_flex);
-		node.add_local_signal("set_handlers", InputMethod::set_handlers_flex);
-
-		let method = InputMethod {
-			node: Arc::downgrade(node),
-			uid: node.uid.clone(),
-			enabled: Mutex::new(true),
-			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
-			specialization: Mutex::new(specialization),
-			captures: Registry::new(),
-			datamap: Mutex::new(datamap),
-			handler_aliases: LifeLinkedNodeMap::default(),
-			handler_order: OnceCell::new(),
-		};
-		for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
-			method.handle_new_handler(&handler);
-			method.make_alias(&handler);
-		}
-		let method = INPUT_METHOD_REGISTRY.add(method);
-		node.add_aspect_raw(method.clone());
-		Ok(method)
-	}
-	fn get(node: &Node) -> Result<Arc<Self>> {
-		node.get_aspect::<Self>()
-	}
-
-	fn capture_flex(node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
-		let method = InputMethod::get(&node)?;
-		let handler = InputHandler::find(&calling_client, deserialize(message.as_ref())?)?;
-
-		method.captures.add_raw(&handler);
-		node.send_remote_signal("capture", message)
-	}
-	fn set_datamap_flex(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let method = InputMethod::get(&node)?;
-		method
-			.datamap
-			.lock()
-			.replace(Datamap::from_raw(message.data)?);
-		Ok(())
-	}
-	fn set_handlers_flex(
-		node: Arc<Node>,
-		calling_client: Arc<Client>,
-		message: Message,
-	) -> Result<()> {
-		let method = InputMethod::get(&node)?;
-		let handler_paths: Vec<&str> = deserialize(message.as_ref())?;
-		let handlers: Vec<Weak<InputHandler>> = handler_paths
-			.into_iter()
-			.filter_map(|p| InputHandler::find(&calling_client, p).ok())
-			.map(|h| Arc::downgrade(&h))
-			.collect();
-
-		*method
-			.handler_order
-			.get_or_init(|| Mutex::new(Vec::new()))
-			.lock() = handlers;
-		Ok(())
-	}
-
-	fn make_alias(&self, handler: &InputHandler) {
-		let Some(method_node) = self.node.upgrade() else {
-			return;
-		};
-		let Some(handler_node) = handler.node.upgrade() else {
-			return;
-		};
-		let Some(client) = handler_node.get_client() else {
-			return;
-		};
-		let Ok(method_alias) = Alias::create(
-			&client,
-			handler_node.get_path(),
-			&self.uid,
-			&method_node,
-			AliasInfo {
-				server_signals: vec!["capture"],
-				..Default::default()
-			},
-		) else {
-			return;
-		};
-		method_alias.enabled.store(false, Ordering::Relaxed);
-		handler
-			.method_aliases
-			.add(self as *const InputMethod as usize, &method_alias);
-	}
-
-	fn compare_distance(&self, to: &InputHandler) -> f32 {
-		let distance = self
-			.specialization
-			.lock()
-			.compare_distance(&self.spatial, &to.field);
-		if self.captures.contains(to) {
-			distance * 0.5
-		} else {
-			distance
-		}
-	}
-	fn true_distance(&self, to: &Field) -> f32 {
-		self.specialization.lock().true_distance(&self.spatial, to)
-	}
-
-	fn handle_new_handler(&self, handler: &InputHandler) {
-		let Some(method_node) = self.node.upgrade() else {
-			return;
-		};
-		let Some(method_client) = method_node.get_client() else {
-			return;
-		};
-		let Some(handler_node) = handler.node.upgrade() else {
-			return;
-		};
-		// Receiver itself
-		let Ok(handler_alias) = Alias::create(
-			&method_client,
-			method_node.get_path(),
-			handler.uid.as_str(),
-			&handler_node,
-			AliasInfo {
-				server_methods: vec!["get_transform"],
-				..Default::default()
-			},
-		) else {
-			return;
-		};
-		self.handler_aliases
-			.add(handler.uid.clone(), &handler_alias);
-
-		if let Some(handler_field_node) = handler.field.spatial_ref().node.upgrade() {
-			// Handler's field
-			let Ok(rx_field_alias) = Alias::create(
-				&method_client,
-				handler_alias.get_path(),
-				"field",
-				&handler_field_node,
-				FIELD_ALIAS_INFO.clone(),
-			) else {
-				return;
-			};
-			self.handler_aliases
-				.add(handler.uid.clone() + "-field", &rx_field_alias);
-		}
-
-		let Ok(data) = serialize(&handler.uid) else {
-			return;
-		};
-		let _ = method_node.send_remote_signal("handler_created", data);
-	}
-	fn handle_drop_handler(&self, handler: &InputHandler) {
-		let uid = handler.uid.as_str();
-		self.handler_aliases.remove(uid);
-		self.handler_aliases.remove(&(uid.to_string() + "-field"));
-		let Some(tx_node) = self.node.upgrade() else {
-			return;
-		};
-		let Ok(data) = serialize(&uid) else { return };
-		let _ = tx_node.send_remote_signal("handler_destroyed", data);
-	}
-}
-impl Aspect for InputMethod {
-	const NAME: &'static str = "InputMethod";
-}
-impl Drop for InputMethod {
-	fn drop(&mut self) {
-		INPUT_METHOD_REGISTRY.remove(self);
-	}
-}
+stardust_xr_server_codegen::codegen_input_protocol!();
 
 pub struct DistanceLink {
 	distance: f32,
@@ -269,118 +43,98 @@ impl DistanceLink {
 		self.handler.send_input(order, captured, self, datamap);
 	}
 	#[instrument(level = "debug", skip(self))]
-	fn serialize(&self, order: u32, captured: bool, datamap: Datamap) -> Vec<u8> {
-		let input = self.method.specialization.lock().serialize(
+	fn serialize(&self, order: u32, captured: bool, datamap: Datamap) -> InputData {
+		let mut input = self.method.data.lock().clone();
+		input.update_to(
 			self,
 			Spatial::space_to_space_matrix(Some(&self.method.spatial), Some(&self.handler.spatial)),
 		);
 
-		let root = InputData {
+		InputData {
 			uid: self.method.uid.clone(),
 			input,
 			distance: self.method.true_distance(&self.handler.field),
 			datamap,
 			order,
 			captured,
-		};
-		root.serialize()
+		}
+	}
+}
+pub trait InputDataTrait {
+	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
+	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
+	fn update_to(&mut self, distance_link: &DistanceLink, local_to_handler_matrix: Mat4);
+}
+impl InputDataTrait for InputDataType {
+	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+		match self {
+			InputDataType::Pointer(i) => i.compare_distance(space, field),
+			InputDataType::Hand(i) => i.compare_distance(space, field),
+			InputDataType::Tip(i) => i.compare_distance(space, field),
+		}
+	}
+
+	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+		match self {
+			InputDataType::Pointer(i) => i.true_distance(space, field),
+			InputDataType::Hand(i) => i.true_distance(space, field),
+			InputDataType::Tip(i) => i.true_distance(space, field),
+		}
+	}
+
+	fn update_to(&mut self, distance_link: &DistanceLink, local_to_handler_matrix: Mat4) {
+		match self {
+			InputDataType::Pointer(i) => i.update_to(distance_link, local_to_handler_matrix),
+			InputDataType::Hand(i) => i.update_to(distance_link, local_to_handler_matrix),
+			InputDataType::Tip(i) => i.update_to(distance_link, local_to_handler_matrix),
+		}
 	}
 }
 
-pub struct InputHandler {
-	enabled: Arc<AtomicBool>,
-	uid: String,
-	node: Weak<Node>,
-	spatial: Arc<Spatial>,
-	field: Arc<Field>,
-	method_aliases: LifeLinkedNodeMap<usize>,
-}
-impl InputHandler {
-	pub fn add_to(node: &Arc<Node>, field: &Arc<Field>) -> Result<()> {
-		let handler = InputHandler {
-			enabled: node.enabled.clone(),
-			uid: node.uid.clone(),
-			node: Arc::downgrade(node),
-			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
-			field: field.clone(),
-			method_aliases: LifeLinkedNodeMap::default(),
-		};
-		for method in INPUT_METHOD_REGISTRY.get_valid_contents() {
-			method.make_alias(&handler);
-			method.handle_new_handler(&handler);
-		}
-		let handler = INPUT_HANDLER_REGISTRY.add(handler);
-		node.add_aspect_raw(handler);
+create_interface!(InputInterface, InputInterfaceAspect, "/input");
+pub struct InputInterface;
+impl InputInterfaceAspect for InputInterface {
+	#[doc = "Create an input method node"]
+	fn create_input_method(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
+		transform: Transform,
+		initial_data: InputDataType,
+		datamap: Datamap,
+	) -> Result<()> {
+		let parent = parent.get_aspect::<Spatial>()?;
+		let transform = transform.to_mat4(true, true, true);
+
+		let node = Node::create_parent_name(&calling_client, "/input/method", &name, true)
+			.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		InputMethod::add_to(&node, initial_data, datamap)?;
 		Ok(())
 	}
-	fn find(client: &Client, path: &str) -> Result<Arc<Self>> {
-		client.get_node("Input Handler", path)?.get_aspect::<Self>()
-	}
 
-	#[instrument(level = "debug", skip(self, distance_link))]
-	fn send_input(
-		&self,
-		order: u32,
-		captured: bool,
-		distance_link: &DistanceLink,
-		datamap: Datamap,
-	) {
-		let Some(node) = self.node.upgrade() else {
-			return;
-		};
-		let _ = node.send_remote_signal("input", distance_link.serialize(order, captured, datamap));
-	}
-}
-impl Aspect for InputHandler {
-	const NAME: &'static str = "InputHandler";
-}
-impl PartialEq for InputHandler {
-	fn eq(&self, other: &Self) -> bool {
-		self.spatial == other.spatial
-	}
-}
-impl Drop for InputHandler {
-	fn drop(&mut self) {
-		INPUT_HANDLER_REGISTRY.remove(self);
-		for method in INPUT_METHOD_REGISTRY.get_valid_contents() {
-			method.handle_drop_handler(self);
-		}
-	}
-}
-
-pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create_path(client, "/input", false);
-	node.add_local_signal("create_input_handler", create_input_handler_flex);
-	node.add_local_signal("create_input_method_pointer", pointer::create_pointer_flex);
-	node.add_local_signal("create_input_method_tip", tip::create_tip_flex);
-	node.add_to_scenegraph().map(|_| ())
-}
-
-pub fn create_input_handler_flex(
-	_node: Arc<Node>,
-	calling_client: Arc<Client>,
-	message: Message,
-) -> Result<()> {
-	#[derive(Deserialize)]
-	struct CreateInputHandlerInfo<'a> {
-		name: &'a str,
-		parent_path: &'a str,
+	#[doc = "Create an input handler node"]
+	fn create_input_handler(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		name: String,
+		parent: Arc<Node>,
 		transform: Transform,
-		field_path: &'a str,
-	}
-	let info: CreateInputHandlerInfo = deserialize(message.as_ref())?;
-	let parent = calling_client
-		.get_node("Spatial parent", info.parent_path)?
-		.get_aspect::<Spatial>()?;
-	let transform = parse_transform(info.transform, true, true, true);
-	let field = find_field(&calling_client, info.field_path)?;
+		field: Arc<Node>,
+	) -> Result<()> {
+		let parent = parent.get_aspect::<Spatial>()?;
+		let transform = transform.to_mat4(true, true, true);
+		let field = field.get_aspect::<Field>()?;
 
-	let node = Node::create_parent_name(&calling_client, "/input/handler", info.name, true)
-		.add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(parent.clone()), transform, false);
-	InputHandler::add_to(&node, &field)?;
-	Ok(())
+		let node = Node::create_parent_name(&calling_client, "/input/handler", &name, true)
+			.add_to_scenegraph()?;
+		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		InputHandler::add_to(&node, &field)?;
+		Ok(())
+	}
 }
+
 #[tracing::instrument(level = "debug")]
 pub fn process_input() {
 	// Iterate over all valid input methods
@@ -389,7 +143,6 @@ pub fn process_input() {
 			.get_valid_contents()
 			.into_iter()
 			.filter(|method| *method.enabled.lock())
-			.filter(|method| method.datamap.lock().is_some())
 	});
 	let handlers = INPUT_HANDLER_REGISTRY.get_valid_contents();
 	const LIMIT: usize = 50;
@@ -402,11 +155,10 @@ pub fn process_input() {
 			// Get all valid input handlers and convert them to DistanceLink objects
 			let distance_links: Vec<DistanceLink> = debug_span!("Generate distance links")
 				.in_scope(|| {
-					if let Some(handler_order) = method.handler_order.get() {
-						let handler_order = handler_order.lock();
+					if let Some(handler_order) = &*method.handler_order.lock() {
 						handler_order
 							.iter()
-							.filter_map(|h| h.upgrade())
+							.filter_map(Weak::upgrade)
 							.filter(|handler| handler.enabled.load(Ordering::Relaxed))
 							.map(|handler| DistanceLink::from(method.clone(), handler))
 							.collect()
@@ -445,11 +197,7 @@ pub fn process_input() {
 					method_alias.enabled.store(true, Ordering::Release);
 				}
 				let captured = captures.contains(&distance_link.handler);
-				distance_link.send_input(
-					i as u32,
-					captured,
-					method.datamap.lock().clone().unwrap(),
-				);
+				distance_link.send_input(i as u32, captured, method.datamap.lock().clone());
 
 				// If the current distance link is in the list of captured input handlers,
 				// break out of the loop to avoid sending input to the remaining distance links

@@ -5,7 +5,7 @@
 name = "task"
 
 # the type of the debugger. If not set, it can't be debugged but can still be run
-type = "lldb"
+# type = "lldb"
 
 # the program to run
 program = "cargo"

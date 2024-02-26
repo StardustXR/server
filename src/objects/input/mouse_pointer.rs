@@ -5,7 +5,7 @@ use crate::{
 			mask_matches, pulse_receiver_client, PulseSender, KEYMAPS, PULSE_RECEIVER_REGISTRY,
 		},
 		fields::{Field, Ray},
-		input::{pointer::Pointer, InputMethod, InputType},
+		input::{InputDataType, InputMethod, Pointer},
 		spatial::Spatial,
 		Node,
 	},
@@ -61,8 +61,11 @@ impl MousePointer {
 		let node = Node::create_parent_name(&INTERNAL_CLIENT, "", &nanoid!(), false)
 			.add_to_scenegraph()?;
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
-		let pointer =
-			InputMethod::add_to(&node, InputType::Pointer(Pointer::default()), None).unwrap();
+		let pointer = InputMethod::add_to(
+			&node,
+			InputDataType::Pointer(Pointer::default()),
+			Datamap::from_typed(MouseEvent::default())?,
+		)?;
 
 		KEYMAPS.lock().insert(
 			"flatscreen".to_string(),
@@ -129,7 +132,7 @@ impl MousePointer {
 			};
 			self.mouse_datamap.scroll_continuous = vec2(0.0, mouse.scroll_change / 120.0);
 			self.mouse_datamap.scroll_discrete = vec2(0.0, mouse.scroll_change / 120.0);
-			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).ok();
+			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).unwrap();
 		}
 		self.send_keyboard_input(sk);
 	}
