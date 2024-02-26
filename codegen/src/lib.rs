@@ -36,10 +36,10 @@ pub fn codegen_audio_protocol(_input: proc_macro::TokenStream) -> proc_macro::To
 pub fn codegen_drawable_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 	codegen_protocol(DRAWABLE_PROTOCOL)
 }
-// #[proc_macro]
-// pub fn codegen_input_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-// 	codegen_protocol(INPUT_PROTOCOL)
-// }
+#[proc_macro]
+pub fn codegen_input_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+	codegen_protocol(INPUT_PROTOCOL)
+}
 
 fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 	let protocol = Protocol::parse(protocol).unwrap();
@@ -213,8 +213,10 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 		.map(generate_member)
 		.reduce(fold_tokens)
 		.map(|t| {
+			// TODO: properly import all dependencies
 			quote! {
 				pub mod #client_mod_name {
+					use super::*;
 					#t
 				}
 			}
@@ -388,6 +390,12 @@ fn generate_argument_name(argument: &Argument) -> TokenStream {
 fn convert_deserializeable_argument_type(argument_type: &ArgumentType) -> ArgumentType {
 	match argument_type {
 		ArgumentType::Node { .. } => ArgumentType::String,
+		ArgumentType::Vec(v) => {
+			ArgumentType::Vec(Box::new(convert_deserializeable_argument_type(v.as_ref())))
+		}
+		ArgumentType::Map(v) => {
+			ArgumentType::Map(Box::new(convert_deserializeable_argument_type(v.as_ref())))
+		}
 		f => f.clone(),
 	}
 }
@@ -397,12 +405,18 @@ fn generate_argument_deserialize(
 	optional: bool,
 ) -> TokenStream {
 	let name = Ident::new(&argument_name.to_case(Case::Snake), Span::call_site());
-
-	match argument_type {
-		ArgumentType::Node { .. } => match optional {
+	if let ArgumentType::Node { .. } = argument_type {
+		return match optional {
 			true => quote!(#name.map(|n| _calling_client.get_node(#argument_name, &n)?)),
 			false => quote!(_calling_client.get_node(#argument_name, &#name)?),
-		},
+		};
+	}
+	if optional {
+		let mapping = generate_argument_deserialize("o", argument_type, false);
+		return quote!(#name.map(|o| Ok::<_, color_eyre::eyre::Report>(#mapping)).transpose()?);
+	}
+
+	match argument_type {
 		ArgumentType::Color => quote!(color::rgba_linear!(#name[0], #name[1], #name[2], #name[3])),
 		ArgumentType::Vec(v) => {
 			let mapping = generate_argument_deserialize("a", v, false);

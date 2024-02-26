@@ -1,7 +1,7 @@
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		input::{tip::Tip, InputMethod, InputType},
+		input::{InputDataType, InputMethod, Tip},
 		spatial::Spatial,
 		Node,
 	},
@@ -45,8 +45,12 @@ impl SkController {
 		.add_to_scenegraph()?;
 		Spatial::add_to(&_node, None, Mat4::IDENTITY, false);
 		let model = sk.model_create_mem("cursor.glb", include_bytes!("cursor.glb"), None)?;
-		let tip = InputType::Tip(Tip::default());
-		let input = InputMethod::add_to(&_node, tip, None)?;
+		let tip = InputDataType::Tip(Tip::default());
+		let input = InputMethod::add_to(
+			&_node,
+			tip,
+			Datamap::from_typed(ControllerDatamap::default())?,
+		)?;
 		Ok(SkController {
 			_node,
 			input,
@@ -74,6 +78,6 @@ impl SkController {
 		self.datamap.select = controller.trigger;
 		self.datamap.grab = controller.grip;
 		self.datamap.scroll = controller.stick;
-		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).ok();
+		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 	}
 }

@@ -66,7 +66,7 @@ xkbcommon = { version = "0.7.0", default-features = false, optional = true }
 ctrlc = "3.4.1"
 libc = "0.2.148"
 input-event-codes = "5.16.8"
-nix = "0.27.1"
+nix = "0.28.0"
 wayland-scanner = "0.31.1"
 wayland-backend = "0.3.3"
 cluFlock = "1.2.7"

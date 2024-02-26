@@ -1,16 +1,57 @@
+use super::{DistanceLink, Finger, Hand, InputDataTrait, Joint, Thumb};
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::Spatial;
-use glam::{vec3a, Mat4};
-use stardust_xr::schemas::flat::{Hand as FlatHand, InputDataType, Joint};
+use glam::{vec3a, Mat4, Quat};
 use std::sync::Arc;
 
-use super::{DistanceLink, InputSpecialization};
-
-#[derive(Debug, Default)]
-pub struct Hand {
-	pub base: FlatHand,
+impl Default for Joint {
+	fn default() -> Self {
+		Joint {
+			position: [0.0; 3].into(),
+			rotation: Quat::IDENTITY.into(),
+			radius: 0.0,
+			distance: 0.0,
+		}
+	}
 }
-impl InputSpecialization for Hand {
+impl Default for Finger {
+	fn default() -> Self {
+		Finger {
+			tip: Default::default(),
+			distal: Default::default(),
+			intermediate: Default::default(),
+			proximal: Default::default(),
+			metacarpal: Default::default(),
+		}
+	}
+}
+impl Default for Thumb {
+	fn default() -> Self {
+		Thumb {
+			tip: Default::default(),
+			distal: Default::default(),
+			proximal: Default::default(),
+			metacarpal: Default::default(),
+		}
+	}
+}
+impl Default for Hand {
+	fn default() -> Self {
+		Hand {
+			right: Default::default(),
+			thumb: Default::default(),
+			index: Default::default(),
+			middle: Default::default(),
+			ring: Default::default(),
+			little: Default::default(),
+			palm: Default::default(),
+			wrist: Default::default(),
+			elbow: Default::default(),
+		}
+	}
+}
+
+impl InputDataTrait for Hand {
 	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		self.true_distance(space, field).abs()
 	}
@@ -18,34 +59,29 @@ impl InputSpecialization for Hand {
 		let mut min_distance = f32::MAX;
 
 		for tip in [
-			&self.base.thumb.tip.position,
-			&self.base.index.tip.position,
-			&self.base.middle.tip.position,
-			&self.base.ring.tip.position,
-			&self.base.little.tip.position,
+			&self.thumb.tip.position,
+			&self.index.tip.position,
+			&self.middle.tip.position,
+			&self.ring.tip.position,
+			&self.little.tip.position,
 		] {
 			min_distance = min_distance.min(field.distance(space, vec3a(tip.x, tip.y, tip.z)));
 		}
 
 		min_distance
 	}
-	fn serialize(
-		&self,
-		distance_link: &DistanceLink,
-		local_to_handler_matrix: Mat4,
-	) -> InputDataType {
-		let mut hand = self.base;
+	fn update_to(&mut self, distance_link: &DistanceLink, local_to_handler_matrix: Mat4) {
 		let mut joints: Vec<&mut Joint> = Vec::new();
 
-		joints.extend([&mut hand.palm, &mut hand.wrist]);
-		if let Some(elbow) = &mut hand.elbow {
+		joints.extend([&mut self.palm, &mut self.wrist]);
+		if let Some(elbow) = &mut self.elbow {
 			joints.push(elbow);
 		}
 		for finger in [
-			&mut hand.index,
-			&mut hand.middle,
-			&mut hand.ring,
-			&mut hand.little,
+			&mut self.index,
+			&mut self.middle,
+			&mut self.ring,
+			&mut self.little,
 		] {
 			joints.extend([
 				&mut finger.tip,
@@ -56,10 +92,10 @@ impl InputSpecialization for Hand {
 			]);
 		}
 		joints.extend([
-			&mut hand.thumb.tip,
-			&mut hand.thumb.distal,
-			&mut hand.thumb.proximal,
-			&mut hand.thumb.metacarpal,
+			&mut self.thumb.tip,
+			&mut self.thumb.distal,
+			&mut self.thumb.proximal,
+			&mut self.thumb.metacarpal,
 		]);
 
 		for joint in joints {
@@ -73,7 +109,5 @@ impl InputSpecialization for Hand {
 				.field
 				.distance(&distance_link.handler.spatial, position.into());
 		}
-
-		InputDataType::Hand(Box::new(hand))
 	}
 }
