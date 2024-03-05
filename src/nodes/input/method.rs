@@ -137,7 +137,7 @@ impl InputMethod {
 				.add(handler.uid.clone() + "-field", &rx_field_alias);
 		}
 
-		let _ = input_method_client::new_handler(&method_node, &handler.uid, &handler_node);
+		let _ = input_method_client::create_handler(&method_node, &handler.uid, &handler_node);
 	}
 	pub(super) fn handle_drop_handler(&self, handler: &InputHandler) {
 		let uid = handler.uid.as_str();
@@ -147,7 +147,7 @@ impl InputMethod {
 			return;
 		};
 
-		let _ = input_method_client::drop_handler(&tx_node, &uid);
+		let _ = input_method_client::destroy_handler(&tx_node, &uid);
 	}
 }
 impl Aspect for InputMethod {

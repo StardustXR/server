@@ -117,8 +117,12 @@ impl PulseSender {
 		self.aliases
 			.add(receiver.uid.clone() + "-field", &rx_field_alias);
 
-		let _ =
-			pulse_sender_client::new_receiver(&tx_node, &receiver.uid, &rx_alias, &rx_field_alias);
+		let _ = pulse_sender_client::create_receiver(
+			&tx_node,
+			&receiver.uid,
+			&rx_alias,
+			&rx_field_alias,
+		);
 	}
 
 	fn handle_drop_receiver(&self, receiver: &PulseReceiver) {
@@ -128,7 +132,7 @@ impl PulseSender {
 		let Some(tx_node) = self.node.upgrade() else {
 			return;
 		};
-		let _ = pulse_sender_client::drop_receiver(&tx_node, uid);
+		let _ = pulse_sender_client::destroy_receiver(&tx_node, uid);
 	}
 }
 impl Aspect for PulseSender {

@@ -40,6 +40,10 @@ pub fn codegen_drawable_protocol(_input: proc_macro::TokenStream) -> proc_macro:
 pub fn codegen_input_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 	codegen_protocol(INPUT_PROTOCOL)
 }
+#[proc_macro]
+pub fn codegen_items_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+	codegen_protocol(ITEM_PROTOCOL)
+}
 
 fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 	let protocol = Protocol::parse(protocol).unwrap();
@@ -462,12 +466,13 @@ fn generate_argument_decl(argument: &Argument, owned_values: bool) -> TokenStrea
 }
 fn argument_type_option_name(argument_type: &ArgumentType) -> String {
 	match argument_type {
+		ArgumentType::Empty => "Empty".to_string(),
 		ArgumentType::Bool => "Bool".to_string(),
 		ArgumentType::Int => "Int".to_string(),
 		ArgumentType::UInt => "UInt".to_string(),
 		ArgumentType::Float => "Float".to_string(),
-		ArgumentType::Vec2 => "Vec2".to_string(),
-		ArgumentType::Vec3 => "Vec3".to_string(),
+		ArgumentType::Vec2(_) => "Vec2".to_string(),
+		ArgumentType::Vec3(_) => "Vec3".to_string(),
 		ArgumentType::Quat => "Quat".to_string(),
 		ArgumentType::Color => "Color".to_string(),
 		ArgumentType::String => "String".to_string(),
@@ -488,12 +493,19 @@ fn generate_argument_type(
 	owned: bool,
 ) -> TokenStream {
 	let _type = match argument_type {
+		ArgumentType::Empty => quote!(()),
 		ArgumentType::Bool => quote!(bool),
 		ArgumentType::Int => quote!(i32),
 		ArgumentType::UInt => quote!(u32),
 		ArgumentType::Float => quote!(f32),
-		ArgumentType::Vec2 => quote!(mint::Vector2<f32>),
-		ArgumentType::Vec3 => quote!(mint::Vector3<f32>),
+		ArgumentType::Vec2(c) => {
+			let component = generate_argument_type(c, false, true);
+			quote!(mint::Vector2<#component>)
+		}
+		ArgumentType::Vec3(c) => {
+			let component = generate_argument_type(c, false, true);
+			quote!(mint::Vector3<#component>)
+		}
 		ArgumentType::Quat => quote!(mint::Quaternion<f32>),
 		ArgumentType::Color => quote!(stardust_xr::values::Color),
 		ArgumentType::Bytes => {

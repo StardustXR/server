@@ -1,9 +1,7 @@
 pub mod camera;
-mod environment;
 pub mod panel;
 
 use self::camera::CameraItem;
-use self::environment::{EnvironmentItem, ITEM_TYPE_INFO_ENVIRONMENT};
 use self::panel::{PanelItemTrait, ITEM_TYPE_INFO_PANEL};
 use super::fields::Field;
 use super::spatial::{parse_transform, Spatial};
@@ -182,14 +180,12 @@ impl Drop for Item {
 
 pub enum ItemType {
 	Camera(CameraItem),
-	Environment(EnvironmentItem),
 	Panel(Arc<dyn PanelItemTrait>),
 }
 impl ItemType {
 	fn serialize_start_data(&self, id: &str) -> Result<Message> {
 		match self {
 			ItemType::Camera(c) => c.serialize_start_data(id),
-			ItemType::Environment(e) => e.serialize_start_data(id),
 			ItemType::Panel(p) => p.serialize_start_data(id),
 		}
 	}
@@ -437,10 +433,6 @@ impl Drop for ItemAcceptor {
 pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 	let node = Node::create_parent_name(client, "", "item", false);
 	node.add_local_signal("create_camera_item", camera::create_camera_item_flex);
-	node.add_local_signal(
-		"create_environment_item",
-		environment::create_environment_item_flex,
-	);
 	node.add_local_signal("register_item_ui", register_item_ui_flex);
 	node.add_local_signal("create_item_acceptor", create_item_acceptor_flex);
 	node.add_to_scenegraph().map(|_| ())
@@ -448,7 +440,6 @@ pub fn create_interface(client: &Arc<Client>) -> Result<()> {
 
 fn type_info(name: &str) -> Result<&'static TypeInfo> {
 	match name {
-		"environment" => Ok(&ITEM_TYPE_INFO_ENVIRONMENT),
 		#[cfg(feature = "wayland")]
 		"panel" => Ok(&ITEM_TYPE_INFO_PANEL),
 		_ => Err(eyre!("Invalid item type")),
