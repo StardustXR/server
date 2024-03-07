@@ -2,7 +2,7 @@
 edition = "2021"
 rust-version = "1.75"
 name = "stardust-xr-server"
-version = "0.44.0"
+version = "0.44.1"
 authors = ["Nova King <technobaboo@proton.me>"]
 description = "Stardust XR reference display server"
 license = "GPLv2"
