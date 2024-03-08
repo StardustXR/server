@@ -177,6 +177,7 @@ pub struct PanelItemInitData {
 
 pub trait Backend: Send + Sync + 'static {
 	fn start_data(&self) -> Result<PanelItemInitData>;
+	fn surface_alive(&self, surface: &SurfaceID) -> bool;
 
 	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>);
 
@@ -541,6 +542,9 @@ impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
 impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 	fn start_data(&self) -> Result<PanelItemInitData> {
 		self.backend.start_data()
+	}
+	fn surface_alive(&self, surface: &SurfaceID) -> bool {
+		self.backend.surface_alive(surface)
 	}
 
 	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>) {

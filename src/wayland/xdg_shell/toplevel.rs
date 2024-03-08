@@ -95,7 +95,7 @@ impl Drop for ToplevelData {
 
 impl Dispatch<XdgToplevel, WlWeak<WlSurface>, WaylandState> for WaylandState {
 	fn request(
-		_state: &mut WaylandState,
+		state: &mut WaylandState,
 		_client: &Client,
 		xdg_toplevel: &XdgToplevel,
 		request: xdg_toplevel::Request,
@@ -230,7 +230,6 @@ impl Dispatch<XdgToplevel, WlWeak<WlSurface>, WaylandState> for WaylandState {
 					error!("Couldn't get the panel item");
 					return;
 				};
-				panel_item.backend.seat.drop_surface(&wl_surface);
 				panel_item.drop_toplevel();
 			}
 			_ => {}

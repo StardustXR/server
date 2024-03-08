@@ -1,16 +1,10 @@
 use super::{popup::PopupData, surface::XdgSurfaceData, ToplevelData};
 use crate::{
 	nodes::{
-		data::KEYMAPS,
 		drawable::model::ModelPart,
 		items::panel::{Backend, ChildInfo, PanelItem, PanelItemInitData, SurfaceID},
 	},
-	wayland::{
-		seat::{CursorInfo, KeyboardEvent, PointerEvent, SeatData},
-		state::ClientState,
-		surface::CoreSurface,
-		utils, SERIAL_COUNTER,
-	},
+	wayland::{seat::SeatWrapper, state::ClientState, surface::CoreSurface, utils, SERIAL_COUNTER},
 };
 use color_eyre::eyre::{eyre, Result};
 use mint::Vector2;
@@ -18,10 +12,9 @@ use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use smithay::reexports::{
 	wayland_protocols::xdg::shell::server::xdg_toplevel::XdgToplevel,
-	wayland_server::{protocol::wl_surface::WlSurface, Resource, Weak},
+	wayland_server::{protocol::wl_surface::WlSurface, Resource, Weak as WlWeak},
 };
 use std::sync::Arc;
-use tokio::sync::watch;
 use tracing::debug;
 
 pub struct XdgToplevelState {
@@ -30,22 +23,18 @@ pub struct XdgToplevelState {
 }
 
 pub struct XdgBackend {
-	toplevel: Weak<XdgToplevel>,
-	toplevel_wl_surface: Weak<WlSurface>,
+	toplevel: WlWeak<XdgToplevel>,
+	toplevel_wl_surface: WlWeak<WlSurface>,
 	pub toplevel_state: Mutex<XdgToplevelState>,
-	popups: Mutex<FxHashMap<String, Weak<WlSurface>>>,
-	pub cursor: watch::Receiver<Option<CursorInfo>>,
-	pub seat: Arc<SeatData>,
-	pointer_grab: Mutex<Option<SurfaceID>>,
-	keyboard_grab: Mutex<Option<SurfaceID>>,
+	popups: Mutex<FxHashMap<String, WlWeak<WlSurface>>>,
+	pub seat: Arc<SeatWrapper>,
 }
 impl XdgBackend {
 	pub fn create(
 		toplevel_wl_surface: WlSurface,
 		toplevel: XdgToplevel,
-		seat: Arc<SeatData>,
+		seat: Arc<SeatWrapper>,
 	) -> Self {
-		let cursor = seat.new_surface(&toplevel_wl_surface);
 		XdgBackend {
 			toplevel: toplevel.downgrade(),
 			toplevel_wl_surface: toplevel_wl_surface.downgrade(),
@@ -54,15 +43,19 @@ impl XdgBackend {
 				activated: false,
 			}),
 			popups: Mutex::new(FxHashMap::default()),
-			cursor,
 			seat,
-			pointer_grab: Mutex::new(None),
-			keyboard_grab: Mutex::new(None),
 		}
 	}
 	fn wl_surface_from_id(&self, id: &SurfaceID) -> Option<WlSurface> {
 		match id {
-			SurfaceID::Cursor => self.cursor.borrow().as_ref()?.surface.upgrade().ok(),
+			SurfaceID::Cursor => self
+				.seat
+				.cursor_info_rx
+				.borrow()
+				.surface
+				.clone()?
+				.upgrade()
+				.ok(),
 			SurfaceID::Toplevel => self.toplevel_wl_surface(),
 			SurfaceID::Child(popup) => {
 				let popups = self.popups.lock();
@@ -146,13 +139,6 @@ impl XdgBackend {
 	}
 	pub fn drop_popup(&self, panel_item: &PanelItem<XdgBackend>, uid: &str) {
 		panel_item.drop_child(uid);
-		let Some(popup) = self.popups.lock().remove(uid) else {
-			return;
-		};
-		let Some(wl_surface) = popup.upgrade().ok() else {
-			return;
-		};
-		self.seat.drop_surface(&wl_surface);
 	}
 
 	fn child_data(&self) -> FxHashMap<String, ChildInfo> {
@@ -193,16 +179,20 @@ impl Backend for XdgBackend {
 			.clone()
 			.ok_or_else(|| eyre!("Could not get toplevel"))?;
 
-		let pointer_grab = self.pointer_grab.lock().clone();
-		let keyboard_grab = self.keyboard_grab.lock().clone();
-
 		Ok(PanelItemInitData {
-			cursor: self.cursor.borrow().as_ref().and_then(|c| c.cursor_data()),
+			cursor: (*self.seat.cursor_info_rx.borrow()).cursor_data(),
 			toplevel: toplevel_data.into(),
 			children: self.child_data(),
-			pointer_grab,
-			keyboard_grab,
+			pointer_grab: None,
+			keyboard_grab: None,
 		})
+	}
+	fn surface_alive(&self, surface: &SurfaceID) -> bool {
+		match surface {
+			SurfaceID::Cursor => true,
+			SurfaceID::Toplevel => true,
+			SurfaceID::Child(c) => self.popups.lock().contains_key(c),
+		}
 	}
 
 	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>) {
@@ -237,66 +227,32 @@ impl Backend for XdgBackend {
 		let Some(surface) = self.wl_surface_from_id(surface) else {
 			return;
 		};
-		self.seat
-			.pointer_event(&surface, PointerEvent::Motion(position));
+		self.seat.pointer_motion(surface, position)
 	}
-	fn pointer_button(&self, surface: &SurfaceID, button: u32, pressed: bool) {
-		let Some(surface) = self.wl_surface_from_id(surface) else {
-			return;
-		};
-		self.seat.pointer_event(
-			&surface,
-			PointerEvent::Button {
-				button,
-				state: if pressed { 1 } else { 0 },
-			},
-		)
+	fn pointer_button(&self, _surface: &SurfaceID, button: u32, pressed: bool) {
+		self.seat.pointer_button(button, pressed)
 	}
 	fn pointer_scroll(
 		&self,
-		surface: &SurfaceID,
+		_surface: &SurfaceID,
 		scroll_distance: Option<Vector2<f32>>,
 		scroll_steps: Option<Vector2<f32>>,
 	) {
-		let Some(surface) = self.wl_surface_from_id(surface) else {
-			return;
-		};
-		self.seat.pointer_event(
-			&surface,
-			PointerEvent::Scroll {
-				axis_continuous: scroll_distance,
-				axis_discrete: scroll_steps,
-			},
-		)
+		self.seat.pointer_scroll(scroll_distance, scroll_steps)
 	}
 
 	fn keyboard_keys(&self, surface: &SurfaceID, keymap_id: &str, keys: Vec<i32>) {
 		let Some(surface) = self.wl_surface_from_id(surface) else {
 			return;
 		};
-		let keymaps = KEYMAPS.lock();
-		let Some(keymap) = keymaps.get(keymap_id).cloned() else {
-			return;
-		};
-		if self.seat.set_keymap(keymap, vec![surface.clone()]).is_err() {
-			return;
-		}
-		for key in keys {
-			self.seat.keyboard_event(
-				&surface,
-				KeyboardEvent::Key {
-					key: key.abs() as u32,
-					state: key > 0,
-				},
-			);
-		}
+		self.seat.keyboard_keys(surface, keymap_id, keys)
 	}
 
 	fn touch_down(&self, surface: &SurfaceID, id: u32, position: Vector2<f32>) {
 		let Some(surface) = self.wl_surface_from_id(surface) else {
 			return;
 		};
-		self.seat.touch_down(&surface, id, position)
+		self.seat.touch_down(surface, id, position)
 	}
 	fn touch_move(&self, id: u32, position: Vector2<f32>) {
 		self.seat.touch_move(id, position)

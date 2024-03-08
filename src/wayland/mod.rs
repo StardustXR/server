@@ -20,7 +20,6 @@ pub mod xwayland_rootless;
 use self::xwayland_rootless::XWaylandState;
 
 use self::{state::WaylandState, surface::CORE_SURFACES};
-use crate::wayland::seat::SeatData;
 use crate::{core::task, wayland::state::ClientState};
 use color_eyre::eyre::{ensure, Result};
 use global_counter::primitive::exact::CounterU32;
@@ -179,10 +178,9 @@ impl Wayland {
 							id: OnceCell::new(),
 							compositor_state: Default::default(),
 							display: Arc::downgrade(&display),
-							seat: SeatData::new(&dh1)
+							seat: state.lock().seat.clone(),
 						});
-						let client = dh2.insert_client(stream.into_std()?, client_state.clone())?;
-						let _ = client_state.seat.client.set(client.id());
+						let _client = dh2.insert_client(stream.into_std()?, client_state.clone())?;
 					}
 					e = dispatch_poll_listener.readable() => { // Dispatch
 						let mut guard = e?;

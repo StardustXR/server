@@ -14,7 +14,7 @@ use parking_lot::Mutex;
 use smithay::reexports::{
 	wayland_protocols::xdg::shell::server::{
 		xdg_surface::{self, XdgSurface},
-		xdg_toplevel::{XdgToplevel, EVT_WM_CAPABILITIES_SINCE},
+		xdg_toplevel::{WmCapabilities, XdgToplevel, EVT_WM_CAPABILITIES_SINCE},
 	},
 	wayland_server::{
 		protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle, Resource,
@@ -58,7 +58,13 @@ impl Dispatch<XdgSurface, WlWeak<WlSurface>, WaylandState> for WaylandState {
 				debug!(?toplevel, ?xdg_surface, "Create XDG toplevel");
 
 				if toplevel.version() >= EVT_WM_CAPABILITIES_SINCE {
-					toplevel.wm_capabilities(vec![3]);
+					toplevel.wm_capabilities(
+						vec![WmCapabilities::Maximize, WmCapabilities::Fullscreen]
+							.into_iter()
+							.map(u32::from)
+							.flat_map(u32::to_ne_bytes)
+							.collect(),
+					);
 				}
 				toplevel.configure(
 					0,
@@ -69,7 +75,7 @@ impl Dispatch<XdgSurface, WlWeak<WlSurface>, WaylandState> for WaylandState {
 							.flat_map(u32::to_ne_bytes)
 							.collect()
 					} else {
-						vec![]
+						vec![1].into_iter().flat_map(u32::to_ne_bytes).collect()
 					},
 				);
 				xdg_surface.configure(SERIAL_COUNTER.inc());
@@ -100,7 +106,10 @@ impl Dispatch<XdgSurface, WlWeak<WlSurface>, WaylandState> for WaylandState {
 							);
 							utils::insert_data(&wl_surface, Arc::downgrade(&panel_item));
 							utils::insert_data_raw(&wl_surface, node);
-							handle_cursor(&panel_item, panel_item.backend.cursor.clone());
+							handle_cursor(
+								&panel_item,
+								panel_item.backend.seat.cursor_info_rx.clone(),
+							);
 						}
 					},
 					{
@@ -172,10 +181,7 @@ impl Dispatch<XdgSurface, WlWeak<WlSurface>, WaylandState> for WaylandState {
 					&panel_item,
 					positioner,
 				);
-				handle_cursor(
-					&panel_item,
-					panel_item.backend.seat.new_surface(&wl_surface),
-				);
+				handle_cursor(&panel_item, panel_item.backend.seat.cursor_info_rx.clone());
 				let xdg_popup = data_init.init(id, wl_surface.downgrade());
 				utils::insert_data(&wl_surface, SurfaceID::Child(uid));
 				utils::insert_data(&wl_surface, Arc::downgrade(&panel_item));

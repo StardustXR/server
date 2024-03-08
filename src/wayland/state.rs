@@ -1,5 +1,5 @@
-use super::DisplayWrapper;
-use crate::wayland::{drm::wl_drm::WlDrm, seat::SeatData};
+use super::{seat::SeatWrapper, DisplayWrapper};
+use crate::wayland::drm::wl_drm::WlDrm;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::{
@@ -9,6 +9,7 @@ use smithay::{
 		renderer::gles::GlesRenderer,
 	},
 	delegate_dmabuf, delegate_output, delegate_shm,
+	input::{keyboard::XkbConfig, SeatState},
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
 		wayland_protocols::xdg::{
@@ -45,7 +46,7 @@ pub struct ClientState {
 	pub id: OnceCell<ClientId>,
 	pub compositor_state: CompositorClientState,
 	pub display: Weak<DisplayWrapper>,
-	pub seat: Arc<SeatData>,
+	pub seat: Arc<SeatWrapper>,
 }
 impl ClientState {
 	pub fn flush(&self) {
@@ -80,6 +81,8 @@ pub struct WaylandState {
 	dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
 	pub drm_formats: Vec<Fourcc>,
 	pub dmabuf_tx: UnboundedSender<(Dmabuf, Option<dmabuf::ImportNotifier>)>,
+	pub seat_state: SeatState<Self>,
+	pub seat: Arc<SeatWrapper>,
 	pub output: Output,
 }
 
@@ -133,6 +136,12 @@ impl WaylandState {
 			(dmabuf_state, dmabuf_global, None)
 		};
 
+		let mut seat_state = SeatState::new();
+		let mut seat = seat_state.new_wl_seat(&display_handle, "seat0");
+		seat.add_pointer();
+		seat.add_keyboard(XkbConfig::default(), 200, 25).unwrap();
+		seat.add_touch();
+
 		let output = Output::new(
 			"1x".to_owned(),
 			smithay::output::PhysicalProperties {
@@ -173,6 +182,8 @@ impl WaylandState {
 				drm_formats,
 				dmabuf_state,
 				dmabuf_tx,
+				seat_state,
+				seat: Arc::new(SeatWrapper::new(weak.clone(), seat)),
 				output,
 			})
 		})
