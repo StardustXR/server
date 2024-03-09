@@ -22,7 +22,6 @@ use self::xwayland_rootless::XWaylandState;
 use self::{state::WaylandState, surface::CORE_SURFACES};
 use crate::{core::task, wayland::state::ClientState};
 use color_eyre::eyre::{ensure, Result};
-use global_counter::primitive::exact::CounterU32;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use sk::StereoKitDraw;
@@ -52,7 +51,6 @@ use tracing::{debug_span, info, instrument};
 
 pub static X_DISPLAY: OnceCell<u32> = OnceCell::new();
 pub static WAYLAND_DISPLAY: OnceCell<String> = OnceCell::new();
-pub static SERIAL_COUNTER: CounterU32 = CounterU32::new(0);
 
 struct EGLRawHandles {
 	display: *const c_void,
@@ -175,6 +173,7 @@ impl Wayland {
 					acc = listen_async.accept() => { // New client connected
 						let (stream, _) = acc?;
 						let client_state = Arc::new(ClientState {
+							pid: stream.peer_cred().ok().and_then(|c| c.pid()),
 							id: OnceCell::new(),
 							compositor_state: Default::default(),
 							display: Arc::downgrade(&display),

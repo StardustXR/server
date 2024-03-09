@@ -106,15 +106,49 @@ impl SeatWrapper {
 			touches: Mutex::new(FxHashMap::default()),
 		}
 	}
+	pub fn unfocus(&self, surface: &WlSurface, state: &mut WaylandState) {
+		let pointer = self.seat.get_pointer().unwrap();
+		if pointer.current_focus() == Some(surface.clone()) {
+			pointer.motion(
+				state,
+				None,
+				&MotionEvent {
+					location: (0.0, 0.0).into(),
+					serial: SERIAL_COUNTER.next_serial(),
+					time: 0,
+				},
+			)
+		}
+		let keyboard = self.seat.get_keyboard().unwrap();
+		if keyboard.current_focus() == Some(surface.clone()) {
+			keyboard.set_focus(state, None, SERIAL_COUNTER.next_serial());
+		}
+		let touch = self.seat.get_touch().unwrap();
+		for (id, touch_surface) in self.touches.lock().iter() {
+			if touch_surface.id() == surface.id() {
+				self.touch_up(*id);
+				touch.up(
+					state,
+					&UpEvent {
+						slot: Some(*id).into(),
+						serial: SERIAL_COUNTER.next_serial(),
+						time: 0,
+					},
+				)
+			}
+		}
+	}
+
 	pub fn pointer_motion(&self, surface: WlSurface, position: Vector2<f32>) {
 		let Some(state) = self.wayland_state.upgrade() else {
 			return;
 		};
+		let mut state = state.lock();
 		let Some(pointer) = self.seat.get_pointer() else {
 			return;
 		};
 		pointer.motion(
-			&mut state.lock(),
+			&mut state,
 			Some((surface, (0, 0).into())),
 			&MotionEvent {
 				location: (position.x as f64, position.y as f64).into(),
@@ -122,16 +156,18 @@ impl SeatWrapper {
 				time: 0,
 			},
 		);
+		pointer.frame(&mut state);
 	}
 	pub fn pointer_button(&self, button: u32, pressed: bool) {
 		let Some(state) = self.wayland_state.upgrade() else {
 			return;
 		};
+		let mut state = state.lock();
 		let Some(pointer) = self.seat.get_pointer() else {
 			return;
 		};
 		pointer.button(
-			&mut state.lock(),
+			&mut state,
 			&ButtonEvent {
 				button,
 				state: if pressed {
@@ -143,6 +179,7 @@ impl SeatWrapper {
 				time: 0,
 			},
 		);
+		pointer.frame(&mut state);
 	}
 	pub fn pointer_scroll(
 		&self,
@@ -171,7 +208,8 @@ impl SeatWrapper {
 				v120: scroll_steps.map(|d| ((d.x * 120.0) as i32, (d.y * 120.0) as i32)),
 				stop: (false, false),
 			},
-		)
+		);
+		pointer.frame(&mut state);
 	}
 
 	pub fn keyboard_keys(&self, surface: WlSurface, keymap_id: &str, keys: Vec<i32>) {

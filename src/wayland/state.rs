@@ -12,10 +12,7 @@ use smithay::{
 	input::{keyboard::XkbConfig, SeatState},
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
-		wayland_protocols::xdg::{
-			decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
-			shell::server::xdg_wm_base::XdgWmBase,
-		},
+		wayland_protocols::xdg::decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
 		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as DecorationMode,
 		wayland_server::{
 			backend::{ClientData, ClientId, DisconnectReason},
@@ -34,7 +31,7 @@ use smithay::{
 			self, DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState,
 		},
 		output::OutputHandler,
-		shell::kde::decoration::KdeDecorationState,
+		shell::{kde::decoration::KdeDecorationState, xdg::XdgShellState},
 		shm::{ShmHandler, ShmState},
 	},
 };
@@ -43,6 +40,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tracing::{info, warn};
 
 pub struct ClientState {
+	pub pid: Option<i32>,
 	pub id: OnceCell<ClientId>,
 	pub compositor_state: CompositorClientState,
 	pub display: Weak<DisplayWrapper>,
@@ -83,6 +81,7 @@ pub struct WaylandState {
 	pub dmabuf_tx: UnboundedSender<(Dmabuf, Option<dmabuf::ImportNotifier>)>,
 	pub seat_state: SeatState<Self>,
 	pub seat: Arc<SeatWrapper>,
+	pub xdg_shell: XdgShellState,
 	pub output: Output,
 }
 
@@ -163,8 +162,9 @@ impl WaylandState {
 			None,
 		);
 		output.set_preferred(mode);
+
+		let xdg_shell = XdgShellState::new::<Self>(&display_handle);
 		display_handle.create_global::<Self, WlDataDeviceManager, _>(3, ());
-		display_handle.create_global::<Self, XdgWmBase, _>(5, ());
 		display_handle.create_global::<Self, ZxdgDecorationManagerV1, _>(1, ());
 		display_handle.create_global::<Self, WlDrm, _>(2, ());
 
@@ -184,6 +184,7 @@ impl WaylandState {
 				dmabuf_tx,
 				seat_state,
 				seat: Arc::new(SeatWrapper::new(weak.clone(), seat)),
+				xdg_shell,
 				output,
 			})
 		})

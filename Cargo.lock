@@ -2137,7 +2137,6 @@ dependencies = [
  "directories",
  "fxtypemap",
  "glam 0.23.0",
- "global_counter",
  "input-event-codes",
  "lazy_static",
  "libc",

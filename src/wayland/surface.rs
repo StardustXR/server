@@ -43,8 +43,8 @@ pub struct CoreSurface {
 	sk_tex: OnceCell<Tex>,
 	sk_mat: OnceCell<Arc<Material>>,
 	material_offset: Mutex<Delta<u32>>,
-	on_mapped: Box<dyn Fn() + Send + Sync>,
-	on_commit: Box<dyn Fn(u32) + Send + Sync>,
+	on_mapped: Mutex<Box<dyn Fn() + Send + Sync>>,
+	on_commit: Mutex<Box<dyn Fn(u32) + Send + Sync>>,
 	pub pending_material_applications: Registry<ModelPart>,
 }
 
@@ -64,8 +64,8 @@ impl CoreSurface {
 					sk_tex: OnceCell::new(),
 					sk_mat: OnceCell::new(),
 					material_offset: Mutex::new(Delta::new(0)),
-					on_mapped: Box::new(on_mapped) as Box<dyn Fn() + Send + Sync>,
-					on_commit: Box::new(on_commit) as Box<dyn Fn(u32) + Send + Sync>,
+					on_mapped: Mutex::new(Box::new(on_mapped) as Box<dyn Fn() + Send + Sync>),
+					on_commit: Mutex::new(Box::new(on_commit) as Box<dyn Fn(u32) + Send + Sync>),
 					pending_material_applications: Registry::new(),
 				})
 			});
@@ -73,11 +73,16 @@ impl CoreSurface {
 	}
 
 	pub fn commit(&self, count: u32) {
-		(self.on_commit)(count);
+		(*self.on_commit.lock())(count);
 	}
 
 	pub fn from_wl_surface(surf: &WlSurface) -> Option<Arc<CoreSurface>> {
 		get_data(surf)
+	}
+
+	pub fn decycle(&self) {
+		*self.on_mapped.lock() = Box::new(|| {});
+		*self.on_commit.lock() = Box::new(|_| {});
 	}
 
 	pub fn process(&self, sk: &impl StereoKitDraw, renderer: &mut GlesRenderer) {
@@ -170,7 +175,7 @@ impl CoreSurface {
 		});
 		drop(mapped_data);
 		if just_mapped {
-			(self.on_mapped)();
+			(*self.on_mapped.lock())();
 		}
 		self.apply_surface_materials();
 	}
