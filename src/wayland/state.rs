@@ -46,14 +46,6 @@ pub struct ClientState {
 	pub display: Weak<DisplayWrapper>,
 	pub seat: Arc<SeatWrapper>,
 }
-impl ClientState {
-	pub fn flush(&self) {
-		let Some(display) = self.display.upgrade() else {
-			return;
-		};
-		let _ = display.flush_clients(self.id.get().cloned());
-	}
-}
 impl ClientData for ClientState {
 	fn initialized(&self, client_id: ClientId) {
 		info!("Wayland client {:?} connected", client_id);

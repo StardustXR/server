@@ -281,6 +281,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 }
 
 // Remote signals
+#[allow(unused)]
 impl<B: Backend + ?Sized> PanelItem<B> {
 	pub fn toplevel_parent_changed(&self, parent: &str) {
 		let Some(node) = self.node.upgrade() else {
@@ -381,6 +382,7 @@ macro_rules! flex_deserialize {
 		}
 	};
 }
+#[allow(unused)]
 impl<B: Backend + ?Sized> PanelItem<B> {
 	fn apply_surface_material_flex(
 		node: Arc<Node>,
