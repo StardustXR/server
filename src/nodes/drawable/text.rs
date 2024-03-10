@@ -17,18 +17,17 @@ use super::{TextAspect, TextStyle};
 static TEXT_REGISTRY: Registry<Text> = Registry::new();
 
 fn convert_align(x_align: super::XAlign, y_align: super::YAlign) -> TextAlign {
-	let x_align = match x_align {
-		super::XAlign::Left => TextAlign::XLeft,
-		super::XAlign::Center => TextAlign::XCenter,
-		super::XAlign::Right => TextAlign::XRight,
-	} as u32;
-	let y_align = match y_align {
-		super::YAlign::Top => TextAlign::YTop,
-		super::YAlign::Center => TextAlign::YCenter,
-		super::YAlign::Bottom => TextAlign::YBottom,
-	} as u32;
-
-	unsafe { std::mem::transmute(x_align | y_align) }
+	match (x_align, y_align) {
+		(super::XAlign::Left, super::YAlign::Top) => TextAlign::Left,
+		(super::XAlign::Left, super::YAlign::Center) => TextAlign::CenterLeft,
+		(super::XAlign::Left, super::YAlign::Bottom) => TextAlign::BottomLeft,
+		(super::XAlign::Center, super::YAlign::Top) => TextAlign::Center,
+		(super::XAlign::Center, super::YAlign::Center) => TextAlign::Center,
+		(super::XAlign::Center, super::YAlign::Bottom) => TextAlign::BottomCenter,
+		(super::XAlign::Right, super::YAlign::Top) => TextAlign::Right,
+		(super::XAlign::Right, super::YAlign::Center) => TextAlign::CenterRight,
+		(super::XAlign::Right, super::YAlign::Bottom) => TextAlign::BottomRight,
+	}
 }
 
 pub struct Text {
@@ -94,8 +93,8 @@ impl Text {
 						super::TextFit::Overflow => TextFit::Overflow,
 					},
 					*style,
-					convert_align(bounds.anchor_align_x.clone(), bounds.anchor_align_y.clone()),
-					convert_align(data.text_align_x.clone(), data.text_align_y.clone()),
+					convert_align(bounds.anchor_align_x, bounds.anchor_align_y),
+					convert_align(data.text_align_x, data.text_align_y),
 					vec3(0.0, 0.0, 0.0),
 					Color128::from([data.color.c.r, data.color.c.g, data.color.c.b, data.color.a]),
 				);
@@ -105,7 +104,7 @@ impl Text {
 					transform,
 					*style,
 					TextAlign::Center,
-					convert_align(data.text_align_x.clone(), data.text_align_y.clone()),
+					convert_align(data.text_align_x, data.text_align_y),
 					vec3(0.0, 0.0, 0.0),
 					Color128::from([data.color.c.r, data.color.c.g, data.color.c.b, data.color.a]),
 				);
