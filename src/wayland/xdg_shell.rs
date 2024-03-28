@@ -76,7 +76,7 @@ impl XdgShellHandler for WaylandState {
 
 	fn new_toplevel(&mut self, toplevel: ToplevelSurface) {
 		toplevel.with_pending_state(|s| {
-			s.decoration_mode = Some(Mode::ClientSide);
+			s.decoration_mode = Some(Mode::ServerSide);
 			s.states.set(State::TiledTop);
 			s.states.set(State::TiledBottom);
 			s.states.set(State::TiledLeft);
