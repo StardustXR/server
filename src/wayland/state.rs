@@ -12,7 +12,10 @@ use smithay::{
 	input::{keyboard::XkbConfig, SeatState},
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
-		wayland_protocols::xdg::decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+		wayland_protocols::xdg::{
+			decoration::zv1::server::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+			shell::server::xdg_toplevel::WmCapabilities,
+		},
 		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as DecorationMode,
 		wayland_server::{
 			backend::{ClientData, ClientId, DisconnectReason},
@@ -31,7 +34,10 @@ use smithay::{
 			self, DmabufFeedback, DmabufFeedbackBuilder, DmabufGlobal, DmabufHandler, DmabufState,
 		},
 		output::OutputHandler,
-		shell::{kde::decoration::KdeDecorationState, xdg::XdgShellState},
+		shell::{
+			kde::decoration::KdeDecorationState,
+			xdg::{WmCapabilitySet, XdgShellState},
+		},
 		shm::{ShmHandler, ShmState},
 	},
 };
@@ -155,7 +161,13 @@ impl WaylandState {
 		);
 		output.set_preferred(mode);
 
-		let xdg_shell = XdgShellState::new::<Self>(&display_handle);
+		let mut xdg_shell = XdgShellState::new::<Self>(&display_handle);
+		let mut capabilities = WmCapabilitySet::default();
+		capabilities.set(WmCapabilities::Maximize);
+		capabilities.set(WmCapabilities::Fullscreen);
+		capabilities.unset(WmCapabilities::Minimize);
+		capabilities.unset(WmCapabilities::WindowMenu);
+		xdg_shell.replace_capabilities(capabilities);
 		display_handle.create_global::<Self, WlDataDeviceManager, _>(3, ());
 		display_handle.create_global::<Self, ZxdgDecorationManagerV1, _>(1, ());
 		display_handle.create_global::<Self, WlDrm, _>(2, ());
