@@ -2,7 +2,7 @@ use crate::wayland::surface::CoreSurface;
 
 use super::state::{ClientState, WaylandState};
 use portable_atomic::{AtomicU32, Ordering};
-#[cfg(feature = "xwayland")]
+#[cfg(feature = "xwayland_rootless")]
 use smithay::xwayland::XWaylandClientData;
 use smithay::{
 	delegate_compositor,
@@ -41,7 +41,7 @@ impl CompositorHandler for WaylandState {
 		if let Some(client_state) = client.get_data::<ClientState>() {
 			&client_state.compositor_state
 		} else {
-			#[cfg(feature = "xwayland")]
+			#[cfg(feature = "xwayland_rootless")]
 			if let Some(xwayland_client_data) = client.get_data::<XWaylandClientData>() {
 				return &xwayland_client_data.compositor_state;
 			}

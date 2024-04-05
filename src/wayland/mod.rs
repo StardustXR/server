@@ -17,7 +17,7 @@ use crate::wayland::xwayland_rootful::start_xwayland;
 #[cfg(feature = "xwayland_rootless")]
 pub mod xwayland_rootless;
 #[cfg(feature = "xwayland_rootless")]
-use self::xwayland_rootless::XWaylandState;
+use crate::wayland::xwayland_rootless::start_xwayland;
 
 use self::{state::WaylandState, surface::CORE_SURFACES};
 use crate::{core::task, wayland::state::ClientState};
@@ -101,7 +101,7 @@ pub struct Wayland {
 	#[cfg(feature = "xwayland_rootful")]
 	pub x_lock: X11Lock,
 	#[cfg(feature = "xwayland_rootless")]
-	pub xwayland_state: XWaylandState,
+	xwayland_join_handle: JoinHandle<Result<()>>,
 }
 impl Wayland {
 	pub fn new() -> Result<Self> {
@@ -120,9 +120,7 @@ impl Wayland {
 		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
 		let display = Arc::new(DisplayWrapper(Mutex::new(display), display_handle.clone()));
 
-		#[cfg(feature = "xwayland_rootless")]
-		let xwayland_state = XWaylandState::create(&display_handle)?;
-		let wayland_state = WaylandState::new(display_handle, &renderer, dmabuf_tx);
+		let wayland_state = WaylandState::new(display_handle.clone(), &renderer, dmabuf_tx);
 		let output = wayland_state.lock().output.clone();
 
 		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
@@ -138,6 +136,9 @@ impl Wayland {
 		info!(socket_name, "Wayland active");
 
 		let join_handle = Wayland::start_loop(display.clone(), socket, wayland_state)?;
+		#[cfg(feature = "xwayland_rootless")]
+		let xwayland_join_handle = task::new(|| "xwayland", start_xwayland(display_handle))?;
+
 		Ok(Wayland {
 			display,
 			socket_name,
@@ -148,7 +149,7 @@ impl Wayland {
 			#[cfg(feature = "xwayland_rootful")]
 			x_lock: x_display,
 			#[cfg(feature = "xwayland_rootless")]
-			xwayland_state,
+			xwayland_join_handle,
 		})
 	}
 
@@ -226,5 +227,7 @@ impl Wayland {
 impl Drop for Wayland {
 	fn drop(&mut self) {
 		self.join_handle.abort();
+		#[cfg(feature = "xwayland_rootless")]
+		self.xwayland_join_handle.abort();
 	}
 }

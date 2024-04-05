@@ -74,8 +74,9 @@ fxtypemap = "0.2.0"
 toml = "0.8.10"
 
 [dependencies.smithay]
-# git = "https://github.com/technobaboo/smithay.git" # Until we get stereokit to understand OES samplers and external textures
-git = "https://github.com/smithay/smithay.git" # Until we get stereokit to understand OES samplers and external textures
+# git = "https://github.com/technobaboo/smithay.git"
+git = "https://github.com/colinmarc/smithay.git"
+# git = "https://github.com/smithay/smithay.git"
 # path = "../smithay"
 default-features = false
 features = [
