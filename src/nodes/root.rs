@@ -13,9 +13,10 @@ use color_eyre::eyre::Result;
 use glam::Mat4;
 use rustc_hash::FxHashMap;
 use stardust_xr::schemas::flex::{deserialize, serialize};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tracing::instrument;
+use tracing::{info, instrument};
 
 static ROOT_REGISTRY: Registry<Root> = Registry::new();
 
@@ -72,7 +73,9 @@ impl Root {
 		calling_client: Arc<Client>,
 		message: Message,
 	) -> Result<()> {
-		*calling_client.base_resource_prefixes.lock() = deserialize(message.as_ref())?;
+		let prefixes: Vec<PathBuf> = deserialize(message.as_ref())?;
+		info!(?client, ?prefixes, "Set base prefixes");
+		*calling_client.base_resource_prefixes.lock() = prefixes;
 		Ok(())
 	}
 
