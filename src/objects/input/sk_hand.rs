@@ -1,5 +1,6 @@
 use crate::core::client::INTERNAL_CLIENT;
-use crate::nodes::input::InputDataType;
+use crate::nodes::fields::Field;
+use crate::nodes::input::{InputDataType, InputHandler, INPUT_HANDLER_REGISTRY};
 use crate::nodes::{
 	input::{Hand, InputMethod, Joint},
 	spatial::Spatial,
@@ -10,8 +11,9 @@ use glam::Mat4;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
+use std::f32::INFINITY;
 use std::sync::Arc;
-use stereokit::{ButtonState, HandJoint, Handed, StereoKitMultiThread};
+use stereokit::{ButtonState, Color128, HandJoint, Handed, Material, StereoKitMultiThread};
 
 fn convert_joint(joint: HandJoint) -> Joint {
 	Joint {
@@ -30,12 +32,14 @@ struct HandDatamap {
 
 pub struct SkHand {
 	_node: Arc<Node>,
-	input: Arc<InputMethod>,
 	handed: Handed,
+	material: Material,
+	input: Arc<InputMethod>,
+	capture: Option<Arc<InputHandler>>,
 	datamap: HandDatamap,
 }
 impl SkHand {
-	pub fn new(handed: Handed) -> Result<Self> {
+	pub fn new(handed: Handed, sk: &impl StereoKitMultiThread) -> Result<Self> {
 		let _node = Node::create_parent_name(&INTERNAL_CLIENT, "", &nanoid!(), false)
 			.add_to_scenegraph()?;
 		Spatial::add_to(&_node, None, Mat4::IDENTITY, false);
@@ -45,10 +49,15 @@ impl SkHand {
 		});
 		let datamap = Datamap::from_typed(HandDatamap::default())?;
 		let input = InputMethod::add_to(&_node, hand, datamap)?;
+
+		let material = sk.material_copy(Material::HAND);
+		sk.input_hand_material(handed, Material(material.0));
 		Ok(SkHand {
 			_node,
-			input,
 			handed,
+			material,
+			input,
+			capture: None,
 			datamap: Default::default(),
 		})
 	}
@@ -98,5 +107,94 @@ impl SkHand {
 		self.datamap.pinch_strength = sk_hand.pinch_activation;
 		self.datamap.grab_strength = sk_hand.grip_activation;
 		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
+
+		// remove the capture when it's removed from captures list
+		if let Some(capture) = &self.capture {
+			if !self.input.captures.get_valid_contents().contains(&capture) {
+				self.capture.take();
+				sk.material_set_color(&self.material, "color", Color128::new_rgb(1.0, 1.0, 1.0));
+			}
+		}
+		// add the capture that's the closest if we don't have one
+		if self.capture.is_none() {
+			self.capture = self
+				.input
+				.captures
+				.get_valid_contents()
+				.into_iter()
+				.map(|handler| (handler.clone(), self.compare_distance(&handler.field).abs()))
+				.reduce(|(handlers_a, distance_a), (handlers_b, distance_b)| {
+					if distance_a < distance_b {
+						(handlers_a, distance_a)
+					} else {
+						(handlers_b, distance_b)
+					}
+				})
+				.map(|(rx, _)| rx);
+			if self.capture.is_some() {
+				sk.material_set_color(&self.material, "color", Color128::new_rgb(0.0, 1.0, 0.75));
+			}
+		}
+
+		// make sure that if something is captured only send input to it
+		if let Some(capture) = &self.capture {
+			self.input.set_handler_order([capture].into_iter());
+			return;
+		}
+
+		// send input to all the input handlers that are the closest to the ray as possible
+		self.input.set_handler_order(
+			INPUT_HANDLER_REGISTRY
+				.get_valid_contents()
+				.into_iter()
+				// filter out all the disabled handlers
+				.filter(|handler| {
+					let Some(node) = handler.node.upgrade() else {
+						return false;
+					};
+					node.enabled()
+				})
+				// get the unsigned distance to the handler's field (unsigned so giant fields won't always eat input)
+				.map(|handler| {
+					(
+						vec![handler.clone()],
+						self.compare_distance(&handler.field).abs(),
+					)
+				})
+				// .inspect(|(_, result)| {
+				// 	dbg!(result);
+				// })
+				// now collect all handlers that are same distance if they're the closest
+				.reduce(|(mut handlers_a, distance_a), (handlers_b, distance_b)| {
+					if (distance_a - distance_b).abs() < 0.001 {
+						// distance is basically the same (within 1mm)
+						handlers_a.extend(handlers_b);
+						(handlers_a, distance_a)
+					} else if distance_a < distance_b {
+						(handlers_a, distance_a)
+					} else {
+						(handlers_b, distance_b)
+					}
+				})
+				.map(|(rx, _)| rx)
+				.unwrap_or_default()
+				.iter(),
+		);
+	}
+
+	fn compare_distance(&self, field: &Field) -> f32 {
+		let InputDataType::Hand(hand) = &*self.input.data.lock() else {
+			return INFINITY;
+		};
+		let spatial = &self.input.spatial;
+		let thumb_tip_distance = field.distance(spatial, hand.thumb.tip.position.into());
+		let index_tip_distance = field.distance(spatial, hand.index.tip.position.into());
+		let middle_tip_distance = field.distance(spatial, hand.middle.tip.position.into());
+		let ring_tip_distance = field.distance(spatial, hand.ring.tip.position.into());
+
+		(thumb_tip_distance * 0.3)
+			+ (index_tip_distance * 0.4)
+			+ (middle_tip_distance * 0.15)
+			+ (ring_tip_distance * 0.15)
 	}
 }

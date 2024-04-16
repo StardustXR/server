@@ -1,4 +1,4 @@
-use super::{DistanceLink, InputDataTrait, Pointer};
+use super::{InputDataTrait, InputLink, Pointer};
 use crate::nodes::{
 	fields::{Field, Ray, RayMarchResult},
 	spatial::Spatial,
@@ -29,27 +29,17 @@ impl Pointer {
 	}
 }
 impl InputDataTrait for Pointer {
-	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
-		let ray_info = self.ray_march(space, field);
-		if ray_info.min_distance > 0.0 {
-			ray_info.deepest_point_distance + 1000.0
-		} else {
-			ray_info
-				.deepest_point_distance
-				.hypot(0.001 / ray_info.min_distance)
-		}
-	}
-	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		let ray_info = self.ray_march(space, field);
 		ray_info.min_distance
 	}
-	fn update_to(&mut self, distance_link: &DistanceLink, mut local_to_handler_matrix: Mat4) {
+	fn update_to(&mut self, input_link: &InputLink, mut local_to_handler_matrix: Mat4) {
 		local_to_handler_matrix =
 			Mat4::from_rotation_translation(self.orientation.into(), self.origin.into())
 				* local_to_handler_matrix;
 		let (_, orientation, origin) = local_to_handler_matrix.to_scale_rotation_translation();
 
-		let ray_march = self.ray_march(&distance_link.method.spatial, &distance_link.handler.field);
+		let ray_march = self.ray_march(&input_link.method.spatial, &input_link.handler.field);
 		let direction = local_to_handler_matrix
 			.transform_vector3(vec3(0.0, 0.0, -1.0))
 			.normalize();

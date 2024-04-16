@@ -5,7 +5,7 @@ use crate::{
 			mask_matches, pulse_receiver_client, PulseSender, KEYMAPS, PULSE_RECEIVER_REGISTRY,
 		},
 		fields::{Field, Ray},
-		input::{InputDataType, InputMethod, Pointer},
+		input::{InputDataType, InputHandler, InputMethod, Pointer, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
 		Node,
 	},
@@ -52,6 +52,7 @@ pub struct MousePointer {
 	node: Arc<Node>,
 	spatial: Arc<Spatial>,
 	pointer: Arc<InputMethod>,
+	capture: Option<Arc<InputHandler>>,
 	mouse_datamap: MouseEvent,
 	keyboard_datamap: KeyboardEvent,
 	keyboard_sender: Arc<PulseSender>,
@@ -84,6 +85,7 @@ impl MousePointer {
 			node,
 			spatial,
 			pointer,
+			capture: None,
 			mouse_datamap: Default::default(),
 			keyboard_datamap: Default::default(),
 			keyboard_sender,
@@ -134,7 +136,104 @@ impl MousePointer {
 			self.mouse_datamap.scroll_discrete = vec2(0.0, mouse.scroll_change / 120.0);
 			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).unwrap();
 		}
+		self.target_pointer_input();
 		self.send_keyboard_input(sk);
+	}
+
+	fn target_pointer_input(&mut self) {
+		// remove the capture when it's removed from captures list
+		if let Some(capture) = &self.capture {
+			if !self
+				.pointer
+				.captures
+				.get_valid_contents()
+				.contains(&capture)
+			{
+				self.capture.take();
+			}
+		}
+		// add the capture that's the closest if we don't have one
+		if self.capture.is_none() {
+			if let Some(new_capture) = self
+				.pointer
+				.captures
+				.get_valid_contents()
+				.into_iter()
+				.map(|h| {
+					(
+						h.clone(),
+						h.field.ray_march(Ray {
+							origin: vec3(0.0, 0.0, 0.0),
+							direction: vec3(0.0, 0.0, -1.0),
+							space: self.spatial.clone(),
+						}),
+					)
+				})
+				.reduce(|(handlers_a, result_a), (handlers_b, result_b)| {
+					if result_a.min_distance < result_b.min_distance {
+						(handlers_a, result_a)
+					} else {
+						(handlers_b, result_b)
+					}
+				})
+				.map(|(rx, _)| rx)
+			{
+				self.capture = Some(new_capture.clone());
+			}
+		}
+
+		// make sure that if something is captured only send input to it
+		if let Some(capture) = &self.capture {
+			self.pointer.set_handler_order([capture].into_iter());
+			return;
+		}
+
+		// send input to all the input handlers that are the closest to the ray as possible
+		self.pointer.set_handler_order(
+			INPUT_HANDLER_REGISTRY
+				.get_valid_contents()
+				.into_iter()
+				// filter out all the disabled handlers
+				.filter(|handler| {
+					let Some(node) = handler.node.upgrade() else {
+						return false;
+					};
+					node.enabled()
+				})
+				// ray march to all the enabled handlers' fields
+				.map(|handler| {
+					let result = handler.field.ray_march(Ray {
+						origin: vec3(0.0, 0.0, 0.0),
+						direction: vec3(0.0, 0.0, -1.0),
+						space: self.spatial.clone(),
+					});
+					(vec![handler], result)
+				})
+				// make sure the field isn't at the pointer origin and that it's being hit
+				.filter(|(_, result)| {
+					result.deepest_point_distance > 0.01 && result.min_distance < 0.0
+				})
+				// .inspect(|(_, result)| {
+				// 	dbg!(result);
+				// })
+				// now collect all handlers that are same distance if they're the closest
+				.reduce(|(mut handlers_a, result_a), (handlers_b, result_b)| {
+					if (result_a.deepest_point_distance - result_b.deepest_point_distance).abs()
+						< 0.001
+					{
+						// distance is basically the same
+						handlers_a.extend(handlers_b);
+						(handlers_a, result_a)
+					} else if result_a.deepest_point_distance < result_b.deepest_point_distance {
+						(handlers_a, result_a)
+					} else {
+						(handlers_b, result_b)
+					}
+				})
+				.map(|(rx, _)| rx)
+				.unwrap_or_default()
+				.iter(),
+		);
 	}
 
 	fn send_keyboard_input(&mut self, sk: &impl StereoKitMultiThread) {

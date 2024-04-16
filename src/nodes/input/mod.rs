@@ -21,22 +21,17 @@ use std::sync::{Arc, Weak};
 use tracing::{debug_span, instrument};
 
 static INPUT_METHOD_REGISTRY: Registry<InputMethod> = Registry::new();
-static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
+pub static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
 
 stardust_xr_server_codegen::codegen_input_protocol!();
 
-pub struct DistanceLink {
-	distance: f32,
+pub struct InputLink {
 	method: Arc<InputMethod>,
 	handler: Arc<InputHandler>,
 }
-impl DistanceLink {
+impl InputLink {
 	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Self {
-		DistanceLink {
-			distance: method.compare_distance(&handler),
-			method,
-			handler,
-		}
+		InputLink { method, handler }
 	}
 
 	fn send_input(&self, order: u32, captured: bool, datamap: Datamap) {
@@ -53,7 +48,7 @@ impl DistanceLink {
 		InputData {
 			uid: self.method.uid.clone(),
 			input,
-			distance: self.method.true_distance(&self.handler.field),
+			distance: self.method.distance(&self.handler.field),
 			datamap,
 			order,
 			captured,
@@ -61,32 +56,23 @@ impl DistanceLink {
 	}
 }
 pub trait InputDataTrait {
-	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
-	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
-	fn update_to(&mut self, distance_link: &DistanceLink, local_to_handler_matrix: Mat4);
+	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
+	fn update_to(&mut self, input_link: &InputLink, local_to_handler_matrix: Mat4);
 }
 impl InputDataTrait for InputDataType {
-	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		match self {
-			InputDataType::Pointer(i) => i.compare_distance(space, field),
-			InputDataType::Hand(i) => i.compare_distance(space, field),
-			InputDataType::Tip(i) => i.compare_distance(space, field),
+			InputDataType::Pointer(i) => i.distance(space, field),
+			InputDataType::Hand(i) => i.distance(space, field),
+			InputDataType::Tip(i) => i.distance(space, field),
 		}
 	}
 
-	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+	fn update_to(&mut self, input_link: &InputLink, local_to_handler_matrix: Mat4) {
 		match self {
-			InputDataType::Pointer(i) => i.true_distance(space, field),
-			InputDataType::Hand(i) => i.true_distance(space, field),
-			InputDataType::Tip(i) => i.true_distance(space, field),
-		}
-	}
-
-	fn update_to(&mut self, distance_link: &DistanceLink, local_to_handler_matrix: Mat4) {
-		match self {
-			InputDataType::Pointer(i) => i.update_to(distance_link, local_to_handler_matrix),
-			InputDataType::Hand(i) => i.update_to(distance_link, local_to_handler_matrix),
-			InputDataType::Tip(i) => i.update_to(distance_link, local_to_handler_matrix),
+			InputDataType::Pointer(i) => i.update_to(input_link, local_to_handler_matrix),
+			InputDataType::Hand(i) => i.update_to(input_link, local_to_handler_matrix),
+			InputDataType::Tip(i) => i.update_to(input_link, local_to_handler_matrix),
 		}
 	}
 }
@@ -144,66 +130,42 @@ pub fn process_input() {
 			.into_iter()
 			.filter(|method| *method.enabled.lock())
 	});
-	let handlers = INPUT_HANDLER_REGISTRY.get_valid_contents();
-	const LIMIT: usize = 50;
+	// const LIMIT: usize = 50;
 	for method in methods {
 		for alias in method.node.upgrade().unwrap().aliases.get_valid_contents() {
 			alias.enabled.store(false, Ordering::Release);
 		}
 
 		debug_span!("Process input method").in_scope(|| {
-			// Get all valid input handlers and convert them to DistanceLink objects
-			let distance_links: Vec<DistanceLink> = debug_span!("Generate distance links")
-				.in_scope(|| {
-					if let Some(handler_order) = &*method.handler_order.lock() {
-						handler_order
-							.iter()
-							.filter_map(Weak::upgrade)
-							.filter(|handler| handler.enabled.load(Ordering::Relaxed))
-							.map(|handler| DistanceLink::from(method.clone(), handler))
-							.collect()
-					} else {
-						let mut distance_links: Vec<_> = handlers
-							.iter()
-							.filter(|handler| handler.enabled.load(Ordering::Relaxed))
-							.map(|handler| {
-								debug_span!("Create distance link").in_scope(|| {
-									DistanceLink::from(method.clone(), handler.clone())
-								})
-							})
-							.collect();
+			// Get all valid input handlers and convert them to InputLink objects
+			let input_links: Vec<InputLink> = debug_span!("Generate input links").in_scope(|| {
+				method
+					.handler_order
+					.lock()
+					.iter()
+					.filter_map(Weak::upgrade)
+					.filter(|handler| {
+						let Some(node) = handler.node.upgrade() else {
+							return false;
+						};
+						node.enabled()
+					})
+					.map(|handler| InputLink::from(method.clone(), handler))
+					.collect()
+			});
 
-						// Sort the distance links by their distance in ascending order
-						debug_span!("Sort distance links").in_scope(|| {
-							distance_links.sort_unstable_by(|a, b| {
-								a.distance.abs().partial_cmp(&b.distance.abs()).unwrap()
-							});
-						});
-
-						distance_links.truncate(LIMIT);
-						distance_links
-					}
-				});
-
-			let captures = method.captures.take_valid_contents();
+			method.captures.clear();
 			// Iterate over the distance links and send input to them
-			for (i, distance_link) in distance_links.into_iter().enumerate() {
-				if let Some(method_alias) = distance_link
+			for (i, input_link) in input_links.into_iter().enumerate() {
+				if let Some(method_alias) = input_link
 					.handler
 					.method_aliases
-					.get(&(Arc::as_ptr(&distance_link.method) as usize))
+					.get(&(Arc::as_ptr(&input_link.method) as usize))
 					.and_then(|a| a.get_aspect::<Alias>().ok())
 				{
 					method_alias.enabled.store(true, Ordering::Release);
 				}
-				let captured = captures.contains(&distance_link.handler);
-				distance_link.send_input(i as u32, captured, method.datamap.lock().clone());
-
-				// If the current distance link is in the list of captured input handlers,
-				// break out of the loop to avoid sending input to the remaining distance links
-				if captured {
-					break;
-				}
+				input_link.send_input(i as u32, true, method.datamap.lock().clone());
 			}
 		});
 	}

@@ -1,4 +1,4 @@
-use super::{DistanceLink, Finger, Hand, InputDataTrait, Joint, Thumb};
+use super::{Finger, Hand, InputDataTrait, InputLink, Joint, Thumb};
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::Spatial;
 use glam::{vec3a, Mat4, Quat};
@@ -52,10 +52,7 @@ impl Default for Hand {
 }
 
 impl InputDataTrait for Hand {
-	fn compare_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
-		self.true_distance(space, field).abs()
-	}
-	fn true_distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		let mut min_distance = f32::MAX;
 
 		for tip in [
@@ -70,7 +67,7 @@ impl InputDataTrait for Hand {
 
 		min_distance
 	}
-	fn update_to(&mut self, distance_link: &DistanceLink, local_to_handler_matrix: Mat4) {
+	fn update_to(&mut self, input_link: &InputLink, local_to_handler_matrix: Mat4) {
 		let mut joints: Vec<&mut Joint> = Vec::new();
 
 		joints.extend([&mut self.palm, &mut self.wrist]);
@@ -104,10 +101,10 @@ impl InputDataTrait for Hand {
 			let (_, rotation, position) = joint_matrix.to_scale_rotation_translation();
 			joint.position = position.into();
 			joint.rotation = rotation.into();
-			joint.distance = distance_link
+			joint.distance = input_link
 				.handler
 				.field
-				.distance(&distance_link.handler.spatial, position.into());
+				.distance(&input_link.handler.spatial, position.into());
 		}
 	}
 }

@@ -1,13 +1,14 @@
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		input::{InputDataType, InputMethod, Pointer},
+		fields::Ray,
+		input::{InputDataType, InputMethod, Pointer, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
 		Node,
 	},
 };
 use color_eyre::eyre::Result;
-use glam::Mat4;
+use glam::{vec3, Mat4};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
@@ -56,5 +57,47 @@ impl EyePointer {
 			// Set pointer input datamap
 			*self.pointer.datamap.lock() = Datamap::from_typed(EyeDatamap { eye: 2 }).unwrap();
 		}
+
+		// send input to all the input handlers that are the closest to the ray as possible
+		let rx = INPUT_HANDLER_REGISTRY
+			.get_valid_contents()
+			.into_iter()
+			// filter out all the disabled handlers
+			.filter(|handler| {
+				let Some(node) = handler.node.upgrade() else {
+					return false;
+				};
+				node.enabled()
+			})
+			// ray march to all the enabled handlers' fields
+			.map(|handler| {
+				let result = handler.field.ray_march(Ray {
+					origin: vec3(0.0, 0.0, 0.0),
+					direction: vec3(0.0, 0.0, -1.0),
+					space: self.spatial.clone(),
+				});
+				(vec![handler], result)
+			})
+			// make sure the field isn't at the pointer origin and that it's being hit
+			.filter(|(_, result)| result.deepest_point_distance > 0.01 && result.min_distance < 0.0)
+			// .inspect(|(_, result)| {
+			// 	dbg!(result);
+			// })
+			// now collect all handlers that are same distance if they're the closest
+			.reduce(|(mut handlers_a, result_a), (handlers_b, result_b)| {
+				if (result_a.deepest_point_distance - result_b.deepest_point_distance).abs() < 0.001
+				{
+					// distance is basically the same
+					handlers_a.extend(handlers_b);
+					(handlers_a, result_a)
+				} else if result_a.deepest_point_distance < result_b.deepest_point_distance {
+					(handlers_a, result_a)
+				} else {
+					(handlers_b, result_b)
+				}
+			})
+			.map(|(rx, _)| rx)
+			.unwrap_or_default();
+		self.pointer.set_handler_order(rx.iter());
 	}
 }

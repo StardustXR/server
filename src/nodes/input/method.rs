@@ -25,9 +25,9 @@ pub struct InputMethod {
 	pub data: Mutex<InputDataType>,
 	pub datamap: Mutex<Datamap>,
 
-	pub(super) captures: Registry<InputHandler>,
+	pub captures: Registry<InputHandler>,
 	pub(super) handler_aliases: LifeLinkedNodeMap<String>,
-	pub(super) handler_order: Mutex<Option<Vec<Weak<InputHandler>>>>,
+	pub(super) handler_order: Mutex<Vec<Weak<InputHandler>>>,
 }
 impl InputMethod {
 	pub fn add_to(
@@ -44,7 +44,7 @@ impl InputMethod {
 			captures: Registry::new(),
 			datamap: Mutex::new(datamap),
 			handler_aliases: LifeLinkedNodeMap::default(),
-			handler_order: Mutex::new(None),
+			handler_order: Mutex::new(Vec::new()),
 		};
 		for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
 			method.handle_new_handler(&handler);
@@ -84,16 +84,12 @@ impl InputMethod {
 			.add(self as *const InputMethod as usize, &method_alias);
 	}
 
-	pub fn compare_distance(&self, to: &InputHandler) -> f32 {
-		let distance = self.data.lock().compare_distance(&self.spatial, &to.field);
-		if self.captures.contains(to) {
-			distance * 0.5
-		} else {
-			distance
-		}
+	pub fn distance(&self, to: &Field) -> f32 {
+		self.data.lock().distance(&self.spatial, to)
 	}
-	pub fn true_distance(&self, to: &Field) -> f32 {
-		self.data.lock().true_distance(&self.spatial, to)
+
+	pub fn set_handler_order<'a>(&self, handlers: impl Iterator<Item = &'a Arc<InputHandler>>) {
+		*self.handler_order.lock() = handlers.map(Arc::downgrade).collect();
 	}
 
 	pub(super) fn handle_new_handler(&self, handler: &InputHandler) {
@@ -137,7 +133,7 @@ impl InputMethod {
 				.add(handler.uid.clone() + "-field", &rx_field_alias);
 		}
 
-		let _ = input_method_client::new_handler(&method_node, &handler.uid, &handler_node);
+		let _ = input_method_client::create_handler(&method_node, &handler.uid, &handler_node);
 	}
 	pub(super) fn handle_drop_handler(&self, handler: &InputHandler) {
 		let uid = handler.uid.as_str();
@@ -147,7 +143,7 @@ impl InputMethod {
 			return;
 		};
 
-		let _ = input_method_client::drop_handler(&tx_node, &uid);
+		let _ = input_method_client::destroy_handler(&tx_node, &uid);
 	}
 }
 impl Aspect for InputMethod {
@@ -176,25 +172,25 @@ impl InputMethodAspect for InputMethod {
 	fn set_handler_order(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		handlers: Option<Vec<Arc<Node>>>,
+		handlers: Vec<Arc<Node>>,
 	) -> Result<()> {
 		let input_method = node.get_aspect::<InputMethod>()?;
-		let Some(handlers) = handlers else {
-			*input_method.handler_order.lock() = None;
-			return Ok(());
-		};
 		let handlers = handlers
 			.into_iter()
 			.filter_map(|p| p.get_aspect::<InputHandler>().ok())
 			.map(|i| Arc::downgrade(&i))
 			.collect::<Vec<_>>();
 
-		*input_method.handler_order.lock() = Some(handlers);
+		*input_method.handler_order.lock() = handlers;
 		Ok(())
 	}
 
 	#[doc = "Have the input handler that this method reference came from capture the method for the next frame."]
-	fn capture(node: Arc<Node>, _calling_client: Arc<Client>, handler: Arc<Node>) -> Result<()> {
+	fn request_capture(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		handler: Arc<Node>,
+	) -> Result<()> {
 		let input_method = node.get_aspect::<InputMethod>()?;
 		let input_handler = handler.get_aspect::<InputHandler>()?;
 

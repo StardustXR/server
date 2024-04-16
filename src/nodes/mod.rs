@@ -55,7 +55,7 @@ pub type Method = fn(Arc<Node>, Arc<Client>, Message, MethodResponseSender);
 stardust_xr_server_codegen::codegen_node_protocol!();
 
 pub struct Node {
-	pub enabled: Arc<AtomicBool>,
+	enabled: Arc<AtomicBool>,
 	pub(super) uid: String,
 	path: String,
 	client: Weak<Client>,
@@ -112,6 +112,9 @@ impl Node {
 			.ok_or_else(|| eyre!("Internal: Unable to get client"))?
 			.scenegraph
 			.add_node(self))
+	}
+	pub fn enabled(&self) -> bool {
+		self.enabled.load(Ordering::Relaxed)
 	}
 	pub fn destroy(&self) {
 		if let Some(client) = self.get_client() {

@@ -1,5 +1,5 @@
 use super::{
-	input_handler_client, DistanceLink, InputHandlerAspect, INPUT_HANDLER_REGISTRY,
+	input_handler_client, InputHandlerAspect, InputLink, INPUT_HANDLER_REGISTRY,
 	INPUT_METHOD_REGISTRY,
 };
 use crate::{
@@ -7,13 +7,11 @@ use crate::{
 	nodes::{fields::Field, spatial::Spatial, Aspect, Node},
 };
 use color_eyre::eyre::Result;
-use portable_atomic::AtomicBool;
 use stardust_xr::values::Datamap;
 use std::sync::{Arc, Weak};
 use tracing::instrument;
 
 pub struct InputHandler {
-	pub enabled: Arc<AtomicBool>,
 	pub uid: String,
 	pub node: Weak<Node>,
 	pub spatial: Arc<Spatial>,
@@ -23,7 +21,6 @@ pub struct InputHandler {
 impl InputHandler {
 	pub fn add_to(node: &Arc<Node>, field: &Arc<Field>) -> Result<()> {
 		let handler = InputHandler {
-			enabled: node.enabled.clone(),
 			uid: node.uid.clone(),
 			node: Arc::downgrade(node),
 			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
@@ -39,28 +36,28 @@ impl InputHandler {
 		Ok(())
 	}
 
-	#[instrument(level = "debug", skip(self, distance_link))]
+	#[instrument(level = "debug", skip(self, input_link))]
 	pub(super) fn send_input(
 		&self,
 		order: u32,
 		captured: bool,
-		distance_link: &DistanceLink,
+		input_link: &InputLink,
 		datamap: Datamap,
 	) {
 		let Some(node) = self.node.upgrade() else {
 			return;
 		};
-		let Some(method_alias) = distance_link
+		let Some(method_alias) = input_link
 			.handler
 			.method_aliases
-			.get(&(Arc::as_ptr(&distance_link.method) as usize))
+			.get(&(Arc::as_ptr(&input_link.method) as usize))
 		else {
 			return;
 		};
 		let _ = input_handler_client::input(
 			&node,
 			&method_alias,
-			&distance_link.serialize(order, captured, datamap),
+			&input_link.serialize(order, captured, datamap),
 		);
 	}
 }

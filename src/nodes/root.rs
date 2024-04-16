@@ -74,7 +74,7 @@ impl Root {
 		message: Message,
 	) -> Result<()> {
 		let prefixes: Vec<PathBuf> = deserialize(message.as_ref())?;
-		info!(?client, ?prefixes, "Set base prefixes");
+		info!(?calling_client, ?prefixes, "Set base prefixes");
 		*calling_client.base_resource_prefixes.lock() = prefixes;
 		Ok(())
 	}

@@ -170,8 +170,8 @@ fn main() {
 		.unwrap();
 	let mut hands = (!cli_args.flatscreen)
 		.then(|| {
-			let left = SkHand::new(Handed::Left).ok();
-			let right = SkHand::new(Handed::Right).ok();
+			let left = SkHand::new(Handed::Left, &sk).ok();
+			let right = SkHand::new(Handed::Right, &sk).ok();
 			left.zip(right)
 		})
 		.flatten();
