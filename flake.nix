@@ -42,6 +42,10 @@
           gnome-graphical-test = self'.checks.gnome-graphical-test;
           "${name}" = pkgs.callPackage ./nix/stardust-xr-server.nix { inherit name src; };
         };
+        apps.default = {
+          type = "app";
+          program = self'.packages.${name} + "/bin/stardust-xr-server";
+        };
         checks.gnome-graphical-test = pkgs.nixosTest (import ./nix/gnome-graphical-test.nix { inherit pkgs self; });
         devShells.default = pkgs.mkShell {
           inputsFrom = [ self'.packages.default ];
