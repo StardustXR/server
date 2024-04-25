@@ -374,13 +374,16 @@ impl XdgBackend {
 		panel_item.new_child(uid, self.child_data(uid).unwrap());
 	}
 	pub fn reposition_popup(&self, uid: &str, _popup: PopupSurface, positioner: PositionerState) {
-		self.popups.lock().get_mut(uid).unwrap().1 = positioner;
-
+		let mut popups = self.popups.lock();
+		let Some((_, old_positioner)) = popups.get_mut(uid) else {
+			return
+		};
 		let Some(panel_item) = self.panel_item() else {
 			return;
 		};
 		let geometry = positioner.get_geometry();
 
+		*old_positioner = positioner;
 		panel_item.reposition_child(uid, geometry.into());
 	}
 	pub fn drop_popup(&self, uid: &str) {
