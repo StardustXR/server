@@ -51,6 +51,7 @@ impl SkHand {
 		let input = InputMethod::add_to(&_node, hand, datamap)?;
 
 		let material = sk.material_copy(Material::HAND);
+		unsafe { sk.material_addref(&material); }
 		sk.input_hand_material(handed, Material(material.0));
 		Ok(SkHand {
 			_node,
