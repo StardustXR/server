@@ -55,6 +55,7 @@ fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 			generate_aspect(&Aspect {
 				name: virtual_aspect_name,
 				description: protocol.description.clone(),
+				inherits: vec![],
 				members: p.members,
 			})
 		})
@@ -83,12 +84,6 @@ fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 		.map(generate_aspect)
 		.reduce(fold_tokens)
 		.unwrap_or_default();
-	// let nodes = protocol
-	// 	.nodes
-	// 	.iter()
-	// 	.map(generate_node)
-	// 	.reduce(fold_tokens)
-	// 	.unwrap_or_default();
 	quote!(#custom_enums #custom_unions #custom_structs #aspects #interface).into()
 }
 
