@@ -379,7 +379,7 @@ fn map_key(key: Key) -> Option<u32> {
 		Key::BracketClose => Some(input_event_codes::KEY_RIGHTBRACE!()),
 		Key::Minus => Some(input_event_codes::KEY_MINUS!()),
 		Key::Equals => Some(input_event_codes::KEY_EQUAL!()),
-		Key::Backtick => None,
+		Key::Backtick => Some(input_event_codes::KEY_GRAVE!()),
 		Key::LCmd => Some(input_event_codes::KEY_LEFTMETA!()),
 		Key::RCmd => Some(input_event_codes::KEY_RIGHTMETA!()),
 		Key::Multiply => Some(input_event_codes::KEY_NUMERIC_STAR!()),
