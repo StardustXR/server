@@ -118,22 +118,24 @@ impl InputMethod {
 		self.handler_aliases
 			.add(handler.uid.clone(), &handler_alias);
 
-		if let Some(handler_field_node) = handler.field.spatial_ref().node.upgrade() {
-			// Handler's field
-			let Ok(rx_field_alias) = Alias::create(
-				&method_client,
-				handler_alias.get_path(),
-				"field",
-				&handler_field_node,
-				FIELD_ALIAS_INFO.clone(),
-			) else {
-				return;
-			};
-			self.handler_aliases
-				.add(handler.uid.clone() + "-field", &rx_field_alias);
-		}
+		let Some(handler_field_node) = handler.field.spatial_ref().node.upgrade() else {
+			return
+		};
+		// Handler's field
+		let Ok(rx_field_alias) = Alias::create(
+			&method_client,
+			handler_alias.get_path(),
+			"field",
+			&handler_field_node,
+			FIELD_ALIAS_INFO.clone(),
+		) else {
+			return;
+		};
+		self.handler_aliases
+			.add(handler.uid.clone() + "-field", &rx_field_alias);
 
-		let _ = input_method_client::create_handler(&method_node, &handler.uid, &handler_node);
+
+		let _ = input_method_client::create_handler(&method_node, &handler.uid, &handler_node, &rx_field_alias);
 	}
 	pub(super) fn handle_drop_handler(&self, handler: &InputHandler) {
 		let uid = handler.uid.as_str();
