@@ -103,7 +103,7 @@ impl Node {
 			aspects: Default::default(),
 			destroyable,
 		};
-		<Node as NodeAspect>::add_node_members(&node);
+		<Node as OwnedAspect>::add_node_members(&node);
 		node
 	}
 	pub fn add_to_scenegraph(self) -> Result<Arc<Node>> {
@@ -267,7 +267,7 @@ impl Debug for Node {
 			.finish()
 	}
 }
-impl NodeAspect for Node {
+impl OwnedAspect for Node {
 	fn set_enabled(node: Arc<Node>, _calling_client: Arc<Client>, enabled: bool) -> Result<()> {
 		node.enabled.store(enabled, Ordering::Relaxed);
 		Ok(())

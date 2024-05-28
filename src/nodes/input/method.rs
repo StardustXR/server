@@ -1,6 +1,6 @@
 use super::{
 	input_method_client, InputDataTrait, InputDataType, InputHandler, InputMethodAspect,
-	INPUT_HANDLER_REGISTRY, INPUT_METHOD_REGISTRY,
+	InputMethodRefAspect, INPUT_HANDLER_REGISTRY, INPUT_METHOD_REGISTRY,
 };
 use crate::{
 	core::{client::Client, node_collections::LifeLinkedNodeMap, registry::Registry},
@@ -51,6 +51,7 @@ impl InputMethod {
 			method.make_alias(&handler);
 		}
 		let method = INPUT_METHOD_REGISTRY.add(method);
+		<InputMethod as InputMethodRefAspect>::add_node_members(node);
 		<InputMethod as InputMethodAspect>::add_node_members(node);
 		node.add_aspect_raw(method.clone());
 		Ok(method)
@@ -119,7 +120,7 @@ impl InputMethod {
 			.add(handler.uid.clone(), &handler_alias);
 
 		let Some(handler_field_node) = handler.field.spatial_ref().node.upgrade() else {
-			return
+			return;
 		};
 		// Handler's field
 		let Ok(rx_field_alias) = Alias::create(
@@ -134,8 +135,12 @@ impl InputMethod {
 		self.handler_aliases
 			.add(handler.uid.clone() + "-field", &rx_field_alias);
 
-
-		let _ = input_method_client::create_handler(&method_node, &handler.uid, &handler_node, &rx_field_alias);
+		let _ = input_method_client::create_handler(
+			&method_node,
+			&handler.uid,
+			&handler_node,
+			&rx_field_alias,
+		);
 	}
 	pub(super) fn handle_drop_handler(&self, handler: &InputHandler) {
 		let uid = handler.uid.as_str();
@@ -150,6 +155,22 @@ impl InputMethod {
 }
 impl Aspect for InputMethod {
 	const NAME: &'static str = "InputMethod";
+}
+impl InputMethodRefAspect for InputMethod {
+	#[doc = "Have the input handler that this method reference came from capture the method for the next frame."]
+	fn request_capture(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		handler: Arc<Node>,
+	) -> Result<()> {
+		let input_method = node.get_aspect::<InputMethod>()?;
+		let input_handler = handler.get_aspect::<InputHandler>()?;
+
+		input_method.captures.add_raw(&input_handler);
+		// input_method_client::
+		// node.send_remote_signal("capture", message)
+		Ok(())
+	}
 }
 impl InputMethodAspect for InputMethod {
 	#[doc = "Set the spatial input component of this input method. You must keep the same input data type throughout the entire thing."]
@@ -187,18 +208,20 @@ impl InputMethodAspect for InputMethod {
 		Ok(())
 	}
 
-	#[doc = "Have the input handler that this method reference came from capture the method for the next frame."]
-	fn request_capture(
+	#[doc = "Set which handlers are captured."]
+	fn set_captures(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		handler: Arc<Node>,
+		handlers: Vec<Arc<Node>>,
 	) -> Result<()> {
 		let input_method = node.get_aspect::<InputMethod>()?;
-		let input_handler = handler.get_aspect::<InputHandler>()?;
-
-		input_method.captures.add_raw(&input_handler);
-		// input_method_client::
-		// node.send_remote_signal("capture", message)
+		input_method.captures.clear();
+		for handler in handlers {
+			let Ok(handler) = handler.get_aspect::<InputHandler>() else {
+				continue;
+			};
+			input_method.captures.add_raw(&handler);
+		}
 		Ok(())
 	}
 }

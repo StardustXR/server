@@ -77,6 +77,7 @@ impl Spatial {
 		if let Some(parent) = parent {
 			parent.children.add_raw(&spatial);
 		}
+		<Spatial as SpatialRefAspect>::add_node_members(node);
 		<Spatial as SpatialAspect>::add_node_members(node);
 		node.add_aspect_raw(spatial.clone());
 		spatial
@@ -243,7 +244,7 @@ impl Spatial {
 impl Aspect for Spatial {
 	const NAME: &'static str = "Spatial";
 }
-impl SpatialAspect for Spatial {
+impl SpatialRefAspect for Spatial {
 	async fn get_local_bounding_box(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
@@ -304,7 +305,8 @@ impl SpatialAspect for Spatial {
 			scale: Some(scale.into()),
 		})
 	}
-
+}
+impl SpatialAspect for Spatial {
 	fn set_local_transform(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,

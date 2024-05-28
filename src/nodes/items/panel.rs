@@ -211,7 +211,6 @@ pub fn panel_item_from_node(node: &Node) -> Option<Arc<dyn PanelItemTrait>> {
 }
 
 pub trait PanelItemTrait: Backend + Send + Sync + 'static {
-	fn uid(&self) -> &str;
 	fn serialize_start_data(&self, id: &str) -> Result<Message>;
 }
 
@@ -533,10 +532,6 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 	flex_no_args!(reset_touches_flex, reset_touches);
 }
 impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
-	fn uid(&self) -> &str {
-		&self.uid
-	}
-
 	fn serialize_start_data(&self, id: &str) -> Result<Message> {
 		Ok(serialize((id, self.start_data()?))?.into())
 	}
