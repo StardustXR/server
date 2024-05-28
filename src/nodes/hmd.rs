@@ -6,7 +6,7 @@ use crate::{
 use color_eyre::eyre::Result;
 use glam::{vec3, Mat4};
 use std::sync::Arc;
-use stereokit::StereoKitMultiThread;
+use stereokit_rust::system::Input;
 
 lazy_static::lazy_static! {
 	static ref HMD: Arc<Node> = create();
@@ -19,9 +19,9 @@ fn create() -> Arc<Node> {
 	node
 }
 
-pub fn frame(sk: &impl StereoKitMultiThread) {
+pub fn frame() {
 	let spatial = HMD.get_aspect::<Spatial>().unwrap();
-	let hmd_pose = sk.input_head();
+	let hmd_pose = Input::get_head();
 	*spatial.transform.lock() = Mat4::from_scale_rotation_translation(
 		vec3(1.0, 1.0, 1.0),
 		hmd_pose.orientation.into(),

@@ -1,61 +1,54 @@
 use super::{MaterialParameter, ModelAspect, ModelPartAspect, Node};
 use crate::core::client::Client;
-use crate::core::destroy_queue;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::spatial::Spatial;
 use crate::nodes::Aspect;
-use crate::SK_MULTITHREAD;
 use color_eyre::eyre::{eyre, Result};
+use glam::{Mat4, Vec2, Vec3};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
+use send_wrapper::SendWrapper;
 use stardust_xr::values::ResourceID;
+use stereokit_rust::material::Transparency;
+use stereokit_rust::maths::Bounds;
+use stereokit_rust::sk::MainThreadToken;
+use stereokit_rust::{material::Material, model::Model as SKModel, tex::Tex, util::Color128};
 
 use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::sync::{Arc, Weak};
-use stereokit::named_colors::WHITE;
-use stereokit::{
-	Bounds, Color128, Material, Model as SKModel, RenderLayer, Shader, StereoKitDraw,
-	StereoKitMultiThread, Transparency,
-};
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
-static HOLDOUT_MATERIAL: OnceCell<Arc<Material>> = OnceCell::new();
+static HOLDOUT_MATERIAL: OnceCell<Arc<SendWrapper<Material>>> = OnceCell::new();
 
 impl MaterialParameter {
-	fn apply_to_material(
-		&self,
-		client: &Client,
-		sk: &impl StereoKitMultiThread,
-		material: &Material,
-		parameter_name: &str,
-	) {
+	fn apply_to_material(&self, client: &Client, material: &Material, parameter_name: &str) {
+		let mut params = material.get_all_param_info();
 		match self {
 			MaterialParameter::Bool(val) => {
-				sk.material_set_bool(material, parameter_name, *val);
+				params.set_bool(parameter_name, *val);
 			}
 			MaterialParameter::Int(val) => {
-				sk.material_set_int(material, parameter_name, *val);
+				params.set_int(parameter_name, &[*val]);
 			}
 			MaterialParameter::UInt(val) => {
-				sk.material_set_uint(material, parameter_name, *val);
+				params.set_uint(parameter_name, &[*val]);
 			}
 			MaterialParameter::Float(val) => {
-				sk.material_set_float(material, parameter_name, *val);
+				params.set_float(parameter_name, *val);
 			}
 			MaterialParameter::Vec2(val) => {
-				sk.material_set_vector2(material, parameter_name, *val);
+				params.set_vec2(parameter_name, Vec2::from(*val));
 			}
 			MaterialParameter::Vec3(val) => {
-				sk.material_set_vector3(material, parameter_name, *val);
+				params.set_vec3(parameter_name, Vec3::from(*val));
 			}
 			MaterialParameter::Color(val) => {
-				sk.material_set_color(
-					material,
+				params.set_color(
 					parameter_name,
 					Color128::new(val.c.r, val.c.g, val.c.b, val.a),
 				);
@@ -66,8 +59,8 @@ impl MaterialParameter {
 				else {
 					return;
 				};
-				if let Ok(tex) = sk.tex_create_file(texture_path, true, 0) {
-					sk.material_set_texture(material, parameter_name, &tex);
+				if let Ok(tex) = Tex::from_file(texture_path, true, None) {
+					params.set_texture(parameter_name, &tex);
 				}
 			}
 		}
@@ -80,57 +73,27 @@ pub struct ModelPart {
 	space: Arc<Spatial>,
 	model: Weak<Model>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
-	pending_material_replacement: Mutex<Option<Arc<Material>>>,
+	pending_material_replacement: Mutex<Option<Arc<SendWrapper<Material>>>>,
 }
 impl ModelPart {
-	fn create_for_model(sk: &impl StereoKitMultiThread, model: &Arc<Model>, sk_model: &SKModel) {
+	fn create_for_model(model: &Arc<Model>, sk_model: &SKModel) {
 		HOLDOUT_MATERIAL.get_or_init(|| {
-			let mat = sk.material_copy(Material::UNLIT);
-			sk.material_set_transparency(&mat, Transparency::None);
-			sk.material_set_color(
-				&mat,
-				"color",
-				stereokit::sys::color128 {
-					r: 0.0,
-					g: 0.0,
-					b: 0.0,
-					a: 0.0,
-				},
-			);
-			Arc::new(mat)
+			let mut mat = Material::copy(Material::unlit());
+			mat.transparency(Transparency::None);
+			mat.color_tint(Color128::BLACK_TRANSPARENT);
+			Arc::new(SendWrapper::new(mat))
 		});
 
-		let first_root_part = sk.model_node_get_root(sk_model);
-		let mut current_option_part = Some(first_root_part);
-
-		while let Some(current_part) = &mut current_option_part {
-			ModelPart::create(sk, model, sk_model, *current_part);
-
-			if let Some(child) = sk.model_node_child(sk_model, *current_part) {
-				*current_part = child;
-			} else if let Some(sibling) = sk.model_node_sibling(sk_model, *current_part) {
-				*current_part = sibling;
-			} else {
-				while let Some(current_part) = &mut current_option_part {
-					if let Some(sibling) = sk.model_node_sibling(sk_model, *current_part) {
-						*current_part = sibling;
-						break;
-					}
-					current_option_part = sk.model_node_parent(sk_model, *current_part);
-				}
-			}
+		let nodes = sk_model.get_nodes();
+		for part in nodes.all() {
+			ModelPart::create(model, &part);
 		}
 	}
 
-	fn create(
-		sk: &impl StereoKitMultiThread,
-		model: &Arc<Model>,
-		sk_model: &SKModel,
-		id: i32,
-	) -> Option<Arc<Self>> {
-		let parent_node = sk
-			.model_node_parent(sk_model, id)
-			.and_then(|id| model.parts.get(&id));
+	fn create(model: &Arc<Model>, part: &stereokit_rust::model::ModelNode) -> Option<Arc<Self>> {
+		let parent_node = part
+			.get_parent()
+			.and_then(|part| model.parts.get(part.get_id()));
 		let parent_part = parent_node
 			.as_ref()
 			.and_then(|node| node.get_aspect::<ModelPart>().ok());
@@ -138,7 +101,8 @@ impl ModelPart {
 		let stardust_model_part = model.space.node()?;
 		let client = stardust_model_part.get_client()?;
 		let mut part_path = parent_part.map(|n| n.path.clone()).unwrap_or_default();
-		part_path.push(sk.model_node_get_name(sk_model, id)?);
+		part_path.push(part.get_name().unwrap());
+
 		let node = client.scenegraph.add_node(Node::create_parent_name(
 			&client,
 			stardust_model_part.get_path(),
@@ -148,10 +112,12 @@ impl ModelPart {
 		let spatial_parent = parent_node
 			.and_then(|n| n.get_aspect::<Spatial>().ok())
 			.unwrap_or_else(|| model.space.clone());
+
+		let local_transform = unsafe { part.get_local_transform().m };
 		let space = Spatial::add_to(
 			&node,
 			Some(spatial_parent),
-			sk.model_node_get_transform_local(sk_model, id),
+			Mat4::from_cols_array(&local_transform),
 			false,
 		);
 
@@ -163,23 +129,24 @@ impl ModelPart {
 				let Ok(model_part) = node.get_aspect::<ModelPart>() else {
 					return Bounds::default();
 				};
-				let Some(sk) = SK_MULTITHREAD.get() else {
-					return Bounds::default();
-				};
 				let Some(model) = model_part.model.upgrade() else {
 					return Bounds::default();
 				};
 				let Some(sk_model) = model.sk_model.get() else {
 					return Bounds::default();
 				};
-				let Some(sk_mesh) = sk.model_node_get_mesh(sk_model, model_part.id) else {
+				let nodes = sk_model.get_nodes();
+				let Some(model_node) = nodes.get_index(model_part.id) else {
 					return Bounds::default();
 				};
-				sk.mesh_get_bounds(sk_mesh)
+				let Some(sk_mesh) = model_node.get_mesh() else {
+					return Bounds::default();
+				};
+				sk_mesh.get_bounds()
 			});
 
 		let model_part = Arc::new(ModelPart {
-			id,
+			id: *part.get_id(),
 			path: part_path,
 			space,
 			model: Arc::downgrade(model),
@@ -188,17 +155,31 @@ impl ModelPart {
 		});
 		<ModelPart as ModelPartAspect>::add_node_members(&node);
 		node.add_aspect_raw(model_part.clone());
-		model.parts.add(id, &node);
+		model.parts.add(*part.get_id(), &node);
 		Some(model_part)
 	}
 
-	pub fn replace_material(&self, replacement: Arc<Material>) {
+	pub fn replace_material(&self, replacement: Arc<SendWrapper<Material>>) {
 		self.pending_material_replacement
 			.lock()
 			.replace(replacement);
 	}
+	/// only to be run on the main thread
+	pub fn replace_material_now(&self, replacement: &Material) {
+		let Some(model) = self.model.upgrade() else {
+			return;
+		};
+		let Some(sk_model) = model.sk_model.get() else {
+			return;
+		};
+		let nodes = sk_model.get_nodes();
+		let Some(mut part) = nodes.get_index(self.id) else {
+			return;
+		};
+		part.material(replacement);
+	}
 
-	fn update(&self, sk: &impl StereoKitDraw) {
+	fn update(&self) {
 		let Some(model) = self.model.upgrade() else {
 			return;
 		};
@@ -208,28 +189,37 @@ impl ModelPart {
 		let Some(node) = model.space.node() else {
 			return;
 		};
+		let nodes = sk_model.get_nodes();
+		let Some(mut part) = nodes.get_index(self.id) else {
+			return;
+		};
+		part.model_transform(Spatial::space_to_space_matrix(
+			Some(&self.space),
+			Some(&model.space),
+		));
+
 		let Some(client) = node.get_client() else {
 			return;
 		};
+
 		if let Some(material_replacement) = self.pending_material_replacement.lock().take() {
-			sk.model_node_set_material(sk_model, self.id, material_replacement.as_ref().as_ref());
+			part.material(&**material_replacement);
 		}
 
-		let mut material_parameters = self.pending_material_parameters.lock();
-		for (parameter_name, parameter_value) in material_parameters.drain() {
-			let Some(material) = sk.model_node_get_material(sk_model, self.id) else {
-				continue;
-			};
-			let new_material = sk.material_copy(material);
-			parameter_value.apply_to_material(&client, sk, &new_material, parameter_name.as_str());
-			sk.model_node_set_material(sk_model, self.id, &new_material);
+		// todo: find all materials with identical parameters and batch them into 1 material again
+		'mat_params: {
+			let mut material_parameters = self.pending_material_parameters.lock();
+			if !material_parameters.is_empty() {
+				let Some(material) = part.get_material() else {
+					break 'mat_params;
+				};
+				let new_material = Material::copy(&material);
+				part.material(&new_material);
+				for (parameter_name, parameter_value) in material_parameters.drain() {
+					parameter_value.apply_to_material(&client, &new_material, &parameter_name);
+				}
+			}
 		}
-
-		sk.model_node_set_transform_model(
-			sk_model,
-			self.id,
-			Spatial::space_to_space_matrix(Some(&self.space), Some(&model.space)),
-		);
 	}
 }
 impl Aspect for ModelPart {
@@ -261,15 +251,12 @@ impl ModelPartAspect for ModelPart {
 }
 
 pub struct Model {
-	self_ref: Weak<Model>,
 	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
 	_resource_id: ResourceID,
 	sk_model: OnceCell<SKModel>,
 	parts: LifeLinkedNodeMap<i32>,
 }
-unsafe impl Send for Model {}
-unsafe impl Sync for Model {}
 
 impl Model {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Model>> {
@@ -280,8 +267,7 @@ impl Model {
 		)
 		.ok_or_else(|| eyre!("Resource not found"))?;
 
-		let model = Arc::new_cyclic(|self_ref| Model {
-			self_ref: self_ref.clone(),
+		let model = Arc::new(Model {
 			enabled: node.enabled.clone(),
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			_resource_id: resource_id,
@@ -290,51 +276,50 @@ impl Model {
 		});
 		MODEL_REGISTRY.add_raw(&model);
 
-		let sk = SK_MULTITHREAD.get().unwrap();
-		let sk_model = sk.model_copy(
-			sk.model_create_file(pending_model_path.to_str().unwrap(), None::<Shader>)?,
-		);
-		ModelPart::create_for_model(sk, &model.self_ref.upgrade().unwrap(), &sk_model);
+		// technically doing this in anything but the main thread isn't a good idea but dangit we need those model nodes ASAP
+		let sk_model = SKModel::copy(SKModel::from_file(
+			pending_model_path.to_str().unwrap(),
+			None,
+		)?);
+		ModelPart::create_for_model(&model, &sk_model);
 		let _ = model.sk_model.set(sk_model);
 		node.add_aspect_raw(model.clone());
 		Ok(model)
 	}
 
-	fn draw(&self, sk: &impl StereoKitDraw) {
+	fn draw(&self, token: &MainThreadToken) {
 		let Some(sk_model) = self.sk_model.get() else {
 			return;
 		};
 		for model_node_node in self.parts.nodes() {
 			if let Ok(model_node) = model_node_node.get_aspect::<ModelPart>() {
-				model_node.update(sk);
+				model_node.update();
 			};
 		}
 
-		sk.model_draw(
-			sk_model,
-			self.space.global_transform(),
-			WHITE,
-			RenderLayer::LAYER0,
-		);
+		if self.enabled.load(Ordering::Relaxed) {
+			sk_model.draw(token, self.space.global_transform(), None, None);
+		}
 	}
 }
+// TODO: proper hread safety in stereokit_rust (probably just bind stereokit directly)
+unsafe impl Send for Model {}
+unsafe impl Sync for Model {}
 impl Aspect for Model {
 	const NAME: &'static str = "Model";
 }
 impl ModelAspect for Model {}
 impl Drop for Model {
 	fn drop(&mut self) {
-		if let Some(sk_model) = self.sk_model.take() {
-			destroy_queue::add(sk_model);
-		}
+		// if let Some(sk_model) = self.sk_model.take() {
+		// destroy_queue::add(sk_model);
+		// }
 		MODEL_REGISTRY.remove(self);
 	}
 }
 
-pub fn draw_all(sk: &impl StereoKitDraw) {
+pub fn draw_all(token: &MainThreadToken) {
 	for model in MODEL_REGISTRY.get_valid_contents() {
-		if model.enabled.load(Ordering::Relaxed) {
-			model.draw(sk);
-		}
+		model.draw(token);
 	}
 }

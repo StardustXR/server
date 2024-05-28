@@ -25,6 +25,7 @@ pub struct InputMethod {
 	pub data: Mutex<InputDataType>,
 	pub datamap: Mutex<Datamap>,
 
+	pub capture_requests: Registry<InputHandler>,
 	pub captures: Registry<InputHandler>,
 	pub(super) handler_aliases: LifeLinkedNodeMap<String>,
 	pub(super) handler_order: Mutex<Vec<Weak<InputHandler>>>,
@@ -41,6 +42,7 @@ impl InputMethod {
 			enabled: Mutex::new(true),
 			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
 			data: Mutex::new(data),
+			capture_requests: Registry::new(),
 			captures: Registry::new(),
 			datamap: Mutex::new(datamap),
 			handler_aliases: LifeLinkedNodeMap::default(),
@@ -166,9 +168,7 @@ impl InputMethodRefAspect for InputMethod {
 		let input_method = node.get_aspect::<InputMethod>()?;
 		let input_handler = handler.get_aspect::<InputHandler>()?;
 
-		input_method.captures.add_raw(&input_handler);
-		// input_method_client::
-		// node.send_remote_signal("capture", message)
+		input_method.capture_requests.add_raw(&input_handler);
 		Ok(())
 	}
 }

@@ -13,7 +13,7 @@ use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
-use stereokit::StereoKitMultiThread;
+use stereokit_rust::system::Input;
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct EyeDatamap {
@@ -46,13 +46,11 @@ impl EyePointer {
 
 		Ok(EyePointer { spatial, pointer })
 	}
-	pub fn update(&self, sk: &impl StereoKitMultiThread) {
-		let ray = sk.input_eyes();
-		self.spatial
-			.set_local_transform(Mat4::from_rotation_translation(
-				ray.orientation,
-				ray.position,
-			));
+	pub fn update(&self) {
+		let ray = Input::get_eyes();
+		self.spatial.set_local_transform(
+			Mat4::from_rotation_translation(ray.orientation.into(), ray.position.into()).into(),
+		);
 		{
 			// Set pointer input datamap
 			*self.pointer.datamap.lock() = Datamap::from_typed(EyeDatamap { eye: 2 }).unwrap();

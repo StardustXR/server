@@ -24,7 +24,6 @@ use crate::{core::task, wayland::state::ClientState};
 use color_eyre::eyre::{ensure, Result};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use sk::StereoKitDraw;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::egl::EGLContext;
 use smithay::backend::renderer::gles::GlesRenderer;
@@ -42,7 +41,7 @@ use std::{
 	os::unix::{net::UnixListener, prelude::FromRawFd},
 	sync::Arc,
 };
-use stereokit as sk;
+use stereokit_rust::system::{Backend, BackendGraphics};
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
@@ -59,16 +58,15 @@ struct EGLRawHandles {
 }
 fn get_sk_egl() -> Result<EGLRawHandles> {
 	ensure!(
-		unsafe { sk::sys::backend_graphics_get() }
-			== sk::sys::backend_graphics__backend_graphics_opengles_egl,
+		Backend::graphics() == BackendGraphics::OpenGLESEGL,
 		"StereoKit is not running using EGL!"
 	);
 
 	Ok(unsafe {
 		EGLRawHandles {
-			display: sk::sys::backend_opengl_egl_get_display() as *const c_void,
-			config: sk::sys::backend_opengl_egl_get_config() as *const c_void,
-			context: sk::sys::backend_opengl_egl_get_context() as *const c_void,
+			display: stereokit_rust::system::backend_opengl_egl_get_display() as *const c_void,
+			config: stereokit_rust::system::backend_opengl_egl_get_config() as *const c_void,
+			context: stereokit_rust::system::backend_opengl_egl_get_context() as *const c_void,
 		}
 	})
 }
@@ -196,8 +194,8 @@ impl Wayland {
 		})?)
 	}
 
-	#[instrument(level = "debug", name = "Wayland frame", skip(self, sk))]
-	pub fn update(&mut self, sk: &impl StereoKitDraw) {
+	#[instrument(level = "debug", name = "Wayland frame", skip(self))]
+	pub fn update(&mut self) {
 		while let Ok((dmabuf, notifier)) = self.dmabuf_rx.try_recv() {
 			if self.renderer.import_dmabuf(&dmabuf, None).is_err() {
 				if let Some(notifier) = notifier {
@@ -206,15 +204,15 @@ impl Wayland {
 			}
 		}
 		for core_surface in CORE_SURFACES.get_valid_contents() {
-			core_surface.process(sk, &mut self.renderer);
+			core_surface.process(&mut self.renderer);
 		}
 
 		self.display.flush_clients(None);
 	}
 
-	pub fn frame_event(&self, sk: &impl StereoKitDraw) {
+	pub fn frame_event(&self) {
 		for core_surface in CORE_SURFACES.get_valid_contents() {
-			core_surface.frame(sk, self.output.clone());
+			core_surface.frame(self.output.clone());
 		}
 	}
 

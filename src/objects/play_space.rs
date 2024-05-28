@@ -6,7 +6,7 @@ use mint::Vector2;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
-use stereokit::StereoKitMultiThread;
+use stereokit_rust::system::World;
 
 use crate::{
 	core::client::INTERNAL_CLIENT,
@@ -59,23 +59,14 @@ impl PlaySpace {
 			_pulse_rx: pulse_rx,
 		})
 	}
-	pub fn update(&self, sk: &impl StereoKitMultiThread) {
-		let pose = sk.world_get_bounds_pose();
-		self.spatial
-			.set_local_transform(Mat4::from_rotation_translation(
-				pose.orientation,
-				pose.position,
-			));
+	pub fn update(&self) {
+		let pose = World::get_bounds_pose();
+		self.spatial.set_local_transform(
+			Mat4::from_rotation_translation(pose.orientation.into(), pose.position.into()).into(),
+		);
 		let Field::Box(box_field) = self.field.as_ref() else {
 			return;
 		};
-		box_field.set_size(
-			[
-				sk.world_get_bounds_size().x,
-				0.0,
-				sk.world_get_bounds_size().y,
-			]
-			.into(),
-		);
+		box_field.set_size([World::get_bounds_size().x, 0.0, World::get_bounds_size().y].into());
 	}
 }

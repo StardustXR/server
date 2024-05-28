@@ -4,12 +4,14 @@ use crate::{
 	nodes::{spatial::Spatial, Aspect, Node},
 };
 use color_eyre::eyre::Result;
-use glam::Vec3A;
+use glam::Vec3;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use prisma::Lerp;
 use std::{collections::VecDeque, sync::Arc};
-use stereokit::{bounds_grow_to_fit_pt, Bounds, Color128, LinePoint as SkLinePoint, StereoKitDraw};
+use stereokit_rust::{
+	maths::Bounds, sk::MainThreadToken, system::LinePoint as SkLinePoint, util::Color128,
+};
 
 static LINES_REGISTRY: Registry<Lines> = Registry::new();
 
@@ -29,7 +31,7 @@ impl Lines {
 				if let Ok(lines) = node.get_aspect::<Lines>() {
 					for line in &*lines.data.lock() {
 						for point in &line.points {
-							bounds = bounds_grow_to_fit_pt(bounds, point.point);
+							bounds.grown_point(Vec3::from(point.point));
 						}
 					}
 				}
@@ -47,7 +49,7 @@ impl Lines {
 		Ok(lines)
 	}
 
-	fn draw(&self, draw_ctx: &impl StereoKitDraw) {
+	fn draw(&self, token: &MainThreadToken) {
 		let transform_mat = self.space.global_transform();
 		let data = self.data.lock().clone();
 		for line in &data {
@@ -55,15 +57,9 @@ impl Lines {
 				.points
 				.iter()
 				.map(|p| SkLinePoint {
-					pt: transform_mat.transform_point3a(Vec3A::from(p.point)).into(),
+					pt: transform_mat.transform_point3(Vec3::from(p.point)).into(),
 					thickness: p.thickness,
-					color: stereokit::sys::color128::from([
-						p.color.c.r,
-						p.color.c.g,
-						p.color.c.b,
-						p.color.a,
-					])
-					.into(),
+					color: Color128::new(p.color.c.r, p.color.c.g, p.color.c.b, p.color.a).into(),
 				})
 				.collect();
 			if line.cyclic && !points.is_empty() {
@@ -78,9 +74,7 @@ impl Lines {
 				};
 				let connect_point = SkLinePoint {
 					pt: transform_mat
-						.transform_point3a(
-							Vec3A::from(first.point).lerp(Vec3A::from(last.point), 0.5),
-						)
+						.transform_point3(Vec3::from(first.point).lerp(Vec3::from(last.point), 0.5))
 						.into(),
 					thickness: (first.thickness + last.thickness) * 0.5,
 					color: color.into(),
@@ -88,7 +82,7 @@ impl Lines {
 				points.push_front(connect_point.clone());
 				points.push_back(connect_point);
 			}
-			draw_ctx.line_add_listv(points.make_contiguous());
+			stereokit_rust::system::Lines::add_list(token, points.make_contiguous());
 		}
 	}
 }
@@ -108,10 +102,10 @@ impl Drop for Lines {
 	}
 }
 
-pub fn draw_all(draw_ctx: &impl StereoKitDraw) {
+pub fn draw_all(token: &MainThreadToken) {
 	for lines in LINES_REGISTRY.get_valid_contents() {
 		if lines.enabled.load(Ordering::Relaxed) {
-			lines.draw(draw_ctx);
+			lines.draw(token);
 		}
 	}
 }

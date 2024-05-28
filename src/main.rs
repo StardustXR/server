@@ -26,11 +26,15 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::Duration;
-use stereokit::{
-	named_colors::BLACK, DepthMode, DisplayMode, Handed, LogLevel, StereoKitMultiThread,
-	TextureFormat, TextureType,
+use stereokit_rust::material::Material;
+use stereokit_rust::shader::Shader;
+use stereokit_rust::sk::{
+	sk_quit, AppMode, DepthMode, DisplayBlend, DisplayMode, QuitReason, SkClosures, SkSettings,
 };
-use stereokit::{DisplayBlend, Sk};
+use stereokit_rust::system::{Handed, LogLevel, Renderer, World};
+use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
+use stereokit_rust::ui::Ui;
+use stereokit_rust::util::{Color128, Device, Time};
 use tokio::sync::Notify;
 use tokio::task::LocalSet;
 use tokio::{runtime::Handle, sync::oneshot};
@@ -63,7 +67,6 @@ struct CliArgs {
 }
 
 static STARDUST_INSTANCE: OnceCell<String> = OnceCell::new();
-static SK_MULTITHREAD: OnceCell<Sk> = OnceCell::new();
 static STOP_NOTIFIER: Notify = Notify::const_new();
 
 struct EventLoopInfo {
@@ -102,16 +105,16 @@ fn main() {
 	}
 	let cli_args = Arc::new(CliArgs::parse());
 
-	let sk = stereokit::Settings {
-		app_name: "Stardust XR".to_string(),
-		display_preference: if cli_args.flatscreen {
-			DisplayMode::Flatscreen
+	let (sk, sk_event_loop) = SkSettings::default()
+		.app_name("Stardust XR")
+		.mode(if cli_args.flatscreen {
+			AppMode::Simulator
 		} else {
-			DisplayMode::MixedReality
-		},
-		blend_preference: DisplayBlend::AnyTransparent,
-		depth_mode: DepthMode::D32,
-		log_filter: match EnvFilter::from_default_env().max_level_hint() {
+			AppMode::XR
+		})
+		.blend_preference(DisplayBlend::AnyTransparent)
+		.depth_mode(DepthMode::D32)
+		.log_filter(match EnvFilter::from_default_env().max_level_hint() {
 			Some(LevelFilter::ERROR) => LogLevel::Error,
 			Some(LevelFilter::WARN) => LogLevel::Warning,
 			Some(LevelFilter::INFO) => LogLevel::Inform,
@@ -119,46 +122,35 @@ fn main() {
 			Some(LevelFilter::TRACE) => LogLevel::Diagnostic,
 			Some(LevelFilter::OFF) => LogLevel::None,
 			None => LogLevel::Warning,
-		},
-		overlay_app: cli_args.overlay_priority.is_some(),
-		overlay_priority: cli_args.overlay_priority.unwrap_or(u32::MAX),
-		disable_desktop_input_window: true,
-		render_scaling: 2.0,
-		..Default::default()
-	}
-	.init()
-	.expect("StereoKit failed to initialize");
-	let _ = SK_MULTITHREAD.set(sk.multithreaded());
+		})
+		.overlay_app(cli_args.overlay_priority.is_some())
+		.overlay_priority(cli_args.overlay_priority.unwrap_or(u32::MAX))
+		.disable_desktop_input_window(true)
+		.render_scaling(2.0)
+		.init()
+		.expect("StereoKit failed to initialize");
 	info!("Init StereoKit");
 
-	sk.render_set_multisample(0);
-
-	sk.material_set_shader(
-		sk.material_find("default/material_pbr").unwrap(),
-		sk.shader_find("default/shader_pbr_clip").unwrap(),
-	);
+	Renderer::multisample(0);
+	Material::default().shader(Shader::pbr_clip());
+	Ui::enable_far_interact(false);
 
 	// Skytex/light stuff
 	{
-		if let Some((light, tex)) = project_dirs
+		if let Some(sky) = project_dirs
 			.as_ref()
-			.and_then(|dirs| {
-				let skytex_path = dirs.config_dir().join("skytex.hdr");
-				skytex_path
-					.exists()
-					.then(|| sk.tex_create_cubemap_file(&skytex_path, true, 100).ok())
-			})
-			.flatten()
+			.map(|dirs| dirs.config_dir().join("skytex.hdr"))
+			.filter(|f| f.exists())
+			.and_then(|p| SHCubemap::from_cubemap_equirectangular(p, true, 100).ok())
 		{
-			sk.render_set_skytex(&tex);
-			sk.render_set_skylight(light);
+			sky.render_as_sky();
 		} else {
-			sk.render_set_skytex(sk.tex_gen_color(
-				BLACK,
+			Renderer::skytex(Tex::gen_color(
+				Color128::BLACK,
 				1,
 				1,
-				TextureType::CUBEMAP,
-				TextureFormat::RGBA32,
+				TexType::Cubemap,
+				TexFormat::RGBA32,
 			));
 		}
 	}
@@ -170,33 +162,25 @@ fn main() {
 		.unwrap();
 	let mut hands = (!cli_args.flatscreen)
 		.then(|| {
-			let left = SkHand::new(Handed::Left, &sk).ok();
-			let right = SkHand::new(Handed::Right, &sk).ok();
+			let left = SkHand::new(Handed::Left).ok();
+			let right = SkHand::new(Handed::Right).ok();
 			left.zip(right)
 		})
 		.flatten();
 	let mut controllers = (!cli_args.flatscreen && !cli_args.disable_controller)
 		.then(|| {
-			let left = SkController::new(&sk, Handed::Left).ok();
-			let right = SkController::new(&sk, Handed::Right).ok();
+			let left = SkController::new(Handed::Left).ok();
+			let right = SkController::new(Handed::Right).ok();
 			left.zip(right)
 		})
 		.flatten();
-	let eye_pointer = (sk.active_display_mode() == DisplayMode::MixedReality
-		&& sk.device_has_eye_gaze())
+	let eye_pointer = (sk.get_active_display_mode() == DisplayMode::MixedReality
+		&& Device::has_eye_gaze())
 	.then(EyePointer::new)
 	.transpose()
 	.unwrap();
 
-	if hands.is_none() {
-		sk.input_hand_visible(Handed::Left, false);
-		sk.input_hand_visible(Handed::Right, false);
-	}
-
-	let play_space = sk
-		.world_has_bounds()
-		.then(|| PlaySpace::new().ok())
-		.flatten();
+	let play_space = World::has_bounds().then(|| PlaySpace::new().ok()).flatten();
 
 	let (info_sender, info_receiver) = oneshot::channel::<EventLoopInfo>();
 	let event_thread = std::thread::Builder::new()
@@ -229,47 +213,48 @@ fn main() {
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
 	debug_span!("StereoKit").in_scope(|| {
-		sk.run(
-			|sk| {
+		SkClosures::run_app(
+			sk,
+			sk_event_loop,
+			|_sk, token| {
 				let _span = debug_span!("StereoKit step");
 				let _span = _span.enter();
 
-				hmd::frame(sk);
-				camera::update(sk);
+				hmd::frame();
+				camera::update(token);
 				#[cfg(feature = "wayland")]
-				wayland.frame_event(sk);
+				wayland.frame_event();
 				destroy_queue::clear();
 
 				if let Some(mouse_pointer) = &mut mouse_pointer {
-					mouse_pointer.update(sk);
+					mouse_pointer.update();
 				}
 				if let Some((left_hand, right_hand)) = &mut hands {
-					left_hand.update(!cli_args.disable_controller, sk);
-					right_hand.update(!cli_args.disable_controller, sk);
+					left_hand.update(!cli_args.disable_controller, token);
+					right_hand.update(!cli_args.disable_controller, token);
 				}
 				if let Some((left_controller, right_controller)) = &mut controllers {
-					left_controller.update(sk);
-					right_controller.update(sk);
+					left_controller.update(token);
+					right_controller.update(token);
 				}
 				if let Some(eye_pointer) = &eye_pointer {
-					eye_pointer.update(sk);
+					eye_pointer.update();
 				}
 				if let Some(play_space) = &play_space {
-					play_space.update(sk);
+					play_space.update();
 				}
 				input::process_input();
-				nodes::root::Root::send_frame_events(sk.time_elapsed_unscaled());
+				nodes::root::Root::send_frame_events(Time::get_step_unscaled());
 				adaptive_sleep(
-					sk,
 					&mut last_frame_delta,
 					&mut sleep_duration,
 					Duration::from_micros(250),
 				);
 
 				#[cfg(feature = "wayland")]
-				wayland.update(sk);
-				drawable::draw(sk);
-				audio::update(sk);
+				wayland.update();
+				drawable::draw(token);
+				audio::update();
 				#[cfg(feature = "wayland")]
 				wayland.make_context_current();
 			},
@@ -295,12 +280,11 @@ fn main() {
 }
 
 fn adaptive_sleep(
-	sk: &impl StereoKitMultiThread,
 	last_frame_delta: &mut Duration,
 	sleep_duration: &mut Duration,
 	sleep_duration_increase: Duration,
 ) {
-	let frame_delta = Duration::from_secs_f64(sk.time_elapsed_unscaled());
+	let frame_delta = Duration::from_secs_f64(Time::get_step_unscaled());
 	if *last_frame_delta < frame_delta {
 		if let Some(frame_delta_delta) = frame_delta.checked_sub(*last_frame_delta) {
 			if let Some(new_sleep_duration) = sleep_duration.checked_sub(frame_delta_delta) {
@@ -346,7 +330,7 @@ async fn event_loop(
 	info!("Cleanly shut down event loop");
 
 	unsafe {
-		stereokit::sys::sk_quit();
+		sk_quit(QuitReason::SystemClose);
 	}
 
 	Ok(())

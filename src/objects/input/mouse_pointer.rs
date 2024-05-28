@@ -11,23 +11,37 @@ use crate::{
 	},
 };
 use color_eyre::eyre::Result;
-use glam::{vec2, vec3, Mat4, Vec2, Vec3};
+use glam::{vec3, Mat4, Vec3};
+use mint::Vector2;
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
-use std::{convert::TryFrom, sync::Arc};
-use stereokit::{ray_from_mouse, ButtonState, Key, StereoKitMultiThread};
+use std::sync::Arc;
+use stereokit_rust::system::{Input, Key};
 use xkbcommon::xkb::{Context, Keymap, FORMAT_TEXT_V1};
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct MouseEvent {
 	select: f32,
 	middle: f32,
 	context: f32,
 	grab: f32,
-	scroll_continuous: Vec2,
-	scroll_discrete: Vec2,
+	scroll_continuous: Vector2<f32>,
+	scroll_discrete: Vector2<f32>,
 	raw_input_events: Vec<u32>,
+}
+impl Default for MouseEvent {
+	fn default() -> Self {
+		MouseEvent {
+			select: 0.0,
+			middle: 0.0,
+			context: 0.0,
+			grab: 0.0,
+			scroll_continuous: [0.0; 2].into(),
+			scroll_discrete: [0.0; 2].into(),
+			raw_input_events: vec![],
+		}
+	}
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -91,53 +105,48 @@ impl MousePointer {
 			keyboard_sender,
 		})
 	}
-	pub fn update(&mut self, sk: &impl StereoKitMultiThread) {
-		let mouse = sk.input_mouse();
+	pub fn update(&mut self) {
+		let mouse = Input::get_mouse();
 
-		let ray = ray_from_mouse(mouse.pos).unwrap();
+		let ray = mouse.get_ray();
 		self.spatial.set_local_transform(
 			Mat4::look_to_rh(
-				Vec3::from(ray.pos),
-				Vec3::from(ray.dir),
+				Vec3::from(ray.position),
+				Vec3::from(ray.direction),
 				vec3(0.0, 1.0, 0.0),
 			)
 			.inverse(),
 		);
 		{
 			// Set pointer input datamap
-			self.mouse_datamap.select =
-				if sk.input_key(Key::MouseLeft).contains(ButtonState::ACTIVE) {
-					1.0f32
-				} else {
-					0.0f32
-				};
-			self.mouse_datamap.middle =
-				if sk.input_key(Key::MouseCenter).contains(ButtonState::ACTIVE) {
-					1.0f32
-				} else {
-					0.0f32
-				};
-			self.mouse_datamap.context =
-				if sk.input_key(Key::MouseRight).contains(ButtonState::ACTIVE) {
-					1.0f32
-				} else {
-					0.0f32
-				};
-			self.mouse_datamap.grab = if sk.input_key(Key::MouseBack).contains(ButtonState::ACTIVE)
-				|| sk
-					.input_key(Key::MouseForward)
-					.contains(ButtonState::ACTIVE)
+			self.mouse_datamap.select = if Input::key(Key::MouseLeft).is_active() {
+				1.0f32
+			} else {
+				0.0f32
+			};
+			self.mouse_datamap.middle = if Input::key(Key::MouseCenter).is_active() {
+				1.0f32
+			} else {
+				0.0f32
+			};
+			self.mouse_datamap.context = if Input::key(Key::MouseRight).is_active() {
+				1.0f32
+			} else {
+				0.0f32
+			};
+			self.mouse_datamap.grab = if Input::key(Key::MouseBack).is_active()
+				|| Input::key(Key::MouseForward).is_active()
 			{
 				1.0f32
 			} else {
 				0.0f32
 			};
-			self.mouse_datamap.scroll_continuous = vec2(0.0, mouse.scroll_change / 120.0);
-			self.mouse_datamap.scroll_discrete = vec2(0.0, mouse.scroll_change / 120.0);
+			self.mouse_datamap.scroll_continuous = [0.0, mouse.scroll_change / 120.0].into();
+			self.mouse_datamap.scroll_discrete = [0.0, mouse.scroll_change / 120.0].into();
 			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).unwrap();
 		}
 		self.target_pointer_input();
-		self.send_keyboard_input(sk);
+		self.send_keyboard_input();
 	}
 
 	fn target_pointer_input(&mut self) {
@@ -145,7 +154,7 @@ impl MousePointer {
 		if let Some(capture) = &self.capture {
 			if !self
 				.pointer
-				.captures
+				.capture_requests
 				.get_valid_contents()
 				.contains(&capture)
 			{
@@ -156,7 +165,7 @@ impl MousePointer {
 		if self.capture.is_none() {
 			if let Some(new_capture) = self
 				.pointer
-				.captures
+				.capture_requests
 				.get_valid_contents()
 				.into_iter()
 				.map(|h| {
@@ -183,8 +192,10 @@ impl MousePointer {
 		}
 
 		// make sure that if something is captured only send input to it
+		self.pointer.captures.clear();
 		if let Some(capture) = &self.capture {
 			self.pointer.set_handler_order([capture].into_iter());
+			self.pointer.captures.add_raw(capture);
 			return;
 		}
 
@@ -236,7 +247,7 @@ impl MousePointer {
 		);
 	}
 
-	fn send_keyboard_input(&mut self, sk: &impl StereoKitMultiThread) {
+	fn send_keyboard_input(&mut self) {
 		let rx = PULSE_RECEIVER_REGISTRY
 			.get_valid_contents()
 			.into_iter()
@@ -263,12 +274,12 @@ impl MousePointer {
 
 		if let Some(rx) = rx {
 			let keys = (8_u32..254)
-				.filter_map(|i| Key::try_from(i).ok())
-				.filter_map(|k| Some((map_key(k)?, sk.input_key(k))))
+				.map(|i| unsafe { std::mem::transmute(i) })
+				.filter_map(|k| Some((map_key(k)?, Input::key(k))))
 				.filter_map(|(i, k)| {
-					if k.contains(ButtonState::JUST_ACTIVE) {
+					if k.is_just_active() {
 						Some(i as i32)
-					} else if k.contains(ButtonState::JUST_INACTIVE) {
+					} else if k.is_just_inactive() {
 						Some(-(i as i32))
 					} else {
 						None

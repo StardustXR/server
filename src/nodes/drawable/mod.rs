@@ -16,22 +16,22 @@ use color_eyre::eyre::{self, Result};
 use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
-use stereokit::StereoKitDraw;
+use stereokit_rust::{sk::MainThreadToken, system::Renderer, tex::SHCubemap};
 
 // #[instrument(level = "debug", skip(sk))]
-pub fn draw(sk: &impl StereoKitDraw) {
-	lines::draw_all(sk);
-	model::draw_all(sk);
-	text::draw_all(sk);
+pub fn draw(token: &MainThreadToken) {
+	lines::draw_all(token);
+	model::draw_all(token);
+	text::draw_all(token);
 
 	if let Some(skytex) = QUEUED_SKYTEX.lock().take() {
-		if let Ok((_skylight, skytex)) = sk.tex_create_cubemap_file(&skytex, true, i32::MAX) {
-			sk.render_set_skytex(&skytex);
+		if let Ok(skytex) = SHCubemap::from_cubemap_equirectangular(&skytex, true, 100) {
+			Renderer::skytex(skytex.tex);
 		}
 	}
 	if let Some(skylight) = QUEUED_SKYLIGHT.lock().take() {
-		if let Ok((skylight, _)) = sk.tex_create_cubemap_file(&skylight, true, i32::MAX) {
-			sk.render_set_skylight(skylight);
+		if let Ok(skylight) = SHCubemap::from_cubemap_equirectangular(&skylight, true, 100) {
+			Renderer::skylight(skylight.sh);
 		}
 	}
 }

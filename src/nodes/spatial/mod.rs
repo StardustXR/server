@@ -7,7 +7,7 @@ use crate::core::client::Client;
 use crate::core::registry::Registry;
 use crate::create_interface;
 use color_eyre::eyre::{eyre, Result};
-use glam::{vec3a, Mat4, Quat};
+use glam::{vec3a, Mat4, Quat, Vec3};
 use mint::Vector3;
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use std::fmt::Debug;
 use std::ptr;
 use std::sync::{Arc, Weak};
-use stereokit::{bounds_grow_to_fit_box, Bounds};
+use stereokit_rust::maths::Bounds;
 
 stardust_xr_server_codegen::codegen_spatial_protocol!();
 impl Transform {
@@ -104,11 +104,7 @@ impl Spatial {
 			.map(|b| (b)(&node))
 			.unwrap_or_default();
 		for child in self.children.get_valid_contents() {
-			bounds = bounds_grow_to_fit_box(
-				bounds,
-				child.get_bounding_box(),
-				Some(child.local_transform()),
-			);
+			bounds.grown_box(child.get_bounding_box(), child.local_transform());
 		}
 		bounds
 	}
@@ -253,8 +249,8 @@ impl SpatialRefAspect for Spatial {
 		let bounds = this_spatial.get_bounding_box();
 
 		Ok(BoundingBox {
-			center: mint::Vector3::from(bounds.center),
-			size: mint::Vector3::from(bounds.dimensions),
+			center: Vec3::from(bounds.center).into(),
+			size: Vec3::from(bounds.dimensions).into(),
 		})
 	}
 
@@ -267,21 +263,18 @@ impl SpatialRefAspect for Spatial {
 		let relative_spatial = relative_to.get_aspect::<Spatial>()?;
 		let center = Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
 			.transform_point3([0.0; 3].into());
-		let bounds = bounds_grow_to_fit_box(
-			Bounds {
-				center,
-				dimensions: [0.0; 3].into(),
-			},
+		let mut bounds = Bounds {
+			center: center.into(),
+			dimensions: [0.0; 3].into(),
+		};
+		bounds.grown_box(
 			this_spatial.get_bounding_box(),
-			Some(Spatial::space_to_space_matrix(
-				Some(&this_spatial),
-				Some(&relative_spatial),
-			)),
+			Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial)),
 		);
 
 		Ok(BoundingBox {
-			center: mint::Vector3::from(bounds.center),
-			size: mint::Vector3::from(bounds.dimensions),
+			center: Vec3::from(bounds.center).into(),
+			size: Vec3::from(bounds.dimensions).into(),
 		})
 	}
 

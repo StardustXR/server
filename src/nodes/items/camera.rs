@@ -19,12 +19,19 @@ use mint::{RowMatrix4, Vector2};
 use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use send_wrapper::SendWrapper;
 use serde::Deserialize;
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::Arc;
-use stereokit::{
-	Color128, Material, Rect, RenderLayer, StereoKitDraw, Tex, TextureType, Transparency,
+use stereokit_rust::{
+	material::{Material, Transparency},
+	shader::Shader,
+	sk::MainThreadToken,
+	system::Renderer,
+	tex::{Tex, TexFormat, TexType},
+	util::Color128,
 };
+use tracing::error;
 
 lazy_static! {
 	pub(super) static ref ITEM_TYPE_INFO_CAMERA: TypeInfo = TypeInfo {
@@ -46,8 +53,8 @@ struct FrameInfo {
 pub struct CameraItem {
 	space: Arc<Spatial>,
 	frame_info: Mutex<FrameInfo>,
-	sk_tex: OnceCell<Tex>,
-	sk_mat: OnceCell<Arc<Material>>,
+	sk_tex: OnceCell<SendWrapper<Tex>>,
+	sk_mat: OnceCell<Arc<SendWrapper<Material>>>,
 	applied_to: Registry<ModelPart>,
 	apply_to: Registry<ModelPart>,
 }
@@ -111,52 +118,54 @@ impl CameraItem {
 		Ok(serialize(id)?.into())
 	}
 
-	pub fn update(&self, sk: &impl StereoKitDraw) {
+	pub fn update(&self, token: &MainThreadToken) {
 		let frame_info = self.frame_info.lock();
 		let sk_tex = self.sk_tex.get_or_init(|| {
-			sk.tex_gen_color(
+			SendWrapper::new(Tex::gen_color(
 				Color128::default(),
 				frame_info.px_size.x as i32,
 				frame_info.px_size.y as i32,
-				TextureType::RENDER_TARGET,
-				stereokit::TextureFormat::RGBA32Linear,
-			)
+				TexType::Rendertarget,
+				TexFormat::RGBA32Linear,
+			))
 		});
-		let sk_mat = self.sk_mat.get_or_init(|| {
-			let shader = sk.shader_create_mem(&UNLIT_SHADER_BYTES).unwrap();
-			let mat = sk.material_create(&shader);
-			sk.material_set_texture(&mat, "diffuse", sk_tex.as_ref());
-			sk.material_set_transparency(&mat, Transparency::Blend);
-			Arc::new(mat)
-		});
+		let sk_mat = self
+			.sk_mat
+			.get_or_try_init(|| -> Result<Arc<SendWrapper<Material>>> {
+				let shader = Shader::from_memory(&UNLIT_SHADER_BYTES)?;
+				let mut mat = Material::new(&shader, None);
+				mat.get_all_param_info().set_texture("diffuse", &**sk_tex);
+				mat.transparency(Transparency::Blend);
+				Ok(Arc::new(SendWrapper::new(mat)))
+			});
+		let Ok(sk_mat) = sk_mat else {
+			error!("unable to make camera item stereokit texture");
+			return;
+		};
 		for model_part in self.apply_to.take_valid_contents() {
 			model_part.replace_material(sk_mat.clone())
 		}
 
 		if !self.applied_to.is_empty() {
-			sk.render_to(
-				sk_tex,
-				frame_info.proj_matrix,
+			Renderer::render_to(
+				token,
+				&**sk_tex,
 				self.space.global_transform(),
-				RenderLayer::all(),
-				stereokit::RenderClear::All,
-				Rect {
-					x: 0.0,
-					y: 0.0,
-					w: 0.0,
-					h: 0.0,
-				},
-			);
+				frame_info.proj_matrix,
+				None,
+				None,
+				None,
+			)
 		}
 	}
 }
 
-pub fn update(sk: &impl StereoKitDraw) {
+pub fn update(token: &MainThreadToken) {
 	for camera in ITEM_TYPE_INFO_CAMERA.items.get_valid_contents() {
 		let ItemType::Camera(camera) = &camera.specialization else {
 			continue;
 		};
-		camera.update(sk);
+		camera.update(token);
 	}
 }
 

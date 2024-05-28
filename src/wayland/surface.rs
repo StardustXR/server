@@ -19,9 +19,11 @@ use smithay::{
 	wayland::compositor::{self, SurfaceData},
 };
 use std::{cell::RefCell, ffi::c_void, sync::Arc, time::Duration};
-use stereokit::{
-	Material, Shader, StereoKitDraw, Tex, TextureAddress, TextureFormat, TextureSample,
-	TextureType, Transparency,
+use stereokit_rust::{
+	material::{Material, Transparency},
+	shader::Shader,
+	tex::{Tex, TexAddress, TexFormat, TexSample, TexType},
+	util::Time,
 };
 
 pub static CORE_SURFACES: Registry<CoreSurface> = Registry::new();
@@ -40,8 +42,8 @@ pub struct CoreSurface {
 	pub dh: DisplayHandle,
 	pub weak_surface: wayland_server::Weak<WlSurface>,
 	mapped_data: Mutex<Option<CoreSurfaceData>>,
-	sk_tex: OnceCell<Tex>,
-	sk_mat: OnceCell<Arc<Material>>,
+	sk_tex: OnceCell<SendWrapper<Mutex<Tex>>>,
+	sk_mat: OnceCell<SendWrapper<Mutex<Material>>>,
 	material_offset: Mutex<Delta<u32>>,
 	on_mapped: Mutex<Box<dyn Fn() + Send + Sync>>,
 	on_commit: Mutex<Box<dyn Fn(u32) + Send + Sync>>,
@@ -85,24 +87,28 @@ impl CoreSurface {
 		*self.on_commit.lock() = Box::new(|_| {});
 	}
 
-	pub fn process(&self, sk: &impl StereoKitDraw, renderer: &mut GlesRenderer) {
+	pub fn process(&self, renderer: &mut GlesRenderer) {
 		let Some(wl_surface) = self.wl_surface() else {
 			return;
 		};
 
-		let sk_tex = self
-			.sk_tex
-			.get_or_init(|| sk.tex_create(TextureType::IMAGE_NO_MIPS, TextureFormat::RGBA32));
+		let sk_tex = self.sk_tex.get_or_init(|| {
+			SendWrapper::new(Mutex::new(Tex::new(
+				TexType::ImageNomips,
+				TexFormat::RGBA32Linear,
+				nanoid::nanoid!(),
+			)))
+		});
 		self.sk_mat.get_or_init(|| {
-			let shader = sk.shader_create_mem(&PANEL_SHADER_BYTES);
+			let shader = Shader::from_memory(&PANEL_SHADER_BYTES).unwrap();
 			// let _ = renderer.with_context(|c| unsafe {
 			// 	shader_inject(c, &mut shader, SIMULA_VERT_STR, SIMULA_FRAG_STR)
 			// });
 
-			let mat = sk.material_create(shader.as_ref().unwrap_or(Shader::UI.as_ref()));
-			sk.material_set_texture(&mat, "diffuse", sk_tex.as_ref());
-			sk.material_set_transparency(&mat, Transparency::Blend);
-			Arc::new(mat)
+			let mut mat = Material::new(shader, None);
+			mat.diffuse_tex(sk_tex.lock().as_ref());
+			mat.transparency(Transparency::Blend);
+			SendWrapper::new(Mutex::new(mat))
 		});
 
 		// Let smithay handle buffer management (has to be done here as RendererSurfaceStates is not thread safe)
@@ -146,22 +152,22 @@ impl CoreSurface {
 			let Some(sk_mat) = self.sk_mat.get() else {
 				return;
 			};
-			unsafe {
-				sk.tex_set_surface(
-					sk_tex.as_ref(),
+			sk_tex
+				.lock()
+				.set_native_surface(
 					smithay_tex.tex_id() as usize as *mut c_void,
-					TextureType::IMAGE_NO_MIPS,
+					TexType::ImageNomips,
 					smithay::backend::renderer::gles::ffi::RGBA8.into(),
 					smithay_tex.width() as i32,
 					smithay_tex.height() as i32,
 					1,
 					false,
-				);
-				sk.tex_set_sample(sk_tex.as_ref(), TextureSample::Point);
-				sk.tex_set_address(sk_tex.as_ref(), TextureAddress::Clamp);
-			}
+				)
+				.sample_mode(TexSample::Point)
+				.address_mode(TexAddress::Clamp);
+
 			if let Some(material_offset) = self.material_offset.lock().delta() {
-				sk.material_set_queue_offset(sk_mat.as_ref().as_ref(), *material_offset as i32);
+				sk_mat.lock().queue_offset(*material_offset as i32);
 			}
 
 			let Some(surface_size) = renderer_surface_state.surface_size() else {
@@ -180,7 +186,7 @@ impl CoreSurface {
 		self.apply_surface_materials();
 	}
 
-	pub fn frame(&self, sk: &impl StereoKitDraw, output: Output) {
+	pub fn frame(&self, output: Output) {
 		let Some(wl_surface) = self.wl_surface() else {
 			return;
 		};
@@ -188,7 +194,7 @@ impl CoreSurface {
 		send_frames_surface_tree(
 			&wl_surface,
 			&output,
-			Duration::from_secs_f64(sk.time_get()),
+			Duration::from_secs_f64(Time::get_total_unscaled()),
 			None,
 			|_, _| Some(output.clone()),
 		);
@@ -204,8 +210,9 @@ impl CoreSurface {
 
 	fn apply_surface_materials(&self) {
 		if let Some(sk_mat) = self.sk_mat.get() {
+			let sk_mat = sk_mat.lock();
 			for model_node in self.pending_material_applications.get_valid_contents() {
-				model_node.replace_material(sk_mat.clone());
+				model_node.replace_material_now(sk_mat.as_ref());
 			}
 			self.pending_material_applications.clear();
 		}

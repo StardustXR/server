@@ -44,7 +44,7 @@ lto = true
 [dependencies]
 color-eyre = { version = "0.6.2", default-features = false }
 clap = { version = "4.2.4", features = ["derive"] }
-glam = { version = "0.23.0", features = ["mint"] }
+glam = { version = "0.27.0", features = ["mint", "serde"] }
 lazy_static = "1.4.0"
 mint = "0.5.9"
 nanoid = "0.4.0"
@@ -84,13 +84,10 @@ features = [
     "renderer_gl",
     "wayland_frontend",
 ]
-version = "*"
 optional = true
 
-[dependencies.stereokit]
-default-features = false
-features = ["linux-egl"]
-version = "0.16.9"
+[dependencies.stereokit-rust]
+git = "https://github.com/mvvvv/StereoKit-rust.git"
 
 [dependencies.console-subscriber]
 version = "0.2.0"

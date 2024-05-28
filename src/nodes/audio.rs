@@ -15,7 +15,7 @@ use stardust_xr::values::ResourceID;
 use std::ops::DerefMut;
 use std::sync::Arc;
 use std::{ffi::OsStr, path::PathBuf};
-use stereokit::{Sound as SkSound, SoundInstance, StereoKitDraw};
+use stereokit_rust::sound::{Sound as SkSound, SoundInst};
 
 static SOUND_REGISTRY: Registry<Sound> = Registry::new();
 
@@ -26,7 +26,7 @@ pub struct Sound {
 	volume: f32,
 	pending_audio_path: PathBuf,
 	sk_sound: OnceCell<SendWrapper<SkSound>>,
-	instance: Mutex<Option<SoundInstance>>,
+	instance: Mutex<Option<SoundInst>>,
 	stop: Mutex<Option<()>>,
 	play: Mutex<Option<()>>,
 }
@@ -53,24 +53,21 @@ impl Sound {
 		Ok(sound_arc)
 	}
 
-	fn update(&self, sk: &impl StereoKitDraw) {
+	fn update(&self) {
 		let sound = self.sk_sound.get_or_init(|| {
-			SendWrapper::new(sk.sound_create(self.pending_audio_path.clone()).unwrap())
+			SendWrapper::new(SkSound::from_file(self.pending_audio_path.clone()).unwrap())
 		});
 		if self.stop.lock().take().is_some() {
 			if let Some(instance) = self.instance.lock().take() {
-				sk.sound_inst_stop(instance);
+				instance.stop();
 			}
 		}
 		if self.instance.lock().is_none() && self.play.lock().take().is_some() {
-			self.instance.lock().replace(sk.sound_play(
-				sound.as_ref(),
-				vec3(0.0, 0.0, 0.0),
-				self.volume,
-			));
+			let instance = sound.play(vec3(0.0, 0.0, 0.0), Some(self.volume));
+			self.instance.lock().replace(instance);
 		}
 		if let Some(instance) = self.instance.lock().deref_mut() {
-			sk.sound_inst_set_pos(*instance, self.space.global_transform().w_axis.xyz());
+			instance.position(self.space.global_transform().w_axis.xyz());
 		}
 	}
 }
@@ -98,9 +95,9 @@ impl Drop for Sound {
 	}
 }
 
-pub fn update(sk: &impl StereoKitDraw) {
+pub fn update() {
 	for sound in SOUND_REGISTRY.get_valid_contents() {
-		sound.update(sk)
+		sound.update()
 	}
 }
 

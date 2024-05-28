@@ -11,9 +11,10 @@ use glam::{Mat4, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
-use stereokit::{
-	named_colors::WHITE, ButtonState, Handed, Model, RenderLayer, StereoKitDraw,
-	StereoKitMultiThread,
+use stereokit_rust::{
+	model::Model,
+	sk::MainThreadToken,
+	system::{Handed, Input},
 };
 
 #[derive(Default, Deserialize, Serialize)]
@@ -32,7 +33,7 @@ pub struct SkController {
 	datamap: ControllerDatamap,
 }
 impl SkController {
-	pub fn new(sk: &impl StereoKitMultiThread, handed: Handed) -> Result<Self> {
+	pub fn new(handed: Handed) -> Result<Self> {
 		let _node = Node::create_parent_name(
 			&INTERNAL_CLIENT,
 			"",
@@ -45,7 +46,7 @@ impl SkController {
 		)
 		.add_to_scenegraph()?;
 		Spatial::add_to(&_node, None, Mat4::IDENTITY, false);
-		let model = sk.model_create_mem("cursor.glb", include_bytes!("cursor.glb"), None)?;
+		let model = Model::from_memory("cursor.glb", include_bytes!("cursor.glb"), None)?;
 		let tip = InputDataType::Tip(Tip::default());
 		let input = InputMethod::add_to(
 			&_node,
@@ -61,30 +62,35 @@ impl SkController {
 			datamap: Default::default(),
 		})
 	}
-	pub fn update(&mut self, sk: &impl StereoKitDraw) {
-		let controller = sk.input_controller(self.handed);
-		*self.input.enabled.lock() = controller.tracked.contains(ButtonState::ACTIVE);
+	pub fn update(&mut self, token: &MainThreadToken) {
+		let controller = Input::controller(self.handed);
+		*self.input.enabled.lock() = controller.tracked.is_active();
 		if *self.input.enabled.lock() {
 			let world_transform = Mat4::from_rotation_translation(
-				controller.aim.orientation,
-				controller.aim.position,
+				controller.aim.orientation.into(),
+				controller.aim.position.into(),
 			);
-			sk.model_draw(
-				&self.model,
+			self.model.draw(
+				token,
 				world_transform * Mat4::from_scale(Vec3::ONE * 0.02),
-				WHITE,
-				RenderLayer::LAYER0,
+				None,
+				None,
 			);
 			self.input.spatial.set_local_transform(world_transform);
 		}
 		self.datamap.select = controller.trigger;
 		self.datamap.grab = controller.grip;
-		self.datamap.scroll = controller.stick;
+		self.datamap.scroll = controller.stick.into();
 		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 
 		// remove the capture when it's removed from captures list
 		if let Some(capture) = &self.capture {
-			if !self.input.captures.get_valid_contents().contains(&capture) {
+			if !self
+				.input
+				.capture_requests
+				.get_valid_contents()
+				.contains(&capture)
+			{
 				self.capture.take();
 			}
 		}
@@ -92,7 +98,7 @@ impl SkController {
 		if self.capture.is_none() {
 			self.capture = self
 				.input
-				.captures
+				.capture_requests
 				.get_valid_contents()
 				.into_iter()
 				.map(|handler| {
@@ -115,8 +121,10 @@ impl SkController {
 		}
 
 		// make sure that if something is captured only send input to it
+		self.input.captures.clear();
 		if let Some(capture) = &self.capture {
 			self.input.set_handler_order([capture].into_iter());
+			self.input.captures.add_raw(capture);
 			return;
 		}
 

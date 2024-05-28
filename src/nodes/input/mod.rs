@@ -154,7 +154,6 @@ pub fn process_input() {
 					.collect()
 			});
 
-			method.captures.clear();
 			// Iterate over the distance links and send input to them
 			for (i, input_link) in input_links.into_iter().enumerate() {
 				if let Some(method_alias) = input_link
@@ -165,8 +164,13 @@ pub fn process_input() {
 				{
 					method_alias.enabled.store(true, Ordering::Release);
 				}
-				input_link.send_input(i as u32, true, method.datamap.lock().clone());
+				input_link.send_input(
+					i as u32,
+					method.captures.contains(&input_link.handler),
+					method.datamap.lock().clone(),
+				);
 			}
+			method.capture_requests.clear();
 		});
 	}
 }

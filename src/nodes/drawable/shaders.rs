@@ -4,14 +4,14 @@ use smithay::backend::renderer::gles::{
 	GlesError,
 };
 use std::mem::transmute;
-use stereokit::Shader;
+use stereokit_rust::shader::Shader;
 use tracing::error;
 
 // Simula shader with fancy lanzcos sampling
-pub const UNLIT_SHADER_BYTES: &[u8] = include_bytes!("shader_unlit_gamma.sks");
+pub const UNLIT_SHADER_BYTES: &[u8] = include_bytes!("assets/shaders/shader_unlit_gamma.hlsl.sks");
 
 // Simula shader with fancy lanzcos sampling
-pub const PANEL_SHADER_BYTES: &[u8] = include_bytes!("shader_unlit_simula.sks");
+pub const PANEL_SHADER_BYTES: &[u8] = include_bytes!("assets/shaders/shader_unlit_simula.hlsl.sks");
 
 struct FfiAssetHeader {
 	asset_type: i32,

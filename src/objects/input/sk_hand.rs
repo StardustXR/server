@@ -7,18 +7,20 @@ use crate::nodes::{
 	Node,
 };
 use color_eyre::eyre::Result;
-use glam::Mat4;
+use glam::{Mat4, Quat, Vec3};
 use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::f32::INFINITY;
 use std::sync::Arc;
-use stereokit::{ButtonState, Color128, HandJoint, Handed, Material, StereoKitMultiThread};
+use stereokit_rust::sk::MainThreadToken;
+use stereokit_rust::system::{HandJoint, Handed, Input, LinePoint, Lines};
+use stereokit_rust::util::Color128;
 
 fn convert_joint(joint: HandJoint) -> Joint {
 	Joint {
-		position: joint.position.into(),
-		rotation: joint.orientation.into(),
+		position: Vec3::from(joint.position).into(),
+		rotation: Quat::from(joint.orientation).into(),
 		radius: joint.radius,
 		distance: 0.0,
 	}
@@ -33,13 +35,12 @@ struct HandDatamap {
 pub struct SkHand {
 	_node: Arc<Node>,
 	handed: Handed,
-	material: Material,
 	input: Arc<InputMethod>,
 	capture: Option<Arc<InputHandler>>,
 	datamap: HandDatamap,
 }
 impl SkHand {
-	pub fn new(handed: Handed, sk: &impl StereoKitMultiThread) -> Result<Self> {
+	pub fn new(handed: Handed) -> Result<Self> {
 		let _node = Node::create_parent_name(&INTERNAL_CLIENT, "", &nanoid!(), false)
 			.add_to_scenegraph()?;
 		Spatial::add_to(&_node, None, Mat4::IDENTITY, false);
@@ -50,29 +51,21 @@ impl SkHand {
 		let datamap = Datamap::from_typed(HandDatamap::default())?;
 		let input = InputMethod::add_to(&_node, hand, datamap)?;
 
-		let material = sk.material_copy(Material::HAND);
-		unsafe { sk.material_addref(&material); }
-		sk.input_hand_material(handed, Material(material.0));
+		Input::hand_visible(handed, false);
 		Ok(SkHand {
 			_node,
 			handed,
-			material,
 			input,
 			capture: None,
 			datamap: Default::default(),
 		})
 	}
-	pub fn update(&mut self, controller_enabled: bool, sk: &impl StereoKitMultiThread) {
-		let sk_hand = sk.input_hand(self.handed);
+	pub fn update(&mut self, controller_enabled: bool, token: &MainThreadToken) {
+		let sk_hand = Input::hand(self.handed);
 		if let InputDataType::Hand(hand) = &mut *self.input.data.lock() {
-			let controller_active = controller_enabled
-				&& sk
-					.input_controller(self.handed)
-					.tracked
-					.contains(ButtonState::ACTIVE);
-			*self.input.enabled.lock() =
-				!controller_active && sk_hand.tracked_state.contains(ButtonState::ACTIVE);
-			sk.input_hand_visible(self.handed, *self.input.enabled.lock());
+			let controller_active =
+				controller_enabled && Input::controller(self.handed).is_tracked();
+			*self.input.enabled.lock() = !controller_active && sk_hand.tracked.is_active();
 			if *self.input.enabled.lock() {
 				hand.thumb.tip = convert_joint(sk_hand.fingers[0][4]);
 				hand.thumb.distal = convert_joint(sk_hand.fingers[0][3]);
@@ -92,17 +85,27 @@ impl SkHand {
 					finger.metacarpal = convert_joint(sk_finger[0]);
 				}
 
-				hand.palm.position = sk_hand.palm.position.into();
-				hand.palm.rotation = sk_hand.palm.orientation.into();
+				hand.palm.position = Vec3::from(sk_hand.palm.position).into();
+				hand.palm.rotation = Quat::from(sk_hand.palm.orientation).into();
 				hand.palm.radius =
 					(sk_hand.fingers[2][0].radius + sk_hand.fingers[2][1].radius) * 0.5;
 
-				hand.wrist.position = sk_hand.wrist.position.into();
-				hand.wrist.rotation = sk_hand.wrist.orientation.into();
+				hand.wrist.position = Vec3::from(sk_hand.wrist.position).into();
+				hand.wrist.rotation = Quat::from(sk_hand.wrist.orientation).into();
 				hand.wrist.radius =
 					(sk_hand.fingers[0][0].radius + sk_hand.fingers[4][0].radius) * 0.5;
 
 				hand.elbow = None;
+
+				self.draw(
+					token,
+					if self.capture.is_none() {
+						Color128::new_rgb(1.0, 1.0, 1.0)
+					} else {
+						Color128::new_rgb(0.0, 1.0, 0.75)
+					},
+					hand,
+				);
 			}
 		}
 		self.datamap.pinch_strength = sk_hand.pinch_activation;
@@ -111,16 +114,20 @@ impl SkHand {
 
 		// remove the capture when it's removed from captures list
 		if let Some(capture) = &self.capture {
-			if !self.input.captures.get_valid_contents().contains(&capture) {
+			if !self
+				.input
+				.capture_requests
+				.get_valid_contents()
+				.contains(&capture)
+			{
 				self.capture.take();
-				sk.material_set_color(&self.material, "color", Color128::new_rgb(1.0, 1.0, 1.0));
 			}
 		}
 		// add the capture that's the closest if we don't have one
 		if self.capture.is_none() {
 			self.capture = self
 				.input
-				.captures
+				.capture_requests
 				.get_valid_contents()
 				.into_iter()
 				.map(|handler| (handler.clone(), self.compare_distance(&handler.field).abs()))
@@ -132,14 +139,13 @@ impl SkHand {
 					}
 				})
 				.map(|(rx, _)| rx);
-			if self.capture.is_some() {
-				sk.material_set_color(&self.material, "color", Color128::new_rgb(0.0, 1.0, 0.75));
-			}
 		}
 
 		// make sure that if something is captured only send input to it
+		self.input.captures.clear();
 		if let Some(capture) = &self.capture {
 			self.input.set_handler_order([capture].into_iter());
+			self.input.captures.add_raw(capture);
 			return;
 		}
 
@@ -183,6 +189,77 @@ impl SkHand {
 		);
 	}
 
+	fn draw(&self, token: &MainThreadToken, color: Color128, hand: &Hand) {
+		// thumb
+		Lines::add_list(
+			token,
+			&[
+				joint_to_line_point(&hand.thumb.tip, color),
+				joint_to_line_point(&hand.thumb.distal, color),
+				joint_to_line_point(&hand.thumb.proximal, color),
+				joint_to_line_point(&hand.thumb.metacarpal, color),
+			],
+		);
+		// index
+		Lines::add_list(
+			token,
+			&[
+				joint_to_line_point(&hand.index.tip, color),
+				joint_to_line_point(&hand.index.distal, color),
+				joint_to_line_point(&hand.index.intermediate, color),
+				joint_to_line_point(&hand.index.proximal, color),
+				joint_to_line_point(&hand.index.metacarpal, color),
+			],
+		);
+		// middle
+		Lines::add_list(
+			token,
+			&[
+				joint_to_line_point(&hand.middle.tip, color),
+				joint_to_line_point(&hand.middle.distal, color),
+				joint_to_line_point(&hand.middle.intermediate, color),
+				joint_to_line_point(&hand.middle.proximal, color),
+				joint_to_line_point(&hand.middle.metacarpal, color),
+			],
+		);
+		// ring
+		Lines::add_list(
+			token,
+			&[
+				joint_to_line_point(&hand.ring.tip, color),
+				joint_to_line_point(&hand.ring.distal, color),
+				joint_to_line_point(&hand.ring.intermediate, color),
+				joint_to_line_point(&hand.ring.proximal, color),
+				joint_to_line_point(&hand.ring.metacarpal, color),
+			],
+		);
+		// little
+		Lines::add_list(
+			token,
+			&[
+				joint_to_line_point(&hand.little.tip, color),
+				joint_to_line_point(&hand.little.distal, color),
+				joint_to_line_point(&hand.little.intermediate, color),
+				joint_to_line_point(&hand.little.proximal, color),
+				joint_to_line_point(&hand.little.metacarpal, color),
+			],
+		);
+
+		// palm
+		Lines::add_list(
+			token,
+			&[
+				joint_to_line_point(&hand.wrist, color),
+				joint_to_line_point(&hand.thumb.metacarpal, color),
+				joint_to_line_point(&hand.index.metacarpal, color),
+				joint_to_line_point(&hand.middle.metacarpal, color),
+				joint_to_line_point(&hand.ring.metacarpal, color),
+				joint_to_line_point(&hand.little.metacarpal, color),
+				joint_to_line_point(&hand.wrist, color),
+			],
+		);
+	}
+
 	fn compare_distance(&self, field: &Field) -> f32 {
 		let InputDataType::Hand(hand) = &*self.input.data.lock() else {
 			return INFINITY;
@@ -197,5 +274,13 @@ impl SkHand {
 			+ (index_tip_distance * 0.4)
 			+ (middle_tip_distance * 0.15)
 			+ (ring_tip_distance * 0.15)
+	}
+}
+
+fn joint_to_line_point(joint: &Joint, color: Color128) -> LinePoint {
+	LinePoint {
+		pt: Vec3::from(joint.position).into(),
+		thickness: joint.radius * 2.0,
+		color: color.into(),
 	}
 }

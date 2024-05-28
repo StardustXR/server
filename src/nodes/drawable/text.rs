@@ -8,8 +8,11 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
-use stereokit::{
-	named_colors::WHITE, Color128, StereoKitDraw, TextAlign, TextFit, TextStyle as SkTextStyle,
+use stereokit_rust::{
+	font::Font,
+	sk::MainThreadToken,
+	system::{TextAlign, TextFit, TextStyle as SkTextStyle},
+	util::{Color128, Color32},
 };
 
 use super::{TextAspect, TextStyle};
@@ -18,13 +21,13 @@ static TEXT_REGISTRY: Registry<Text> = Registry::new();
 
 fn convert_align(x_align: super::XAlign, y_align: super::YAlign) -> TextAlign {
 	match (x_align, y_align) {
-		(super::XAlign::Left, super::YAlign::Top) => TextAlign::Left,
+		(super::XAlign::Left, super::YAlign::Top) => TextAlign::TopLeft,
 		(super::XAlign::Left, super::YAlign::Center) => TextAlign::CenterLeft,
 		(super::XAlign::Left, super::YAlign::Bottom) => TextAlign::BottomLeft,
 		(super::XAlign::Center, super::YAlign::Top) => TextAlign::Center,
 		(super::XAlign::Center, super::YAlign::Center) => TextAlign::Center,
 		(super::XAlign::Center, super::YAlign::Bottom) => TextAlign::BottomCenter,
-		(super::XAlign::Right, super::YAlign::Top) => TextAlign::Right,
+		(super::XAlign::Right, super::YAlign::Top) => TextAlign::TopRight,
 		(super::XAlign::Right, super::YAlign::Center) => TextAlign::CenterRight,
 		(super::XAlign::Right, super::YAlign::Bottom) => TextAlign::BottomRight,
 	}
@@ -59,16 +62,16 @@ impl Text {
 		Ok(text)
 	}
 
-	fn draw(&self, sk: &impl StereoKitDraw) {
+	fn draw(&self, token: &MainThreadToken) {
 		let style =
 			self.style
 				.get_or_try_init(|| -> Result<SkTextStyle, color_eyre::eyre::Error> {
 					let font = self
 						.font_path
 						.as_deref()
-						.and_then(|path| sk.font_create(path).ok())
-						.unwrap_or_else(|| sk.font_find("default/font").unwrap());
-					Ok(unsafe { sk.text_make_style(font, 1.0, WHITE) })
+						.and_then(|path| Font::from_file(path).ok())
+						.unwrap_or_default();
+					Ok(SkTextStyle::from_font(font, 1.0, Color32::WHITE))
 				});
 
 		if let Ok(style) = style {
@@ -81,7 +84,8 @@ impl Text {
 					data.character_height,
 				));
 			if let Some(bounds) = &data.bounds {
-				sk.text_add_in(
+				stereokit_rust::system::Text::add_in(
+					token,
 					&*text,
 					transform,
 					Vec2::from(bounds.bounds) / data.character_height,
@@ -92,21 +96,40 @@ impl Text {
 						super::TextFit::Exact => TextFit::Exact,
 						super::TextFit::Overflow => TextFit::Overflow,
 					},
-					*style,
-					convert_align(bounds.anchor_align_x, bounds.anchor_align_y),
-					convert_align(data.text_align_x, data.text_align_y),
-					vec3(0.0, 0.0, 0.0),
-					Color128::from([data.color.c.r, data.color.c.g, data.color.c.b, data.color.a]),
+					Some(style.clone()),
+					Some(Color128::new(
+						data.color.c.r,
+						data.color.c.g,
+						data.color.c.b,
+						data.color.a,
+					)),
+					data.bounds
+						.as_ref()
+						.map(|b| convert_align(b.anchor_align_x, b.anchor_align_y)),
+					Some(convert_align(data.text_align_x, data.text_align_y)),
+					None,
+					None,
+					None,
 				);
 			} else {
-				sk.text_add_at(
+				stereokit_rust::system::Text::add_at(
+					token,
 					&*text,
 					transform,
-					*style,
-					TextAlign::Center,
-					convert_align(data.text_align_x, data.text_align_y),
-					vec3(0.0, 0.0, 0.0),
-					Color128::from([data.color.c.r, data.color.c.g, data.color.c.b, data.color.a]),
+					Some(*style),
+					Some(Color128::new(
+						data.color.c.r,
+						data.color.c.g,
+						data.color.c.b,
+						data.color.a,
+					)),
+					data.bounds
+						.as_ref()
+						.map(|b| convert_align(b.anchor_align_x, b.anchor_align_y)),
+					Some(convert_align(data.text_align_x, data.text_align_y)),
+					None,
+					None,
+					None,
 				);
 			}
 		}
@@ -141,10 +164,10 @@ impl Drop for Text {
 	}
 }
 
-pub fn draw_all(sk: &impl StereoKitDraw) {
+pub fn draw_all(token: &MainThreadToken) {
 	for text in TEXT_REGISTRY.get_valid_contents() {
 		if text.enabled.load(Ordering::Relaxed) {
-			text.draw(sk);
+			text.draw(token);
 		}
 	}
 }
