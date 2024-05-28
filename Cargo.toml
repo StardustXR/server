@@ -65,12 +65,10 @@ atty = "0.2.14"
 xkbcommon = { version = "0.7.0", default-features = false, optional = true }
 ctrlc = "3.4.1"
 libc = "0.2.148"
-input-event-codes = "5.16.8"
-nix = "0.28.0"
+input-event-codes = "6.2.0"
+nix = "0.29.0"
 wayland-scanner = "0.31.1"
 wayland-backend = "0.3.3"
-cluFlock = "1.2.7"
-fxtypemap = "0.2.0"
 toml = "0.8.10"
 
 [dependencies.smithay]
@@ -95,11 +93,11 @@ features = ["linux-egl"]
 version = "0.16.9"
 
 [dependencies.console-subscriber]
-version = "0.1.8"
+version = "0.2.0"
 optional = true
 
 [dependencies.tracing-tracy]
-version = "0.10.4"
+version = "0.11.0"
 optional = true
 
 [dependencies.stardust-xr]
