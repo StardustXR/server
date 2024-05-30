@@ -40,6 +40,18 @@ pub fn codegen_drawable_protocol(_input: proc_macro::TokenStream) -> proc_macro:
 pub fn codegen_input_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 	codegen_protocol(INPUT_PROTOCOL)
 }
+#[proc_macro]
+pub fn codegen_item_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+	codegen_protocol(ITEM_PROTOCOL)
+}
+#[proc_macro]
+pub fn codegen_item_camera_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+	codegen_protocol(ITEM_CAMERA_PROTOCOL)
+}
+#[proc_macro]
+pub fn codegen_item_panel_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+	codegen_protocol(ITEM_PANEL_PROTOCOL)
+}
 
 fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 	let protocol = Protocol::parse(protocol).unwrap();
@@ -457,13 +469,15 @@ fn generate_argument_decl(argument: &Argument, owned_values: bool) -> TokenStrea
 }
 fn argument_type_option_name(argument_type: &ArgumentType) -> String {
 	match argument_type {
+		ArgumentType::Empty => "Empty".to_string(),
 		ArgumentType::Bool => "Bool".to_string(),
 		ArgumentType::Int => "Int".to_string(),
 		ArgumentType::UInt => "UInt".to_string(),
 		ArgumentType::Float => "Float".to_string(),
-		ArgumentType::Vec2 => "Vec2".to_string(),
-		ArgumentType::Vec3 => "Vec3".to_string(),
+		ArgumentType::Vec2(_) => "Vec2".to_string(),
+		ArgumentType::Vec3(_) => "Vec3".to_string(),
 		ArgumentType::Quat => "Quat".to_string(),
+		ArgumentType::Mat4 => "Mat4".to_string(),
 		ArgumentType::Color => "Color".to_string(),
 		ArgumentType::String => "String".to_string(),
 		ArgumentType::Bytes => "Bytes".to_string(),
@@ -483,13 +497,21 @@ fn generate_argument_type(
 	owned: bool,
 ) -> TokenStream {
 	let _type = match argument_type {
+		ArgumentType::Empty => quote!(()),
 		ArgumentType::Bool => quote!(bool),
 		ArgumentType::Int => quote!(i32),
 		ArgumentType::UInt => quote!(u32),
 		ArgumentType::Float => quote!(f32),
-		ArgumentType::Vec2 => quote!(mint::Vector2<f32>),
-		ArgumentType::Vec3 => quote!(mint::Vector3<f32>),
-		ArgumentType::Quat => quote!(mint::Quaternion<f32>),
+		ArgumentType::Vec2(t) => {
+			let t = generate_argument_type(&t, false, true);
+			quote!(stardust_xr::values::Vector2<#t>)
+		}
+		ArgumentType::Vec3(t) => {
+			let t = generate_argument_type(&t, false, true);
+			quote!(stardust_xr::values::Vector3<#t>)
+		}
+		ArgumentType::Quat => quote!(stardust_xr::values::Quaternion),
+		ArgumentType::Mat4 => quote!(stardust_xr::values::Mat4),
 		ArgumentType::Color => quote!(stardust_xr::values::Color),
 		ArgumentType::Bytes => {
 			if !owned {
@@ -517,9 +539,9 @@ fn generate_argument_type(
 			let t = generate_argument_type(&t, false, true);
 
 			if !owned {
-				quote!(&rustc_hash::FxHashMap<String, #t>)
+				quote!(&stardust_xr::values::Map<String, #t>)
 			} else {
-				quote!(rustc_hash::FxHashMap<String, #t>)
+				quote!(stardust_xr::values::Map<String, #t>)
 			}
 		}
 		ArgumentType::Datamap => {

@@ -297,7 +297,3 @@ impl FieldInterfaceAspect for FieldInterface {
 		Ok(())
 	}
 }
-
-pub fn find_field(client: &Client, path: &str) -> Result<Arc<Field>> {
-	client.get_node("Field", path)?.get_aspect::<Field>()
-}

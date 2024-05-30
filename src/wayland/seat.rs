@@ -307,7 +307,7 @@ impl SeatWrapper {
 			},
 		);
 	}
-	pub fn reset_touches(&self) {
+	pub fn reset_input(&self) {
 		for id in self.touches.lock().keys() {
 			self.touch_up(*id)
 		}

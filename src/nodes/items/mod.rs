@@ -1,29 +1,27 @@
 pub mod camera;
-mod environment;
 pub mod panel;
 
 use self::camera::CameraItem;
-use self::environment::{EnvironmentItem, ITEM_TYPE_INFO_ENVIRONMENT};
-use self::panel::{PanelItemTrait, ITEM_TYPE_INFO_PANEL};
+use self::panel::PanelItemTrait;
 use super::fields::Field;
-use super::spatial::{parse_transform, Spatial};
+use super::spatial::Spatial;
 use super::{Alias, Aspect, Message, Node};
 use crate::core::client::Client;
 use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
-use crate::nodes::fields::find_field;
 use crate::nodes::spatial::Transform;
-use color_eyre::eyre::{ensure, eyre, Result};
+use color_eyre::eyre::{ensure, Result};
 use lazy_static::lazy_static;
 use nanoid::nanoid;
 use parking_lot::Mutex;
 use portable_atomic::Ordering;
-use serde::Deserialize;
-use stardust_xr::schemas::flex::{deserialize, serialize};
+use stardust_xr::schemas::flex::deserialize;
 
 use std::hash::Hash;
 use std::sync::{Arc, Weak};
+
+stardust_xr_server_codegen::codegen_item_protocol!();
 
 lazy_static! {
 	static ref ITEM_ALIAS_LOCAL_SIGNALS: Vec<&'static str> = vec![
@@ -68,6 +66,8 @@ pub struct TypeInfo {
 	pub ui: Mutex<Weak<ItemUI>>,
 	pub items: Registry<Item>,
 	pub acceptors: Registry<ItemAcceptor>,
+	pub new_acceptor_fn:
+		fn(node: &Node, uid: &str, acceptor: &Arc<Node>, acceptor_field: &Arc<Node>),
 }
 impl Hash for TypeInfo {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -182,15 +182,19 @@ impl Drop for Item {
 
 pub enum ItemType {
 	Camera(CameraItem),
-	Environment(EnvironmentItem),
 	Panel(Arc<dyn PanelItemTrait>),
 }
 impl ItemType {
-	fn serialize_start_data(&self, id: &str) -> Result<Message> {
+	fn send_ui_item_created(&self, node: &Node, uid: &str, item: &Arc<Node>) {
 		match self {
-			ItemType::Camera(c) => c.serialize_start_data(id),
-			ItemType::Environment(e) => e.serialize_start_data(id),
-			ItemType::Panel(p) => p.serialize_start_data(id),
+			ItemType::Camera(c) => c.send_ui_item_created(node, uid, item),
+			ItemType::Panel(p) => p.send_ui_item_created(node, uid, item),
+		}
+	}
+	fn send_acceptor_item_created(&self, node: &Node, uid: &str, item: &Arc<Node>) {
+		match self {
+			ItemType::Camera(c) => c.send_acceptor_item_created(node, uid, item),
+			ItemType::Panel(p) => p.send_acceptor_item_created(node, uid, item),
 		}
 	}
 }
@@ -237,16 +241,6 @@ impl ItemUI {
 		}
 		Ok(())
 	}
-	fn send_state(&self, state: &str, name: &str) {
-		let Ok(serialized_data) = serialize(name) else {
-			return;
-		};
-		let _ = self
-			.node
-			.upgrade()
-			.unwrap()
-			.send_remote_signal(state, serialized_data);
-	}
 
 	fn handle_create_item(&self, item: &Item) {
 		let Some(node) = self.node.upgrade() else {
@@ -256,38 +250,26 @@ impl ItemUI {
 			return;
 		};
 
-		if let Ok(alias_node) = item.make_alias(&client, &(node.get_path().to_string() + "/item")) {
-			self.item_aliases.add(item.uid.clone(), &alias_node);
-		}
-
-		let Ok(serialized_data) = item.specialization.serialize_start_data(&item.uid) else {
+		let Ok(item_alias) = item.make_alias(&client, &(node.get_path().to_string() + "/item"))
+		else {
 			return;
 		};
-		let _ = node.send_remote_signal("create_item", serialized_data);
-	}
-	fn handle_destroy_item(&self, item: &Item) {
-		self.item_aliases.remove(&item.uid);
-		self.send_state("destroy_item", item.uid.as_str());
+		self.item_aliases.add(item.uid.clone(), &item_alias);
+
+		item.specialization
+			.send_ui_item_created(&node, &item.uid, &item_alias);
 	}
 	fn handle_capture_item(&self, item: &Item, acceptor: &ItemAcceptor) {
-		let Some(node) = self.node.upgrade() else {
-			return;
-		};
-
-		let Ok(message) = serialize((item.uid.as_str(), acceptor.uid.as_str())) else {
-			return;
-		};
-		let _ = node.send_remote_signal("capture_item", message);
+		let _ =
+			item_ui_client::capture_item(&self.node.upgrade().unwrap(), &item.uid, &acceptor.uid);
 	}
 	fn handle_release_item(&self, item: &Item, acceptor: &ItemAcceptor) {
-		let Some(node) = self.node.upgrade() else {
-			return;
-		};
-
-		let Ok(message) = serialize((item.uid.as_str(), acceptor.uid.as_str())) else {
-			return;
-		};
-		let _ = node.send_remote_signal("release_item", message);
+		let _ =
+			item_ui_client::release_item(&self.node.upgrade().unwrap(), &item.uid, &acceptor.uid);
+	}
+	fn handle_destroy_item(&self, item: &Item) {
+		let _ = item_ui_client::destroy_item(&self.node.upgrade().unwrap(), &item.uid);
+		self.item_aliases.remove(&item.uid);
 	}
 	fn handle_create_acceptor(&self, acceptor: &ItemAcceptor) {
 		let Some(node) = self.node.upgrade() else {
@@ -297,22 +279,26 @@ impl ItemUI {
 			return;
 		};
 
-		let Ok((alias, field_alias)) = acceptor.make_aliases(
+		let Ok((acceptor_alias, acceptor_field_alias)) = acceptor.make_aliases(
 			&client,
 			&format!("/item/{}/acceptor", self.type_info.type_name),
 		) else {
 			return;
 		};
-		self.acceptor_aliases.add(acceptor.uid.clone(), &alias);
+		self.acceptor_aliases
+			.add(acceptor.uid.clone(), &acceptor_alias);
 		self.acceptor_field_aliases
-			.add(acceptor.uid.clone(), &field_alias);
-		let Ok(message) = serialize(&acceptor.uid) else {
-			return;
-		};
-		let _ = node.send_remote_signal("create_acceptor", message);
+			.add(acceptor.uid.clone(), &acceptor_field_alias);
+
+		(acceptor.type_info.new_acceptor_fn)(
+			&node,
+			&acceptor.uid,
+			&acceptor_alias,
+			&acceptor_field_alias,
+		);
 	}
 	fn handle_destroy_acceptor(&self, acceptor: &ItemAcceptor) {
-		self.send_state("destroy_acceptor", acceptor.uid.as_str());
+		let _ = item_ui_client::destroy_acceptor(&self.node.upgrade().unwrap(), &acceptor.uid);
 		self.acceptor_aliases.remove(&acceptor.uid);
 		self.acceptor_field_aliases.remove(&acceptor.uid);
 	}
@@ -397,31 +383,27 @@ impl ItemAcceptor {
 		};
 
 		self.accepted_registry.add_raw(item);
-		if let Ok(alias_node) = item.make_alias(&client, &node.path) {
-			self.accepted_aliases.add(item.uid.clone(), &alias_node);
-		}
-
-		let Ok(serialized_data) = item.specialization.serialize_start_data(&item.uid) else {
+		let Ok(alias_node) = item.make_alias(&client, &node.path) else {
 			return;
 		};
-		let _ = node.send_remote_signal("capture", serialized_data);
+		self.accepted_aliases.add(item.uid.clone(), &alias_node);
+
+		item.specialization
+			.send_acceptor_item_created(&node, &item.uid, &alias_node);
 	}
 	fn handle_release(&self, item: &Item) {
-		let Some(node) = self.node.upgrade() else {
-			return;
-		};
+		if let Some(node) = self.node.upgrade() {
+			let _ = item_acceptor_client::release_item(&node, &item.uid);
+		}
 
 		self.accepted_registry.remove(item);
 		self.accepted_aliases.remove(&item.uid);
-		let Ok(message) = serialize(&item.uid) else {
-			return;
-		};
-		let _ = node.send_remote_signal("release", message);
 	}
 }
 impl Aspect for ItemAcceptor {
 	const NAME: &'static str = "ItemAcceptor";
 }
+impl ItemAcceptorAspect for ItemAcceptor {}
 impl Drop for ItemAcceptor {
 	fn drop(&mut self) {
 		self.type_info.acceptors.remove(self);
@@ -434,69 +416,31 @@ impl Drop for ItemAcceptor {
 	}
 }
 
-pub fn create_interface(client: &Arc<Client>) -> Result<()> {
-	let node = Node::create_parent_name(client, "", "item", false);
-	node.add_local_signal("create_camera_item", camera::create_camera_item_flex);
-	node.add_local_signal(
-		"create_environment_item",
-		environment::create_environment_item_flex,
-	);
-	node.add_local_signal("register_item_ui", register_item_ui_flex);
-	node.add_local_signal("create_item_acceptor", create_item_acceptor_flex);
-	node.add_to_scenegraph().map(|_| ())
-}
-
-fn type_info(name: &str) -> Result<&'static TypeInfo> {
-	match name {
-		"environment" => Ok(&ITEM_TYPE_INFO_ENVIRONMENT),
-		#[cfg(feature = "wayland")]
-		"panel" => Ok(&ITEM_TYPE_INFO_PANEL),
-		_ => Err(eyre!("Invalid item type")),
-	}
-}
-
 pub fn register_item_ui_flex(
-	_node: Arc<Node>,
 	calling_client: Arc<Client>,
-	message: Message,
+	type_info: &'static TypeInfo,
 ) -> Result<()> {
-	#[derive(Deserialize)]
-	struct RegisterItemUIInfo<'a> {
-		item_type: &'a str,
-	}
-	let info: RegisterItemUIInfo = deserialize(message.as_ref())?;
-	let type_info = type_info(info.item_type)?;
 	let ui = Node::create_parent_name(&calling_client, "/item", type_info.type_name, true)
 		.add_to_scenegraph()?;
 	ItemUI::add_to(&ui, type_info)?;
 	Ok(())
 }
-
 fn create_item_acceptor_flex(
-	_node: Arc<Node>,
 	calling_client: Arc<Client>,
-	message: Message,
+	name: String,
+	parent: Arc<Node>,
+	transform: Transform,
+	type_info: &'static TypeInfo,
+	field: Arc<Node>,
 ) -> Result<()> {
-	#[derive(Deserialize)]
-	struct CreateItemAcceptorInfo<'a> {
-		name: &'a str,
-		parent_path: &'a str,
-		transform: Transform,
-		field_path: &'a str,
-		item_type: &'a str,
-	}
-	let info: CreateItemAcceptorInfo = deserialize(message.as_ref())?;
-	let space = calling_client
-		.get_node("Reference space", info.parent_path)?
-		.get_aspect::<Spatial>()?;
-	let transform = parse_transform(info.transform, true, true, false);
-	let field = find_field(&calling_client, info.field_path)?;
-	let type_info = type_info(info.item_type)?;
+	let space = parent.get_aspect::<Spatial>()?;
+	let field = field.get_aspect::<Field>()?;
+	let transform = transform.to_mat4(true, true, false);
 
 	let node = Node::create_parent_name(
 		&calling_client,
 		&format!("/item/{}/acceptor", type_info.type_name),
-		info.name,
+		&name,
 		true,
 	)
 	.add_to_scenegraph()?;
@@ -504,3 +448,6 @@ fn create_item_acceptor_flex(
 	ItemAcceptor::add_to(&node, type_info, field);
 	Ok(())
 }
+
+struct ItemInterface;
+// create_interface!(ItemInterface, ItemInterfaceAspect, "/item");

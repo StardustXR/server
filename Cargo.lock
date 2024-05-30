@@ -880,9 +880,9 @@ checksum = "9fc0510504f03c51ada170672ac806f1f105a88aa97a5281117e1ddc3368e51a"
 
 [[package]]
 name = "flatbuffers"
-version = "23.5.26"
+version = "24.3.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4dac53e22462d78c16d64a1cd22371b54cc3fe94aa15e7886a2fa6e5d1ab8640"
+checksum = "8add37afff2d4ffa83bc748a70b4b1370984f6980768554182424ef71447c35f"
 dependencies = [
  "bitflags 1.3.2",
  "rustc_version",
@@ -2483,7 +2483,7 @@ checksum = "2f2b15926089e5526bb2dd738a2eb0e59034356e06eb71e1cd912358c0e62c4d"
 [[package]]
 name = "stardust-xr"
 version = "0.45.0"
-source = "git+https://github.com/StardustXR/core.git#6ee323df1a1e76666609c1ebfd79f3390ce43c29"
+source = "git+https://github.com/StardustXR/core.git?branch=dev#47208187ffdb00627fabbb3af2bd0a12a6208194"
 dependencies = [
  "cluFlock",
  "color-rs",
@@ -2503,7 +2503,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-schemas"
 version = "1.5.3"
-source = "git+https://github.com/StardustXR/core.git#6ee323df1a1e76666609c1ebfd79f3390ce43c29"
+source = "git+https://github.com/StardustXR/core.git?branch=dev#47208187ffdb00627fabbb3af2bd0a12a6208194"
 dependencies = [
  "flatbuffers",
  "flexbuffers",

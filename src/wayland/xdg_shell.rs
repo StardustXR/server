@@ -7,7 +7,7 @@ use super::{
 use crate::nodes::{
 	drawable::model::ModelPart,
 	items::panel::{
-		Backend, ChildInfo, Geometry, PanelItem, PanelItemInitData, SurfaceID, ToplevelInfo,
+		Backend, ChildInfo, Geometry, PanelItem, PanelItemInitData, SurfaceId, ToplevelInfo,
 	},
 };
 use color_eyre::eyre::Result;
@@ -85,7 +85,7 @@ impl XdgShellHandler for WaylandState {
 			s.states.unset(State::Fullscreen);
 		});
 		toplevel.send_configure();
-		utils::insert_data(toplevel.wl_surface(), SurfaceID::Toplevel);
+		utils::insert_data(toplevel.wl_surface(), SurfaceId::Toplevel);
 		CoreSurface::add_to(
 			self.display_handle.clone(),
 			toplevel.wl_surface(),
@@ -194,7 +194,7 @@ impl XdgShellHandler for WaylandState {
 		if popup.send_configure().is_err() {
 			return;
 		}
-		utils::insert_data(popup.wl_surface(), SurfaceID::Child(uid.clone()));
+		utils::insert_data(popup.wl_surface(), SurfaceId::Child(uid.clone()));
 		utils::insert_data(popup.wl_surface(), uid.clone());
 		utils::insert_data(popup.wl_surface(), Arc::downgrade(&panel_item));
 		CoreSurface::add_to(
@@ -341,18 +341,10 @@ impl XdgBackend {
 			seat,
 		}
 	}
-	fn wl_surface_from_id(&self, id: &SurfaceID) -> Option<WlSurface> {
+	fn wl_surface_from_id(&self, id: &SurfaceId) -> Option<WlSurface> {
 		match id {
-			SurfaceID::Cursor => self
-				.seat
-				.cursor_info_rx
-				.borrow()
-				.surface
-				.clone()?
-				.upgrade()
-				.ok(),
-			SurfaceID::Toplevel => Some(self.toplevel.lock().clone()?.wl_surface().clone()),
-			SurfaceID::Child(popup) => {
+			SurfaceId::Toplevel(_) => Some(self.toplevel.lock().clone()?.wl_surface().clone()),
+			SurfaceId::Child(popup) => {
 				let popups = self.popups.lock();
 				Some(popups.get(popup)?.0.wl_surface().clone())
 			}
@@ -371,12 +363,12 @@ impl XdgBackend {
 			.lock()
 			.insert(uid.to_string(), (popup, positioner));
 
-		panel_item.new_child(uid, self.child_data(uid).unwrap());
+		panel_item.create_child(uid, self.child_data(uid).unwrap());
 	}
 	pub fn reposition_popup(&self, uid: &str, _popup: PopupSurface, positioner: PositionerState) {
 		let mut popups = self.popups.lock();
 		let Some((_, old_positioner)) = popups.get_mut(uid) else {
-			return
+			return;
 		};
 		let Some(panel_item) = self.panel_item() else {
 			return;
@@ -390,13 +382,13 @@ impl XdgBackend {
 		let Some(panel_item) = self.panel_item() else {
 			return;
 		};
-		panel_item.drop_child(uid);
+		panel_item.destroy_child(uid);
 	}
 
 	fn child_data(&self, uid: &str) -> Option<ChildInfo> {
 		let (popup, positioner) = self.popups.lock().get(uid)?.clone();
 		Some(ChildInfo {
-			parent: (*utils::get_data::<SurfaceID>(&popup.get_parent_surface()?)?).clone(),
+			parent: (*utils::get_data::<SurfaceId>(&popup.get_parent_surface()?)?).clone(),
 			geometry: positioner.get_geometry().into(),
 		})
 	}
@@ -448,9 +440,9 @@ impl Backend for XdgBackend {
 			.current_state()
 			.size
 			.clone()
-			.map(|s| [s.w as u32, s.h as u32].into())
+			.map(|s| Vector2::from([s.w as u32, s.h as u32]))
 			.or_else(|| toplevel_core_surface.size())
-			.unwrap_or([0; 2].into());
+			.unwrap_or(Vector2::from([0; 2]));
 		let toplevel = ToplevelInfo {
 			parent: toplevel
 				.parent()
@@ -465,8 +457,8 @@ impl Backend for XdgBackend {
 			{
 				Some(
 					[
-						toplevel_cached_state.min_size.w as u32,
-						toplevel_cached_state.min_size.h as u32,
+						toplevel_cached_state.min_size.w as f32,
+						toplevel_cached_state.min_size.h as f32,
 					]
 					.into(),
 				)
@@ -478,8 +470,8 @@ impl Backend for XdgBackend {
 			{
 				Some(
 					[
-						toplevel_cached_state.max_size.w as u32,
-						toplevel_cached_state.max_size.h as u32,
+						toplevel_cached_state.max_size.w as f32,
+						toplevel_cached_state.max_size.h as f32,
 					]
 					.into(),
 				)
@@ -489,7 +481,7 @@ impl Backend for XdgBackend {
 			logical_rectangle: toplevel_cached_state
 				.geometry
 				.map(Into::into)
-				.unwrap_or(Geometry {
+				.unwrap_or_else(|| Geometry {
 					origin: [0; 2].into(),
 					size,
 				}),
@@ -511,14 +503,31 @@ impl Backend for XdgBackend {
 		})
 	}
 
-	fn surface_alive(&self, surface: &SurfaceID) -> bool {
+	fn surface_alive(&self, surface: &SurfaceId) -> bool {
 		let Some(surface) = self.wl_surface_from_id(surface) else {
 			return false;
 		};
 		surface.is_alive()
 	}
 
-	fn apply_surface_material(&self, surface: SurfaceID, model_part: &Arc<ModelPart>) {
+	fn apply_cursor_material(&self, model_part: &Arc<ModelPart>) {
+		let Some(surface) = self
+			.seat
+			.cursor_info_rx
+			.borrow()
+			.surface
+			.clone()
+			.and_then(|s| s.upgrade().ok())
+		else {
+			return;
+		};
+
+		let Some(core_surface) = CoreSurface::from_wl_surface(&surface) else {
+			return;
+		};
+		core_surface.apply_material(model_part);
+	}
+	fn apply_surface_material(&self, surface: SurfaceId, model_part: &Arc<ModelPart>) {
 		let Some(surface) = self.wl_surface_from_id(&surface) else {
 			return;
 		};
@@ -561,32 +570,32 @@ impl Backend for XdgBackend {
 		})
 	}
 
-	fn pointer_motion(&self, surface: &SurfaceID, position: Vector2<f32>) {
+	fn pointer_motion(&self, surface: &SurfaceId, position: Vector2<f32>) {
 		let Some(surface) = self.wl_surface_from_id(&surface) else {
 			return;
 		};
 		self.seat.pointer_motion(surface, position)
 	}
-	fn pointer_button(&self, _surface: &SurfaceID, button: u32, pressed: bool) {
+	fn pointer_button(&self, _surface: &SurfaceId, button: u32, pressed: bool) {
 		self.seat.pointer_button(button, pressed)
 	}
 	fn pointer_scroll(
 		&self,
-		_surface: &SurfaceID,
+		_surface: &SurfaceId,
 		scroll_distance: Option<Vector2<f32>>,
 		scroll_steps: Option<Vector2<f32>>,
 	) {
 		self.seat.pointer_scroll(scroll_distance, scroll_steps)
 	}
 
-	fn keyboard_keys(&self, surface: &SurfaceID, keymap_id: &str, keys: Vec<i32>) {
+	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: &str, keys: Vec<i32>) {
 		let Some(surface) = self.wl_surface_from_id(&surface) else {
 			return;
 		};
 		self.seat.keyboard_keys(surface, keymap_id, keys)
 	}
 
-	fn touch_down(&self, surface: &SurfaceID, id: u32, position: Vector2<f32>) {
+	fn touch_down(&self, surface: &SurfaceId, id: u32, position: Vector2<f32>) {
 		let Some(surface) = self.wl_surface_from_id(&surface) else {
 			return;
 		};
@@ -598,7 +607,7 @@ impl Backend for XdgBackend {
 	fn touch_up(&self, id: u32) {
 		self.seat.touch_up(id)
 	}
-	fn reset_touches(&self) {
-		self.seat.reset_touches()
+	fn reset_input(&self) {
+		self.seat.reset_input()
 	}
 }

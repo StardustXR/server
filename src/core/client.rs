@@ -109,8 +109,9 @@ impl Client {
 		drawable::create_interface(&client)?;
 		audio::create_interface(&client)?;
 		data::create_interface(&client)?;
-		items::create_interface(&client)?;
 		input::create_interface(&client)?;
+		items::camera::create_interface(&client)?;
+		items::panel::create_interface(&client)?;
 
 		client
 			.root
