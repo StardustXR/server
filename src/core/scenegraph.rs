@@ -19,7 +19,7 @@ use tracing::{debug, debug_span};
 #[derive(Default)]
 pub struct Scenegraph {
 	pub(super) client: OnceCell<Weak<Client>>,
-	nodes: Mutex<FxHashMap<String, Arc<Node>>>,
+	nodes: Mutex<FxHashMap<u64, Arc<Node>>>,
 }
 
 impl Scenegraph {
@@ -34,12 +34,11 @@ impl Scenegraph {
 	}
 	pub fn add_node_raw(&self, node: Arc<Node>) {
 		debug!(node = ?&*node, "Add node");
-		let path = node.get_path().to_string();
-		self.nodes.lock().insert(path, node);
+		self.nodes.lock().insert(node.get_id(), node);
 	}
 
-	pub fn get_node(&self, path: &str) -> Option<Arc<Node>> {
-		let mut node = self.nodes.lock().get(path)?.clone();
+	pub fn get_node(&self, node: u64) -> Option<Arc<Node>> {
+		let mut node = self.nodes.lock().get(&node)?.clone();
 		while let Ok(alias) = node.get_aspect::<Alias>() {
 			if alias.enabled.load(Ordering::Acquire) {
 				node = alias.original.upgrade()?;
@@ -50,9 +49,9 @@ impl Scenegraph {
 		Some(node)
 	}
 
-	pub fn remove_node(&self, path: &str) -> Option<Arc<Node>> {
-		debug!(path, "Remove node");
-		self.nodes.lock().remove(path)
+	pub fn remove_node(&self, node: u64) -> Option<Arc<Node>> {
+		debug!(node, "Remove node");
+		self.nodes.lock().remove(&node)
 	}
 }
 
@@ -94,16 +93,16 @@ fn map_method_return<T: Serialize>(
 impl scenegraph::Scenegraph for Scenegraph {
 	fn send_signal(
 		&self,
-		path: &str,
-		method: &str,
+		node: u64,
+		method: u64,
 		data: &[u8],
 		fds: Vec<OwnedFd>,
 	) -> Result<(), ScenegraphError> {
 		let Some(client) = self.get_client() else {
 			return Err(ScenegraphError::SignalNotFound);
 		};
-		debug_span!("Handle signal", path, method).in_scope(|| {
-			self.get_node(path)
+		debug_span!("Handle signal", node, method).in_scope(|| {
+			self.get_node(node)
 				.ok_or(ScenegraphError::NodeNotFound)?
 				.send_local_signal(
 					client,
@@ -117,8 +116,8 @@ impl scenegraph::Scenegraph for Scenegraph {
 	}
 	fn execute_method(
 		&self,
-		path: &str,
-		method: &str,
+		node: u64,
+		method: u64,
 		data: &[u8],
 		fds: Vec<OwnedFd>,
 		response: oneshot::Sender<Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError>>,
@@ -127,8 +126,8 @@ impl scenegraph::Scenegraph for Scenegraph {
 			let _ = response.send(Err(ScenegraphError::MethodNotFound));
 			return;
 		};
-		debug!(path, method, "Handle method");
-		let Some(node) = self.get_node(path) else {
+		debug!(node, method, "Handle method");
+		let Some(node) = self.get_node(node) else {
 			let _ = response.send(Err(ScenegraphError::NodeNotFound));
 			return;
 		};

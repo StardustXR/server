@@ -2,30 +2,23 @@ use super::{
 	input_handler_client, InputHandlerAspect, InputLink, INPUT_HANDLER_REGISTRY,
 	INPUT_METHOD_REGISTRY,
 };
-use crate::{
-	core::node_collections::LifeLinkedNodeMap,
-	nodes::{fields::Field, spatial::Spatial, Aspect, Node},
-};
+use crate::nodes::{alias::AliasList, fields::Field, spatial::Spatial, Aspect, Node};
 use color_eyre::eyre::Result;
 use stardust_xr::values::Datamap;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tracing::instrument;
 
 pub struct InputHandler {
-	pub uid: String,
-	pub node: Weak<Node>,
 	pub spatial: Arc<Spatial>,
 	pub field: Arc<Field>,
-	pub(super) method_aliases: LifeLinkedNodeMap<usize>,
+	pub(super) method_aliases: AliasList,
 }
 impl InputHandler {
 	pub fn add_to(node: &Arc<Node>, field: &Arc<Field>) -> Result<()> {
 		let handler = InputHandler {
-			uid: node.uid.clone(),
-			node: Arc::downgrade(node),
 			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
 			field: field.clone(),
-			method_aliases: LifeLinkedNodeMap::default(),
+			method_aliases: AliasList::default(),
 		};
 		for method in INPUT_METHOD_REGISTRY.get_valid_contents() {
 			method.make_alias(&handler);
@@ -44,20 +37,16 @@ impl InputHandler {
 		input_link: &InputLink,
 		datamap: Datamap,
 	) {
-		let Some(node) = self.node.upgrade() else {
+		let Some(node) = self.spatial.node() else {
 			return;
 		};
-		let Some(method_alias) = input_link
-			.handler
-			.method_aliases
-			.get(&(Arc::as_ptr(&input_link.method) as usize))
-		else {
+		let Some(method_alias) = self.method_aliases.get(input_link.method.as_ref()) else {
 			return;
 		};
 		let _ = input_handler_client::input(
 			&node,
 			&method_alias,
-			&input_link.serialize(order, captured, datamap),
+			&input_link.serialize(method_alias.id, order, captured, datamap),
 		);
 	}
 }

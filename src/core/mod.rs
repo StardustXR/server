@@ -4,7 +4,6 @@ pub mod delta;
 pub mod destroy_queue;
 pub mod eventloop;
 pub mod idl_utils;
-pub mod node_collections;
 pub mod registry;
 pub mod resource;
 pub mod scenegraph;

@@ -1,11 +1,10 @@
-use super::{MaterialParameter, ModelAspect, ModelPartAspect, Node};
 use crate::core::client::Client;
-use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
+use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::Spatial;
-use crate::nodes::Aspect;
-use color_eyre::eyre::{eyre, Result};
+use crate::nodes::{Aspect, Node};
+use color_eyre::eyre::{bail, eyre, Result};
 use glam::{Mat4, Vec2, Vec3};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -19,8 +18,9 @@ use stereokit_rust::sk::MainThreadToken;
 use stereokit_rust::{material::Material, model::Model as SKModel, tex::Tex, util::Color128};
 
 use std::ffi::OsStr;
-use std::path::PathBuf;
 use std::sync::{Arc, Weak};
+
+use super::{MaterialParameter, ModelAspect, ModelPartAspect, MODEL_PART_ASPECT_ALIAS_INFO};
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
 static HOLDOUT_MATERIAL: OnceCell<Arc<SendWrapper<Material>>> = OnceCell::new();
@@ -69,11 +69,12 @@ impl MaterialParameter {
 
 pub struct ModelPart {
 	id: i32,
-	path: PathBuf,
+	path: String,
 	space: Arc<Spatial>,
 	model: Weak<Model>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Arc<SendWrapper<Material>>>>,
+	aliases: AliasList,
 }
 impl ModelPart {
 	fn create_for_model(model: &Arc<Model>, sk_model: &SKModel) {
@@ -91,26 +92,21 @@ impl ModelPart {
 	}
 
 	fn create(model: &Arc<Model>, part: &stereokit_rust::model::ModelNode) -> Option<Arc<Self>> {
-		let parent_node = part
+		let mut parts = model.parts.lock();
+		let parent_part = part
 			.get_parent()
-			.and_then(|part| model.parts.get(part.get_id()));
-		let parent_part = parent_node
-			.as_ref()
-			.and_then(|node| node.get_aspect::<ModelPart>().ok());
+			.and_then(|part| parts.iter().find(|p| p.id == *part.get_id()));
 
 		let stardust_model_part = model.space.node()?;
 		let client = stardust_model_part.get_client()?;
-		let mut part_path = parent_part.map(|n| n.path.clone()).unwrap_or_default();
-		part_path.push(part.get_name().unwrap());
+		let mut part_path = parent_part
+			.map(|n| n.path.clone() + "/")
+			.unwrap_or_default();
+		part_path += part.get_name().unwrap();
 
-		let node = client.scenegraph.add_node(Node::create_parent_name(
-			&client,
-			stardust_model_part.get_path(),
-			part_path.to_str()?,
-			false,
-		));
-		let spatial_parent = parent_node
-			.and_then(|n| n.get_aspect::<Spatial>().ok())
+		let node = client.scenegraph.add_node(Node::generate(&client, false));
+		let spatial_parent = parent_part
+			.map(|n| n.space.clone())
 			.unwrap_or_else(|| model.space.clone());
 
 		let local_transform = unsafe { part.get_local_transform().m };
@@ -121,29 +117,25 @@ impl ModelPart {
 			false,
 		);
 
-		let _ = node
-			.get_aspect::<Spatial>()
-			.unwrap()
-			.bounding_box_calc
-			.set(|node| {
-				let Ok(model_part) = node.get_aspect::<ModelPart>() else {
-					return Bounds::default();
-				};
-				let Some(model) = model_part.model.upgrade() else {
-					return Bounds::default();
-				};
-				let Some(sk_model) = model.sk_model.get() else {
-					return Bounds::default();
-				};
-				let nodes = sk_model.get_nodes();
-				let Some(model_node) = nodes.get_index(model_part.id) else {
-					return Bounds::default();
-				};
-				let Some(sk_mesh) = model_node.get_mesh() else {
-					return Bounds::default();
-				};
-				sk_mesh.get_bounds()
-			});
+		let _ = space.bounding_box_calc.set(|node| {
+			let Ok(model_part) = node.get_aspect::<ModelPart>() else {
+				return Bounds::default();
+			};
+			let Some(model) = model_part.model.upgrade() else {
+				return Bounds::default();
+			};
+			let Some(sk_model) = model.sk_model.get() else {
+				return Bounds::default();
+			};
+			let model_nodes = sk_model.get_nodes();
+			let Some(model_node) = model_nodes.get_index(model_part.id) else {
+				return Bounds::default();
+			};
+			let Some(sk_mesh) = model_node.get_mesh() else {
+				return Bounds::default();
+			};
+			sk_mesh.get_bounds()
+		});
 
 		let model_part = Arc::new(ModelPart {
 			id: *part.get_id(),
@@ -152,10 +144,11 @@ impl ModelPart {
 			model: Arc::downgrade(model),
 			pending_material_parameters: Mutex::new(FxHashMap::default()),
 			pending_material_replacement: Mutex::new(None),
+			aliases: AliasList::default(),
 		});
 		<ModelPart as ModelPartAspect>::add_node_members(&node);
 		node.add_aspect_raw(model_part.clone());
-		model.parts.add(*part.get_id(), &node);
+		parts.push(model_part.clone());
 		Some(model_part)
 	}
 
@@ -255,9 +248,8 @@ pub struct Model {
 	space: Arc<Spatial>,
 	_resource_id: ResourceID,
 	sk_model: OnceCell<SKModel>,
-	parts: LifeLinkedNodeMap<i32>,
+	parts: Mutex<Vec<Arc<ModelPart>>>,
 }
-
 impl Model {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Model>> {
 		let pending_model_path = get_resource_file(
@@ -272,8 +264,9 @@ impl Model {
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			_resource_id: resource_id,
 			sk_model: OnceCell::new(),
-			parts: LifeLinkedNodeMap::default(),
+			parts: Mutex::new(Vec::default()),
 		});
+		<Model as ModelAspect>::add_node_members(node);
 		MODEL_REGISTRY.add_raw(&model);
 
 		// technically doing this in anything but the main thread isn't a good idea but dangit we need those model nodes ASAP
@@ -291,11 +284,11 @@ impl Model {
 		let Some(sk_model) = self.sk_model.get() else {
 			return;
 		};
-		for model_node_node in self.parts.nodes() {
-			if let Ok(model_node) = model_node_node.get_aspect::<ModelPart>() {
-				model_node.update();
-			};
+		let parts = self.parts.lock();
+		for model_node in &*parts {
+			model_node.update();
 		}
+		drop(parts);
 
 		if self.enabled.load(Ordering::Relaxed) {
 			sk_model.draw(token, self.space.global_transform(), None, None);
@@ -308,12 +301,32 @@ unsafe impl Sync for Model {}
 impl Aspect for Model {
 	const NAME: &'static str = "Model";
 }
-impl ModelAspect for Model {}
+impl ModelAspect for Model {
+	#[doc = "Bind a model part to the node with the ID input."]
+	fn bind_model_part(
+		node: Arc<Node>,
+		calling_client: Arc<Client>,
+		id: u64,
+		part_path: String,
+	) -> color_eyre::eyre::Result<()> {
+		let model = node.get_aspect::<Model>()?;
+		let parts = model.parts.lock();
+		let Some(part) = parts.iter().find(|p| p.path == part_path) else {
+			let paths = parts.iter().map(|p| &p.path).collect::<Vec<_>>();
+			bail!("Couldn't find model part at path {part_path}, all available paths: {paths:?}",)
+		};
+		Alias::create_with_id(
+			&part.space.node().unwrap(),
+			&calling_client,
+			id,
+			MODEL_PART_ASPECT_ALIAS_INFO.clone(),
+			Some(&part.aliases),
+		)?;
+		Ok(())
+	}
+}
 impl Drop for Model {
 	fn drop(&mut self) {
-		// if let Some(sk_model) = self.sk_model.take() {
-		// destroy_queue::add(sk_model);
-		// }
 		MODEL_REGISTRY.remove(self);
 	}
 }

@@ -38,7 +38,7 @@ impl InputLink {
 		self.handler.send_input(order, captured, self, datamap);
 	}
 	#[instrument(level = "debug", skip(self))]
-	fn serialize(&self, order: u32, captured: bool, datamap: Datamap) -> InputData {
+	fn serialize(&self, id: u64, order: u32, captured: bool, datamap: Datamap) -> InputData {
 		let mut input = self.method.data.lock().clone();
 		input.update_to(
 			self,
@@ -46,7 +46,7 @@ impl InputLink {
 		);
 
 		InputData {
-			uid: self.method.uid.clone(),
+			id,
 			input,
 			distance: self.method.distance(&self.handler.field),
 			datamap,
@@ -77,14 +77,14 @@ impl InputDataTrait for InputDataType {
 	}
 }
 
-create_interface!(InputInterface, InputInterfaceAspect, "/input");
+create_interface!(InputInterface);
 pub struct InputInterface;
-impl InputInterfaceAspect for InputInterface {
+impl InterfaceAspect for InputInterface {
 	#[doc = "Create an input method node"]
 	fn create_input_method(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		initial_data: InputDataType,
@@ -93,8 +93,7 @@ impl InputInterfaceAspect for InputInterface {
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 
-		let node = Node::create_parent_name(&calling_client, "/input/method", &name, true)
-			.add_to_scenegraph()?;
+		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 		Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		InputMethod::add_to(&node, initial_data, datamap)?;
 		Ok(())
@@ -104,7 +103,7 @@ impl InputInterfaceAspect for InputInterface {
 	fn create_input_handler(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,
@@ -113,8 +112,7 @@ impl InputInterfaceAspect for InputInterface {
 		let transform = transform.to_mat4(true, true, true);
 		let field = field.get_aspect::<Field>()?;
 
-		let node = Node::create_parent_name(&calling_client, "/input/handler", &name, true)
-			.add_to_scenegraph()?;
+		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 		Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		InputHandler::add_to(&node, &field)?;
 		Ok(())
@@ -145,7 +143,7 @@ pub fn process_input() {
 					.iter()
 					.filter_map(Weak::upgrade)
 					.filter(|handler| {
-						let Some(node) = handler.node.upgrade() else {
+						let Some(node) = handler.spatial.node() else {
 							return false;
 						};
 						node.enabled()
@@ -159,7 +157,7 @@ pub fn process_input() {
 				if let Some(method_alias) = input_link
 					.handler
 					.method_aliases
-					.get(&(Arc::as_ptr(&input_link.method) as usize))
+					.get(input_link.method.as_ref())
 					.and_then(|a| a.get_aspect::<Alias>().ok())
 				{
 					method_alias.enabled.store(true, Ordering::Release);

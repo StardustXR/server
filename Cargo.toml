@@ -70,6 +70,8 @@ nix = "0.29.0"
 wayland-scanner = "0.31.1"
 wayland-backend = "0.3.3"
 toml = "0.8.10"
+global_counter = "=0.2.2"
+slotmap = "1.0.7"
 
 [dependencies.smithay]
 # git = "https://github.com/technobaboo/smithay.git"

@@ -1,11 +1,12 @@
 use super::{
 	input_method_client, InputDataTrait, InputDataType, InputHandler, InputMethodAspect,
-	InputMethodRefAspect, INPUT_HANDLER_REGISTRY, INPUT_METHOD_REGISTRY,
+	InputMethodRefAspect, INPUT_HANDLER_REGISTRY, INPUT_METHOD_ASPECT_ALIAS_INFO,
+	INPUT_METHOD_REF_ASPECT_ALIAS_INFO, INPUT_METHOD_REGISTRY,
 };
 use crate::{
-	core::{client::Client, node_collections::LifeLinkedNodeMap, registry::Registry},
+	core::{client::Client, registry::Registry},
 	nodes::{
-		alias::{Alias, AliasInfo},
+		alias::{Alias, AliasList},
 		fields::{Field, FIELD_ALIAS_INFO},
 		spatial::Spatial,
 		Aspect, Node,
@@ -19,7 +20,6 @@ use std::sync::{Arc, Weak};
 
 pub struct InputMethod {
 	pub node: Weak<Node>,
-	pub uid: String,
 	pub enabled: Mutex<bool>,
 	pub spatial: Arc<Spatial>,
 	pub data: Mutex<InputDataType>,
@@ -27,7 +27,8 @@ pub struct InputMethod {
 
 	pub capture_requests: Registry<InputHandler>,
 	pub captures: Registry<InputHandler>,
-	pub(super) handler_aliases: LifeLinkedNodeMap<String>,
+	handler_aliases: AliasList,
+	handler_field_aliases: AliasList,
 	pub(super) handler_order: Mutex<Vec<Weak<InputHandler>>>,
 }
 impl InputMethod {
@@ -38,14 +39,15 @@ impl InputMethod {
 	) -> Result<Arc<InputMethod>> {
 		let method = InputMethod {
 			node: Arc::downgrade(node),
-			uid: node.uid.clone(),
 			enabled: Mutex::new(true),
 			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
 			data: Mutex::new(data),
+			datamap: Mutex::new(datamap),
+
 			capture_requests: Registry::new(),
 			captures: Registry::new(),
-			datamap: Mutex::new(datamap),
-			handler_aliases: LifeLinkedNodeMap::default(),
+			handler_aliases: AliasList::default(),
+			handler_field_aliases: AliasList::default(),
 			handler_order: Mutex::new(Vec::new()),
 		};
 		for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
@@ -63,28 +65,21 @@ impl InputMethod {
 		let Some(method_node) = self.node.upgrade() else {
 			return;
 		};
-		let Some(handler_node) = handler.node.upgrade() else {
+		let Some(handler_node) = handler.spatial.node() else {
 			return;
 		};
 		let Some(client) = handler_node.get_client() else {
 			return;
 		};
 		let Ok(method_alias) = Alias::create(
-			&client,
-			handler_node.get_path(),
-			&self.uid,
 			&method_node,
-			AliasInfo {
-				server_signals: vec!["capture"],
-				..Default::default()
-			},
+			&client,
+			INPUT_METHOD_ASPECT_ALIAS_INFO.clone(),
+			Some(&handler.method_aliases),
 		) else {
 			return;
 		};
 		method_alias.enabled.store(false, Ordering::Relaxed);
-		handler
-			.method_aliases
-			.add(self as *const InputMethod as usize, &method_alias);
 	}
 
 	pub fn distance(&self, to: &Field) -> f32 {
@@ -102,57 +97,45 @@ impl InputMethod {
 		let Some(method_client) = method_node.get_client() else {
 			return;
 		};
-		let Some(handler_node) = handler.node.upgrade() else {
+		let Some(handler_node) = handler.spatial.node() else {
 			return;
 		};
 		// Receiver itself
 		let Ok(handler_alias) = Alias::create(
-			&method_client,
-			method_node.get_path(),
-			handler.uid.as_str(),
 			&handler_node,
-			AliasInfo {
-				server_methods: vec!["get_transform"],
-				..Default::default()
-			},
+			&method_client,
+			INPUT_METHOD_REF_ASPECT_ALIAS_INFO.clone(),
+			Some(&self.handler_aliases),
 		) else {
 			return;
 		};
-		self.handler_aliases
-			.add(handler.uid.clone(), &handler_alias);
 
-		let Some(handler_field_node) = handler.field.spatial_ref().node.upgrade() else {
+		let Some(handler_field_node) = handler.field.spatial_ref().node() else {
 			return;
 		};
 		// Handler's field
 		let Ok(rx_field_alias) = Alias::create(
-			&method_client,
-			handler_alias.get_path(),
-			"field",
 			&handler_field_node,
+			&method_client,
 			FIELD_ALIAS_INFO.clone(),
+			Some(&self.handler_field_aliases),
 		) else {
 			return;
 		};
-		self.handler_aliases
-			.add(handler.uid.clone() + "-field", &rx_field_alias);
 
-		let _ = input_method_client::create_handler(
-			&method_node,
-			&handler.uid,
-			&handler_node,
-			&rx_field_alias,
-		);
+		let _ = input_method_client::create_handler(&method_node, &handler_alias, &rx_field_alias);
 	}
 	pub(super) fn handle_drop_handler(&self, handler: &InputHandler) {
-		let uid = handler.uid.as_str();
-		self.handler_aliases.remove(uid);
-		self.handler_aliases.remove(&(uid.to_string() + "-field"));
 		let Some(tx_node) = self.node.upgrade() else {
 			return;
 		};
-
-		let _ = input_method_client::destroy_handler(&tx_node, &uid);
+		let Some(handler_alias) = self.handler_aliases.get(handler) else {
+			return;
+		};
+		let _ = input_method_client::destroy_handler(&tx_node, handler_alias.id);
+		self.handler_aliases.remove_aspect(handler);
+		self.handler_field_aliases
+			.remove_aspect(handler.field.as_ref());
 	}
 }
 impl Aspect for InputMethod {

@@ -9,6 +9,7 @@ use crate::{
 use mint::Vector2;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
+use slotmap::KeyData;
 use smithay::{
 	backend::input::{AxisRelativeDirection, ButtonState, KeyState},
 	delegate_seat,
@@ -212,7 +213,7 @@ impl SeatWrapper {
 		pointer.frame(&mut state);
 	}
 
-	pub fn keyboard_keys(&self, surface: WlSurface, keymap_id: &str, keys: Vec<i32>) {
+	pub fn keyboard_keys(&self, surface: WlSurface, keymap_id: u64, keys: Vec<i32>) {
 		let Some(state) = self.wayland_state.upgrade() else {
 			return;
 		};
@@ -220,7 +221,7 @@ impl SeatWrapper {
 			return;
 		};
 		let keymaps = KEYMAPS.lock();
-		let Some(keymap) = keymaps.get(keymap_id).cloned() else {
+		let Some(keymap) = keymaps.get(KeyData::from_ffi(keymap_id).into()).cloned() else {
 			return;
 		};
 

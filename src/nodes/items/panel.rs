@@ -15,51 +15,22 @@ use color_eyre::eyre::Result;
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::Vector2;
-use nanoid::nanoid;
 use std::sync::{Arc, Weak};
 use tracing::{debug, info};
 
-use super::{create_item_acceptor_flex, register_item_ui_flex, ItemInterface};
+use super::{create_item_acceptor_flex, register_item_ui_flex, ItemAcceptor, ItemInterface};
 
 stardust_xr_server_codegen::codegen_item_panel_protocol!();
 lazy_static! {
 	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
 		type_name: "panel",
-		aliased_local_signals: vec![
-			"apply_surface_material",
-			"close_toplevel",
-			"auto_size_toplevel",
-			"set_toplevel_size",
-			"set_toplevel_focused_visuals",
-			"pointer_motion",
-			"pointer_button",
-			"pointer_scroll",
-			"keyboard_keymap",
-			"keyboard_key",
-			"touch_down",
-			"touch_move",
-			"touch_up",
-			"reset_touches",
-		],
-		aliased_local_methods: vec![],
-		aliased_remote_signals: vec![
-			"toplevel_parent_changed",
-			"toplevel_title_changed",
-			"toplevel_app_id_changed",
-			"toplevel_fullscreen_active",
-			"toplevel_move_request",
-			"toplevel_resize_request",
-			"toplevel_size_changed",
-			"set_cursor",
-			"new_child",
-			"reposition_child",
-			"drop_child",
-		],
+		alias_info: PANEL_ITEM_ASPECT_ALIAS_INFO.clone(),
+		ui_node_id: INTERFACE_NODE_ID,
 		ui: Default::default(),
 		items: Registry::new(),
 		acceptors: Registry::new(),
-		new_acceptor_fn: |node, uid, acceptor, acceptor_field| {
-			let _ = panel_item_ui_client::create_acceptor(node, uid, acceptor, acceptor_field);
+		new_acceptor_fn: |node, acceptor, acceptor_field| {
+			let _ = panel_item_ui_client::create_acceptor(node, acceptor, acceptor_field);
 		}
 	};
 }
@@ -85,7 +56,7 @@ pub trait Backend: Send + Sync + 'static {
 		scroll_steps: Option<Vector2<f32>>,
 	);
 
-	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: &str, keys: Vec<i32>);
+	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: u64, keys: Vec<i32>);
 
 	fn touch_down(&self, surface: &SurfaceId, id: u32, position: Vector2<f32>);
 	fn touch_move(&self, id: u32, position: Vector2<f32>);
@@ -101,13 +72,12 @@ pub fn panel_item_from_node(node: &Node) -> Option<Arc<dyn PanelItemTrait>> {
 }
 
 pub trait PanelItemTrait: Backend + Send + Sync + 'static {
-	fn send_ui_item_created(&self, node: &Node, uid: &str, item: &Arc<Node>);
-	fn send_acceptor_item_created(&self, node: &Node, uid: &str, item: &Arc<Node>);
+	fn send_ui_item_created(&self, node: &Node, item: &Arc<Node>);
+	fn send_acceptor_item_created(&self, node: &Node, item: &Arc<Node>);
 }
 
 pub struct PanelItem<B: Backend + ?Sized> {
-	pub uid: String,
-	node: Weak<Node>,
+	pub node: Weak<Node>,
 	pub backend: Box<B>,
 }
 impl<B: Backend + ?Sized> PanelItem<B> {
@@ -118,20 +88,13 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 			.and_then(|pid| get_env(pid).ok())
 			.and_then(|env| state(&env));
 
-		let uid = nanoid!();
-		let node = Arc::new(Node::create_parent_name(
-			&INTERNAL_CLIENT,
-			"/item/panel/item",
-			&uid,
-			true,
-		));
+		let node = Arc::new(Node::generate(&INTERNAL_CLIENT, true));
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 		if let Some(startup_settings) = &startup_settings {
 			spatial.set_local_transform(startup_settings.root);
 		}
 
 		let panel_item = Arc::new(PanelItem {
-			uid: uid.clone(),
 			node: Arc::downgrade(&node),
 			backend,
 		});
@@ -139,7 +102,6 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		let generic_panel_item: Arc<dyn PanelItemTrait> = panel_item.clone();
 		Item::add_to(
 			&node,
-			uid,
 			&ITEM_TYPE_INFO_PANEL,
 			ItemType::Panel(generic_panel_item),
 		);
@@ -158,7 +120,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 // Remote signals
 #[allow(unused)]
 impl<B: Backend + ?Sized> PanelItem<B> {
-	pub fn toplevel_parent_changed(&self, parent: &str) {
+	pub fn toplevel_parent_changed(&self, parent: u64) {
 		let Some(node) = self.node.upgrade() else {
 			return;
 		};
@@ -212,23 +174,23 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 		}
 	}
 
-	pub fn create_child(&self, uid: &str, info: ChildInfo) {
+	pub fn create_child(&self, id: u64, info: &ChildInfo) {
 		let Some(node) = self.node.upgrade() else {
 			return;
 		};
-		panel_item_client::create_child(&node, uid, &info);
+		panel_item_client::create_child(&node, id, info);
 	}
-	pub fn reposition_child(&self, uid: &str, geometry: Geometry) {
+	pub fn reposition_child(&self, id: u64, geometry: &Geometry) {
 		let Some(node) = self.node.upgrade() else {
 			return;
 		};
-		panel_item_client::reposition_child(&node, uid, &geometry);
+		panel_item_client::reposition_child(&node, id, geometry);
 	}
-	pub fn destroy_child(&self, uid: &str) {
+	pub fn destroy_child(&self, id: u64) {
 		let Some(node) = self.node.upgrade() else {
 			return;
 		};
-		panel_item_client::destroy_child(&node, uid);
+		panel_item_client::destroy_child(&node, id);
 	}
 }
 
@@ -373,13 +335,13 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		surface: SurfaceId,
-		keymap_id: String,
+		keymap_id: u64,
 		keys: Vec<i32>,
 	) -> Result<()> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.keyboard_keys(&surface, &keymap_id, keys);
+		panel_item.keyboard_keys(&surface, keymap_id, keys);
 		Ok(())
 	}
 
@@ -430,18 +392,25 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		Ok(())
 	}
 }
-impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
-	fn send_ui_item_created(&self, node: &Node, uid: &str, item: &Arc<Node>) {
-		let Ok(init_data) = self.backend.start_data() else {
-			return;
-		};
-		let _ = panel_item_ui_client::create_item(node, uid, item, init_data);
+
+impl PanelItemAcceptorAspect for ItemAcceptor {
+	fn capture_item(node: Arc<Node>, _calling_client: Arc<Client>, item: Arc<Node>) -> Result<()> {
+		super::acceptor_capture_item_flex(node, item)
 	}
-	fn send_acceptor_item_created(&self, node: &Node, uid: &str, item: &Arc<Node>) {
+}
+
+impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
+	fn send_ui_item_created(&self, node: &Node, item: &Arc<Node>) {
 		let Ok(init_data) = self.backend.start_data() else {
 			return;
 		};
-		let _ = panel_item_acceptor_client::capture_item(node, uid, item, init_data);
+		let _ = panel_item_ui_client::create_item(node, item, init_data);
+	}
+	fn send_acceptor_item_created(&self, node: &Node, item: &Arc<Node>) {
+		let Ok(init_data) = self.backend.start_data() else {
+			return;
+		};
+		let _ = panel_item_acceptor_client::capture_item(node, item, init_data);
 	}
 }
 impl<B: Backend + ?Sized> Backend for PanelItem<B> {
@@ -488,7 +457,7 @@ impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 			.pointer_scroll(surface, scroll_distance, scroll_steps)
 	}
 
-	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: &str, keys: Vec<i32>) {
+	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: u64, keys: Vec<i32>) {
 		self.backend.keyboard_keys(surface, keymap_id, keys)
 	}
 
@@ -508,12 +477,12 @@ impl<B: Backend + ?Sized> Backend for PanelItem<B> {
 impl<B: Backend + ?Sized> Drop for PanelItem<B> {
 	fn drop(&mut self) {
 		// Dropped panel item, basically just a debug breakpoint place
-		info!("Dropped panel item {}", self.uid);
+		info!("Dropped panel item");
 	}
 }
 
-create_interface!(ItemInterface, ItemPanelInterfaceAspect, "/item/panel");
-impl ItemPanelInterfaceAspect for ItemInterface {
+create_interface!(ItemInterface);
+impl InterfaceAspect for ItemInterface {
 	#[doc = "Register this client to manage the items of a certain type and create default 3D UI for them."]
 	fn register_panel_item_ui(_node: Arc<Node>, calling_client: Arc<Client>) -> Result<()> {
 		register_item_ui_flex(calling_client, &ITEM_TYPE_INFO_PANEL)
@@ -523,14 +492,14 @@ impl ItemPanelInterfaceAspect for ItemInterface {
 	fn create_panel_item_acceptor(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,
 	) -> Result<()> {
 		create_item_acceptor_flex(
 			calling_client,
-			name,
+			id,
 			parent,
 			transform,
 			&ITEM_TYPE_INFO_PANEL,

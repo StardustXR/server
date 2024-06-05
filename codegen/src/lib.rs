@@ -8,10 +8,10 @@ fn fold_tokens(a: TokenStream, b: TokenStream) -> TokenStream {
 	quote!(#a #b)
 }
 
-// #[proc_macro]
-// pub fn codegen_root_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-// 	codegen_protocol(ROOT_PROTOCOL)
-// }
+#[proc_macro]
+pub fn codegen_root_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+	codegen_protocol(ROOT_PROTOCOL)
+}
 #[proc_macro]
 pub fn codegen_node_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 	codegen_protocol(NODE_PROTOCOL)
@@ -58,18 +58,17 @@ fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 	let interface = protocol
 		.interface
 		.map(|p| {
-			let virtual_aspect_name = p.path[1..]
-				.split('/')
-				.map(ToString::to_string)
-				.reduce(|a, b| format!("{a}_{b}"))
-				.unwrap_or_default()
-				+ "_interface";
-			generate_aspect(&Aspect {
-				name: virtual_aspect_name,
+			let node_id = p.node_id;
+			let node_id = quote! {
+				const INTERFACE_NODE_ID: u64 = #node_id;
+			};
+			let aspect = generate_aspect(&Aspect {
+				name: "interface".to_string(),
 				description: protocol.description.clone(),
 				inherits: vec![],
 				members: p.members,
-			})
+			});
+			quote!(#node_id #aspect)
 		})
 		.unwrap_or_default();
 	let custom_enums = protocol
@@ -169,45 +168,6 @@ fn generate_custom_struct(custom_struct: &CustomStruct) -> TokenStream {
 	}
 }
 
-// fn generate_node(node: &Node) -> TokenStream {
-// 	let node_name = Ident::new(&node.name, Span::call_site());
-// 	let description = &node.description;
-
-// 	let aspects = node
-// 		.aspects
-// 		.iter()
-// 		.map(|a| {
-// 			let aspect_name = Ident::new(&format!("{a}Aspect"), Span::call_site());
-// 			quote!(impl #aspect_name for #node_name {})
-// 		})
-// 		.reduce(fold_tokens)
-// 		.unwrap_or_default();
-
-// 	quote! {
-// 		#[doc = #description]
-// 		#[derive(Debug)]
-// 		pub struct #node_name (crate::node::Node);
-// 		impl crate::node::NodeType for #node_name {
-// 			fn node(&self) -> &crate::node::Node {
-// 				&self.0
-// 			}
-// 			fn alias(&self) -> Self {
-// 				#node_name(self.0.alias())
-// 			}
-// 			fn from_path(client: &std::sync::Arc<crate::client::Client>, path: String, destroyable: bool) -> Self {
-// 				#node_name(crate::node::Node::from_path(client, path, destroyable))
-// 			}
-// 		}
-// 		impl serde::Serialize for #node_name {
-// 			fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-// 				let node_path = self.0.get_path().map_err(|e| serde::ser::Error::custom(e))?;
-// 				serializer.serialize_str(&node_path)
-// 			}
-// 		}
-// 		#aspects
-// 	}
-// }
-
 fn generate_aspect(aspect: &Aspect) -> TokenStream {
 	let description = &aspect.description;
 	let (client_members, server_members) = aspect.members.iter().split(|m| m.side == Side::Server);
@@ -234,6 +194,30 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 		&format!("{}Aspect", &aspect.name.to_case(Case::Pascal)),
 		Span::call_site(),
 	);
+
+	let opcodes = aspect
+		.members
+		.iter()
+		.map(|m| {
+			let aspect_name = aspect.name.to_case(Case::ScreamingSnake);
+			let member_name = m.name.to_case(Case::ScreamingSnake);
+			let name_type = if m.side == Side::Client {
+				"CLIENT"
+			} else {
+				"SERVER"
+			};
+			let name = Ident::new(
+				&format!("{aspect_name}_{member_name}_{name_type}_OPCODE"),
+				Span::call_site(),
+			);
+			let opcode = m.opcode;
+
+			quote!(pub(crate) const #name: u64 = #opcode;)
+		})
+		.reduce(fold_tokens)
+		.unwrap_or_default();
+	let alias_info = generate_alias_info(aspect);
+
 	let server_side_members = server_members
 		.map(generate_member)
 		.reduce(fold_tokens)
@@ -259,11 +243,45 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 			#server_side_members
 		}
 	};
-	quote!(#client_side_members #server_side_members)
+	quote!(#opcodes #alias_info #client_side_members #server_side_members)
+}
+
+fn generate_alias_opcodes(aspect: &Aspect, side: Side, _type: MemberType) -> TokenStream {
+	aspect
+		.members
+		.iter()
+		.filter(|m| m.side == side)
+		.filter(|m| m._type == _type)
+		.map(|m| m.opcode)
+		.map(|o| quote!(#o))
+		.reduce(|a, b| quote!(#a, #b))
+		.unwrap_or_default()
+}
+fn generate_alias_info(aspect: &Aspect) -> TokenStream {
+	let aspect_alias_info_name = Ident::new(
+		&format!(
+			"{}_ASPECT_ALIAS_INFO",
+			aspect.name.to_case(Case::ScreamingSnake)
+		),
+		Span::call_site(),
+	);
+	let local_signals = generate_alias_opcodes(aspect, Side::Server, MemberType::Signal);
+	let local_methods = generate_alias_opcodes(aspect, Side::Server, MemberType::Method);
+	let remote_signals = generate_alias_opcodes(aspect, Side::Client, MemberType::Signal);
+
+	quote! {
+		lazy_static::lazy_static! {
+			pub static ref #aspect_alias_info_name: crate::nodes::alias::AliasInfo = crate::nodes::alias::AliasInfo {
+				server_signals: vec![#local_signals],
+				server_methods: vec![#local_methods],
+				client_signals: vec![#remote_signals],
+			};
+		}
+	}
 }
 
 fn generate_member(member: &Member) -> TokenStream {
-	let name_str = &member.name;
+	let id = member.opcode;
 	let name = Ident::new(&member.name.to_case(Case::Snake), Span::call_site());
 	let description = &member.description;
 
@@ -298,8 +316,8 @@ fn generate_member(member: &Member) -> TokenStream {
 		(Side::Client, MemberType::Method) => {
 			quote! {
 				#[doc = #description]
-				pub async fn #name(#argument_decls) -> color_eyre::eyre::Result<#return_type> {
-					_node.execute_remote_method(#name_str, &(#argument_uses)).await
+				pub async fn #name(#argument_decls) -> color_eyre::eyre::Result<(#return_type, Vec<std::os::fd::OwnedFd>)> {
+					_node.execute_remote_method_typed(#id, &(#argument_uses), vec![]).await
 				}
 			}
 		}
@@ -308,7 +326,7 @@ fn generate_member(member: &Member) -> TokenStream {
 				#[doc = #description]
 				pub fn #name(#argument_decls) -> color_eyre::eyre::Result<()> {
 					let serialized = stardust_xr::schemas::flex::serialize((#argument_uses))?;
-					_node.send_remote_signal(#name_str, serialized)
+					_node.send_remote_signal(#id, serialized)
 				}
 			}
 		}
@@ -319,23 +337,7 @@ fn generate_member(member: &Member) -> TokenStream {
 			}
 		}
 		(Side::Server, MemberType::Signal) => {
-			let prefix =
-				if let Some(ArgumentType::Node { _type, return_info }) = &member.return_type {
-					if let Some(return_info) = return_info {
-						let parent_name = Ident::new(
-							&(name_str.to_case(Case::ScreamingSnake) + "_PARENT_PATH"),
-							Span::call_site(),
-						);
-						let parent_path = &return_info.parent;
-						quote!(const #parent_name: &'static str = #parent_path;)
-					} else {
-						TokenStream::default()
-					}
-				} else {
-					TokenStream::default()
-				};
 			quote! {
-				#prefix
 				#[doc = #description]
 				fn #name(#argument_decls) -> color_eyre::eyre::Result<()>;
 			}
@@ -343,8 +345,8 @@ fn generate_member(member: &Member) -> TokenStream {
 	}
 }
 fn generate_handler(member: &Member) -> TokenStream {
-	let member_name = &member.name;
-	let member_name_ident = Ident::new(&member_name, Span::call_site());
+	let opcode = member.opcode;
+	let member_name_ident = Ident::new(&member.name, Span::call_site());
 
 	let argument_names = member
 		.arguments
@@ -375,13 +377,13 @@ fn generate_handler(member: &Member) -> TokenStream {
 		.unwrap_or_default();
 	match member._type {
 		MemberType::Signal => quote! {
-			node.add_local_signal(#member_name, |_node, _calling_client, _message| {
+			node.add_local_signal(#opcode, |_node, _calling_client, _message| {
 				#deserialize
 				Self::#member_name_ident(_node, _calling_client.clone(), #argument_uses)
 			});
 		},
 		MemberType::Method => quote! {
-			node.add_local_method(#member_name, |_node, _calling_client, _message, _method_response| {
+			node.add_local_method(#opcode, |_node, _calling_client, _message, _method_response| {
 				_method_response.wrap_async(async move {
 					#deserialize
 					Ok((Self::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await?, Vec::new()))
@@ -396,7 +398,7 @@ fn generate_argument_name(argument: &Argument) -> TokenStream {
 
 fn convert_deserializeable_argument_type(argument_type: &ArgumentType) -> ArgumentType {
 	match argument_type {
-		ArgumentType::Node { .. } => ArgumentType::String,
+		ArgumentType::Node { .. } => ArgumentType::NodeID,
 		ArgumentType::Vec(v) => {
 			ArgumentType::Vec(Box::new(convert_deserializeable_argument_type(v.as_ref())))
 		}
@@ -414,8 +416,8 @@ fn generate_argument_deserialize(
 	let name = Ident::new(&argument_name.to_case(Case::Snake), Span::call_site());
 	if let ArgumentType::Node { .. } = argument_type {
 		return match optional {
-			true => quote!(#name.map(|n| _calling_client.get_node(#argument_name, &n)?)),
-			false => quote!(_calling_client.get_node(#argument_name, &#name)?),
+			true => quote!(#name.map(|n| _calling_client.get_node(#argument_name, n)?)),
+			false => quote!(_calling_client.get_node(#argument_name, #name)?),
 		};
 	}
 	if optional {
@@ -445,10 +447,10 @@ fn generate_argument_serialize(
 	match argument_type {
 		ArgumentType::Node {
 			_type,
-			return_info: _,
+			return_id_parameter_name: _,
 		} => match optional {
-			true => quote!(#name.map(|n| n.get_path())),
-			false => quote!(#name.get_path()),
+			true => quote!(#name.map(|n| n.get_id())),
+			false => quote!(#name.get_id()),
 		},
 		ArgumentType::Color => quote!([#name.c.r, #name.c.g, #name.c.b, #name.a]),
 		ArgumentType::Vec(v) => {
@@ -483,6 +485,7 @@ fn argument_type_option_name(argument_type: &ArgumentType) -> String {
 		ArgumentType::Bytes => "Bytes".to_string(),
 		ArgumentType::Vec(v) => format!("{}Vector", argument_type_option_name(&v)),
 		ArgumentType::Map(m) => format!("{}Map", argument_type_option_name(&m)),
+		ArgumentType::NodeID => "Node ID".to_string(),
 		ArgumentType::Datamap => "Datamap".to_string(),
 		ArgumentType::ResourceID => "ResourceID".to_string(),
 		ArgumentType::Enum(e) => e.clone(),
@@ -544,6 +547,7 @@ fn generate_argument_type(
 				quote!(stardust_xr::values::Map<String, #t>)
 			}
 		}
+		ArgumentType::NodeID => quote!(u64),
 		ArgumentType::Datamap => {
 			if !owned {
 				quote!(&stardust_xr::values::Datamap)
@@ -576,7 +580,7 @@ fn generate_argument_type(
 		}
 		ArgumentType::Node {
 			_type,
-			return_info: _,
+			return_id_parameter_name: _,
 		} => {
 			if !owned {
 				quote!(&std::sync::Arc<crate::nodes::Node>)

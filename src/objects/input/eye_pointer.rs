@@ -9,7 +9,6 @@ use crate::{
 };
 use color_eyre::eyre::Result;
 use glam::{vec3, Mat4};
-use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
@@ -34,8 +33,7 @@ pub struct EyePointer {
 }
 impl EyePointer {
 	pub fn new() -> Result<Self> {
-		let node = Node::create_parent_name(&INTERNAL_CLIENT, "", &nanoid!(), false)
-			.add_to_scenegraph()?;
+		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph()?;
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 		let pointer = InputMethod::add_to(
 			&node,
@@ -62,7 +60,7 @@ impl EyePointer {
 			.into_iter()
 			// filter out all the disabled handlers
 			.filter(|handler| {
-				let Some(node) = handler.node.upgrade() else {
+				let Some(node) = handler.spatial.node() else {
 					return false;
 				};
 				node.enabled()

@@ -33,11 +33,37 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 		self.lock()
 			.contains_key(&(ptr::addr_of!(*t) as *const () as usize))
 	}
+	pub fn get_changes(old: &Registry<T>, new: &Registry<T>) -> (Vec<Arc<T>>, Vec<Arc<T>>) {
+		let old = old.lock();
+		let new = new.lock();
+
+		let mut added = Vec::new();
+		let mut removed = Vec::new();
+
+		for (id, entry) in new.iter() {
+			if let Some(entry) = entry.upgrade() {
+				if !old.contains_key(id) {
+					added.push(entry);
+				}
+			}
+		}
+		for (id, entry) in old.iter() {
+			if let Some(entry) = entry.upgrade() {
+				if !new.contains_key(id) {
+					removed.push(entry);
+				}
+			}
+		}
+		(added, removed)
+	}
 	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
 		self.lock()
 			.iter()
 			.filter_map(|pair| pair.1.upgrade())
 			.collect()
+	}
+	pub fn set(&self, other: &Registry<T>) {
+		*self.lock() = other.lock().clone();
 	}
 	pub fn take_valid_contents(&self) -> Vec<Arc<T>> {
 		self.0
@@ -47,6 +73,14 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 			.into_iter()
 			.filter_map(|pair| pair.1.upgrade())
 			.collect()
+	}
+	pub fn retain<F: Fn(&T) -> bool>(&self, f: F) {
+		self.lock().retain(|_, v| {
+			let Some(v) = v.upgrade() else {
+				return true;
+			};
+			(f)(&v)
+		})
 	}
 	pub fn remove(&self, t: &T) {
 		self.lock()

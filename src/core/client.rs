@@ -1,21 +1,23 @@
 use super::{
-	client_state::{ClientState, CLIENT_STATES},
+	client_state::{ClientStateParsed, CLIENT_STATES},
 	destroy_queue,
 	scenegraph::Scenegraph,
 };
 use crate::{
 	core::{registry::OwnedRegistry, task},
-	nodes::{audio, data, drawable, fields, hmd, input, items, root::Root, spatial, Node},
+	nodes::{
+		audio, data, drawable, fields, hmd, input, items,
+		root::{ClientState, Root},
+		spatial, Node,
+	},
 };
 use color_eyre::eyre::{eyre, Result};
+use global_counter::primitive::exact::CounterU32;
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use stardust_xr::{
-	messenger::{self, MessageSenderHandle},
-	schemas::flex::serialize,
-};
+use stardust_xr::messenger::{self, MessageSenderHandle};
 use std::{fmt::Debug, fs, iter::FromIterator, path::PathBuf, sync::Arc};
 use tokio::{net::UnixStream, task::JoinHandle};
 use tracing::info;
@@ -32,10 +34,11 @@ lazy_static! {
 		disconnect_status: OnceCell::new(),
 
 		message_sender_handle: None,
+		id_counter: CounterU32::new(0),
 		scenegraph: Default::default(),
 		root: OnceCell::new(),
 		base_resource_prefixes: Default::default(),
-		state: Arc::new(ClientState::default()),
+		state: OnceCell::default(),
 	});
 }
 
@@ -47,7 +50,7 @@ pub fn get_env(pid: i32) -> Result<FxHashMap<String, String>, std::io::Error> {
 			.map(|(k, v)| (k.to_string(), v.to_string())),
 	))
 }
-pub fn state(env: &FxHashMap<String, String>) -> Option<Arc<ClientState>> {
+pub fn state(env: &FxHashMap<String, String>) -> Option<Arc<ClientStateParsed>> {
 	let token = env.get("STARDUST_STARTUP_TOKEN")?;
 	CLIENT_STATES.lock().get(token).cloned()
 }
@@ -60,11 +63,12 @@ pub struct Client {
 	flush_join_handle: OnceCell<JoinHandle<Result<()>>>,
 	disconnect_status: OnceCell<Result<()>>,
 
+	id_counter: CounterU32,
 	pub message_sender_handle: Option<MessageSenderHandle>,
 	pub scenegraph: Arc<Scenegraph>,
 	pub root: OnceCell<Arc<Root>>,
 	pub base_resource_prefixes: Mutex<Vec<PathBuf>>,
-	pub state: Arc<ClientState>,
+	pub state: OnceCell<ClientState>,
 }
 impl Client {
 	pub fn from_connection(connection: UnixStream) -> Result<Arc<Self>> {
@@ -84,7 +88,7 @@ impl Client {
 		let state = env
 			.as_ref()
 			.and_then(state)
-			.unwrap_or_else(|| Arc::new(ClientState::default()));
+			.unwrap_or_else(|| Arc::new(ClientStateParsed::default()));
 
 		let client = CLIENTS.add(Client {
 			pid,
@@ -95,14 +99,15 @@ impl Client {
 			flush_join_handle: OnceCell::new(),
 			disconnect_status: OnceCell::new(),
 
+			id_counter: CounterU32::new(256),
 			message_sender_handle: Some(messenger_tx.handle()),
 			scenegraph: scenegraph.clone(),
 			root: OnceCell::new(),
 			base_resource_prefixes: Default::default(),
-			state,
+			state: OnceCell::default(),
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
-		let _ = client.root.set(Root::create(&client)?);
+		let _ = client.root.set(Root::create(&client, state.root)?);
 		hmd::make_alias(&client)?;
 		spatial::create_interface(&client)?;
 		fields::create_interface(&client)?;
@@ -113,12 +118,7 @@ impl Client {
 		items::camera::create_interface(&client)?;
 		items::panel::create_interface(&client)?;
 
-		client
-			.root
-			.get()
-			.unwrap()
-			.node
-			.send_remote_signal("restore_state", serialize(client.state.apply_to(&client))?)?;
+		let _ = client.state.set(state.apply_to(&client));
 
 		let pid_printable = pid
 			.map(|pid| pid.to_string())
@@ -191,15 +191,19 @@ impl Client {
 		let cwd_proc_path = format!("/proc/{pid}/cwd");
 		std::fs::read_link(cwd_proc_path).ok()
 	}
-	pub async fn save_state(&self) -> Option<ClientState> {
+	pub async fn save_state(&self) -> Option<ClientStateParsed> {
 		let internal = self.root.get()?.save_state().await.ok()?;
-		Some(ClientState::from_deserialized(self, internal))
+		Some(ClientStateParsed::from_deserialized(self, internal))
+	}
+
+	pub fn generate_id(&self) -> u64 {
+		self.id_counter.inc() as u64
 	}
 
 	#[inline]
-	pub fn get_node(&self, name: &'static str, path: &str) -> Result<Arc<Node>> {
+	pub fn get_node(&self, name: &'static str, id: u64) -> Result<Arc<Node>> {
 		self.scenegraph
-			.get_node(path)
+			.get_node(id)
 			.ok_or_else(|| eyre!("{} not found", name))
 	}
 

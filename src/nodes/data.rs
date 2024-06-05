@@ -1,24 +1,22 @@
-use super::alias::AliasInfo;
+use super::alias::AliasList;
 use super::fields::Field;
 use super::spatial::{parse_transform, Spatial};
 use super::{Alias, Aspect, Node};
 use crate::core::client::Client;
-use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::create_interface;
 use crate::nodes::fields::FIELD_ALIAS_INFO;
 use crate::nodes::spatial::Transform;
 use color_eyre::eyre::{bail, ensure, eyre, Result};
 use lazy_static::lazy_static;
-use nanoid::nanoid;
 use parking_lot::Mutex;
-use rustc_hash::FxHashMap;
+use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 use stardust_xr::schemas::flex::flexbuffers;
 use stardust_xr::values::Datamap;
 use std::sync::{Arc, Weak};
 
 lazy_static! {
-	pub static ref KEYMAPS: Mutex<FxHashMap<String, String>> = Mutex::new(FxHashMap::default());
+	pub static ref KEYMAPS: Mutex<SlotMap<DefaultKey, String>> = Mutex::new(SlotMap::default());
 }
 
 static PULSE_SENDER_REGISTRY: Registry<PulseSender> = Registry::new();
@@ -58,14 +56,16 @@ stardust_xr_server_codegen::codegen_data_protocol!();
 pub struct PulseSender {
 	node: Weak<Node>,
 	pub mask: Datamap,
-	aliases: LifeLinkedNodeMap<String>,
+	aliases: AliasList,
+	field_aliases: AliasList,
 }
 impl PulseSender {
 	pub fn add_to(node: &Arc<Node>, mask: Datamap) -> Result<Arc<PulseSender>> {
 		let sender = PulseSender {
 			node: Arc::downgrade(node),
 			mask,
-			aliases: LifeLinkedNodeMap::default(),
+			aliases: AliasList::default(),
+			field_aliases: AliasList::default(),
 		};
 
 		// <PulseSender as PulseSenderAspect>::add_node_members(node);
@@ -91,44 +91,41 @@ impl PulseSender {
 		};
 		// Receiver itself
 		let Ok(rx_alias) = Alias::create(
-			&tx_client,
-			tx_node.get_path(),
-			receiver.uid.as_str(),
 			&rx_node,
-			AliasInfo {
-				server_methods: vec!["send_data"],
-				..Default::default()
-			},
+			&tx_client,
+			PULSE_RECEIVER_ASPECT_ALIAS_INFO.clone(),
+			Some(&self.aliases),
 		) else {
 			return;
 		};
-		self.aliases.add(receiver.uid.clone(), &rx_alias);
 
 		// Receiver's field
 		let Ok(rx_field_alias) = Alias::create(
+			&rx_node
+				.get_aspect::<PulseReceiver>()
+				.unwrap()
+				.field
+				.spatial_ref()
+				.node()
+				.unwrap(),
 			&tx_client,
-			rx_alias.get_path(),
-			"field",
-			&rx_node.get_aspect::<PulseReceiver>().unwrap().field_node,
 			FIELD_ALIAS_INFO.clone(),
+			Some(&self.aliases),
 		) else {
 			return;
 		};
-		self.aliases
-			.add(receiver.uid.clone() + "-field", &rx_field_alias);
 
-		let _ =
-			pulse_sender_client::new_receiver(&tx_node, &receiver.uid, &rx_alias, &rx_field_alias);
+		let _ = pulse_sender_client::new_receiver(&tx_node, &rx_alias, &rx_field_alias);
 	}
 
 	fn handle_drop_receiver(&self, receiver: &PulseReceiver) {
-		let uid = receiver.uid.as_str();
-		self.aliases.remove(uid);
-		self.aliases.remove(&(uid.to_string() + "-field"));
+		let id = receiver.node.upgrade().unwrap().get_id();
+		self.aliases.remove_aspect(receiver);
+		self.field_aliases.remove_aspect(receiver.field.as_ref());
 		let Some(tx_node) = self.node.upgrade() else {
 			return;
 		};
-		let _ = pulse_sender_client::drop_receiver(&tx_node, uid);
+		let _ = pulse_sender_client::drop_receiver(&tx_node, id);
 	}
 }
 impl Aspect for PulseSender {
@@ -142,21 +139,19 @@ impl Drop for PulseSender {
 }
 
 pub struct PulseReceiver {
-	uid: String,
 	pub node: Weak<Node>,
-	pub field_node: Arc<Node>,
+	pub field: Arc<Field>,
 	pub mask: Datamap,
 }
 impl PulseReceiver {
 	pub fn add_to(
 		node: &Arc<Node>,
-		field_node: Arc<Node>,
+		field: Arc<Field>,
 		mask: Datamap,
 	) -> Result<Arc<PulseReceiver>> {
 		let receiver = PulseReceiver {
-			uid: nanoid!(),
 			node: Arc::downgrade(node),
-			field_node,
+			field,
 			mask,
 		};
 		let receiver = PULSE_RECEIVER_REGISTRY.add(receiver);
@@ -186,7 +181,7 @@ impl PulseReceiverAspect for PulseReceiver {
 			"Message ({data:?}) does not contain the same keys as the receiver's mask ({:?})",
 			this_receiver.mask
 		);
-		pulse_receiver_client::data(&node, &sender.uid, &data)?;
+		pulse_receiver_client::data(&node, &sender, &data)?;
 		Ok(())
 	}
 }
@@ -199,24 +194,19 @@ impl Drop for PulseReceiver {
 	}
 }
 
-create_interface!(DataInterface, DataInterfaceAspect, "/data");
+create_interface!(DataInterface);
 struct DataInterface;
-impl DataInterfaceAspect for DataInterface {
+impl InterfaceAspect for DataInterface {
 	fn create_pulse_sender(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		mask: Datamap,
 	) -> Result<()> {
 		get_mask(&mask)?;
-		let node = Node::create_parent_name(
-			&calling_client,
-			Self::CREATE_PULSE_SENDER_PARENT_PATH,
-			&name,
-			true,
-		);
+		let node = Node::from_id(&calling_client, id, true);
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, false);
 
@@ -229,22 +219,17 @@ impl DataInterfaceAspect for DataInterface {
 	fn create_pulse_receiver(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,
 		mask: Datamap,
 	) -> Result<()> {
 		get_mask(&mask)?;
-		let node = Node::create_parent_name(
-			&calling_client,
-			Self::CREATE_PULSE_RECEIVER_PARENT_PATH,
-			&name,
-			true,
-		);
+		let node = Node::from_id(&calling_client, id, true);
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = parse_transform(transform, true, true, false);
-		let _ = field.get_aspect::<Field>()?;
+		let field = field.get_aspect::<Field>()?;
 
 		let node = node.add_to_scenegraph()?;
 		Spatial::add_to(&node, Some(parent.clone()), transform, false);
@@ -256,7 +241,7 @@ impl DataInterfaceAspect for DataInterface {
 		_node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		keymap: String,
-	) -> Result<String> {
+	) -> Result<u64> {
 		let mut keymaps = KEYMAPS.lock();
 		if let Some(found_keymap_id) = keymaps
 			.iter()
@@ -264,22 +249,20 @@ impl DataInterfaceAspect for DataInterface {
 			.map(|(k, _v)| k)
 			.last()
 		{
-			return Ok(found_keymap_id.clone());
+			return Ok(found_keymap_id.data().as_ffi());
 		}
 
-		let generated_id = nanoid!();
-		keymaps.insert(generated_id.clone(), keymap);
-
-		Ok(generated_id)
+		let key = keymaps.insert(keymap);
+		Ok(key.data().as_ffi())
 	}
 
 	async fn get_keymap(
 		_node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		keymap_id: String,
+		keymap_id: u64,
 	) -> Result<String> {
 		let keymaps = KEYMAPS.lock();
-		let Some(keymap) = keymaps.get(&keymap_id) else {
+		let Some(keymap) = keymaps.get(KeyData::from_ffi(keymap_id).into()) else {
 			bail!("Could not find keymap. Try registering it")
 		};
 

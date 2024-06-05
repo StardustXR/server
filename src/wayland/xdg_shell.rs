@@ -13,6 +13,7 @@ use crate::nodes::{
 use color_eyre::eyre::Result;
 use mint::Vector2;
 use parking_lot::Mutex;
+use rand::Rng;
 use rustc_hash::FxHashMap;
 use smithay::{
 	delegate_xdg_shell,
@@ -184,7 +185,7 @@ impl XdgShellHandler for WaylandState {
 	}
 
 	fn new_popup(&mut self, popup: PopupSurface, positioner: PositionerState) {
-		let uid = nanoid::nanoid!();
+		let uid = rand::thread_rng().gen_range(0..u64::MAX);
 		let Some(parent) = popup.get_parent_surface() else {
 			return;
 		};
@@ -194,8 +195,8 @@ impl XdgShellHandler for WaylandState {
 		if popup.send_configure().is_err() {
 			return;
 		}
-		utils::insert_data(popup.wl_surface(), SurfaceId::Child(uid.clone()));
-		utils::insert_data(popup.wl_surface(), uid.clone());
+		utils::insert_data(popup.wl_surface(), SurfaceId::Child(uid));
+		utils::insert_data(popup.wl_surface(), uid);
 		utils::insert_data(popup.wl_surface(), Arc::downgrade(&panel_item));
 		CoreSurface::add_to(
 			self.display_handle.clone(),
@@ -203,9 +204,7 @@ impl XdgShellHandler for WaylandState {
 			{
 				let popup = popup.clone();
 				move || {
-					panel_item
-						.backend
-						.new_popup(&uid, popup.clone(), positioner);
+					panel_item.backend.new_popup(uid, popup.clone(), positioner);
 				}
 			},
 			{
@@ -228,14 +227,14 @@ impl XdgShellHandler for WaylandState {
 		let Some(panel_item) = surface_panel_item(popup.wl_surface()) else {
 			return;
 		};
-		let Some(uid) = utils::get_data::<String>(popup.wl_surface())
+		let Some(SurfaceId::Child(uid)) = utils::get_data::<SurfaceId>(popup.wl_surface())
 			.as_deref()
 			.cloned()
 		else {
 			return;
 		};
 
-		panel_item.backend.reposition_popup(&uid, popup, positioner)
+		panel_item.backend.reposition_popup(uid, popup, positioner)
 	}
 	fn popup_destroyed(&mut self, popup: PopupSurface) {
 		if let Some(core_surface) = CoreSurface::from_wl_surface(popup.wl_surface()) {
@@ -244,14 +243,14 @@ impl XdgShellHandler for WaylandState {
 		let Some(panel_item) = surface_panel_item(popup.wl_surface()) else {
 			return;
 		};
-		let Some(uid) = utils::get_data::<String>(popup.wl_surface())
+		let Some(SurfaceId::Child(uid)) = utils::get_data::<SurfaceId>(popup.wl_surface())
 			.as_deref()
 			.cloned()
 		else {
 			return;
 		};
 		panel_item.backend.seat.unfocus(popup.wl_surface(), self);
-		panel_item.backend.drop_popup(&uid);
+		panel_item.backend.drop_popup(uid);
 	}
 
 	fn grab(&mut self, _popup: PopupSurface, _seat: WlSeat, _serial: Serial) {}
@@ -330,7 +329,7 @@ delegate_xdg_shell!(WaylandState);
 
 pub struct XdgBackend {
 	toplevel: Mutex<Option<ToplevelSurface>>,
-	popups: Mutex<FxHashMap<String, (PopupSurface, PositionerState)>>,
+	popups: Mutex<FxHashMap<u64, (PopupSurface, PositionerState)>>,
 	pub seat: Arc<SeatWrapper>,
 }
 impl XdgBackend {
@@ -354,20 +353,18 @@ impl XdgBackend {
 		surface_panel_item(self.toplevel.lock().clone()?.wl_surface())
 	}
 
-	pub fn new_popup(&self, uid: &str, popup: PopupSurface, positioner: PositionerState) {
+	pub fn new_popup(&self, id: u64, popup: PopupSurface, positioner: PositionerState) {
 		let Some(panel_item) = self.panel_item() else {
 			return;
 		};
 
-		self.popups
-			.lock()
-			.insert(uid.to_string(), (popup, positioner));
+		self.popups.lock().insert(id, (popup, positioner));
 
-		panel_item.create_child(uid, self.child_data(uid).unwrap());
+		panel_item.create_child(id, &self.child_data(id).unwrap());
 	}
-	pub fn reposition_popup(&self, uid: &str, _popup: PopupSurface, positioner: PositionerState) {
+	pub fn reposition_popup(&self, id: u64, _popup: PopupSurface, positioner: PositionerState) {
 		let mut popups = self.popups.lock();
-		let Some((_, old_positioner)) = popups.get_mut(uid) else {
+		let Some((_, old_positioner)) = popups.get_mut(&id) else {
 			return;
 		};
 		let Some(panel_item) = self.panel_item() else {
@@ -376,18 +373,19 @@ impl XdgBackend {
 		let geometry = positioner.get_geometry();
 
 		*old_positioner = positioner;
-		panel_item.reposition_child(uid, geometry.into());
+		panel_item.reposition_child(id, &geometry.into());
 	}
-	pub fn drop_popup(&self, uid: &str) {
+	pub fn drop_popup(&self, id: u64) {
 		let Some(panel_item) = self.panel_item() else {
 			return;
 		};
-		panel_item.destroy_child(uid);
+		panel_item.destroy_child(id);
 	}
 
-	fn child_data(&self, uid: &str) -> Option<ChildInfo> {
-		let (popup, positioner) = self.popups.lock().get(uid)?.clone();
+	fn child_data(&self, id: u64) -> Option<ChildInfo> {
+		let (popup, positioner) = self.popups.lock().get(&id)?.clone();
 		Some(ChildInfo {
+			id,
 			parent: (*utils::get_data::<SurfaceId>(&popup.get_parent_surface()?)?).clone(),
 			geometry: positioner.get_geometry().into(),
 		})
@@ -443,12 +441,14 @@ impl Backend for XdgBackend {
 			.map(|s| Vector2::from([s.w as u32, s.h as u32]))
 			.or_else(|| toplevel_core_surface.size())
 			.unwrap_or(Vector2::from([0; 2]));
+		let parent = toplevel
+			.parent()
+			.as_ref()
+			.and_then(surface_panel_item)
+			.and_then(|p| p.node.upgrade())
+			.map(|p| p.get_id());
 		let toplevel = ToplevelInfo {
-			parent: toplevel
-				.parent()
-				.as_ref()
-				.and_then(surface_panel_item)
-				.map(|p| p.uid.clone()),
+			parent,
 			title,
 			app_id,
 			size,
@@ -491,7 +491,7 @@ impl Backend for XdgBackend {
 			.popups
 			.lock()
 			.keys()
-			.map(|k| (k.clone(), self.child_data(k).unwrap()))
+			.map(|k| self.child_data(*k).unwrap())
 			.collect();
 
 		Ok(PanelItemInitData {
@@ -588,7 +588,7 @@ impl Backend for XdgBackend {
 		self.seat.pointer_scroll(scroll_distance, scroll_steps)
 	}
 
-	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: &str, keys: Vec<i32>) {
+	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: u64, keys: Vec<i32>) {
 		let Some(surface) = self.wl_surface_from_id(&surface) else {
 			return;
 		};

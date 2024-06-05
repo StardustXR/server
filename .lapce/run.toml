@@ -8,13 +8,13 @@ name = "task"
 # type = "lldb"
 
 # the program to run
-program = "cargo"
+program = "./target/debug/stardust-xr-server"
 
 # the program arguments, e.g. args = ["arg1", "arg2"], optional
-args = ["lrun", "--", "-f"]
+# args = []
 
 # current working directory, optional
-# cwd = "${workspace}"
+cwd = "${workspace}"
 
 # enviroment variables, optional
 # [configs.env]

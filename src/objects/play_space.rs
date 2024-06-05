@@ -3,7 +3,6 @@ use std::sync::Arc;
 use color_eyre::eyre::Result;
 use glam::Mat4;
 use mint::Vector2;
-use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use stereokit_rust::system::World;
@@ -40,15 +39,14 @@ pub struct PlaySpace {
 }
 impl PlaySpace {
 	pub fn new() -> Result<Self> {
-		let node = Node::create_parent_name(&INTERNAL_CLIENT, "", &nanoid!(), false)
-			.add_to_scenegraph()?;
+		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph()?;
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 		BoxField::add_to(&node, [0.0; 3].into());
 		let field = node.get_aspect::<Field>()?.clone();
 
 		let pulse_rx = PulseReceiver::add_to(
 			&node,
-			node.clone(),
+			field.clone(),
 			Datamap::from_typed(PlaySpaceMap::default())?,
 		)?;
 

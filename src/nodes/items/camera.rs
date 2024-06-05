@@ -1,10 +1,8 @@
-use super::{create_item_acceptor_flex, register_item_ui_flex, Item, ItemInterface, ItemType};
+use super::{
+	create_item_acceptor_flex, register_item_ui_flex, Item, ItemAcceptor, ItemInterface, ItemType,
+};
 use crate::{
-	core::{
-		client::{Client, INTERNAL_CLIENT},
-		registry::Registry,
-		scenegraph::MethodResponseSender,
-	},
+	core::{client::Client, registry::Registry, scenegraph::MethodResponseSender},
 	create_interface,
 	nodes::{
 		drawable::{model::ModelPart, shaders::UNLIT_SHADER_BYTES},
@@ -17,7 +15,6 @@ use color_eyre::eyre::{bail, eyre, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::{ColumnMatrix4, Vector2};
-use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
@@ -37,14 +34,13 @@ stardust_xr_server_codegen::codegen_item_camera_protocol!();
 lazy_static! {
 	pub(super) static ref ITEM_TYPE_INFO_CAMERA: TypeInfo = TypeInfo {
 		type_name: "camera",
-		aliased_local_signals: vec!["apply_preview_material", "frame"],
-		aliased_local_methods: vec![],
-		aliased_remote_signals: vec![],
+		alias_info: CAMERA_ITEM_ASPECT_ALIAS_INFO.clone(),
+		ui_node_id: INTERFACE_NODE_ID,
 		ui: Default::default(),
 		items: Registry::new(),
 		acceptors: Registry::new(),
-		new_acceptor_fn: |node, uid, acceptor, acceptor_field| {
-			let _ = camera_item_ui_client::create_acceptor(node, uid, acceptor, acceptor_field);
+		new_acceptor_fn: |node, acceptor, acceptor_field| {
+			let _ = camera_item_ui_client::create_acceptor(node, acceptor, acceptor_field);
 		}
 	};
 }
@@ -62,11 +58,11 @@ pub struct CameraItem {
 	applied_to: Registry<ModelPart>,
 	apply_to: Registry<ModelPart>,
 }
+#[allow(unused)]
 impl CameraItem {
 	pub fn add_to(node: &Arc<Node>, proj_matrix: Mat4, px_size: Vector2<u32>) {
 		Item::add_to(
 			node,
-			nanoid!(),
 			&ITEM_TYPE_INFO_CAMERA,
 			ItemType::Camera(CameraItem {
 				space: node.get_aspect::<Spatial>().unwrap().clone(),
@@ -80,11 +76,7 @@ impl CameraItem {
 				apply_to: Registry::new(),
 			}),
 		);
-		node.add_local_method("frame", CameraItem::frame_flex);
-		node.add_local_signal(
-			"apply_preview_material",
-			CameraItem::apply_preview_material_flex,
-		);
+		// <CameraItem as CameraItemAspect>::node_methods(node);
 	}
 
 	fn frame_flex(
@@ -118,11 +110,11 @@ impl CameraItem {
 		Ok(())
 	}
 
-	pub fn send_ui_item_created(&self, node: &Node, uid: &str, item: &Arc<Node>) {
-		let _ = camera_item_ui_client::create_item(node, uid, item);
+	pub fn send_ui_item_created(&self, node: &Node, item: &Arc<Node>) {
+		let _ = camera_item_ui_client::create_item(node, item);
 	}
-	pub fn send_acceptor_item_created(&self, node: &Node, uid: &str, item: &Arc<Node>) {
-		let _ = camera_item_acceptor_client::capture_item(node, uid, item);
+	pub fn send_acceptor_item_created(&self, node: &Node, item: &Arc<Node>) {
+		let _ = camera_item_acceptor_client::capture_item(node, item);
 	}
 
 	pub fn update(&self, token: &MainThreadToken) {
@@ -166,6 +158,13 @@ impl CameraItem {
 		}
 	}
 }
+impl CameraItemAspect for CameraItem {}
+
+impl CameraItemAcceptorAspect for ItemAcceptor {
+	fn capture_item(node: Arc<Node>, _calling_client: Arc<Client>, item: Arc<Node>) -> Result<()> {
+		super::acceptor_capture_item_flex(node, item)
+	}
+}
 
 pub fn update(token: &MainThreadToken) {
 	for camera in ITEM_TYPE_INFO_CAMERA.items.get_valid_contents() {
@@ -176,31 +175,24 @@ pub fn update(token: &MainThreadToken) {
 	}
 }
 
-create_interface!(ItemInterface, ItemCameraInterfaceAspect, "/item/camera");
-impl ItemCameraInterfaceAspect for ItemInterface {
+create_interface!(ItemInterface);
+impl InterfaceAspect for ItemInterface {
 	#[doc = "Create a camera item at a specific location"]
 	fn create_camera_item(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		proj_matrix: ColumnMatrix4<f32>,
 		px_size: Vector2<u32>,
 	) -> Result<()> {
-		let parent_name = format!("/item/{}/item", ITEM_TYPE_INFO_CAMERA.type_name);
 		let space = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, false);
 
-		let node = Node::create_parent_name(&INTERNAL_CLIENT, &parent_name, &name, false)
-			.add_to_scenegraph()?;
+		let node = Node::from_id(&calling_client, id, false).add_to_scenegraph()?;
 		Spatial::add_to(&node, None, transform * space.global_transform(), false);
 		CameraItem::add_to(&node, proj_matrix.into(), px_size);
-		node.get_aspect::<Item>().unwrap().make_alias_named(
-			&calling_client,
-			&parent_name,
-			&name,
-		)?;
 		Ok(())
 	}
 
@@ -213,14 +205,14 @@ impl ItemCameraInterfaceAspect for ItemInterface {
 	fn create_camera_item_acceptor(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,
 	) -> Result<()> {
 		create_item_acceptor_flex(
 			calling_client,
-			name,
+			id,
 			parent,
 			transform,
 			&ITEM_TYPE_INFO_CAMERA,

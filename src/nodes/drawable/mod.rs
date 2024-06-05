@@ -40,10 +40,10 @@ static QUEUED_SKYLIGHT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static QUEUED_SKYTEX: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 stardust_xr_server_codegen::codegen_drawable_protocol!();
-create_interface!(DrawableInterface, DrawableInterfaceAspect, "/drawable");
+create_interface!(DrawableInterface);
 
 pub struct DrawableInterface;
-impl DrawableInterfaceAspect for DrawableInterface {
+impl InterfaceAspect for DrawableInterface {
 	fn set_sky_tex(_node: Arc<Node>, calling_client: Arc<Client>, tex: ResourceID) -> Result<()> {
 		let resource_path = get_resource_file(&tex, &calling_client, &[OsStr::new("hdr")])
 			.ok_or(eyre::eyre!("Could not find resource"))?;
@@ -65,13 +65,12 @@ impl DrawableInterfaceAspect for DrawableInterface {
 	fn create_lines(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		lines: Vec<Line>,
 	) -> Result<()> {
-		let node =
-			Node::create_parent_name(&calling_client, Self::CREATE_LINES_PARENT_PATH, &name, true);
+		let node = Node::from_id(&calling_client, id, true);
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 
@@ -84,13 +83,12 @@ impl DrawableInterfaceAspect for DrawableInterface {
 	fn load_model(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		model: ResourceID,
 	) -> Result<()> {
-		let node =
-			Node::create_parent_name(&calling_client, Self::LOAD_MODEL_PARENT_PATH, &name, true);
+		let node = Node::from_id(&calling_client, id, true);
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 		let node = node.add_to_scenegraph()?;
@@ -102,14 +100,13 @@ impl DrawableInterfaceAspect for DrawableInterface {
 	fn create_text(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		text: String,
 		style: TextStyle,
 	) -> Result<()> {
-		let node =
-			Node::create_parent_name(&calling_client, Self::CREATE_TEXT_PARENT_PATH, &name, true);
+		let node = Node::from_id(&calling_client, id, true);
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 

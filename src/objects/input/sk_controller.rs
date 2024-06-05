@@ -34,17 +34,7 @@ pub struct SkController {
 }
 impl SkController {
 	pub fn new(handed: Handed) -> Result<Self> {
-		let _node = Node::create_parent_name(
-			&INTERNAL_CLIENT,
-			"",
-			if handed == Handed::Left {
-				"controller_left"
-			} else {
-				"controller_right"
-			},
-			false,
-		)
-		.add_to_scenegraph()?;
+		let _node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph()?;
 		Spatial::add_to(&_node, None, Mat4::IDENTITY, false);
 		let model = Model::from_memory("cursor.glb", include_bytes!("cursor.glb"), None)?;
 		let tip = InputDataType::Tip(Tip::default());
@@ -135,7 +125,7 @@ impl SkController {
 				.into_iter()
 				// filter out all the disabled handlers
 				.filter(|handler| {
-					let Some(node) = handler.node.upgrade() else {
+					let Some(node) = handler.spatial.node() else {
 						return false;
 					};
 					node.enabled()

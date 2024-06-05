@@ -9,7 +9,6 @@ use crate::create_interface;
 use color_eyre::eyre::{eyre, Result};
 use glam::{vec3a, Mat4, Quat, Vec3};
 use mint::Vector3;
-use nanoid::nanoid;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use std::fmt::Debug;
@@ -40,20 +39,18 @@ impl Transform {
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
 pub struct Spatial {
-	uid: String,
-	pub(super) node: Weak<Node>,
+	node: Weak<Node>,
 	parent: Mutex<Option<Arc<Spatial>>>,
 	old_parent: Mutex<Option<Arc<Spatial>>>,
-	pub(super) transform: Mutex<Mat4>,
+	transform: Mutex<Mat4>,
 	zone: Mutex<Weak<Zone>>,
 	children: Registry<Spatial>,
-	pub(super) bounding_box_calc: OnceCell<fn(&Node) -> Bounds>,
+	pub bounding_box_calc: OnceCell<fn(&Node) -> Bounds>,
 }
 
 impl Spatial {
 	pub fn new(node: Weak<Node>, parent: Option<Arc<Spatial>>, transform: Mat4) -> Arc<Self> {
 		Arc::new(Spatial {
-			uid: nanoid!(),
 			node,
 			parent: Mutex::new(parent),
 			old_parent: Mutex::new(None),
@@ -232,7 +229,7 @@ impl Spatial {
 		self.zone
 			.lock()
 			.upgrade()
-			.and_then(|zone| zone.field.upgrade())
+			.map(|zone| zone.field.clone())
 			.map(|field| field.distance(self, vec3a(0.0, 0.0, 0.0)))
 			.unwrap_or(f32::MAX)
 	}
@@ -359,13 +356,12 @@ impl SpatialAspect for Spatial {
 }
 impl PartialEq for Spatial {
 	fn eq(&self, other: &Self) -> bool {
-		self.uid == other.uid
+		self.node.as_ptr() == other.node.as_ptr()
 	}
 }
 impl Debug for Spatial {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Spatial")
-			.field("uid", &self.uid)
 			.field("parent", &self.parent)
 			.field("old_parent", &self.old_parent)
 			.field("transform", &self.transform)
@@ -374,7 +370,7 @@ impl Debug for Spatial {
 }
 impl Drop for Spatial {
 	fn drop(&mut self) {
-		zone::release_drop(self);
+		zone::release(self);
 		ZONEABLE_REGISTRY.remove(self);
 	}
 }
@@ -397,26 +393,25 @@ pub fn parse_transform(transform: Transform, position: bool, rotation: bool, sca
 }
 
 pub struct SpatialInterface;
-impl SpatialInterfaceAspect for SpatialInterface {
+impl InterfaceAspect for SpatialInterface {
 	fn create_spatial(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		zoneable: bool,
 	) -> Result<()> {
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = parse_transform(transform, true, true, true);
-		let node = Node::create_parent_name(&calling_client, "/spatial/spatial", &name, true)
-			.add_to_scenegraph()?;
+		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 		Spatial::add_to(&node, Some(parent.clone()), transform, zoneable);
 		Ok(())
 	}
 	fn create_zone(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,
@@ -425,12 +420,11 @@ impl SpatialInterfaceAspect for SpatialInterface {
 		let transform = parse_transform(transform, true, true, false);
 		let field = field.get_aspect::<Field>()?;
 
-		let node = Node::create_parent_name(&calling_client, "/spatial/zone", &name, true)
-			.add_to_scenegraph()?;
+		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 		let space = Spatial::add_to(&node, Some(parent.clone()), transform, false);
-		Zone::add_to(&node, space, &field);
+		Zone::add_to(&node, space, field);
 		Ok(())
 	}
 }
 
-create_interface!(SpatialInterface, SpatialInterfaceAspect, "/spatial");
+create_interface!(SpatialInterface);

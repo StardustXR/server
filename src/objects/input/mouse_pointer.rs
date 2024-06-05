@@ -4,7 +4,7 @@ use crate::{
 		data::{
 			mask_matches, pulse_receiver_client, PulseSender, KEYMAPS, PULSE_RECEIVER_REGISTRY,
 		},
-		fields::{Field, Ray},
+		fields::Ray,
 		input::{InputDataType, InputHandler, InputMethod, Pointer, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
 		Node,
@@ -13,8 +13,8 @@ use crate::{
 use color_eyre::eyre::Result;
 use glam::{vec3, Mat4, Vec3};
 use mint::Vector2;
-use nanoid::nanoid;
 use serde::{Deserialize, Serialize};
+use slotmap::DefaultKey;
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
 use stereokit_rust::system::{Input, Key};
@@ -62,8 +62,10 @@ impl Default for KeyboardEvent {
 	}
 }
 
+#[allow(unused)]
 pub struct MousePointer {
 	node: Arc<Node>,
+	keymap: DefaultKey,
 	spatial: Arc<Spatial>,
 	pointer: Arc<InputMethod>,
 	capture: Option<Arc<InputHandler>>,
@@ -73,8 +75,7 @@ pub struct MousePointer {
 }
 impl MousePointer {
 	pub fn new() -> Result<Self> {
-		let node = Node::create_parent_name(&INTERNAL_CLIENT, "", &nanoid!(), false)
-			.add_to_scenegraph()?;
+		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph()?;
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 		let pointer = InputMethod::add_to(
 			&node,
@@ -82,8 +83,7 @@ impl MousePointer {
 			Datamap::from_typed(MouseEvent::default())?,
 		)?;
 
-		KEYMAPS.lock().insert(
-			"flatscreen".to_string(),
+		let keymap = KEYMAPS.lock().insert(
 			Keymap::new_from_names(&Context::new(0), "evdev", "", "", "", None, 0)
 				.unwrap()
 				.get_as_string(FORMAT_TEXT_V1),
@@ -97,6 +97,7 @@ impl MousePointer {
 
 		Ok(MousePointer {
 			node,
+			keymap,
 			spatial,
 			pointer,
 			capture: None,
@@ -206,7 +207,7 @@ impl MousePointer {
 				.into_iter()
 				// filter out all the disabled handlers
 				.filter(|handler| {
-					let Some(node) = handler.node.upgrade() else {
+					let Some(node) = handler.spatial.node() else {
 						return false;
 					};
 					node.enabled()
@@ -253,7 +254,7 @@ impl MousePointer {
 			.into_iter()
 			.filter(|rx| mask_matches(&rx.mask, &self.keyboard_sender.mask))
 			.map(|rx| {
-				let result = rx.field_node.get_aspect::<Field>().unwrap().ray_march(Ray {
+				let result = rx.field.ray_march(Ray {
 					origin: vec3(0.0, 0.0, 0.0),
 					direction: vec3(0.0, 0.0, -1.0),
 					space: self.spatial.clone(),
@@ -291,7 +292,7 @@ impl MousePointer {
 			if !self.keyboard_datamap.keys.is_empty() {
 				pulse_receiver_client::data(
 					&rx.node.upgrade().unwrap(),
-					&self.node.uid,
+					&self.node,
 					&Datamap::from_typed(&self.keyboard_datamap).unwrap(),
 				)
 				.unwrap();

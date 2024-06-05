@@ -10,7 +10,6 @@ pub mod root;
 pub mod spatial;
 
 use color_eyre::eyre::{eyre, Result};
-use nanoid::nanoid;
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
@@ -56,13 +55,12 @@ stardust_xr_server_codegen::codegen_node_protocol!();
 
 pub struct Node {
 	enabled: Arc<AtomicBool>,
-	pub(super) uid: String,
-	path: String,
+	id: u64,
 	client: Weak<Client>,
 	message_sender_handle: Option<MessageSenderHandle>,
-	// trailing_slash_pos: usize,
-	local_signals: Mutex<FxHashMap<String, Signal>>,
-	local_methods: Mutex<FxHashMap<String, Method>>,
+
+	local_signals: Mutex<FxHashMap<u64, Signal>>,
+	local_methods: Mutex<FxHashMap<u64, Method>>,
 	aliases: Registry<Alias>,
 	aspects: Aspects,
 	destroyable: bool,
@@ -71,32 +69,19 @@ impl Node {
 	pub fn get_client(&self) -> Option<Arc<Client>> {
 		self.client.upgrade()
 	}
-	// pub fn get_name(&self) -> &str {
-	// 	&self.path[self.trailing_slash_pos + 1..]
-	// }
-	pub fn get_path(&self) -> &str {
-		self.path.as_str()
+	pub fn get_id(&self) -> u64 {
+		self.id
 	}
 
-	pub fn create_parent_name(
-		client: &Arc<Client>,
-		parent: &str,
-		name: &str,
-		destroyable: bool,
-	) -> Self {
-		let mut path = parent.to_string();
-		path.push('/');
-		path.push_str(name);
-		Self::create_path(client, path, destroyable)
+	pub fn generate(client: &Arc<Client>, destroyable: bool) -> Self {
+		Self::from_id(client, client.generate_id(), destroyable)
 	}
-	pub fn create_path(client: &Arc<Client>, path: impl ToString, destroyable: bool) -> Self {
+	pub fn from_id(client: &Arc<Client>, id: u64, destroyable: bool) -> Self {
 		let node = Node {
 			enabled: Arc::new(AtomicBool::new(true)),
-			uid: nanoid!(),
 			client: Arc::downgrade(client),
 			message_sender_handle: client.message_sender_handle.clone(),
-			path: path.to_string(),
-			// trailing_slash_pos: parent.len(),
+			id,
 			local_signals: Default::default(),
 			local_methods: Default::default(),
 			aliases: Default::default(),
@@ -118,7 +103,7 @@ impl Node {
 	}
 	pub fn destroy(&self) {
 		if let Some(client) = self.get_client() {
-			client.scenegraph.remove_node(self.get_path());
+			client.scenegraph.remove_node(self.get_id());
 		}
 	}
 
@@ -136,11 +121,11 @@ impl Node {
 	// 	Ok(serialize(pid)?.into())
 	// }
 
-	pub fn add_local_signal(&self, name: &str, signal: Signal) {
-		self.local_signals.lock().insert(name.to_string(), signal);
+	pub fn add_local_signal(&self, id: u64, signal: Signal) {
+		self.local_signals.lock().insert(id, signal);
 	}
-	pub fn add_local_method(&self, name: &str, method: Method) {
-		self.local_methods.lock().insert(name.to_string(), method);
+	pub fn add_local_method(&self, id: u64, method: Method) {
+		self.local_methods.lock().insert(id, method);
 	}
 
 	pub fn add_aspect<A: Aspect>(&self, aspect: A) -> Arc<A> {
@@ -156,7 +141,7 @@ impl Node {
 	pub fn send_local_signal(
 		self: Arc<Self>,
 		calling_client: Arc<Client>,
-		method: &str,
+		method: u64,
 		message: Message,
 	) -> Result<(), ScenegraphError> {
 		if let Ok(alias) = self.get_aspect::<Alias>() {
@@ -172,7 +157,7 @@ impl Node {
 			let signal = self
 				.local_signals
 				.lock()
-				.get(method)
+				.get(&method)
 				.cloned()
 				.ok_or(ScenegraphError::SignalNotFound)?;
 			signal(self, calling_client, message).map_err(|error| ScenegraphError::SignalError {
@@ -183,7 +168,7 @@ impl Node {
 	pub fn execute_local_method(
 		self: Arc<Self>,
 		calling_client: Arc<Client>,
-		method: &str,
+		method: u64,
 		message: Message,
 		response: MethodResponseSender,
 	) {
@@ -206,14 +191,14 @@ impl Node {
 				response,
 			)
 		} else {
-			let Some(method) = self.local_methods.lock().get(method).cloned() else {
+			let Some(method) = self.local_methods.lock().get(&method).cloned() else {
 				response.send(Err(ScenegraphError::MethodNotFound));
 				return;
 			};
 			method(self, calling_client, message, response);
 		}
 	}
-	pub fn send_remote_signal(&self, method: &str, message: impl Into<Message>) -> Result<()> {
+	pub fn send_remote_signal(&self, method: u64, message: impl Into<Message>) -> Result<()> {
 		let message = message.into();
 		self.aliases
 			.get_valid_contents()
@@ -230,16 +215,14 @@ impl Node {
 					},
 				);
 			});
-		let path = self.path.clone();
-		let method = method.to_string();
 		if let Some(handle) = self.message_sender_handle.as_ref() {
-			handle.signal(path.as_str(), method.as_str(), &message.data, message.fds)?;
+			handle.signal(self.id, method, &message.data, message.fds)?;
 		}
 		Ok(())
 	}
 	pub async fn execute_remote_method_typed<S: Serialize, D: DeserializeOwned>(
 		&self,
-		method: &str,
+		method: u64,
 		input: S,
 		fds: Vec<OwnedFd>,
 	) -> Result<(D, Vec<OwnedFd>)> {
@@ -250,7 +233,7 @@ impl Node {
 
 		let serialized = serialize(input)?;
 		let result = message_sender_handle
-			.method(self.path.as_str(), method, &serialized, fds)?
+			.method(self.id, method, &serialized, fds)?
 			.await
 			.map_err(|e| eyre!(e))?;
 
@@ -261,10 +244,7 @@ impl Node {
 }
 impl Debug for Node {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("Node")
-			.field("uid", &self.uid)
-			.field("path", &self.path)
-			.finish()
+		f.debug_struct("Node").field("id", &self.id).finish()
 	}
 }
 impl OwnedAspect for Node {

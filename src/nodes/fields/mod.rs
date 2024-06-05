@@ -9,7 +9,10 @@ use self::sphere::SphereField;
 use self::torus::TorusField;
 
 use super::alias::AliasInfo;
-use super::spatial::Spatial;
+use super::spatial::{
+	Spatial, SPATIAL_REF_GET_LOCAL_BOUNDING_BOX_SERVER_OPCODE,
+	SPATIAL_REF_GET_RELATIVE_BOUNDING_BOX_SERVER_OPCODE, SPATIAL_REF_GET_TRANSFORM_SERVER_OPCODE,
+};
 use super::{Aspect, Node};
 use crate::core::client::Client;
 use crate::create_interface;
@@ -24,7 +27,15 @@ use std::sync::Arc;
 // TODO: get SDFs working properly with non-uniform scale and so on, output distance relative to the spatial it's compared against
 
 pub static FIELD_ALIAS_INFO: Lazy<AliasInfo> = Lazy::new(|| AliasInfo {
-	server_methods: vec!["distance", "normal", "closest_point", "ray_march"],
+	server_methods: vec![
+		SPATIAL_REF_GET_TRANSFORM_SERVER_OPCODE,
+		SPATIAL_REF_GET_LOCAL_BOUNDING_BOX_SERVER_OPCODE,
+		SPATIAL_REF_GET_RELATIVE_BOUNDING_BOX_SERVER_OPCODE,
+		FIELD_DISTANCE_SERVER_OPCODE,
+		FIELD_NORMAL_SERVER_OPCODE,
+		FIELD_CLOSEST_POINT_SERVER_OPCODE,
+		FIELD_RAY_MARCH_SERVER_OPCODE,
+	],
 	..Default::default()
 });
 
@@ -200,26 +211,20 @@ impl Deref for Field {
 	}
 }
 
-create_interface!(FieldInterface, FieldInterfaceAspect, "/field");
+create_interface!(FieldInterface);
 pub struct FieldInterface;
-impl FieldInterfaceAspect for FieldInterface {
+impl InterfaceAspect for FieldInterface {
 	fn create_box_field(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		size: mint::Vector3<f32>,
 	) -> Result<()> {
 		let transform = transform.to_mat4(true, true, false);
 		let parent = parent.get_aspect::<Spatial>()?;
-		let node = Node::create_parent_name(
-			&calling_client,
-			Self::CREATE_BOX_FIELD_PARENT_PATH,
-			&name,
-			true,
-		)
-		.add_to_scenegraph()?;
+		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 		Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		BoxField::add_to(&node, size);
 		Ok(())
@@ -228,7 +233,7 @@ impl FieldInterfaceAspect for FieldInterface {
 	fn create_cylinder_field(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		length: f32,
@@ -236,13 +241,7 @@ impl FieldInterfaceAspect for FieldInterface {
 	) -> Result<()> {
 		let transform = transform.to_mat4(true, true, false);
 		let parent = parent.get_aspect::<Spatial>()?;
-		let node = Node::create_parent_name(
-			&calling_client,
-			Self::CREATE_CYLINDER_FIELD_PARENT_PATH,
-			&name,
-			true,
-		)
-		.add_to_scenegraph()?;
+		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 		Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		CylinderField::add_to(&node, length, radius);
 		Ok(())
@@ -251,19 +250,13 @@ impl FieldInterfaceAspect for FieldInterface {
 	fn create_sphere_field(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		position: mint::Vector3<f32>,
 		radius: f32,
 	) -> Result<()> {
 		let parent = parent.get_aspect::<Spatial>()?;
-		let node = Node::create_parent_name(
-			&calling_client,
-			Self::CREATE_SPHERE_FIELD_PARENT_PATH,
-			&name,
-			true,
-		)
-		.add_to_scenegraph()?;
+		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 		Spatial::add_to(
 			&node,
 			Some(parent.clone()),
@@ -277,7 +270,7 @@ impl FieldInterfaceAspect for FieldInterface {
 	fn create_torus_field(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		radius_a: f32,
@@ -285,13 +278,7 @@ impl FieldInterfaceAspect for FieldInterface {
 	) -> Result<()> {
 		let transform = transform.to_mat4(true, true, false);
 		let parent = parent.get_aspect::<Spatial>()?;
-		let node = Node::create_parent_name(
-			&calling_client,
-			Self::CREATE_TORUS_FIELD_PARENT_PATH,
-			&name,
-			true,
-		)
-		.add_to_scenegraph()?;
+		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 		Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		TorusField::add_to(&node, radius_a, radius_b);
 		Ok(())

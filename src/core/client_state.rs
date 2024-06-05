@@ -1,5 +1,5 @@
 use super::client::{get_env, Client};
-use crate::nodes::{spatial::Spatial, Node};
+use crate::nodes::{root::ClientState, spatial::Spatial, Node};
 use glam::Mat4;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
@@ -11,7 +11,7 @@ use std::{
 };
 
 lazy_static::lazy_static! {
-	pub static ref CLIENT_STATES: Mutex<FxHashMap<String, Arc<ClientState>>> = Default::default();
+	pub static ref CLIENT_STATES: Mutex<FxHashMap<String, Arc<ClientStateParsed>>> = Default::default();
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,28 +31,27 @@ impl LaunchInfo {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ClientState {
+pub struct ClientStateParsed {
 	pub launch_info: Option<LaunchInfo>,
 	pub data: Vec<u8>,
 	pub root: Mat4,
 	pub spatial_anchors: FxHashMap<String, Mat4>,
 }
-impl ClientState {
-	pub fn from_deserialized(client: &Client, state: ClientStateInternal) -> Self {
-		ClientState {
+impl ClientStateParsed {
+	pub fn from_deserialized(client: &Client, state: ClientState) -> Self {
+		ClientStateParsed {
 			launch_info: LaunchInfo::from_client(client),
 			data: state.data.unwrap_or_default(),
-			root: Self::spatial_transform(client, &state.root.unwrap_or_default())
-				.unwrap_or_default(),
+			root: Self::spatial_transform(client, state.root).unwrap_or_default(),
 			spatial_anchors: state
 				.spatial_anchors
 				.into_iter()
-				.filter_map(|(k, v)| Some((k, Self::spatial_transform(client, &v)?)))
+				.filter_map(|(k, v)| Some((k, Self::spatial_transform(client, v)?)))
 				.collect(),
 		}
 	}
-	fn spatial_transform(client: &Client, path: &str) -> Option<Mat4> {
-		let node = client.scenegraph.get_node(path)?;
+	fn spatial_transform(client: &Client, id: u64) -> Option<Mat4> {
+		let node = client.scenegraph.get_node(id)?;
 		let spatial = node.get_aspect::<Spatial>().ok()?;
 		Some(spatial.global_transform())
 	}
@@ -79,24 +78,20 @@ impl ClientState {
 		std::fs::write(state_file_path, toml::to_string(&self).unwrap()).unwrap();
 	}
 
-	pub fn apply_to(&self, client: &Arc<Client>) -> ClientStateInternal {
+	pub fn apply_to(&self, client: &Arc<Client>) -> ClientState {
 		if let Some(root) = client.root.get() {
 			root.set_transform(self.root)
 		}
-		ClientStateInternal {
+		ClientState {
 			data: Some(self.data.clone()),
-			root: Some("/".to_string()),
+			root: 0,
 			spatial_anchors: self
 				.spatial_anchors
 				.iter()
 				.map(|(k, v)| {
-					(k.clone(), {
-						let node = Node::create_parent_name(client, "/spatial/anchor", k, true)
-							.add_to_scenegraph()
-							.unwrap();
-						Spatial::add_to(&node, None, *v, false);
-						k.clone()
-					})
+					let node = Node::generate(client, true).add_to_scenegraph().unwrap();
+					Spatial::add_to(&node, None, *v, false);
+					(k.clone(), node.get_id())
 				})
 				.collect(),
 		}
@@ -112,7 +107,7 @@ impl ClientState {
 		Some(command)
 	}
 }
-impl Default for ClientState {
+impl Default for ClientStateParsed {
 	fn default() -> Self {
 		Self {
 			launch_info: None,
@@ -121,11 +116,4 @@ impl Default for ClientState {
 			spatial_anchors: Default::default(),
 		}
 	}
-}
-
-#[derive(Default, Serialize, Deserialize)]
-pub struct ClientStateInternal {
-	data: Option<Vec<u8>>,
-	root: Option<String>,
-	spatial_anchors: FxHashMap<String, String>,
 }

@@ -101,20 +101,19 @@ pub fn update() {
 	}
 }
 
-create_interface!(AudioInterface, AudioInterfaceAspect, "/audio");
+create_interface!(AudioInterface);
 struct AudioInterface;
-impl AudioInterfaceAspect for AudioInterface {
+impl InterfaceAspect for AudioInterface {
 	#[doc = "Create a sound node. WAV and MP3 are supported."]
 	fn create_sound(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		name: String,
+		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		resource: ResourceID,
 	) -> Result<()> {
-		let node =
-			Node::create_parent_name(&calling_client, Self::CREATE_SOUND_PARENT_PATH, &name, true);
+		let node = Node::from_id(&calling_client, id, true);
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 		let node = node.add_to_scenegraph()?;

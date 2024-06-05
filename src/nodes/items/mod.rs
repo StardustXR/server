@@ -3,41 +3,23 @@ pub mod panel;
 
 use self::camera::CameraItem;
 use self::panel::PanelItemTrait;
-use super::fields::Field;
+use super::alias::AliasList;
+use super::fields::{Field, FIELD_ALIAS_INFO};
 use super::spatial::Spatial;
-use super::{Alias, Aspect, Message, Node};
+use super::{Alias, Aspect, Node};
 use crate::core::client::Client;
-use crate::core::node_collections::LifeLinkedNodeMap;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
 use crate::nodes::spatial::Transform;
 use color_eyre::eyre::{ensure, Result};
-use lazy_static::lazy_static;
-use nanoid::nanoid;
 use parking_lot::Mutex;
-use portable_atomic::Ordering;
-use stardust_xr::schemas::flex::deserialize;
 
 use std::hash::Hash;
 use std::sync::{Arc, Weak};
 
 stardust_xr_server_codegen::codegen_item_protocol!();
 
-lazy_static! {
-	static ref ITEM_ALIAS_LOCAL_SIGNALS: Vec<&'static str> = vec![
-		"get_bounds",
-		"get_transform",
-		"set_transform",
-		"set_spatial_parent",
-		"set_spatial_parent_in_place",
-		"set_zoneable",
-		"release",
-	];
-	static ref ITEM_ALIAS_LOCAL_METHODS: Vec<&'static str> = vec![];
-	static ref ITEM_ALIAS_REMOTE_SIGNALS: Vec<&'static str> = vec![];
-}
-
-pub fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
+fn capture(item: &Arc<Item>, acceptor: &Arc<ItemAcceptor>) {
 	if item.captured_acceptor.lock().strong_count() > 0 {
 		release(item);
 	}
@@ -60,14 +42,12 @@ fn release(item: &Item) {
 
 pub struct TypeInfo {
 	pub type_name: &'static str,
-	pub aliased_local_signals: Vec<&'static str>,
-	pub aliased_local_methods: Vec<&'static str>,
-	pub aliased_remote_signals: Vec<&'static str>,
+	pub alias_info: AliasInfo,
+	pub ui_node_id: u64,
 	pub ui: Mutex<Weak<ItemUI>>,
 	pub items: Registry<Item>,
 	pub acceptors: Registry<ItemAcceptor>,
-	pub new_acceptor_fn:
-		fn(node: &Node, uid: &str, acceptor: &Arc<Node>, acceptor_field: &Arc<Node>),
+	pub new_acceptor_fn: fn(node: &Node, acceptor: &Arc<Node>, acceptor_field: &Arc<Node>),
 }
 impl Hash for TypeInfo {
 	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -83,7 +63,6 @@ impl Eq for TypeInfo {}
 
 pub struct Item {
 	node: Weak<Node>,
-	uid: String,
 	type_info: &'static TypeInfo,
 	captured_acceptor: Mutex<Weak<ItemAcceptor>>,
 	pub specialization: ItemType,
@@ -91,20 +70,18 @@ pub struct Item {
 impl Item {
 	pub fn add_to(
 		node: &Arc<Node>,
-		uid: String,
 		type_info: &'static TypeInfo,
 		specialization: ItemType,
 	) -> Arc<Self> {
 		let item = Item {
 			node: Arc::downgrade(node),
-			uid,
 			type_info,
 			captured_acceptor: Default::default(),
 			specialization,
 		};
 		let item = type_info.items.add(item);
 
-		node.add_local_signal("release", Item::release_flex);
+		<Item as ItemAspect>::add_node_members(node);
 		if let Some(ui) = type_info.ui.lock().upgrade() {
 			ui.handle_create_item(&item);
 		}
@@ -122,53 +99,24 @@ impl Item {
 
 		item
 	}
-	fn make_alias_named(
-		&self,
-		client: &Arc<Client>,
-		parent: &str,
-		name: &str,
-	) -> Result<Arc<Node>> {
+	fn make_alias(&self, client: &Arc<Client>, alias_list: &AliasList) -> Result<Arc<Node>> {
 		Alias::create(
-			client,
-			parent,
-			name,
 			&self.node.upgrade().unwrap(),
-			AliasInfo {
-				server_signals: [
-					&self.type_info.aliased_local_signals,
-					ITEM_ALIAS_LOCAL_SIGNALS.as_slice(),
-				]
-				.concat(),
-				server_methods: [
-					&self.type_info.aliased_local_methods,
-					ITEM_ALIAS_LOCAL_METHODS.as_slice(),
-				]
-				.concat(),
-				client_signals: [
-					&self.type_info.aliased_remote_signals,
-					ITEM_ALIAS_REMOTE_SIGNALS.as_slice(),
-				]
-				.concat(),
-			},
+			client,
+			self.type_info.alias_info.clone() + ITEM_ASPECT_ALIAS_INFO.clone(),
+			Some(alias_list),
 		)
-	}
-	fn make_alias(&self, client: &Arc<Client>, parent: &str) -> Result<Arc<Node>> {
-		self.make_alias_named(client, parent, &self.uid)
-	}
-
-	fn release_flex(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		_message: Message,
-	) -> Result<()> {
-		let item = node.get_aspect::<Item>()?;
-		release(&item);
-
-		Ok(())
 	}
 }
 impl Aspect for Item {
 	const NAME: &'static str = "Item";
+}
+impl ItemAspect for Item {
+	fn release(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
+		let item = node.get_aspect::<Item>()?;
+		release(&item);
+		Ok(())
+	}
 }
 impl Drop for Item {
 	fn drop(&mut self) {
@@ -185,16 +133,16 @@ pub enum ItemType {
 	Panel(Arc<dyn PanelItemTrait>),
 }
 impl ItemType {
-	fn send_ui_item_created(&self, node: &Node, uid: &str, item: &Arc<Node>) {
+	fn send_ui_item_created(&self, node: &Node, item: &Arc<Node>) {
 		match self {
-			ItemType::Camera(c) => c.send_ui_item_created(node, uid, item),
-			ItemType::Panel(p) => p.send_ui_item_created(node, uid, item),
+			ItemType::Camera(c) => c.send_ui_item_created(node, item),
+			ItemType::Panel(p) => p.send_ui_item_created(node, item),
 		}
 	}
-	fn send_acceptor_item_created(&self, node: &Node, uid: &str, item: &Arc<Node>) {
+	fn send_acceptor_item_created(&self, node: &Node, item: &Arc<Node>) {
 		match self {
-			ItemType::Camera(c) => c.send_acceptor_item_created(node, uid, item),
-			ItemType::Panel(p) => p.send_acceptor_item_created(node, uid, item),
+			ItemType::Camera(c) => c.send_acceptor_item_created(node, item),
+			ItemType::Panel(p) => p.send_acceptor_item_created(node, item),
 		}
 	}
 }
@@ -212,9 +160,9 @@ impl ItemType {
 pub struct ItemUI {
 	node: Weak<Node>,
 	type_info: &'static TypeInfo,
-	item_aliases: LifeLinkedNodeMap<String>,
-	acceptor_aliases: LifeLinkedNodeMap<String>,
-	acceptor_field_aliases: LifeLinkedNodeMap<String>,
+	item_aliases: AliasList,
+	acceptor_aliases: AliasList,
+	acceptor_field_aliases: AliasList,
 }
 impl ItemUI {
 	fn add_to(node: &Arc<Node>, type_info: &'static TypeInfo) -> Result<()> {
@@ -226,9 +174,9 @@ impl ItemUI {
 		let ui = Arc::new(ItemUI {
 			node: Arc::downgrade(node),
 			type_info,
-			item_aliases: Default::default(),
-			acceptor_aliases: Default::default(),
-			acceptor_field_aliases: Default::default(),
+			item_aliases: AliasList::default(),
+			acceptor_aliases: AliasList::default(),
+			acceptor_field_aliases: AliasList::default(),
 		});
 		*type_info.ui.lock() = Arc::downgrade(&ui);
 		node.add_aspect_raw(ui.clone());
@@ -250,26 +198,44 @@ impl ItemUI {
 			return;
 		};
 
-		let Ok(item_alias) = item.make_alias(&client, &(node.get_path().to_string() + "/item"))
-		else {
+		let Ok(item_alias) = item.make_alias(&client, &self.item_aliases) else {
 			return;
 		};
-		self.item_aliases.add(item.uid.clone(), &item_alias);
 
-		item.specialization
-			.send_ui_item_created(&node, &item.uid, &item_alias);
+		item.specialization.send_ui_item_created(&node, &item_alias);
 	}
 	fn handle_capture_item(&self, item: &Item, acceptor: &ItemAcceptor) {
-		let _ =
-			item_ui_client::capture_item(&self.node.upgrade().unwrap(), &item.uid, &acceptor.uid);
+		let Some(item_alias) = self.item_aliases.get(item) else {
+			return;
+		};
+		let Some(acceptor_alias) = self.acceptor_aliases.get(acceptor) else {
+			return;
+		};
+		let _ = item_ui_client::capture_item(
+			&self.node.upgrade().unwrap(),
+			item_alias.id,
+			acceptor_alias.id,
+		);
 	}
 	fn handle_release_item(&self, item: &Item, acceptor: &ItemAcceptor) {
-		let _ =
-			item_ui_client::release_item(&self.node.upgrade().unwrap(), &item.uid, &acceptor.uid);
+		let Some(item_alias) = self.item_aliases.get(item) else {
+			return;
+		};
+		let Some(acceptor_alias) = self.acceptor_aliases.get(acceptor) else {
+			return;
+		};
+		let _ = item_ui_client::release_item(
+			&self.node.upgrade().unwrap(),
+			item_alias.id,
+			acceptor_alias.id,
+		);
 	}
 	fn handle_destroy_item(&self, item: &Item) {
-		let _ = item_ui_client::destroy_item(&self.node.upgrade().unwrap(), &item.uid);
-		self.item_aliases.remove(&item.uid);
+		let Some(item_alias) = self.item_aliases.get(item) else {
+			return;
+		};
+		let _ = item_ui_client::destroy_item(&self.node.upgrade().unwrap(), item_alias.id);
+		self.item_aliases.remove_aspect(item);
 	}
 	fn handle_create_acceptor(&self, acceptor: &ItemAcceptor) {
 		let Some(node) = self.node.upgrade() else {
@@ -279,28 +245,40 @@ impl ItemUI {
 			return;
 		};
 
-		let Ok((acceptor_alias, acceptor_field_alias)) = acceptor.make_aliases(
+		let Some(acceptor_node) = acceptor.spatial.node() else {
+			return;
+		};
+		let Ok(acceptor_alias) = Alias::create(
+			&acceptor_node,
 			&client,
-			&format!("/item/{}/acceptor", self.type_info.type_name),
+			ITEM_ACCEPTOR_ASPECT_ALIAS_INFO.clone(),
+			Some(&self.acceptor_aliases),
 		) else {
 			return;
 		};
-		self.acceptor_aliases
-			.add(acceptor.uid.clone(), &acceptor_alias);
-		self.acceptor_field_aliases
-			.add(acceptor.uid.clone(), &acceptor_field_alias);
 
-		(acceptor.type_info.new_acceptor_fn)(
-			&node,
-			&acceptor.uid,
-			&acceptor_alias,
-			&acceptor_field_alias,
-		);
+		let Some(acceptor_field_node) = acceptor.field.spatial_ref().node() else {
+			return;
+		};
+		let Ok(acceptor_field_alias) = Alias::create(
+			&acceptor_field_node,
+			&client,
+			FIELD_ALIAS_INFO.clone(),
+			Some(&self.acceptor_aliases),
+		) else {
+			return;
+		};
+
+		(acceptor.type_info.new_acceptor_fn)(&node, &acceptor_alias, &acceptor_field_alias);
 	}
 	fn handle_destroy_acceptor(&self, acceptor: &ItemAcceptor) {
-		let _ = item_ui_client::destroy_acceptor(&self.node.upgrade().unwrap(), &acceptor.uid);
-		self.acceptor_aliases.remove(&acceptor.uid);
-		self.acceptor_field_aliases.remove(&acceptor.uid);
+		let acceptor_alias = self.acceptor_aliases.get(acceptor).unwrap();
+		let _ = item_ui_client::destroy_acceptor(&self.node.upgrade().unwrap(), acceptor_alias.id);
+
+		self.acceptor_aliases
+			.remove_aspect(acceptor.spatial.as_ref());
+		self.acceptor_field_aliases
+			.remove_aspect(acceptor.field.as_ref());
 	}
 }
 impl Aspect for ItemUI {
@@ -313,69 +291,29 @@ impl Drop for ItemUI {
 }
 
 pub struct ItemAcceptor {
-	uid: String,
-	node: Weak<Node>,
+	spatial: Arc<Spatial>,
 	pub type_info: &'static TypeInfo,
 	field: Arc<Field>,
-	accepted_aliases: LifeLinkedNodeMap<String>,
+	accepted_aliases: AliasList,
 	accepted_registry: Registry<Item>,
 }
 impl ItemAcceptor {
 	fn add_to(node: &Arc<Node>, type_info: &'static TypeInfo, field: Arc<Field>) {
 		let acceptor = type_info.acceptors.add(ItemAcceptor {
-			uid: nanoid!(),
-			node: Arc::downgrade(node),
+			spatial: node.get_aspect::<Spatial>().unwrap(),
 			type_info,
 			field,
-			accepted_aliases: Default::default(),
+			accepted_aliases: AliasList::default(),
 			accepted_registry: Registry::new(),
 		});
-		node.add_local_signal("capture", ItemAcceptor::capture_flex);
 		if let Some(ui) = type_info.ui.lock().upgrade() {
 			ui.handle_create_acceptor(&acceptor);
 		}
-		node.add_aspect_raw(acceptor);
+		node.add_aspect_raw(acceptor.clone());
 	}
 
-	fn capture_flex(node: Arc<Node>, calling_client: Arc<Client>, message: Message) -> Result<()> {
-		if !node.enabled.load(Ordering::Relaxed) {
-			return Ok(());
-		}
-
-		let acceptor = node.get_aspect::<ItemAcceptor>().unwrap();
-		let item_path: &str = deserialize(message.as_ref())?;
-		let item_node = calling_client.get_node("Item", item_path)?;
-		let item = item_node.get_aspect::<Item>()?;
-		capture(&item, &acceptor);
-
-		Ok(())
-	}
-
-	fn make_aliases(&self, client: &Arc<Client>, parent: &str) -> Result<(Arc<Node>, Arc<Node>)> {
-		let acceptor_node = &self.node.upgrade().unwrap();
-		let acceptor_alias = Alias::create(
-			client,
-			parent,
-			&self.uid,
-			acceptor_node,
-			AliasInfo {
-				server_signals: vec!["capture"],
-				..Default::default()
-			},
-		)?;
-
-		let acceptor_field_alias = Alias::create(
-			client,
-			acceptor_alias.get_path(),
-			"field",
-			&self.field.spatial_ref().node.upgrade().unwrap(),
-			AliasInfo::default(),
-		)?;
-
-		Ok((acceptor_alias, acceptor_field_alias))
-	}
 	fn handle_capture(&self, item: &Arc<Item>) {
-		let Some(node) = self.node.upgrade() else {
+		let Some(node) = self.spatial.node() else {
 			return;
 		};
 		let Some(client) = node.get_client() else {
@@ -383,21 +321,22 @@ impl ItemAcceptor {
 		};
 
 		self.accepted_registry.add_raw(item);
-		let Ok(alias_node) = item.make_alias(&client, &node.path) else {
+		let Ok(alias_node) = item.make_alias(&client, &self.accepted_aliases) else {
 			return;
 		};
-		self.accepted_aliases.add(item.uid.clone(), &alias_node);
 
 		item.specialization
-			.send_acceptor_item_created(&node, &item.uid, &alias_node);
+			.send_acceptor_item_created(&node, &alias_node);
 	}
 	fn handle_release(&self, item: &Item) {
-		if let Some(node) = self.node.upgrade() {
-			let _ = item_acceptor_client::release_item(&node, &item.uid);
-		}
-
 		self.accepted_registry.remove(item);
-		self.accepted_aliases.remove(&item.uid);
+		self.accepted_aliases.remove_aspect(item);
+
+		let Some(node) = self.spatial.node() else {
+			return;
+		};
+		let alias = self.accepted_aliases.get(item).unwrap();
+		let _ = item_acceptor_client::release_item(&node, alias.id);
 	}
 }
 impl Aspect for ItemAcceptor {
@@ -420,14 +359,13 @@ pub fn register_item_ui_flex(
 	calling_client: Arc<Client>,
 	type_info: &'static TypeInfo,
 ) -> Result<()> {
-	let ui = Node::create_parent_name(&calling_client, "/item", type_info.type_name, true)
-		.add_to_scenegraph()?;
+	let ui = Node::from_id(&calling_client, type_info.ui_node_id, true).add_to_scenegraph()?;
 	ItemUI::add_to(&ui, type_info)?;
 	Ok(())
 }
 fn create_item_acceptor_flex(
 	calling_client: Arc<Client>,
-	name: String,
+	id: u64,
 	parent: Arc<Node>,
 	transform: Transform,
 	type_info: &'static TypeInfo,
@@ -437,17 +375,19 @@ fn create_item_acceptor_flex(
 	let field = field.get_aspect::<Field>()?;
 	let transform = transform.to_mat4(true, true, false);
 
-	let node = Node::create_parent_name(
-		&calling_client,
-		&format!("/item/{}/acceptor", type_info.type_name),
-		&name,
-		true,
-	)
-	.add_to_scenegraph()?;
+	let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(space.clone()), transform, false);
 	ItemAcceptor::add_to(&node, type_info, field);
 	Ok(())
 }
 
+fn acceptor_capture_item_flex(node: Arc<Node>, item: Arc<Node>) -> Result<()> {
+	let acceptor = node.get_aspect::<ItemAcceptor>()?;
+	let item = item.get_aspect::<Item>()?;
+	capture(&item, &acceptor);
+
+	Ok(())
+}
+
 struct ItemInterface;
-// create_interface!(ItemInterface, ItemInterfaceAspect, "/item");
+// create_interface!(ItemInterface);

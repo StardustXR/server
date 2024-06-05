@@ -17,7 +17,7 @@ use crate::wayland::X_DISPLAY;
 
 use self::core::eventloop::EventLoop;
 use clap::Parser;
-use core::client_state::ClientState;
+use core::client_state::ClientStateParsed;
 use directories::ProjectDirs;
 use once_cell::sync::OnceCell;
 use stardust_xr::server;
@@ -364,8 +364,8 @@ fn restore_session(
 	};
 	clients
 		.filter_map(Result::ok)
-		.filter_map(|c| ClientState::from_file(&c.path()))
-		.filter_map(ClientState::launch_command)
+		.filter_map(|c| ClientStateParsed::from_file(&c.path()))
+		.filter_map(ClientStateParsed::launch_command)
 		.filter_map(|startup_command| {
 			run_client(
 				startup_command,

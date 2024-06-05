@@ -1,166 +1,147 @@
-use super::{Spatial, ZoneAspect, ZONEABLE_REGISTRY};
+use super::{
+	Spatial, ZoneAspect, SPATIAL_ASPECT_ALIAS_INFO, SPATIAL_REF_ASPECT_ALIAS_INFO,
+	ZONEABLE_REGISTRY,
+};
 use crate::{
 	core::{client::Client, registry::Registry},
 	nodes::{
-		alias::{Alias, AliasInfo},
+		alias::{get_original, Alias, AliasList},
 		fields::Field,
 		Aspect, Node,
 	},
 };
+use color_eyre::eyre::Result;
 use glam::vec3a;
-use parking_lot::Mutex;
-use rustc_hash::FxHashMap;
 use std::sync::{Arc, Weak};
 
 pub fn capture(spatial: &Arc<Spatial>, zone: &Arc<Zone>) {
 	let old_distance = spatial.zone_distance();
-	let new_distance = zone
-		.field
-		.upgrade()
-		.map(|field| field.distance(spatial, vec3a(0.0, 0.0, 0.0)))
-		.unwrap_or(f32::MAX);
+	let new_distance = zone.field.distance(spatial, vec3a(0.0, 0.0, 0.0));
 	if new_distance.abs() < old_distance.abs() {
 		release(spatial);
 		*spatial.old_parent.lock() = spatial.get_parent();
 		*spatial.zone.lock() = Arc::downgrade(zone);
-		zone.captured.add_raw(spatial);
-		let Some(node) = zone.spatial.node.upgrade() else {
+		let Some(zone_node) = zone.spatial.node.upgrade() else {
 			return;
 		};
-		let _ = super::zone_client::capture(&node, &spatial.uid);
+		let Some(spatial_node) = spatial.node.upgrade() else {
+			return;
+		};
+		let Ok(spatial_alias) = Alias::create(
+			&spatial_node,
+			&zone_node.get_client().unwrap(),
+			SPATIAL_ASPECT_ALIAS_INFO.clone(),
+			Some(&zone.captured),
+		) else {
+			return;
+		};
+		let _ = super::zone_client::capture(&zone_node, &spatial_alias);
 	}
 }
-pub fn release(spatial: &Arc<Spatial>) {
+pub fn release(spatial: &Spatial) {
+	let Some(spatial_node) = spatial.node.upgrade() else {
+		return;
+	};
+	let spatial = spatial_node.get_aspect::<Spatial>().unwrap();
+
 	let _ = spatial.set_spatial_parent_in_place(spatial.old_parent.lock().take().as_ref());
 	let mut spatial_zone = spatial.zone.lock();
+
 	if let Some(spatial_zone) = spatial_zone.upgrade() {
+		spatial_zone.captured.remove_aspect(spatial.as_ref());
 		let Some(node) = spatial_zone.spatial.node.upgrade() else {
 			return;
 		};
-		spatial_zone.captured.remove(spatial);
-		let _ = super::zone_client::release(&node, &spatial.uid);
+		let _ = super::zone_client::release(&node, spatial_node.id);
 	}
 	*spatial_zone = Weak::new();
-}
-pub(super) fn release_drop(spatial: &Spatial) {
-	let spatial_zone = spatial.zone.lock();
-	if let Some(spatial_zone) = spatial_zone.upgrade() {
-		let Some(node) = spatial_zone.spatial.node.upgrade() else {
-			return;
-		};
-		spatial_zone.captured.remove(spatial);
-		let _ = super::zone_client::release(&node, &spatial.uid);
-	}
 }
 
 pub struct Zone {
 	spatial: Arc<Spatial>,
-	pub field: Weak<Field>,
-	zoneables: Mutex<FxHashMap<String, Arc<Node>>>,
-	captured: Registry<Spatial>,
+	pub field: Arc<Field>,
+	intersecting_spatials: Registry<Spatial>,
+	intersecting: AliasList,
+	captured: AliasList,
 }
 impl Zone {
-	pub fn add_to(node: &Arc<Node>, spatial: Arc<Spatial>, field: &Arc<Field>) -> Arc<Zone> {
+	pub fn add_to(node: &Arc<Node>, spatial: Arc<Spatial>, field: Arc<Field>) -> Arc<Zone> {
 		let zone = Arc::new(Zone {
 			spatial,
-			field: Arc::downgrade(field),
-			zoneables: Mutex::new(FxHashMap::default()),
-			captured: Registry::new(),
+			field,
+			intersecting_spatials: Registry::default(),
+			intersecting: AliasList::default(),
+			captured: AliasList::default(),
 		});
 		<Zone as ZoneAspect>::add_node_members(node);
 		node.add_aspect_raw(zone.clone());
 		zone
+	}
+	pub fn update(&self) -> Result<()> {
+		let node = self.spatial.node().unwrap();
+
+		let current_zoneables = Registry::new();
+		for zoneable in ZONEABLE_REGISTRY.get_valid_contents() {
+			let distance = self.field.distance(&zoneable, [0.0; 3].into());
+			if distance > 0.0 {
+				continue;
+			}
+			if let Some(zone) = zoneable.zone.lock().upgrade() {
+				let zoneable_distance = zone.field.distance(&zoneable, [0.0; 3].into());
+				if zoneable_distance < distance {
+					continue;
+				}
+			}
+			current_zoneables.add_raw(&zoneable);
+		}
+
+		let (added, removed) =
+			Registry::get_changes(&self.intersecting_spatials, &current_zoneables);
+		for added in added {
+			let Some(added_node) = added.node() else {
+				continue;
+			};
+			let Ok(alias) = Alias::create(
+				&added_node,
+				&self.spatial.node().unwrap().get_client().unwrap(),
+				SPATIAL_REF_ASPECT_ALIAS_INFO.clone(),
+				Some(&self.intersecting),
+			) else {
+				continue;
+			};
+			let _ = super::zone_client::enter(&node, &alias);
+		}
+		for removed in removed {
+			let Some(removed_node) = removed.node() else {
+				continue;
+			};
+			release(&removed);
+			let _ = super::zone_client::leave(&node, removed_node.id);
+			self.intersecting.remove_aspect(removed.as_ref());
+		}
+		self.intersecting_spatials.set(&current_zoneables);
+
+		Ok(())
 	}
 }
 impl Aspect for Zone {
 	const NAME: &'static str = "Zone";
 }
 impl ZoneAspect for Zone {
-	fn update(node: Arc<Node>, _calling_client: Arc<Client>) -> color_eyre::eyre::Result<()> {
+	fn update(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
 		let zone = node.get_aspect::<Zone>()?;
-		let Some(field) = zone.field.upgrade() else {
-			return Err(color_eyre::eyre::eyre!("Zone's field has been destroyed"));
-		};
-		let Some((zone_client, zone_node)) = zone
-			.spatial
-			.node
-			.upgrade()
-			.and_then(|n| n.get_client().zip(Some(n)))
-		else {
-			return Err(color_eyre::eyre::eyre!("No client on node?"));
-		};
-		let mut old_zoneables = zone.zoneables.lock();
-		for (_uid, zoneable) in old_zoneables.iter() {
-			zoneable.destroy();
-		}
-		let captured = zone.captured.get_valid_contents();
-		let zoneables = ZONEABLE_REGISTRY
-			.get_valid_contents()
-			.into_iter()
-			.filter(|zoneable| zoneable.node.upgrade().is_some())
-			.filter(|zoneable| {
-				if captured
-					.iter()
-					.any(|captured| Arc::ptr_eq(captured, zoneable))
-				{
-					return true;
-				}
-				let spatial_zone_distance = zoneable.zone_distance();
-				let self_zone_distance = field.distance(zoneable, vec3a(0.0, 0.0, 0.0));
-				self_zone_distance < 0.0 && spatial_zone_distance > self_zone_distance
-			})
-			.filter_map(|zoneable| {
-				let alias = Alias::create(
-					&zone_client,
-					zone_node.get_path(),
-					&zoneable.uid,
-					&zoneable.node.upgrade().unwrap(),
-					AliasInfo {
-						server_signals: vec![
-							"set_transform",
-							"set_spatial_parent",
-							"set_spatial_parent_in_place",
-						],
-						server_methods: vec!["get_bounds", "get_transform"],
-						..Default::default()
-					},
-				)
-				.ok()?;
-				Some((zoneable.uid.clone(), alias))
-			})
-			.collect::<FxHashMap<String, Arc<Node>>>();
-
-		for (uid, zoneable) in zoneables
-			.iter()
-			.filter(|(k, _)| !old_zoneables.contains_key(*k))
-		{
-			super::zone_client::enter(&node, uid, zoneable)?;
-		}
-		for left_uid in old_zoneables.keys().filter(|k| !zoneables.contains_key(*k)) {
-			super::zone_client::leave(&node, &left_uid)?;
-		}
-
-		*old_zoneables = zoneables;
-
+		let _ = zone.update();
 		Ok(())
 	}
 
-	fn capture(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		spatial: Arc<Node>,
-	) -> color_eyre::eyre::Result<()> {
+	fn capture(node: Arc<Node>, _calling_client: Arc<Client>, spatial: Arc<Node>) -> Result<()> {
 		let zone = node.get_aspect::<Zone>()?;
 		let spatial = spatial.get_aspect()?;
 		capture(&spatial, &zone);
 		Ok(())
 	}
 
-	fn release(
-		_node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		spatial: Arc<Node>,
-	) -> color_eyre::eyre::Result<()> {
+	fn release(_node: Arc<Node>, _calling_client: Arc<Client>, spatial: Arc<Node>) -> Result<()> {
 		let spatial = spatial.get_aspect()?;
 		release(&spatial);
 		Ok(())
@@ -168,7 +149,13 @@ impl ZoneAspect for Zone {
 }
 impl Drop for Zone {
 	fn drop(&mut self) {
-		for captured in self.captured.get_valid_contents() {
+		for captured in self
+			.captured
+			.get_aliases()
+			.into_iter()
+			.filter_map(get_original)
+			.filter_map(|n| n.get_aspect::<Spatial>().ok())
+		{
 			release(&captured);
 		}
 	}
