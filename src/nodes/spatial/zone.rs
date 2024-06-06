@@ -153,7 +153,7 @@ impl Drop for Zone {
 			.captured
 			.get_aliases()
 			.into_iter()
-			.filter_map(get_original)
+			.filter_map(|n| get_original(n, false))
 			.filter_map(|n| n.get_aspect::<Spatial>().ok())
 		{
 			release(&captured);

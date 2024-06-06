@@ -74,7 +74,7 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 			.filter_map(|pair| pair.1.upgrade())
 			.collect()
 	}
-	pub fn retain<F: Fn(&T) -> bool>(&self, f: F) {
+	pub fn retain<F: Fn(&Arc<T>) -> bool>(&self, f: F) {
 		self.lock().retain(|_, v| {
 			let Some(v) = v.upgrade() else {
 				return true;

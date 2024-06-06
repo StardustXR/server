@@ -2,7 +2,12 @@ use super::{
 	input_handler_client, InputHandlerAspect, InputLink, INPUT_HANDLER_REGISTRY,
 	INPUT_METHOD_REGISTRY,
 };
-use crate::nodes::{alias::AliasList, fields::Field, spatial::Spatial, Aspect, Node};
+use crate::nodes::{
+	alias::AliasList,
+	fields::Field,
+	spatial::Spatial,
+	Aspect, Node,
+};
 use color_eyre::eyre::Result;
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
@@ -21,7 +26,6 @@ impl InputHandler {
 			method_aliases: AliasList::default(),
 		};
 		for method in INPUT_METHOD_REGISTRY.get_valid_contents() {
-			method.make_alias(&handler);
 			method.handle_new_handler(&handler);
 		}
 		let handler = INPUT_HANDLER_REGISTRY.add(handler);

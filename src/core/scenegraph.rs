@@ -1,10 +1,9 @@
-use crate::nodes::alias::Alias;
+use crate::nodes::alias::get_original;
 use crate::nodes::Node;
 use crate::{core::client::Client, nodes::Message};
 use color_eyre::eyre::Result;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use portable_atomic::Ordering;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
 use stardust_xr::scenegraph;
@@ -38,15 +37,8 @@ impl Scenegraph {
 	}
 
 	pub fn get_node(&self, node: u64) -> Option<Arc<Node>> {
-		let mut node = self.nodes.lock().get(&node)?.clone();
-		while let Ok(alias) = node.get_aspect::<Alias>() {
-			if alias.enabled.load(Ordering::Acquire) {
-				node = alias.original.upgrade()?;
-			} else {
-				return None;
-			}
-		}
-		Some(node)
+		let node = self.nodes.lock().get(&node)?.clone();
+		get_original(node, true)
 	}
 
 	pub fn remove_node(&self, node: u64) -> Option<Arc<Node>> {

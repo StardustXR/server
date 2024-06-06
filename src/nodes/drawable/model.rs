@@ -8,7 +8,6 @@ use color_eyre::eyre::{bail, eyre, Result};
 use glam::{Mat4, Vec2, Vec3};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
 use send_wrapper::SendWrapper;
 use stardust_xr::values::ResourceID;
@@ -244,7 +243,6 @@ impl ModelPartAspect for ModelPart {
 }
 
 pub struct Model {
-	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
 	_resource_id: ResourceID,
 	sk_model: OnceCell<SKModel>,
@@ -260,7 +258,6 @@ impl Model {
 		.ok_or_else(|| eyre!("Resource not found"))?;
 
 		let model = Arc::new(Model {
-			enabled: node.enabled.clone(),
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			_resource_id: resource_id,
 			sk_model: OnceCell::new(),
@@ -290,7 +287,7 @@ impl Model {
 		}
 		drop(parts);
 
-		if self.enabled.load(Ordering::Relaxed) {
+		if self.space.node().unwrap().enabled() {
 			sk_model.draw(token, self.space.global_transform(), None, None);
 		}
 	}

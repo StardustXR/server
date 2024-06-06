@@ -6,7 +6,6 @@ use crate::{
 use color_eyre::eyre::Result;
 use glam::Vec3;
 use parking_lot::Mutex;
-use portable_atomic::{AtomicBool, Ordering};
 use prisma::Lerp;
 use std::{collections::VecDeque, sync::Arc};
 use stereokit_rust::{
@@ -16,7 +15,6 @@ use stereokit_rust::{
 static LINES_REGISTRY: Registry<Lines> = Registry::new();
 
 pub struct Lines {
-	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
 	data: Mutex<Vec<Line>>,
 }
@@ -39,7 +37,6 @@ impl Lines {
 			});
 
 		let lines = LINES_REGISTRY.add(Lines {
-			enabled: node.enabled.clone(),
 			space: node.get_aspect::<Spatial>()?.clone(),
 			data: Mutex::new(lines),
 		});
@@ -104,7 +101,7 @@ impl Drop for Lines {
 
 pub fn draw_all(token: &MainThreadToken) {
 	for lines in LINES_REGISTRY.get_valid_contents() {
-		if lines.enabled.load(Ordering::Relaxed) {
+		if lines.space.node().unwrap().enabled() {
 			lines.draw(token);
 		}
 	}

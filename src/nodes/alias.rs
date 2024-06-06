@@ -1,7 +1,6 @@
 use super::{Aspect, Node};
 use crate::core::{client::Client, registry::Registry};
 use color_eyre::eyre::Result;
-use portable_atomic::AtomicBool;
 use std::{
 	ops::Add,
 	sync::{Arc, Weak},
@@ -23,12 +22,11 @@ impl Add for AliasInfo {
 	}
 }
 
+#[derive(Debug)]
 pub struct Alias {
-	pub enabled: Arc<AtomicBool>,
 	pub(super) node: Weak<Node>,
-	pub original: Weak<Node>,
-
-	pub info: AliasInfo,
+	pub(super) original: Weak<Node>,
+	pub(super) info: AliasInfo,
 }
 impl Alias {
 	pub fn create(
@@ -61,7 +59,6 @@ impl Alias {
 
 	fn add_to(new_node: &Arc<Node>, original: &Arc<Node>, info: AliasInfo) -> Result<()> {
 		let alias = Alias {
-			enabled: Arc::new(AtomicBool::new(true)),
 			node: Arc::downgrade(&new_node),
 			original: Arc::downgrade(original),
 			info,
@@ -75,11 +72,14 @@ impl Aspect for Alias {
 	const NAME: &'static str = "Alias";
 }
 
-pub fn get_original(node: Arc<Node>) -> Option<Arc<Node>> {
+pub fn get_original(node: Arc<Node>, stop_on_disabled: bool) -> Option<Arc<Node>> {
 	let Ok(alias) = node.get_aspect::<Alias>() else {
 		return Some(node);
 	};
-	get_original(alias.original.upgrade()?)
+	if stop_on_disabled && !node.enabled() {
+		return None;
+	}
+	get_original(alias.original.upgrade()?, stop_on_disabled)
 }
 
 #[derive(Debug, Default, Clone)]
@@ -89,19 +89,26 @@ impl AliasList {
 		self.0.add_raw(node);
 	}
 	pub fn get<A: Aspect>(&self, aspect: &A) -> Option<Arc<Node>> {
-		self.0.get_valid_contents().into_iter().find(|node| {
-			let Ok(aspect2) = node.get_aspect::<A>() else {
-				return false;
-			};
-			Arc::as_ptr(&aspect2) != (aspect as *const A)
-		})
+		self.0
+			.get_valid_contents()
+			.into_iter()
+			.filter_map(|n| get_original(n, false))
+			.find(|node| {
+				let Ok(aspect2) = node.get_aspect::<A>() else {
+					return false;
+				};
+				Arc::as_ptr(&aspect2) == (aspect as *const A)
+			})
 	}
 	pub fn get_aliases(&self) -> Vec<Arc<Node>> {
 		self.0.get_valid_contents()
 	}
 	pub fn remove_aspect<A: Aspect>(&self, aspect: &A) {
 		self.0.retain(|node| {
-			let Ok(aspect2) = node.get_aspect::<A>() else {
+			let Some(original) = get_original(node.clone(), false) else {
+				return false;
+			};
+			let Ok(aspect2) = original.get_aspect::<A>() else {
 				return false;
 			};
 			Arc::as_ptr(&aspect2) != (aspect as *const A)

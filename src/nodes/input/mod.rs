@@ -10,12 +10,10 @@ pub use method::*;
 use super::fields::Field;
 use super::spatial::Spatial;
 use crate::create_interface;
-use crate::nodes::alias::Alias;
 use crate::{core::client::Client, nodes::Node};
 use crate::{core::registry::Registry, nodes::spatial::Transform};
 use color_eyre::eyre::Result;
 use glam::Mat4;
-use portable_atomic::Ordering;
 use stardust_xr::values::Datamap;
 use std::sync::{Arc, Weak};
 use tracing::{debug_span, instrument};
@@ -126,14 +124,20 @@ pub fn process_input() {
 		INPUT_METHOD_REGISTRY
 			.get_valid_contents()
 			.into_iter()
-			.filter(|method| *method.enabled.lock())
+			.filter(|method| {
+				let Some(node) = method.spatial.node() else {
+					return false;
+				};
+				node.enabled()
+			})
 	});
+	for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
+		for method_alias in handler.method_aliases.get_aliases() {
+			method_alias.set_enabled(false);
+		}
+	}
 	// const LIMIT: usize = 50;
 	for method in methods {
-		for alias in method.node.upgrade().unwrap().aliases.get_valid_contents() {
-			alias.enabled.store(false, Ordering::Release);
-		}
-
 		debug_span!("Process input method").in_scope(|| {
 			// Get all valid input handlers and convert them to InputLink objects
 			let input_links: Vec<InputLink> = debug_span!("Generate input links").in_scope(|| {
@@ -158,9 +162,8 @@ pub fn process_input() {
 					.handler
 					.method_aliases
 					.get(input_link.method.as_ref())
-					.and_then(|a| a.get_aspect::<Alias>().ok())
 				{
-					method_alias.enabled.store(true, Ordering::Release);
+					method_alias.set_enabled(true);
 				}
 				input_link.send_input(
 					i as u32,

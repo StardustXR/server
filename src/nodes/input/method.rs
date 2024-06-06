@@ -14,13 +14,10 @@ use crate::{
 };
 use color_eyre::eyre::Result;
 use parking_lot::Mutex;
-use portable_atomic::Ordering;
 use stardust_xr::values::Datamap;
 use std::sync::{Arc, Weak};
 
 pub struct InputMethod {
-	pub node: Weak<Node>,
-	pub enabled: Mutex<bool>,
 	pub spatial: Arc<Spatial>,
 	pub data: Mutex<InputDataType>,
 	pub datamap: Mutex<Datamap>,
@@ -38,8 +35,6 @@ impl InputMethod {
 		datamap: Datamap,
 	) -> Result<Arc<InputMethod>> {
 		let method = InputMethod {
-			node: Arc::downgrade(node),
-			enabled: Mutex::new(true),
 			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
 			data: Mutex::new(data),
 			datamap: Mutex::new(datamap),
@@ -52,7 +47,6 @@ impl InputMethod {
 		};
 		for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
 			method.handle_new_handler(&handler);
-			method.make_alias(&handler);
 		}
 		let method = INPUT_METHOD_REGISTRY.add(method);
 		<InputMethod as InputMethodRefAspect>::add_node_members(node);
@@ -61,8 +55,16 @@ impl InputMethod {
 		Ok(method)
 	}
 
+	pub fn distance(&self, to: &Field) -> f32 {
+		self.data.lock().distance(&self.spatial, to)
+	}
+
+	pub fn set_handler_order<'a>(&self, handlers: impl Iterator<Item = &'a Arc<InputHandler>>) {
+		*self.handler_order.lock() = handlers.map(Arc::downgrade).collect();
+	}
+
 	pub(super) fn make_alias(&self, handler: &InputHandler) {
-		let Some(method_node) = self.node.upgrade() else {
+		let Some(method_node) = self.spatial.node() else {
 			return;
 		};
 		let Some(handler_node) = handler.spatial.node() else {
@@ -79,19 +81,12 @@ impl InputMethod {
 		) else {
 			return;
 		};
-		method_alias.enabled.store(false, Ordering::Relaxed);
+		method_alias.set_enabled(false);
 	}
-
-	pub fn distance(&self, to: &Field) -> f32 {
-		self.data.lock().distance(&self.spatial, to)
-	}
-
-	pub fn set_handler_order<'a>(&self, handlers: impl Iterator<Item = &'a Arc<InputHandler>>) {
-		*self.handler_order.lock() = handlers.map(Arc::downgrade).collect();
-	}
-
 	pub(super) fn handle_new_handler(&self, handler: &InputHandler) {
-		let Some(method_node) = self.node.upgrade() else {
+		self.make_alias(handler);
+
+		let Some(method_node) = self.spatial.node() else {
 			return;
 		};
 		let Some(method_client) = method_node.get_client() else {
@@ -126,7 +121,7 @@ impl InputMethod {
 		let _ = input_method_client::create_handler(&method_node, &handler_alias, &rx_field_alias);
 	}
 	pub(super) fn handle_drop_handler(&self, handler: &InputHandler) {
-		let Some(tx_node) = self.node.upgrade() else {
+		let Some(tx_node) = self.spatial.node() else {
 			return;
 		};
 		let Some(handler_alias) = self.handler_aliases.get(handler) else {

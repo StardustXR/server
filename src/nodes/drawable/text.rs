@@ -6,7 +6,6 @@ use color_eyre::eyre::{eyre, Result};
 use glam::{vec3, Mat4, Vec2};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use portable_atomic::{AtomicBool, Ordering};
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
 use stereokit_rust::{
 	font::Font,
@@ -34,7 +33,6 @@ fn convert_align(x_align: super::XAlign, y_align: super::YAlign) -> TextAlign {
 }
 
 pub struct Text {
-	enabled: Arc<AtomicBool>,
 	space: Arc<Spatial>,
 	font_path: Option<PathBuf>,
 	style: OnceCell<SkTextStyle>,
@@ -46,7 +44,6 @@ impl Text {
 	pub fn add_to(node: &Arc<Node>, text: String, style: TextStyle) -> Result<Arc<Text>> {
 		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
 		let text = TEXT_REGISTRY.add(Text {
-			enabled: node.enabled.clone(),
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			font_path: style.font.as_ref().and_then(|res| {
 				get_resource_file(&res, &client, &[OsStr::new("ttf"), OsStr::new("otf")])
@@ -166,7 +163,7 @@ impl Drop for Text {
 
 pub fn draw_all(token: &MainThreadToken) {
 	for text in TEXT_REGISTRY.get_valid_contents() {
-		if text.enabled.load(Ordering::Relaxed) {
+		if text.space.node().unwrap().enabled() {
 			text.draw(token);
 		}
 	}

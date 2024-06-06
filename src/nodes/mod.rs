@@ -9,6 +9,10 @@ pub mod items;
 pub mod root;
 pub mod spatial;
 
+use self::alias::Alias;
+use crate::core::client::Client;
+use crate::core::registry::Registry;
+use crate::core::scenegraph::MethodResponseSender;
 use color_eyre::eyre::{eyre, Result};
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
@@ -22,12 +26,6 @@ use std::fmt::Debug;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
-
-use crate::core::client::Client;
-use crate::core::registry::Registry;
-use crate::core::scenegraph::MethodResponseSender;
-
-use self::alias::Alias;
 
 #[derive(Default)]
 pub struct Message {
@@ -54,7 +52,7 @@ pub type Method = fn(Arc<Node>, Arc<Client>, Message, MethodResponseSender);
 stardust_xr_server_codegen::codegen_node_protocol!();
 
 pub struct Node {
-	enabled: Arc<AtomicBool>,
+	enabled: AtomicBool,
 	id: u64,
 	client: Weak<Client>,
 	message_sender_handle: Option<MessageSenderHandle>,
@@ -78,7 +76,7 @@ impl Node {
 	}
 	pub fn from_id(client: &Arc<Client>, id: u64, destroyable: bool) -> Self {
 		let node = Node {
-			enabled: Arc::new(AtomicBool::new(true)),
+			enabled: AtomicBool::new(true),
 			client: Arc::downgrade(client),
 			message_sender_handle: client.message_sender_handle.clone(),
 			id,
@@ -100,6 +98,9 @@ impl Node {
 	}
 	pub fn enabled(&self) -> bool {
 		self.enabled.load(Ordering::Relaxed)
+	}
+	pub fn set_enabled(&self, enabled: bool) {
+		self.enabled.store(enabled, Ordering::Relaxed)
 	}
 	pub fn destroy(&self) {
 		if let Some(client) = self.get_client() {
@@ -244,12 +245,17 @@ impl Node {
 }
 impl Debug for Node {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("Node").field("id", &self.id).finish()
+		f.debug_struct("Node")
+			.field("id", &self.id)
+			.field("local_signals", &self.local_signals.lock().keys())
+			.field("local_methods", &self.local_methods.lock().keys())
+			.field("destroyable", &self.destroyable)
+			.finish()
 	}
 }
 impl OwnedAspect for Node {
 	fn set_enabled(node: Arc<Node>, _calling_client: Arc<Client>, enabled: bool) -> Result<()> {
-		node.enabled.store(enabled, Ordering::Relaxed);
+		node.set_enabled(enabled);
 		Ok(())
 	}
 
@@ -272,6 +278,7 @@ pub trait Aspect: Any + Send + Sync + 'static {
 
 #[derive(Default)]
 struct Aspects(Mutex<FxHashMap<TypeId, Arc<dyn Any + Send + Sync + 'static>>>);
+
 impl Aspects {
 	fn add<A: Aspect>(&self, t: A) -> Arc<A> {
 		let aspect = Arc::new(t);
@@ -281,7 +288,7 @@ impl Aspects {
 	fn add_raw<A: Aspect>(&self, aspect: Arc<A>) {
 		self.0.lock().insert(Self::type_key::<A>(), aspect);
 	}
-	fn get<A: Aspect + Any + Send + Sync + 'static>(&self) -> Result<Arc<A>> {
+	fn get<A: Aspect>(&self) -> Result<Arc<A>> {
 		self.0
 			.lock()
 			.get(&Self::type_key::<A>())

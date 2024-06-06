@@ -54,8 +54,9 @@ impl SkController {
 	}
 	pub fn update(&mut self, token: &MainThreadToken) {
 		let controller = Input::controller(self.handed);
-		*self.input.enabled.lock() = controller.tracked.is_active();
-		if *self.input.enabled.lock() {
+		let input_node = self.input.spatial.node().unwrap();
+		input_node.set_enabled(controller.tracked.is_active());
+		if input_node.enabled() {
 			let world_transform = Mat4::from_rotation_translation(
 				controller.aim.orientation.into(),
 				controller.aim.position.into(),

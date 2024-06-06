@@ -63,8 +63,10 @@ impl SkHand {
 		if let InputDataType::Hand(hand) = &mut *self.input.data.lock() {
 			let controller_active =
 				controller_enabled && Input::controller(self.handed).is_tracked();
-			*self.input.enabled.lock() = !controller_active && sk_hand.tracked.is_active();
-			if *self.input.enabled.lock() {
+
+			let input_node = self.input.spatial.node().unwrap();
+			input_node.set_enabled(!controller_active && sk_hand.tracked.is_active());
+			if input_node.enabled() {
 				hand.thumb.tip = convert_joint(sk_hand.fingers[0][4]);
 				hand.thumb.distal = convert_joint(sk_hand.fingers[0][3]);
 				hand.thumb.proximal = convert_joint(sk_hand.fingers[0][2]);
