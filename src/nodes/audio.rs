@@ -9,7 +9,6 @@ use color_eyre::eyre::{eyre, Result};
 use glam::{vec3, Vec4Swizzles};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use send_wrapper::SendWrapper;
 use stardust_xr::values::ResourceID;
 
 use std::ops::DerefMut;
@@ -25,7 +24,7 @@ pub struct Sound {
 
 	volume: f32,
 	pending_audio_path: PathBuf,
-	sk_sound: OnceCell<SendWrapper<SkSound>>,
+	sk_sound: OnceCell<SkSound>,
 	instance: Mutex<Option<SoundInst>>,
 	stop: Mutex<Option<()>>,
 	play: Mutex<Option<()>>,
@@ -54,9 +53,9 @@ impl Sound {
 	}
 
 	fn update(&self) {
-		let sound = self.sk_sound.get_or_init(|| {
-			SendWrapper::new(SkSound::from_file(self.pending_audio_path.clone()).unwrap())
-		});
+		let sound = self
+			.sk_sound
+			.get_or_init(|| SkSound::from_file(self.pending_audio_path.clone()).unwrap());
 		if self.stop.lock().take().is_some() {
 			if let Some(instance) = self.instance.lock().take() {
 				instance.stop();

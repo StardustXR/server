@@ -1,11 +1,18 @@
 use super::{state::WaylandState, utils::get_data};
 use crate::{
 	core::{delta::Delta, destroy_queue, registry::Registry},
-	nodes::drawable::{model::ModelPart, shaders::PANEL_SHADER_BYTES},
+	nodes::{
+		drawable::{
+			model::{MaterialWrapper, ModelPart},
+			shaders::PANEL_SHADER_BYTES,
+		},
+		items::camera::TexWrapper,
+	},
 };
 use mint::Vector2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+
 use send_wrapper::SendWrapper;
 use smithay::{
 	backend::renderer::{
@@ -42,8 +49,8 @@ pub struct CoreSurface {
 	pub dh: DisplayHandle,
 	pub weak_surface: wayland_server::Weak<WlSurface>,
 	mapped_data: Mutex<Option<CoreSurfaceData>>,
-	sk_tex: OnceCell<SendWrapper<Mutex<Tex>>>,
-	sk_mat: OnceCell<SendWrapper<Mutex<Material>>>,
+	sk_tex: OnceCell<Mutex<TexWrapper>>,
+	sk_mat: OnceCell<Mutex<MaterialWrapper>>,
 	material_offset: Mutex<Delta<u32>>,
 	on_mapped: Mutex<Box<dyn Fn() + Send + Sync>>,
 	on_commit: Mutex<Box<dyn Fn(u32) + Send + Sync>>,
@@ -93,7 +100,7 @@ impl CoreSurface {
 		};
 
 		let sk_tex = self.sk_tex.get_or_init(|| {
-			SendWrapper::new(Mutex::new(Tex::new(
+			Mutex::new(TexWrapper(Tex::new(
 				TexType::ImageNomips,
 				TexFormat::RGBA32Linear,
 				nanoid::nanoid!(),
@@ -106,9 +113,9 @@ impl CoreSurface {
 			// });
 
 			let mut mat = Material::new(shader, None);
-			mat.diffuse_tex(sk_tex.lock().as_ref());
+			mat.diffuse_tex(&sk_tex.lock().0);
 			mat.transparency(Transparency::Blend);
-			SendWrapper::new(Mutex::new(mat))
+			Mutex::new(MaterialWrapper(mat))
 		});
 
 		// Let smithay handle buffer management (has to be done here as RendererSurfaceStates is not thread safe)
@@ -154,6 +161,7 @@ impl CoreSurface {
 			};
 			sk_tex
 				.lock()
+				.0
 				.set_native_surface(
 					smithay_tex.tex_id() as usize as *mut c_void,
 					TexType::ImageNomips,
@@ -167,7 +175,7 @@ impl CoreSurface {
 				.address_mode(TexAddress::Clamp);
 
 			if let Some(material_offset) = self.material_offset.lock().delta() {
-				sk_mat.lock().queue_offset(*material_offset as i32);
+				sk_mat.lock().0.queue_offset(*material_offset as i32);
 			}
 
 			let Some(surface_size) = renderer_surface_state.surface_size() else {
@@ -212,7 +220,7 @@ impl CoreSurface {
 		if let Some(sk_mat) = self.sk_mat.get() {
 			let sk_mat = sk_mat.lock();
 			for model_node in self.pending_material_applications.get_valid_contents() {
-				model_node.replace_material_now(sk_mat.as_ref());
+				model_node.replace_material_now(&sk_mat.0);
 			}
 			self.pending_material_applications.clear();
 		}

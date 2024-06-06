@@ -9,7 +9,7 @@ use glam::{Mat4, Vec2, Vec3};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use send_wrapper::SendWrapper;
+
 use stardust_xr::values::ResourceID;
 use stereokit_rust::material::Transparency;
 use stereokit_rust::maths::Bounds;
@@ -21,8 +21,12 @@ use std::sync::{Arc, Weak};
 
 use super::{MaterialParameter, ModelAspect, ModelPartAspect, MODEL_PART_ASPECT_ALIAS_INFO};
 
+pub struct MaterialWrapper(pub Material);
+unsafe impl Send for MaterialWrapper {}
+unsafe impl Sync for MaterialWrapper {}
+
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
-static HOLDOUT_MATERIAL: OnceCell<Arc<SendWrapper<Material>>> = OnceCell::new();
+static HOLDOUT_MATERIAL: OnceCell<Arc<MaterialWrapper>> = OnceCell::new();
 
 impl MaterialParameter {
 	fn apply_to_material(&self, client: &Client, material: &Material, parameter_name: &str) {
@@ -72,7 +76,7 @@ pub struct ModelPart {
 	space: Arc<Spatial>,
 	model: Weak<Model>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
-	pending_material_replacement: Mutex<Option<Arc<SendWrapper<Material>>>>,
+	pending_material_replacement: Mutex<Option<Arc<MaterialWrapper>>>,
 	aliases: AliasList,
 }
 impl ModelPart {
@@ -81,7 +85,7 @@ impl ModelPart {
 			let mut mat = Material::copy(Material::unlit());
 			mat.transparency(Transparency::None);
 			mat.color_tint(Color128::BLACK_TRANSPARENT);
-			Arc::new(SendWrapper::new(mat))
+			Arc::new(MaterialWrapper(mat))
 		});
 
 		let nodes = sk_model.get_nodes();
@@ -151,7 +155,7 @@ impl ModelPart {
 		Some(model_part)
 	}
 
-	pub fn replace_material(&self, replacement: Arc<SendWrapper<Material>>) {
+	pub fn replace_material(&self, replacement: Arc<MaterialWrapper>) {
 		self.pending_material_replacement
 			.lock()
 			.replace(replacement);
@@ -195,7 +199,7 @@ impl ModelPart {
 		};
 
 		if let Some(material_replacement) = self.pending_material_replacement.lock().take() {
-			part.material(&**material_replacement);
+			part.material(&material_replacement.0);
 		}
 
 		// todo: find all materials with identical parameters and batch them into 1 material again

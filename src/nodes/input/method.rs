@@ -45,12 +45,12 @@ impl InputMethod {
 			handler_field_aliases: AliasList::default(),
 			handler_order: Mutex::new(Vec::new()),
 		};
+		<InputMethod as InputMethodRefAspect>::add_node_members(node);
+		<InputMethod as InputMethodAspect>::add_node_members(node);
 		for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
 			method.handle_new_handler(&handler);
 		}
 		let method = INPUT_METHOD_REGISTRY.add(method);
-		<InputMethod as InputMethodRefAspect>::add_node_members(node);
-		<InputMethod as InputMethodAspect>::add_node_members(node);
 		node.add_aspect_raw(method.clone());
 		Ok(method)
 	}

@@ -5,7 +5,10 @@ use crate::{
 	core::{client::Client, registry::Registry, scenegraph::MethodResponseSender},
 	create_interface,
 	nodes::{
-		drawable::{model::ModelPart, shaders::UNLIT_SHADER_BYTES},
+		drawable::{
+			model::{MaterialWrapper, ModelPart},
+			shaders::UNLIT_SHADER_BYTES,
+		},
 		items::TypeInfo,
 		spatial::{Spatial, Transform},
 		Message, Node,
@@ -17,7 +20,7 @@ use lazy_static::lazy_static;
 use mint::{ColumnMatrix4, Vector2};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-use send_wrapper::SendWrapper;
+
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::Arc;
 use stereokit_rust::{
@@ -29,6 +32,10 @@ use stereokit_rust::{
 	util::Color128,
 };
 use tracing::error;
+
+pub struct TexWrapper(pub Tex);
+unsafe impl Send for TexWrapper {}
+unsafe impl Sync for TexWrapper {}
 
 stardust_xr_server_codegen::codegen_item_camera_protocol!();
 lazy_static! {
@@ -53,8 +60,8 @@ struct FrameInfo {
 pub struct CameraItem {
 	space: Arc<Spatial>,
 	frame_info: Mutex<FrameInfo>,
-	sk_tex: OnceCell<SendWrapper<Tex>>,
-	sk_mat: OnceCell<Arc<SendWrapper<Material>>>,
+	sk_tex: OnceCell<TexWrapper>,
+	sk_mat: OnceCell<Arc<MaterialWrapper>>,
 	applied_to: Registry<ModelPart>,
 	apply_to: Registry<ModelPart>,
 }
@@ -120,7 +127,7 @@ impl CameraItem {
 	pub fn update(&self, token: &MainThreadToken) {
 		let frame_info = self.frame_info.lock();
 		let sk_tex = self.sk_tex.get_or_init(|| {
-			SendWrapper::new(Tex::gen_color(
+			TexWrapper(Tex::gen_color(
 				Color128::default(),
 				frame_info.px_size.x as i32,
 				frame_info.px_size.y as i32,
@@ -130,12 +137,12 @@ impl CameraItem {
 		});
 		let sk_mat = self
 			.sk_mat
-			.get_or_try_init(|| -> Result<Arc<SendWrapper<Material>>> {
+			.get_or_try_init(|| -> Result<Arc<MaterialWrapper>> {
 				let shader = Shader::from_memory(&UNLIT_SHADER_BYTES)?;
 				let mut mat = Material::new(&shader, None);
-				mat.get_all_param_info().set_texture("diffuse", &**sk_tex);
+				mat.get_all_param_info().set_texture("diffuse", &sk_tex.0);
 				mat.transparency(Transparency::Blend);
-				Ok(Arc::new(SendWrapper::new(mat)))
+				Ok(Arc::new(MaterialWrapper(mat)))
 			});
 		let Ok(sk_mat) = sk_mat else {
 			error!("unable to make camera item stereokit texture");
@@ -148,7 +155,7 @@ impl CameraItem {
 		if !self.applied_to.is_empty() {
 			Renderer::render_to(
 				token,
-				&**sk_tex,
+				&sk_tex.0,
 				self.space.global_transform(),
 				frame_info.proj_matrix,
 				None,
