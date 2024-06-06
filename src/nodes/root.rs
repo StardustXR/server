@@ -89,7 +89,7 @@ impl RootAspect for Root {
 	}
 
 	#[doc = "Generate a client state token and return it back.\n\n When launching a new client, set the environment variable `STARDUST_STARTUP_TOKEN` to the returned string.\n Make sure the environment variable shows in `/proc/{pid}/environ` as that's the only reliable way to pass the value to the server (suggestions welcome).\n"]
-	async fn client_state_token(
+	async fn generate_state_token(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
 		state: ClientState,
