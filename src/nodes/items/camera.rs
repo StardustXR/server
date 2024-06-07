@@ -1,6 +1,8 @@
 use super::{
 	create_item_acceptor_flex, register_item_ui_flex, Item, ItemAcceptor, ItemInterface, ItemType,
 };
+use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
+use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
 use crate::{
 	core::{client::Client, registry::Registry, scenegraph::MethodResponseSender},
 	create_interface,

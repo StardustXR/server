@@ -8,6 +8,7 @@ use super::{
 	spatial::{Spatial, Transform},
 	Node,
 };
+use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::{
 	core::{client::Client, resource::get_resource_file},
 	create_interface,

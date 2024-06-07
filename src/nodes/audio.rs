@@ -4,6 +4,7 @@ use crate::core::destroy_queue;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::create_interface;
+use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::{Spatial, Transform};
 use color_eyre::eyre::{eyre, Result};
 use glam::{vec3, Vec4Swizzles};

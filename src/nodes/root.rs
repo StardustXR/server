@@ -3,6 +3,7 @@ use super::Node;
 use crate::core::client::Client;
 use crate::core::client_state::ClientStateParsed;
 use crate::core::registry::Registry;
+use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 #[cfg(feature = "wayland")]
 use crate::wayland::WAYLAND_DISPLAY;
 #[cfg(feature = "xwayland")]

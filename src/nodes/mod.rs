@@ -146,7 +146,7 @@ impl Node {
 		message: Message,
 	) -> Result<(), ScenegraphError> {
 		if let Ok(alias) = self.get_aspect::<Alias>() {
-			if !alias.info.server_signals.iter().any(|e| e == &method) {
+			if !alias.info.server_signals.iter().any(|e| *e == method) {
 				return Err(ScenegraphError::SignalNotFound);
 			}
 			alias
@@ -174,7 +174,7 @@ impl Node {
 		response: MethodResponseSender,
 	) {
 		if let Ok(alias) = self.get_aspect::<Alias>() {
-			if !alias.info.server_methods.iter().any(|e| e == &method) {
+			if !alias.info.server_methods.iter().any(|e| *e == method) {
 				response.send(Err(ScenegraphError::MethodNotFound));
 				return;
 			}

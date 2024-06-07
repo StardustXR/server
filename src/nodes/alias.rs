@@ -89,16 +89,15 @@ impl AliasList {
 		self.0.add_raw(node);
 	}
 	pub fn get<A: Aspect>(&self, aspect: &A) -> Option<Arc<Node>> {
-		self.0
-			.get_valid_contents()
-			.into_iter()
-			.filter_map(|n| get_original(n, false))
-			.find(|node| {
-				let Ok(aspect2) = node.get_aspect::<A>() else {
-					return false;
-				};
-				Arc::as_ptr(&aspect2) == (aspect as *const A)
-			})
+		self.0.get_valid_contents().into_iter().find(|node| {
+			let Some(node) = get_original(node.clone(), false) else {
+				return false;
+			};
+			let Ok(aspect2) = node.get_aspect::<A>() else {
+				return false;
+			};
+			Arc::as_ptr(&aspect2) == (aspect as *const A)
+		})
 	}
 	pub fn get_aliases(&self) -> Vec<Arc<Node>> {
 		self.0.get_valid_contents()

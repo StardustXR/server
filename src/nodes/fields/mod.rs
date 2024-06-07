@@ -17,6 +17,8 @@ use super::{Aspect, Node};
 use crate::core::client::Client;
 use crate::create_interface;
 use crate::nodes::spatial::Transform;
+use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
+use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use color_eyre::eyre::Result;
 use glam::{vec2, vec3a, Mat4, Vec3, Vec3A};
 use mint::Vector3;

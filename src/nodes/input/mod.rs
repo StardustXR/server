@@ -6,10 +6,13 @@ mod tip;
 
 pub use handler::*;
 pub use method::*;
+use rustc_hash::FxHashMap;
 
 use super::fields::Field;
 use super::spatial::Spatial;
 use crate::create_interface;
+use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
+use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::{core::client::Client, nodes::Node};
 use crate::{core::registry::Registry, nodes::spatial::Transform};
 use color_eyre::eyre::Result;
@@ -32,9 +35,6 @@ impl InputLink {
 		InputLink { method, handler }
 	}
 
-	fn send_input(&self, order: u32, captured: bool, datamap: Datamap) {
-		self.handler.send_input(order, captured, self, datamap);
-	}
 	#[instrument(level = "debug", skip(self))]
 	fn serialize(&self, id: u64, order: u32, captured: bool, datamap: Datamap) -> InputData {
 		let mut input = self.method.data.lock().clone();
@@ -136,6 +136,8 @@ pub fn process_input() {
 			method_alias.set_enabled(false);
 		}
 	}
+	let mut handler_input: FxHashMap<u64, (Arc<Node>, Vec<Arc<Node>>, Vec<InputData>)> =
+		Default::default();
 	// const LIMIT: usize = 50;
 	for method in methods {
 		debug_span!("Process input method").in_scope(|| {
@@ -158,20 +160,32 @@ pub fn process_input() {
 
 			// Iterate over the distance links and send input to them
 			for (i, input_link) in input_links.into_iter().enumerate() {
-				if let Some(method_alias) = input_link
+				let handler = input_link.handler.spatial.node().unwrap();
+				if !handler_input.contains_key(&handler.id) {
+					handler_input.insert(handler.id, (handler.clone(), Vec::new(), Vec::new()));
+				}
+				let (_, methods, datas) = handler_input.get_mut(&handler.id).unwrap();
+
+				let method_alias = input_link
 					.handler
 					.method_aliases
 					.get(input_link.method.as_ref())
-				{
-					method_alias.set_enabled(true);
-				}
-				input_link.send_input(
+					.unwrap();
+				method_alias.set_enabled(true);
+				dbg!(&method_alias.local_methods);
+				datas.push(input_link.serialize(
+					method_alias.id,
 					i as u32,
 					method.captures.contains(&input_link.handler),
 					method.datamap.lock().clone(),
-				);
+				));
+				methods.push(method_alias);
 			}
 			method.capture_requests.clear();
 		});
+	}
+
+	for (_, (handler, methods, data)) in handler_input {
+		let _ = input_handler_client::input(&handler, &methods, &data);
 	}
 }

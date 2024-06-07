@@ -11,9 +11,9 @@ use crate::core::client::Client;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
 use crate::nodes::spatial::Transform;
+use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use color_eyre::eyre::{ensure, Result};
 use parking_lot::Mutex;
-
 use std::hash::Hash;
 use std::sync::{Arc, Weak};
 

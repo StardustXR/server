@@ -7,6 +7,7 @@ use crate::core::registry::Registry;
 use crate::create_interface;
 use crate::nodes::fields::FIELD_ALIAS_INFO;
 use crate::nodes::spatial::Transform;
+use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use color_eyre::eyre::{bail, ensure, eyre, Result};
 use lazy_static::lazy_static;
 use parking_lot::Mutex;

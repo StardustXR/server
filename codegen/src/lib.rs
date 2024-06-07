@@ -269,13 +269,26 @@ fn generate_alias_info(aspect: &Aspect) -> TokenStream {
 	let local_methods = generate_alias_opcodes(aspect, Side::Server, MemberType::Method);
 	let remote_signals = generate_alias_opcodes(aspect, Side::Client, MemberType::Signal);
 
+	let inherits = aspect
+		.inherits
+		.iter()
+		.map(|a| {
+			Ident::new(
+				&format!("{}_ASPECT_ALIAS_INFO", a.to_case(Case::ScreamingSnake)),
+				Span::call_site(),
+			)
+		})
+		.map(|a| quote!(#a.clone()))
+		.fold(quote!(), |a, b| quote!(#a + #b));
+
 	quote! {
 		lazy_static::lazy_static! {
 			pub static ref #aspect_alias_info_name: crate::nodes::alias::AliasInfo = crate::nodes::alias::AliasInfo {
 				server_signals: vec![#local_signals],
 				server_methods: vec![#local_methods],
 				client_signals: vec![#remote_signals],
-			};
+			}
+			#inherits;
 		}
 	}
 }

@@ -1,17 +1,7 @@
-use super::{
-	input_handler_client, InputHandlerAspect, InputLink, INPUT_HANDLER_REGISTRY,
-	INPUT_METHOD_REGISTRY,
-};
-use crate::nodes::{
-	alias::AliasList,
-	fields::Field,
-	spatial::Spatial,
-	Aspect, Node,
-};
+use super::{InputHandlerAspect, INPUT_HANDLER_REGISTRY, INPUT_METHOD_REGISTRY};
+use crate::nodes::{alias::AliasList, fields::Field, spatial::Spatial, Aspect, Node};
 use color_eyre::eyre::Result;
-use stardust_xr::values::Datamap;
 use std::sync::Arc;
-use tracing::instrument;
 
 pub struct InputHandler {
 	pub spatial: Arc<Spatial>,
@@ -31,27 +21,6 @@ impl InputHandler {
 		let handler = INPUT_HANDLER_REGISTRY.add(handler);
 		node.add_aspect_raw(handler);
 		Ok(())
-	}
-
-	#[instrument(level = "debug", skip(self, input_link))]
-	pub(super) fn send_input(
-		&self,
-		order: u32,
-		captured: bool,
-		input_link: &InputLink,
-		datamap: Datamap,
-	) {
-		let Some(node) = self.spatial.node() else {
-			return;
-		};
-		let Some(method_alias) = self.method_aliases.get(input_link.method.as_ref()) else {
-			return;
-		};
-		let _ = input_handler_client::input(
-			&node,
-			&method_alias,
-			&input_link.serialize(method_alias.id, order, captured, datamap),
-		);
 	}
 }
 impl Aspect for InputHandler {

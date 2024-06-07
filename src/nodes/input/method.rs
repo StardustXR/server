@@ -1,7 +1,7 @@
 use super::{
 	input_method_client, InputDataTrait, InputDataType, InputHandler, InputMethodAspect,
-	InputMethodRefAspect, INPUT_HANDLER_REGISTRY, INPUT_METHOD_ASPECT_ALIAS_INFO,
-	INPUT_METHOD_REF_ASPECT_ALIAS_INFO, INPUT_METHOD_REGISTRY,
+	InputMethodRefAspect, INPUT_HANDLER_REGISTRY, INPUT_METHOD_REF_ASPECT_ALIAS_INFO,
+	INPUT_METHOD_REGISTRY,
 };
 use crate::{
 	core::{client::Client, registry::Registry},
@@ -76,7 +76,7 @@ impl InputMethod {
 		let Ok(method_alias) = Alias::create(
 			&method_node,
 			&client,
-			INPUT_METHOD_ASPECT_ALIAS_INFO.clone(),
+			INPUT_METHOD_REF_ASPECT_ALIAS_INFO.clone(),
 			Some(&handler.method_aliases),
 		) else {
 			return;
