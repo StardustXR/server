@@ -120,13 +120,15 @@ impl PulseSender {
 	}
 
 	fn handle_drop_receiver(&self, receiver: &PulseReceiver) {
-		let id = receiver.node.upgrade().unwrap().get_id();
+		let Some(node) = receiver.node.upgrade() else {
+			return;
+		};
 		self.aliases.remove_aspect(receiver);
 		self.field_aliases.remove_aspect(receiver.field.as_ref());
 		let Some(tx_node) = self.node.upgrade() else {
 			return;
 		};
-		let _ = pulse_sender_client::drop_receiver(&tx_node, id);
+		let _ = pulse_sender_client::drop_receiver(&tx_node, node.get_id());
 	}
 }
 impl Aspect for PulseSender {

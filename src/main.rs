@@ -53,10 +53,6 @@ struct CliArgs {
 	#[clap(id = "PRIORITY", short = 'o', long = "overlay", action)]
 	overlay_priority: Option<u32>,
 
-	/// Don't create a tip input for controller because SOME RUNTIMES will lie
-	#[clap(long, action)]
-	disable_controller: bool,
-
 	/// Run a script when ready for clients to connect. If this is not set the script at $HOME/.config/stardust/startup will be ran if it exists.
 	#[clap(id = "PATH", short = 'e', long = "execute-startup-script", action)]
 	startup_script: Option<PathBuf>,
@@ -167,7 +163,7 @@ fn main() {
 			left.zip(right)
 		})
 		.flatten();
-	let mut controllers = (!cli_args.flatscreen && !cli_args.disable_controller)
+	let mut controllers = (!cli_args.flatscreen)
 		.then(|| {
 			let left = SkController::new(Handed::Left).ok();
 			let right = SkController::new(Handed::Right).ok();
@@ -216,7 +212,7 @@ fn main() {
 		SkClosures::run_app(
 			sk,
 			sk_event_loop,
-			|_sk, token| {
+			|sk, token| {
 				let _span = debug_span!("StereoKit step");
 				let _span = _span.enter();
 
@@ -230,8 +226,8 @@ fn main() {
 					mouse_pointer.update();
 				}
 				if let Some((left_hand, right_hand)) = &mut hands {
-					left_hand.update(!cli_args.disable_controller, token);
-					right_hand.update(!cli_args.disable_controller, token);
+					left_hand.update(sk, token);
+					right_hand.update(sk, token);
 				}
 				if let Some((left_controller, right_controller)) = &mut controllers {
 					left_controller.update(token);

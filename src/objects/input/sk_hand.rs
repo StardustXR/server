@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::f32::INFINITY;
 use std::sync::Arc;
-use stereokit_rust::sk::MainThreadToken;
-use stereokit_rust::system::{HandJoint, Handed, Input, LinePoint, Lines};
+use stereokit_rust::sk::{DisplayMode, MainThreadToken, Sk};
+use stereokit_rust::system::{HandJoint, HandSource, Handed, Input, LinePoint, Lines};
 use stereokit_rust::util::Color128;
 
 fn convert_joint(joint: HandJoint) -> Joint {
@@ -58,14 +58,15 @@ impl SkHand {
 			datamap: Default::default(),
 		})
 	}
-	pub fn update(&mut self, controller_enabled: bool, token: &MainThreadToken) {
+	pub fn update(&mut self, sk: &Sk, token: &MainThreadToken) {
 		let sk_hand = Input::hand(self.handed);
+		let real_hand = Input::hand_source(self.handed) as u32 == HandSource::Articulated as u32;
 		if let InputDataType::Hand(hand) = &mut *self.input.data.lock() {
-			let controller_active =
-				controller_enabled && Input::controller(self.handed).is_tracked();
-
 			let input_node = self.input.spatial.node().unwrap();
-			input_node.set_enabled(!controller_active && sk_hand.tracked.is_active());
+			input_node.set_enabled(
+				(real_hand || sk.get_active_display_mode() == DisplayMode::Flatscreen)
+					&& sk_hand.tracked.is_active(),
+			);
 			if input_node.enabled() {
 				hand.thumb.tip = convert_joint(sk_hand.fingers[0][4]);
 				hand.thumb.distal = convert_joint(sk_hand.fingers[0][3]);
