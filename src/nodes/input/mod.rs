@@ -172,7 +172,6 @@ pub fn process_input() {
 					.get(input_link.method.as_ref())
 					.unwrap();
 				method_alias.set_enabled(true);
-				dbg!(&method_alias.local_methods);
 				datas.push(input_link.serialize(
 					method_alias.id,
 					i as u32,
