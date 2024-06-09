@@ -239,7 +239,7 @@ impl SeatWrapper {
 		for key in keys {
 			keyboard.input(
 				&mut state.lock(),
-				key.abs() as u32,
+				key.unsigned_abs(),
 				if key > 0 {
 					KeyState::Pressed
 				} else {

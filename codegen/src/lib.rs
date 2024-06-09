@@ -322,7 +322,7 @@ fn generate_member(member: &Member) -> TokenStream {
 	let return_type = member
 		.return_type
 		.as_ref()
-		.map(|r| generate_argument_type(&r, false, true))
+		.map(|r| generate_argument_type(r, false, true))
 		.unwrap_or_else(|| quote!(()));
 
 	match (side, _type) {
@@ -496,8 +496,8 @@ fn argument_type_option_name(argument_type: &ArgumentType) -> String {
 		ArgumentType::Color => "Color".to_string(),
 		ArgumentType::String => "String".to_string(),
 		ArgumentType::Bytes => "Bytes".to_string(),
-		ArgumentType::Vec(v) => format!("{}Vector", argument_type_option_name(&v)),
-		ArgumentType::Map(m) => format!("{}Map", argument_type_option_name(&m)),
+		ArgumentType::Vec(v) => format!("{}Vector", argument_type_option_name(v)),
+		ArgumentType::Map(m) => format!("{}Map", argument_type_option_name(m)),
 		ArgumentType::NodeID => "Node ID".to_string(),
 		ArgumentType::Datamap => "Datamap".to_string(),
 		ArgumentType::ResourceID => "ResourceID".to_string(),
@@ -519,11 +519,11 @@ fn generate_argument_type(
 		ArgumentType::UInt => quote!(u32),
 		ArgumentType::Float => quote!(f32),
 		ArgumentType::Vec2(t) => {
-			let t = generate_argument_type(&t, false, true);
+			let t = generate_argument_type(t, false, true);
 			quote!(stardust_xr::values::Vector2<#t>)
 		}
 		ArgumentType::Vec3(t) => {
-			let t = generate_argument_type(&t, false, true);
+			let t = generate_argument_type(t, false, true);
 			quote!(stardust_xr::values::Vector3<#t>)
 		}
 		ArgumentType::Quat => quote!(stardust_xr::values::Quaternion),
@@ -544,7 +544,7 @@ fn generate_argument_type(
 			}
 		}
 		ArgumentType::Vec(t) => {
-			let t = generate_argument_type(&t, false, true);
+			let t = generate_argument_type(t, false, true);
 			if !owned {
 				quote!(&[#t])
 			} else {
@@ -552,7 +552,7 @@ fn generate_argument_type(
 			}
 		}
 		ArgumentType::Map(t) => {
-			let t = generate_argument_type(&t, false, true);
+			let t = generate_argument_type(t, false, true);
 
 			if !owned {
 				quote!(&stardust_xr::values::Map<String, #t>)

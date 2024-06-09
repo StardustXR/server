@@ -61,9 +61,7 @@ serde_repr = "0.1.16"
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
 rand = "0.8.5"
-atty = "0.2.14"
 xkbcommon = { version = "0.7.0", default-features = false, optional = true }
-ctrlc = "3.4.1"
 libc = "0.2.148"
 input-event-codes = "6.2.0"
 nix = "0.29.0"

@@ -60,7 +60,7 @@ impl PlaySpace {
 	pub fn update(&self) {
 		let pose = World::get_bounds_pose();
 		self.spatial.set_local_transform(
-			Mat4::from_rotation_translation(pose.orientation.into(), pose.position.into()).into(),
+			Mat4::from_rotation_translation(pose.orientation.into(), pose.position.into()),
 		);
 		let Field::Box(box_field) = self.field.as_ref() else {
 			return;

@@ -3,8 +3,7 @@ use smithay::backend::renderer::gles::{
 	ffi::{self, Gles2, FRAGMENT_SHADER, VERTEX_SHADER},
 	GlesError,
 };
-use std::mem::transmute;
-use stereokit_rust::shader::Shader;
+use stereokit_rust::shader::{Shader, _ShaderT};
 use tracing::error;
 
 // Simula shader with fancy lanzcos sampling
@@ -133,7 +132,7 @@ pub unsafe fn shader_inject(
 	let gl_frag = compile_shader(c, FRAGMENT_SHADER, frag_str)?;
 	let gl_prog = link_program(c, gl_vert, gl_frag)?;
 
-	let shader: *mut FfiShader = transmute(sk_shader.0.as_mut());
+	let shader = sk_shader.0.as_mut() as *mut _ShaderT as *mut FfiShader;
 	if let Some(shader) = shader.as_mut() {
 		shader.shader.vertex = gl_vert;
 		shader.shader.pixel = gl_frag;

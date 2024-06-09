@@ -47,7 +47,8 @@ impl Scenegraph {
 	}
 }
 
-pub struct MethodResponseSender(oneshot::Sender<Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError>>);
+pub type MethodResponse = Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError>;
+pub struct MethodResponseSender(oneshot::Sender<MethodResponse>);
 impl MethodResponseSender {
 	pub fn send(self, t: Result<Message, ScenegraphError>) {
 		let _ = self.0.send(t.map(|m| (m.data, m.fds)));

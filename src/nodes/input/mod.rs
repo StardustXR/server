@@ -161,9 +161,7 @@ pub fn process_input() {
 			// Iterate over the distance links and send input to them
 			for (i, input_link) in input_links.into_iter().enumerate() {
 				let handler = input_link.handler.spatial.node().unwrap();
-				if !handler_input.contains_key(&handler.id) {
-					handler_input.insert(handler.id, (handler.clone(), Vec::new(), Vec::new()));
-				}
+				handler_input.entry(handler.id).or_insert_with(|| (handler.clone(), Vec::new(), Vec::new()));
 				let (_, methods, datas) = handler_input.get_mut(&handler.id).unwrap();
 
 				let method_alias = input_link

@@ -100,7 +100,7 @@ impl XdgShellHandler for WaylandState {
 							toplevel.clone(),
 							client_state.seat.clone(),
 						)),
-						client_state.pid.clone(),
+						client_state.pid,
 					);
 					handle_cursor(&panel_item, panel_item.backend.seat.cursor_info_rx.clone());
 					utils::insert_data(toplevel.wl_surface(), Arc::downgrade(&panel_item));
@@ -430,14 +430,13 @@ impl Backend for XdgBackend {
 				.clone()
 		});
 		let toplevel_cached_state = compositor::with_states(toplevel.wl_surface(), |states| {
-			states.cached_state.current::<SurfaceCachedState>().clone()
+			*states.cached_state.current::<SurfaceCachedState>()
 		});
 		let toplevel_core_surface = CoreSurface::from_wl_surface(toplevel.wl_surface()).unwrap();
 
 		let size = toplevel
 			.current_state()
 			.size
-			.clone()
 			.map(|s| Vector2::from([s.w as u32, s.h as u32]))
 			.or_else(|| toplevel_core_surface.size())
 			.unwrap_or(Vector2::from([0; 2]));
@@ -571,7 +570,7 @@ impl Backend for XdgBackend {
 	}
 
 	fn pointer_motion(&self, surface: &SurfaceId, position: Vector2<f32>) {
-		let Some(surface) = self.wl_surface_from_id(&surface) else {
+		let Some(surface) = self.wl_surface_from_id(surface) else {
 			return;
 		};
 		self.seat.pointer_motion(surface, position)
@@ -589,14 +588,14 @@ impl Backend for XdgBackend {
 	}
 
 	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: u64, keys: Vec<i32>) {
-		let Some(surface) = self.wl_surface_from_id(&surface) else {
+		let Some(surface) = self.wl_surface_from_id(surface) else {
 			return;
 		};
 		self.seat.keyboard_keys(surface, keymap_id, keys)
 	}
 
 	fn touch_down(&self, surface: &SurfaceId, id: u32, position: Vector2<f32>) {
-		let Some(surface) = self.wl_surface_from_id(&surface) else {
+		let Some(surface) = self.wl_surface_from_id(surface) else {
 			return;
 		};
 		self.seat.touch_down(surface, id, position)

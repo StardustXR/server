@@ -46,7 +46,7 @@ impl Text {
 		let text = TEXT_REGISTRY.add(Text {
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			font_path: style.font.as_ref().and_then(|res| {
-				get_resource_file(&res, &client, &[OsStr::new("ttf"), OsStr::new("otf")])
+				get_resource_file(res, &client, &[OsStr::new("ttf"), OsStr::new("otf")])
 			}),
 			style: OnceCell::new(),
 
@@ -93,7 +93,7 @@ impl Text {
 						super::TextFit::Exact => TextFit::Exact,
 						super::TextFit::Overflow => TextFit::Overflow,
 					},
-					Some(style.clone()),
+					Some(*style),
 					Some(Color128::new(
 						data.color.c.r,
 						data.color.c.g,

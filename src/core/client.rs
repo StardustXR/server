@@ -142,11 +142,8 @@ impl Client {
 					let client = client.clone();
 					async move {
 						loop {
-							match messenger_rx.dispatch(&*scenegraph).await {
-								Err(e) => {
-									client.disconnect(Err(e.into()));
-								}
-								_ => (),
+							if let Err(e) = messenger_rx.dispatch(&*scenegraph).await {
+								client.disconnect(Err(e.into()));
 							}
 						}
 					}
@@ -160,11 +157,8 @@ impl Client {
 					let client = client.clone();
 					async move {
 						loop {
-							match messenger_tx.flush().await {
-								Err(e) => {
-									client.disconnect(Err(e.into()));
-								}
-								_ => (),
+							if let Err(e) = messenger_tx.flush().await {
+								client.disconnect(Err(e.into()));
 							}
 						}
 					}

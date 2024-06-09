@@ -3,9 +3,11 @@ use parking_lot::Mutex;
 use std::any::Any;
 use tokio::sync::mpsc::{self, unbounded_channel};
 
+type Anything = Box<dyn Any + Send + Sync>;
+
 static MAIN_DESTROY_QUEUE: Lazy<(
-	mpsc::UnboundedSender<Box<dyn Any + Send + Sync>>,
-	Mutex<mpsc::UnboundedReceiver<Box<dyn Any + Send + Sync>>>,
+	mpsc::UnboundedSender<Anything>,
+	Mutex<mpsc::UnboundedReceiver<Anything>>,
 )> = Lazy::new(|| {
 	let (tx, rx) = unbounded_channel();
 	(tx, Mutex::new(rx))

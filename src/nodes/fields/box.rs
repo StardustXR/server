@@ -54,7 +54,7 @@ impl BoxFieldAspect for BoxField {
 		let Field::Box(this_field) = &*this_field else {
 			return Ok(());
 		};
-		this_field.set_size(size.into());
+		this_field.set_size(size);
 		Ok(())
 	}
 }

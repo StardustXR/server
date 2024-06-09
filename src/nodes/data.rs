@@ -36,7 +36,7 @@ pub fn mask_matches(mask_map_lesser: &Datamap, mask_map_greater: &Datamap) -> bo
 			let greater_key = get_mask(mask_map_greater)?.index(key)?;
 			// otherwise zero-length vectors don't count the same as a single type vector
 			if lesser_key.flexbuffer_type().is_heterogenous_vector()
-				&& lesser_key.as_vector().len() == 0
+				&& lesser_key.as_vector().is_empty()
 				&& greater_key.flexbuffer_type().is_vector()
 			{
 				continue;

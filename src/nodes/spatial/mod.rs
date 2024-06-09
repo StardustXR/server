@@ -19,7 +19,7 @@ use stereokit_rust::maths::Bounds;
 
 stardust_xr_server_codegen::codegen_spatial_protocol!();
 impl Transform {
-	pub fn to_mat4(self, position: bool, rotation: bool, scale: bool) -> Mat4 {
+	pub fn to_mat4(&self, position: bool, rotation: bool, scale: bool) -> Mat4 {
 		let position = position
 			.then_some(self.translation)
 			.flatten()
@@ -184,7 +184,7 @@ impl Spatial {
 	}
 	fn set_parent(self: &Arc<Self>, new_parent: Option<&Arc<Spatial>>) {
 		if let Some(parent) = self.get_parent() {
-			parent.children.remove(&self);
+			parent.children.remove(self);
 		}
 		if let Some(new_parent) = &new_parent {
 			new_parent.children.add_raw(self);
@@ -218,7 +218,7 @@ impl Spatial {
 		}
 
 		self.set_local_transform(Spatial::space_to_space_matrix(
-			Some(&self),
+			Some(self),
 			parent.map(AsRef::as_ref),
 		));
 		self.set_parent(parent);

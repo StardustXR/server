@@ -47,7 +47,7 @@ impl EyePointer {
 	pub fn update(&self) {
 		let ray = Input::get_eyes();
 		self.spatial.set_local_transform(
-			Mat4::from_rotation_translation(ray.orientation.into(), ray.position.into()).into(),
+			Mat4::from_rotation_translation(ray.orientation.into(), ray.position.into()),
 		);
 		{
 			// Set pointer input datamap

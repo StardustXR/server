@@ -76,7 +76,7 @@ impl Lines {
 					thickness: (first.thickness + last.thickness) * 0.5,
 					color: color.into(),
 				};
-				points.push_front(connect_point.clone());
+				points.push_front(connect_point);
 				points.push_back(connect_point);
 			}
 			stereokit_rust::system::Lines::add_list(token, points.make_contiguous());

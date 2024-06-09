@@ -165,7 +165,7 @@ impl Wayland {
 		let dh1 = display.handle();
 		let mut dh2 = dh1.clone();
 
-		Ok(task::new(|| "wayland loop", async move {
+		task::new(|| "wayland loop", async move {
 			let _socket = socket; // Keep the socket alive
 			loop {
 				tokio::select! {
@@ -191,7 +191,7 @@ impl Wayland {
 					}
 				}
 			}
-		})?)
+		})
 	}
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self))]

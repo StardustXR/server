@@ -140,7 +140,7 @@ impl CameraItem {
 		let sk_mat = self
 			.sk_mat
 			.get_or_try_init(|| -> Result<Arc<MaterialWrapper>> {
-				let shader = Shader::from_memory(&UNLIT_SHADER_BYTES)?;
+				let shader = Shader::from_memory(UNLIT_SHADER_BYTES)?;
 				let mut mat = Material::new(&shader, None);
 				mat.get_all_param_info().set_texture("diffuse", &sk_tex.0);
 				mat.transparency(Transparency::Blend);

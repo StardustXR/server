@@ -14,7 +14,7 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 	}
 	fn lock(&self) -> MappedMutexGuard<FxHashMap<usize, Weak<T>>> {
 		MutexGuard::map(self.0.lock(), |r| {
-			r.get_or_insert_with(|| FxHashMap::default())
+			r.get_or_insert_with(FxHashMap::default)
 		})
 	}
 	pub fn add(&self, t: T) -> Arc<T>
@@ -63,7 +63,7 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 			.collect()
 	}
 	pub fn set(&self, other: &Registry<T>) {
-		*self.lock() = other.lock().clone();
+		self.lock().clone_from(&other.lock());
 	}
 	pub fn take_valid_contents(&self) -> Vec<Arc<T>> {
 		self.0
@@ -119,7 +119,7 @@ impl<T: Send + Sync + ?Sized> OwnedRegistry<T> {
 	}
 	fn lock(&self) -> MappedMutexGuard<FxHashMap<usize, Arc<T>>> {
 		MutexGuard::map(self.0.lock(), |r| {
-			r.get_or_insert_with(|| FxHashMap::default())
+			r.get_or_insert_with(FxHashMap::default)
 		})
 	}
 	pub fn add(&self, t: T) -> Arc<T>

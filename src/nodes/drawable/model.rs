@@ -58,7 +58,7 @@ impl MaterialParameter {
 			}
 			MaterialParameter::Texture(resource) => {
 				let Some(texture_path) =
-					get_resource_file(&resource, &client, &[OsStr::new("png"), OsStr::new("jpg")])
+					get_resource_file(resource, client, &[OsStr::new("png"), OsStr::new("jpg")])
 				else {
 					return;
 				};

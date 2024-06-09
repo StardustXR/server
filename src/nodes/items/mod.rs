@@ -35,7 +35,7 @@ fn release(item: &Item) {
 		*captured_acceptor = Weak::default();
 		acceptor.handle_release(item);
 		if let Some(ui) = item.type_info.ui.lock().upgrade() {
-			ui.handle_release_item(item, &acceptor);
+			ui.handle_release_item(item, acceptor);
 		}
 	}
 }

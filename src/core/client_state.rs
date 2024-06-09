@@ -65,11 +65,11 @@ impl ClientStateParsed {
 		let file_string = std::fs::read_to_string(file).ok()?;
 		toml::from_str(&file_string).ok()
 	}
-	pub fn to_file(self, directory: &Path) {
+	pub fn to_file(&self, directory: &Path) {
 		let app_name = self
 			.launch_info
 			.as_ref()
-			.map(|l| l.cmdline.get(0).unwrap().split('/').last().unwrap())
+			.map(|l| l.cmdline.first().unwrap().split('/').last().unwrap())
 			.unwrap_or("unknown");
 		let state_file_path = directory
 			.join(format!("{app_name}-{}", nanoid::nanoid!()))

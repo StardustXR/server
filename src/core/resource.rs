@@ -1,13 +1,16 @@
 use stardust_xr::values::ResourceID;
-use std::{ffi::OsStr, path::PathBuf};
+use std::{
+	ffi::OsStr,
+	path::{Path, PathBuf},
+};
 
 use super::client::Client;
 
 lazy_static::lazy_static! {
-	static ref THEMES: Vec<PathBuf> = std::env::var("STARDUST_THEMES").map(|s| s.split(":").map(PathBuf::from).collect()).unwrap_or_default();
+	static ref THEMES: Vec<PathBuf> = std::env::var("STARDUST_THEMES").map(|s| s.split(':').map(PathBuf::from).collect()).unwrap_or_default();
 }
 
-fn has_extension(path: &PathBuf, extensions: &[&OsStr]) -> bool {
+fn has_extension(path: &Path, extensions: &[&OsStr]) -> bool {
 	if let Some(path_extension) = path.extension() {
 		extensions.contains(&path_extension)
 	} else {

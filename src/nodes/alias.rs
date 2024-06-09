@@ -59,7 +59,7 @@ impl Alias {
 
 	fn add_to(new_node: &Arc<Node>, original: &Arc<Node>, info: AliasInfo) -> Result<()> {
 		let alias = Alias {
-			node: Arc::downgrade(&new_node),
+			node: Arc::downgrade(new_node),
 			original: Arc::downgrade(original),
 			info,
 		};

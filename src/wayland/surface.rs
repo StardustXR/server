@@ -107,7 +107,7 @@ impl CoreSurface {
 			)))
 		});
 		self.sk_mat.get_or_init(|| {
-			let shader = Shader::from_memory(&PANEL_SHADER_BYTES).unwrap();
+			let shader = Shader::from_memory(PANEL_SHADER_BYTES).unwrap();
 			// let _ = renderer.with_context(|c| unsafe {
 			// 	shader_inject(c, &mut shader, SIMULA_VERT_STR, SIMULA_FRAG_STR)
 			// });

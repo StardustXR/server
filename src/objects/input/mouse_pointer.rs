@@ -157,7 +157,7 @@ impl MousePointer {
 				.pointer
 				.capture_requests
 				.get_valid_contents()
-				.contains(&capture)
+				.contains(capture)
 			{
 				self.capture.take();
 			}

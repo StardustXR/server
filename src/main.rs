@@ -1,3 +1,4 @@
+#![allow(clippy::empty_docs)]
 mod core;
 mod nodes;
 mod objects;
@@ -399,7 +400,7 @@ fn run_client(
 	#[cfg(feature = "wayland")]
 	{
 		if let Some(wayland_socket) = wayland.socket_name.as_ref() {
-			command.env("WAYLAND_DISPLAY", &wayland_socket);
+			command.env("WAYLAND_DISPLAY", wayland_socket);
 		}
 		command.env(
 			"DISPLAY",
@@ -429,7 +430,7 @@ async fn save_session(project_dirs: &ProjectDirs) {
 		local_set.spawn_local(async move {
 			tokio::select! {
 				biased;
-				s = client.save_state() => {s.map(|s| s.to_file(&session_dir));},
+				s = client.save_state() => {if let Some(s) = s { s.to_file(&session_dir) }},
 				_ = tokio::time::sleep(Duration::from_millis(100)) => (),
 			}
 		});
