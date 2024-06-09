@@ -29,7 +29,7 @@ use std::time::Duration;
 use stereokit_rust::material::Material;
 use stereokit_rust::shader::Shader;
 use stereokit_rust::sk::{
-	sk_quit, AppMode, DepthMode, DisplayBlend, DisplayMode, QuitReason, SkClosures, SkSettings,
+	sk_quit, AppMode, DepthMode, DisplayBlend, DisplayMode, QuitReason, SkSettings,
 };
 use stereokit_rust::system::{Handed, LogLevel, Renderer, World};
 use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
@@ -71,13 +71,6 @@ struct EventLoopInfo {
 }
 
 fn main() {
-	ctrlc::set_handler(|| {
-		if atty::isnt(atty::Stream::Stdout) {
-			STOP_NOTIFIER.notify_waiters()
-		}
-	})
-	.unwrap();
-
 	let registry = tracing_subscriber::registry();
 
 	#[cfg(feature = "profile_app")]
@@ -101,7 +94,7 @@ fn main() {
 	}
 	let cli_args = Arc::new(CliArgs::parse());
 
-	let (sk, sk_event_loop) = SkSettings::default()
+	let sk = SkSettings::default()
 		.app_name("Stardust XR")
 		.mode(if cli_args.flatscreen {
 			AppMode::Simulator
@@ -209,57 +202,51 @@ fn main() {
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
 	debug_span!("StereoKit").in_scope(|| {
-		SkClosures::run_app(
-			sk,
-			sk_event_loop,
-			|sk, token| {
-				let _span = debug_span!("StereoKit step");
-				let _span = _span.enter();
+		while let Some(token) = sk.step() {
+			let _span = debug_span!("StereoKit step");
+			let _span = _span.enter();
 
-				hmd::frame();
-				camera::update(token);
-				#[cfg(feature = "wayland")]
-				wayland.frame_event();
-				destroy_queue::clear();
+			hmd::frame();
+			camera::update(token);
+			#[cfg(feature = "wayland")]
+			wayland.frame_event();
+			destroy_queue::clear();
 
-				if let Some(mouse_pointer) = &mut mouse_pointer {
-					mouse_pointer.update();
-				}
-				if let Some((left_hand, right_hand)) = &mut hands {
-					left_hand.update(sk, token);
-					right_hand.update(sk, token);
-				}
-				if let Some((left_controller, right_controller)) = &mut controllers {
-					left_controller.update(token);
-					right_controller.update(token);
-				}
-				if let Some(eye_pointer) = &eye_pointer {
-					eye_pointer.update();
-				}
-				if let Some(play_space) = &play_space {
-					play_space.update();
-				}
-				input::process_input();
-				nodes::root::Root::send_frame_events(Time::get_step_unscaled());
-				adaptive_sleep(
-					&mut last_frame_delta,
-					&mut sleep_duration,
-					Duration::from_micros(250),
-				);
+			if let Some(mouse_pointer) = &mut mouse_pointer {
+				mouse_pointer.update();
+			}
+			if let Some((left_hand, right_hand)) = &mut hands {
+				left_hand.update(&sk, token);
+				right_hand.update(&sk, token);
+			}
+			if let Some((left_controller, right_controller)) = &mut controllers {
+				left_controller.update(token);
+				right_controller.update(token);
+			}
+			if let Some(eye_pointer) = &eye_pointer {
+				eye_pointer.update();
+			}
+			if let Some(play_space) = &play_space {
+				play_space.update();
+			}
+			input::process_input();
+			nodes::root::Root::send_frame_events(Time::get_step_unscaled());
+			adaptive_sleep(
+				&mut last_frame_delta,
+				&mut sleep_duration,
+				Duration::from_micros(250),
+			);
 
-				#[cfg(feature = "wayland")]
-				wayland.update();
-				drawable::draw(token);
-				audio::update();
-				#[cfg(feature = "wayland")]
-				wayland.make_context_current();
-			},
-			|_sk| {
-				info!("Cleanly shut down StereoKit");
-			},
-		)
+			#[cfg(feature = "wayland")]
+			wayland.update();
+			drawable::draw(token);
+			audio::update();
+			#[cfg(feature = "wayland")]
+			wayland.make_context_current();
+		}
 	});
 
+	info!("Cleanly shut down StereoKit");
 	#[cfg(feature = "wayland")]
 	drop(wayland);
 

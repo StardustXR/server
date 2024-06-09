@@ -89,7 +89,8 @@ features = [
 optional = true
 
 [dependencies.stereokit-rust]
-git = "https://github.com/mvvvv/StereoKit-rust.git"
+git = "https://github.com/technobaboo/StereoKit-rust.git"
+default-features = false
 
 [dependencies.console-subscriber]
 version = "0.2.0"
