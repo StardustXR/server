@@ -501,14 +501,6 @@ impl Backend for XdgBackend {
 			keyboard_grab: None,
 		})
 	}
-
-	fn surface_alive(&self, surface: &SurfaceId) -> bool {
-		let Some(surface) = self.wl_surface_from_id(surface) else {
-			return false;
-		};
-		surface.is_alive()
-	}
-
 	fn apply_cursor_material(&self, model_part: &Arc<ModelPart>) {
 		let Some(surface) = self
 			.seat

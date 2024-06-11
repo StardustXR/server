@@ -1,3 +1,4 @@
+use super::{create_item_acceptor_flex, register_item_ui_flex, ItemAcceptor, ItemInterface};
 use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
 use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
 use crate::{
@@ -20,8 +21,6 @@ use mint::Vector2;
 use std::sync::{Arc, Weak};
 use tracing::{debug, info};
 
-use super::{create_item_acceptor_flex, register_item_ui_flex, ItemAcceptor, ItemInterface};
-
 stardust_xr_server_codegen::codegen_item_panel_protocol!();
 lazy_static! {
 	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
@@ -39,7 +38,6 @@ lazy_static! {
 
 pub trait Backend: Send + Sync + 'static {
 	fn start_data(&self) -> Result<PanelItemInitData>;
-	fn surface_alive(&self, surface: &SurfaceId) -> bool;
 
 	fn apply_cursor_material(&self, model_part: &Arc<ModelPart>);
 	fn apply_surface_material(&self, surface: SurfaceId, model_part: &Arc<ModelPart>);
@@ -73,16 +71,17 @@ pub fn panel_item_from_node(node: &Node) -> Option<Arc<dyn PanelItemTrait>> {
 	Some(panel_item.clone())
 }
 
-pub trait PanelItemTrait: Backend + Send + Sync + 'static {
+pub trait PanelItemTrait: Send + Sync + 'static {
+	fn backend(&self) -> &dyn Backend;
 	fn send_ui_item_created(&self, node: &Node, item: &Arc<Node>);
 	fn send_acceptor_item_created(&self, node: &Node, item: &Arc<Node>);
 }
 
-pub struct PanelItem<B: Backend + ?Sized> {
+pub struct PanelItem<B: Backend> {
 	pub node: Weak<Node>,
 	pub backend: Box<B>,
 }
-impl<B: Backend + ?Sized> PanelItem<B> {
+impl<B: Backend> PanelItem<B> {
 	pub fn create(backend: Box<B>, pid: Option<i32>) -> (Arc<Node>, Arc<PanelItem<B>>) {
 		debug!(?pid, "Create panel item");
 
@@ -121,7 +120,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 
 // Remote signals
 #[allow(unused)]
-impl<B: Backend + ?Sized> PanelItem<B> {
+impl<B: Backend> PanelItem<B> {
 	pub fn toplevel_parent_changed(&self, parent: u64) {
 		let Some(node) = self.node.upgrade() else {
 			return;
@@ -199,7 +198,7 @@ impl<B: Backend + ?Sized> PanelItem<B> {
 // make these stupid vectors u32 in the protocol somehow!!!!!!!1
 
 #[allow(unused)]
-impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
+impl<B: Backend> PanelItemAspect for PanelItem<B> {
 	#[doc = "Apply the cursor as a material to a model."]
 	fn apply_cursor_material(
 		node: Arc<Node>,
@@ -211,7 +210,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		};
 		let model_part = model_part.get_aspect::<ModelPart>()?;
 
-		panel_item.apply_cursor_material(&model_part);
+		panel_item.backend().apply_cursor_material(&model_part);
 		Ok(())
 	}
 
@@ -227,7 +226,9 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		};
 		let model_part = model_part.get_aspect::<ModelPart>()?;
 
-		panel_item.apply_surface_material(surface, &model_part);
+		panel_item
+			.backend()
+			.apply_surface_material(surface, &model_part);
 		Ok(())
 	}
 
@@ -236,7 +237,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.close_toplevel();
+		panel_item.backend().close_toplevel();
 		Ok(())
 	}
 
@@ -245,7 +246,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.auto_size_toplevel();
+		panel_item.backend().auto_size_toplevel();
 		Ok(())
 	}
 
@@ -258,7 +259,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.set_toplevel_size(size);
+		panel_item.backend().set_toplevel_size(size);
 		Ok(())
 	}
 
@@ -271,7 +272,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.set_toplevel_focused_visuals(focused);
+		panel_item.backend().set_toplevel_focused_visuals(focused);
 		Ok(())
 	}
 
@@ -285,7 +286,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.pointer_motion(&surface, position);
+		panel_item.backend().pointer_motion(&surface, position);
 		Ok(())
 	}
 
@@ -300,7 +301,9 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.pointer_button(&surface, button, pressed);
+		panel_item
+			.backend()
+			.pointer_button(&surface, button, pressed);
 		Ok(())
 	}
 
@@ -315,7 +318,9 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.pointer_scroll(&surface, Some(scroll_distance), Some(scroll_steps));
+		panel_item
+			.backend()
+			.pointer_scroll(&surface, Some(scroll_distance), Some(scroll_steps));
 		Ok(())
 	}
 
@@ -328,7 +333,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.pointer_scroll(&surface, None, None);
+		panel_item.backend().pointer_scroll(&surface, None, None);
 		Ok(())
 	}
 
@@ -343,7 +348,9 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.keyboard_keys(&surface, keymap_id, keys);
+		panel_item
+			.backend()
+			.keyboard_keys(&surface, keymap_id, keys);
 		Ok(())
 	}
 
@@ -358,7 +365,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.touch_down(&surface, uid, position);
+		panel_item.backend().touch_down(&surface, uid, position);
 		Ok(())
 	}
 
@@ -372,7 +379,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.touch_move(uid, position);
+		panel_item.backend().touch_move(uid, position);
 		Ok(())
 	}
 
@@ -381,7 +388,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.touch_up(uid);
+		panel_item.backend().touch_up(uid);
 		Ok(())
 	}
 
@@ -390,7 +397,7 @@ impl<B: Backend + ?Sized> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.reset_input();
+		panel_item.backend().reset_input();
 		Ok(())
 	}
 }
@@ -401,7 +408,10 @@ impl PanelItemAcceptorAspect for ItemAcceptor {
 	}
 }
 
-impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
+impl<B: Backend> PanelItemTrait for PanelItem<B> {
+	fn backend(&self) -> &dyn Backend {
+		self.backend.as_ref()
+	}
 	fn send_ui_item_created(&self, node: &Node, item: &Arc<Node>) {
 		let Ok(init_data) = self.backend.start_data() else {
 			return;
@@ -415,68 +425,7 @@ impl<B: Backend + ?Sized> PanelItemTrait for PanelItem<B> {
 		let _ = panel_item_acceptor_client::capture_item(node, item, init_data);
 	}
 }
-impl<B: Backend + ?Sized> Backend for PanelItem<B> {
-	fn start_data(&self) -> Result<PanelItemInitData> {
-		self.backend.start_data()
-	}
-	fn surface_alive(&self, surface: &SurfaceId) -> bool {
-		self.backend.surface_alive(surface)
-	}
-
-	fn apply_cursor_material(&self, model_part: &Arc<ModelPart>) {
-		self.backend.apply_cursor_material(model_part)
-	}
-	fn apply_surface_material(&self, surface: SurfaceId, model_part: &Arc<ModelPart>) {
-		self.backend.apply_surface_material(surface, model_part)
-	}
-
-	fn close_toplevel(&self) {
-		self.backend.close_toplevel()
-	}
-	fn auto_size_toplevel(&self) {
-		self.backend.auto_size_toplevel()
-	}
-	fn set_toplevel_size(&self, size: Vector2<u32>) {
-		self.backend.set_toplevel_size(size)
-	}
-	fn set_toplevel_focused_visuals(&self, focused: bool) {
-		self.backend.set_toplevel_focused_visuals(focused)
-	}
-
-	fn pointer_motion(&self, surface: &SurfaceId, position: Vector2<f32>) {
-		self.backend.pointer_motion(surface, position)
-	}
-	fn pointer_button(&self, surface: &SurfaceId, button: u32, pressed: bool) {
-		self.backend.pointer_button(surface, button, pressed)
-	}
-	fn pointer_scroll(
-		&self,
-		surface: &SurfaceId,
-		scroll_distance: Option<Vector2<f32>>,
-		scroll_steps: Option<Vector2<f32>>,
-	) {
-		self.backend
-			.pointer_scroll(surface, scroll_distance, scroll_steps)
-	}
-
-	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: u64, keys: Vec<i32>) {
-		self.backend.keyboard_keys(surface, keymap_id, keys)
-	}
-
-	fn touch_down(&self, surface: &SurfaceId, id: u32, position: Vector2<f32>) {
-		self.backend.touch_down(surface, id, position)
-	}
-	fn touch_move(&self, id: u32, position: Vector2<f32>) {
-		self.backend.touch_move(id, position)
-	}
-	fn touch_up(&self, id: u32) {
-		self.backend.touch_up(id)
-	}
-	fn reset_input(&self) {
-		self.backend.reset_input()
-	}
-}
-impl<B: Backend + ?Sized> Drop for PanelItem<B> {
+impl<B: Backend> Drop for PanelItem<B> {
 	fn drop(&mut self) {
 		// Dropped panel item, basically just a debug breakpoint place
 		info!("Dropped panel item");
