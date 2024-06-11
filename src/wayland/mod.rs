@@ -8,16 +8,6 @@ mod surface;
 mod drm;
 mod utils;
 mod xdg_shell;
-#[cfg(feature = "xwayland_rootful")]
-pub mod xwayland_rootful;
-#[cfg(feature = "xwayland_rootful")]
-use self::xwayland_rootful::X11Lock;
-#[cfg(feature = "xwayland_rootful")]
-use crate::wayland::xwayland_rootful::start_xwayland;
-#[cfg(feature = "xwayland_rootless")]
-pub mod xwayland_rootless;
-#[cfg(feature = "xwayland_rootless")]
-use crate::wayland::xwayland_rootless::start_xwayland;
 
 use self::{state::WaylandState, surface::CORE_SURFACES};
 use crate::{core::task, wayland::state::ClientState};
@@ -48,7 +38,6 @@ use tokio::{
 };
 use tracing::{debug_span, info, instrument};
 
-pub static X_DISPLAY: OnceCell<u32> = OnceCell::new();
 pub static WAYLAND_DISPLAY: OnceCell<String> = OnceCell::new();
 
 struct EGLRawHandles {
@@ -96,10 +85,6 @@ pub struct Wayland {
 	renderer: GlesRenderer,
 	output: Output,
 	dmabuf_rx: UnboundedReceiver<(Dmabuf, Option<dmabuf::ImportNotifier>)>,
-	#[cfg(feature = "xwayland_rootful")]
-	pub x_lock: X11Lock,
-	#[cfg(feature = "xwayland_rootless")]
-	xwayland_join_handle: JoinHandle<Result<()>>,
 }
 impl Wayland {
 	pub fn new() -> Result<Self> {
@@ -129,13 +114,9 @@ impl Wayland {
 		if let Some(socket_name) = &socket_name {
 			let _ = WAYLAND_DISPLAY.set(socket_name.clone());
 		}
-		#[cfg(feature = "xwayland_rootful")]
-		let x_display = start_xwayland(socket.as_raw_fd())?;
 		info!(socket_name, "Wayland active");
 
 		let join_handle = Wayland::start_loop(display.clone(), socket, wayland_state)?;
-		#[cfg(feature = "xwayland_rootless")]
-		let xwayland_join_handle = task::new(|| "xwayland", start_xwayland(display_handle))?;
 
 		Ok(Wayland {
 			display,
@@ -144,10 +125,6 @@ impl Wayland {
 			renderer,
 			output,
 			dmabuf_rx,
-			#[cfg(feature = "xwayland_rootful")]
-			x_lock: x_display,
-			#[cfg(feature = "xwayland_rootless")]
-			xwayland_join_handle,
 		})
 	}
 
