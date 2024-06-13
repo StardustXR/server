@@ -24,7 +24,7 @@ use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::reexports::wayland_server::{Display, ListeningSocket};
 use smithay::wayland::dmabuf;
 use std::ffi::OsStr;
-use std::os::fd::OwnedFd;
+use std::os::fd::{IntoRawFd, OwnedFd};
 use std::os::unix::prelude::AsRawFd;
 use std::{
 	ffi::c_void,
@@ -32,6 +32,7 @@ use std::{
 	sync::Arc,
 };
 use stereokit_rust::system::{Backend, BackendGraphics};
+use tokio::io::unix::AsyncFdReadyGuard;
 use tokio::sync::mpsc::UnboundedReceiver;
 use tokio::{
 	io::unix::AsyncFd, net::UnixListener as AsyncUnixListener, sync::mpsc, task::JoinHandle,
@@ -75,6 +76,18 @@ impl DisplayWrapper {
 	}
 	pub fn poll_fd(&self) -> Result<OwnedFd, std::io::Error> {
 		self.0.lock().backend().poll_fd().try_clone_to_owned()
+	}
+}
+
+struct UnownedFd(Option<AsyncFd<OwnedFd>>);
+impl UnownedFd {
+	async fn readable(&self) -> std::io::Result<AsyncFdReadyGuard<'_, OwnedFd>> {
+		self.0.as_ref().unwrap().readable().await
+	}
+}
+impl Drop for UnownedFd {
+	fn drop(&mut self) {
+		self.0.take().unwrap().into_inner().into_raw_fd();
 	}
 }
 
@@ -137,7 +150,7 @@ impl Wayland {
 			AsyncUnixListener::from_std(unsafe { UnixListener::from_raw_fd(socket.as_raw_fd()) })?;
 
 		let dispatch_poll_fd = display.poll_fd()?;
-		let dispatch_poll_listener = AsyncFd::new(dispatch_poll_fd)?;
+		let dispatch_poll_listener = UnownedFd(Some(AsyncFd::new(dispatch_poll_fd)?));
 
 		let dh1 = display.handle();
 		let mut dh2 = dh1.clone();

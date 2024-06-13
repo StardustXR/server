@@ -1,5 +1,7 @@
 pub mod lines;
 pub mod model;
+#[cfg(feature = "wayland")]
+pub mod shader_manipulation;
 pub mod shaders;
 pub mod text;
 

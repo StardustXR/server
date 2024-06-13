@@ -195,7 +195,6 @@ impl XdgShellHandler for WaylandState {
 			return;
 		}
 		utils::insert_data(popup.wl_surface(), SurfaceId::Child(uid));
-		utils::insert_data(popup.wl_surface(), uid);
 		utils::insert_data(popup.wl_surface(), Arc::downgrade(&panel_item));
 		CoreSurface::add_to(
 			popup.wl_surface(),

@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [features]
 default = ["wayland"]
-wayland = ["dep:smithay", "dep:xkbcommon"]
+wayland = ["dep:smithay"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy"]
 
@@ -59,7 +59,7 @@ serde_repr = "0.1.19"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 rand = "0.8.5"
-xkbcommon = { version = "0.7.0", default-features = false, optional = true }
+xkbcommon = { version = "0.7.0", default-features = false }
 libc = "0.2.155"
 input-event-codes = "6.2.0"
 nix = "0.29.0"

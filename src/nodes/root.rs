@@ -4,12 +4,9 @@ use crate::core::client::Client;
 use crate::core::client_state::ClientStateParsed;
 use crate::core::registry::Registry;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
-#[cfg(feature = "wayland")]
-use crate::wayland::WAYLAND_DISPLAY;
-use crate::STARDUST_INSTANCE;
+use crate::session::connection_env;
 use color_eyre::eyre::{bail, Result};
 use glam::Mat4;
-use rustc_hash::FxHashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::info;
@@ -61,25 +58,7 @@ impl RootAspect for Root {
 		_node: Arc<Node>,
 		_calling_client: Arc<Client>,
 	) -> Result<stardust_xr::values::Map<String, String>> {
-		macro_rules! var_env_insert {
-			($env:ident, $name:ident) => {
-				$env.insert(stringify!($name).to_string(), $name.get().unwrap().clone());
-			};
-		}
-
-		let mut env: FxHashMap<String, String> = FxHashMap::default();
-		var_env_insert!(env, STARDUST_INSTANCE);
-		#[cfg(feature = "wayland")]
-		{
-			var_env_insert!(env, WAYLAND_DISPLAY);
-			env.insert("GDK_BACKEND".to_string(), "wayland".to_string());
-			env.insert("QT_QPA_PLATFORM".to_string(), "wayland".to_string());
-			env.insert("MOZ_ENABLE_WAYLAND".to_string(), "1".to_string());
-			env.insert("CLUTTER_BACKEND".to_string(), "wayland".to_string());
-			env.insert("SDL_VIDEODRIVER".to_string(), "wayland".to_string());
-		}
-
-		Ok(env)
+		Ok(connection_env())
 	}
 
 	#[doc = "Generate a client state token and return it back.\n\n When launching a new client, set the environment variable `STARDUST_STARTUP_TOKEN` to the returned string.\n Make sure the environment variable shows in `/proc/{pid}/environ` as that's the only reliable way to pass the value to the server (suggestions welcome).\n"]
