@@ -1,4 +1,4 @@
-use super::{seat::SeatWrapper, DisplayWrapper};
+use super::seat::SeatWrapper;
 use crate::wayland::drm::wl_drm::WlDrm;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -41,7 +41,7 @@ use smithay::{
 		shm::{ShmHandler, ShmState},
 	},
 };
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{info, warn};
 
@@ -49,7 +49,6 @@ pub struct ClientState {
 	pub pid: Option<i32>,
 	pub id: OnceCell<ClientId>,
 	pub compositor_state: CompositorClientState,
-	pub display: Weak<DisplayWrapper>,
 	pub seat: Arc<SeatWrapper>,
 }
 impl ClientData for ClientState {
@@ -67,9 +66,6 @@ impl ClientData for ClientState {
 }
 
 pub struct WaylandState {
-	pub weak_ref: Weak<Mutex<WaylandState>>,
-	pub display_handle: DisplayHandle,
-
 	pub compositor_state: CompositorState,
 	// pub xdg_activation_state: XdgActivationState,
 	pub kde_decoration_state: KdeDecorationState,
@@ -176,9 +172,6 @@ impl WaylandState {
 
 		Arc::new_cyclic(|weak| {
 			Mutex::new(WaylandState {
-				weak_ref: weak.clone(),
-				display_handle,
-
 				compositor_state,
 				// xdg_activation_state,
 				kde_decoration_state,

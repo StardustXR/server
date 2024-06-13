@@ -21,7 +21,7 @@ use smithay::{
 	},
 	desktop::utils::send_frames_surface_tree,
 	output::Output,
-	reexports::wayland_server::{self, protocol::wl_surface::WlSurface, DisplayHandle, Resource},
+	reexports::wayland_server::{self, protocol::wl_surface::WlSurface, Resource},
 	wayland::compositor::{self, SurfaceData},
 };
 use std::{cell::RefCell, ffi::c_void, sync::Arc, time::Duration};
@@ -45,7 +45,6 @@ impl Drop for CoreSurfaceData {
 }
 
 pub struct CoreSurface {
-	pub dh: DisplayHandle,
 	pub weak_surface: wayland_server::Weak<WlSurface>,
 	mapped_data: Mutex<Option<CoreSurfaceData>>,
 	sk_tex: OnceCell<Mutex<TexWrapper>>,
@@ -58,13 +57,11 @@ pub struct CoreSurface {
 
 impl CoreSurface {
 	pub fn add_to(
-		dh: DisplayHandle,
 		surface: &WlSurface,
 		on_mapped: impl Fn() + Send + Sync + 'static,
 		on_commit: impl Fn(u32) + Send + Sync + 'static,
 	) {
 		let core_surface = CORE_SURFACES.add(CoreSurface {
-			dh,
 			weak_surface: surface.downgrade(),
 			mapped_data: Mutex::new(None),
 			sk_tex: OnceCell::new(),

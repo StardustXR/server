@@ -39,7 +39,7 @@ impl SeatHandler for WaylandState {
 		self.seat.cursor_info_tx.send_modify(|c| match image {
 			CursorImageStatus::Hidden => c.surface = None,
 			CursorImageStatus::Surface(surface) => {
-				CoreSurface::add_to(self.display_handle.clone(), &surface, || (), |_| ());
+				CoreSurface::add_to(&surface, || (), |_| ());
 				compositor::with_states(&surface, |data| {
 					if let Some(core_surface) = data.data_map.get::<Arc<CoreSurface>>() {
 						core_surface.set_material_offset(1);

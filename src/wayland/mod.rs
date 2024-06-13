@@ -152,7 +152,6 @@ impl Wayland {
 							pid: stream.peer_cred().ok().and_then(|c| c.pid()),
 							id: OnceCell::new(),
 							compositor_state: Default::default(),
-							display: Arc::downgrade(&display),
 							seat: state.lock().seat.clone(),
 						});
 						let _client = dh2.insert_client(stream.into_std()?, client_state.clone())?;

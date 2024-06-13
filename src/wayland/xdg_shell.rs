@@ -88,7 +88,6 @@ impl XdgShellHandler for WaylandState {
 		toplevel.send_configure();
 		utils::insert_data(toplevel.wl_surface(), SurfaceId::Toplevel);
 		CoreSurface::add_to(
-			self.display_handle.clone(),
 			toplevel.wl_surface(),
 			{
 				let toplevel = toplevel.clone();
@@ -199,7 +198,6 @@ impl XdgShellHandler for WaylandState {
 		utils::insert_data(popup.wl_surface(), uid);
 		utils::insert_data(popup.wl_surface(), Arc::downgrade(&panel_item));
 		CoreSurface::add_to(
-			self.display_handle.clone(),
 			popup.wl_surface(),
 			{
 				let popup = popup.clone();
