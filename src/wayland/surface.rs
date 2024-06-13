@@ -1,4 +1,4 @@
-use super::{state::WaylandState, utils::get_data};
+use super::{state::WaylandState, utils};
 use crate::{
 	core::{delta::Delta, destroy_queue, registry::Registry},
 	nodes::{
@@ -12,7 +12,6 @@ use crate::{
 use mint::Vector2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
-
 use send_wrapper::SendWrapper;
 use smithay::{
 	backend::renderer::{
@@ -64,21 +63,18 @@ impl CoreSurface {
 		on_mapped: impl Fn() + Send + Sync + 'static,
 		on_commit: impl Fn(u32) + Send + Sync + 'static,
 	) {
-		compositor::with_states(surface, |data| {
-			data.data_map.insert_if_missing_threadsafe(|| {
-				CORE_SURFACES.add(CoreSurface {
-					dh,
-					weak_surface: surface.downgrade(),
-					mapped_data: Mutex::new(None),
-					sk_tex: OnceCell::new(),
-					sk_mat: OnceCell::new(),
-					material_offset: Mutex::new(Delta::new(0)),
-					on_mapped: Mutex::new(Box::new(on_mapped) as Box<dyn Fn() + Send + Sync>),
-					on_commit: Mutex::new(Box::new(on_commit) as Box<dyn Fn(u32) + Send + Sync>),
-					pending_material_applications: Registry::new(),
-				})
-			});
+		let core_surface = CORE_SURFACES.add(CoreSurface {
+			dh,
+			weak_surface: surface.downgrade(),
+			mapped_data: Mutex::new(None),
+			sk_tex: OnceCell::new(),
+			sk_mat: OnceCell::new(),
+			material_offset: Mutex::new(Delta::new(0)),
+			on_mapped: Mutex::new(Box::new(on_mapped) as Box<dyn Fn() + Send + Sync>),
+			on_commit: Mutex::new(Box::new(on_commit) as Box<dyn Fn(u32) + Send + Sync>),
+			pending_material_applications: Registry::new(),
 		});
+		utils::insert_data_raw(surface, core_surface);
 	}
 
 	pub fn commit(&self, count: u32) {
@@ -86,7 +82,7 @@ impl CoreSurface {
 	}
 
 	pub fn from_wl_surface(surf: &WlSurface) -> Option<Arc<CoreSurface>> {
-		get_data(surf)
+		utils::get_data(surf)
 	}
 
 	pub fn decycle(&self) {

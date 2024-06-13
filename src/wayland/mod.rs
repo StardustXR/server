@@ -202,7 +202,5 @@ impl Wayland {
 impl Drop for Wayland {
 	fn drop(&mut self) {
 		self.join_handle.abort();
-		#[cfg(feature = "xwayland_rootless")]
-		self.xwayland_join_handle.abort();
 	}
 }

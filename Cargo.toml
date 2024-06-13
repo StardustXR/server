@@ -19,8 +19,6 @@ path = "src/main.rs"
 [features]
 default = ["wayland"]
 wayland = ["dep:smithay", "dep:xkbcommon"]
-xwayland_rootful = []
-xwayland_rootless = ["smithay/xwayland"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy"]
 

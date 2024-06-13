@@ -6,8 +6,6 @@ use crate::core::registry::Registry;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 #[cfg(feature = "wayland")]
 use crate::wayland::WAYLAND_DISPLAY;
-#[cfg(feature = "xwayland")]
-use crate::wayland::X_DISPLAY;
 use crate::STARDUST_INSTANCE;
 use color_eyre::eyre::{bail, Result};
 use glam::Mat4;
@@ -74,11 +72,6 @@ impl RootAspect for Root {
 		#[cfg(feature = "wayland")]
 		{
 			var_env_insert!(env, WAYLAND_DISPLAY);
-			#[cfg(feature = "xwayland")]
-			env.insert(
-				"DISPLAY".to_string(),
-				format!(":{}", X_DISPLAY.get().unwrap()),
-			);
 			env.insert("GDK_BACKEND".to_string(), "wayland".to_string());
 			env.insert("QT_QPA_PLATFORM".to_string(), "wayland".to_string());
 			env.insert("MOZ_ENABLE_WAYLAND".to_string(), "1".to_string());
