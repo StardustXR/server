@@ -1,5 +1,6 @@
 use crate::core::client::CLIENTS;
 use crate::core::client_state::ClientStateParsed;
+#[cfg(feature = "wayland")]
 use crate::wayland::WAYLAND_DISPLAY;
 use crate::{CliArgs, STARDUST_INSTANCE};
 use directories::ProjectDirs;
