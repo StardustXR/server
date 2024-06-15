@@ -124,7 +124,7 @@ impl InputMethod {
 		let Some(tx_node) = self.spatial.node() else {
 			return;
 		};
-		let Some(handler_alias) = self.handler_aliases.get(handler) else {
+		let Some(handler_alias) = self.handler_aliases.get_from_aspect(handler) else {
 			return;
 		};
 		let _ = input_method_client::destroy_handler(&tx_node, handler_alias.id);

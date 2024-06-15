@@ -81,6 +81,18 @@ pub fn get_original(node: Arc<Node>, stop_on_disabled: bool) -> Option<Arc<Node>
 	}
 	get_original(alias.original.upgrade()?, stop_on_disabled)
 }
+pub fn links_to(alias: Arc<Node>, original: Weak<Node>) -> bool {
+	let Ok(alias) = alias.get_aspect::<Alias>() else {
+		return false;
+	};
+	if alias.original.ptr_eq(&original) {
+		return true;
+	}
+	let Some(original_strong) = alias.original.upgrade() else {
+		return false;
+	};
+	links_to(original_strong, original)
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct AliasList(Registry<Node>);
@@ -88,7 +100,13 @@ impl AliasList {
 	fn add(&self, node: &Arc<Node>) {
 		self.0.add_raw(node);
 	}
-	pub fn get<A: Aspect>(&self, aspect: &A) -> Option<Arc<Node>> {
+	pub fn get_from_original_node(&self, original: Weak<Node>) -> Option<Arc<Node>> {
+		self.0
+			.get_valid_contents()
+			.into_iter()
+			.find(move |node| links_to(node.clone(), original.clone()))
+	}
+	pub fn get_from_aspect<A: Aspect>(&self, aspect: &A) -> Option<Arc<Node>> {
 		self.0.get_valid_contents().into_iter().find(|node| {
 			let Some(node) = get_original(node.clone(), false) else {
 				return false;

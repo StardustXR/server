@@ -62,7 +62,7 @@ impl PartialEq for TypeInfo {
 impl Eq for TypeInfo {}
 
 pub struct Item {
-	node: Weak<Node>,
+	spatial: Arc<Spatial>,
 	type_info: &'static TypeInfo,
 	captured_acceptor: Mutex<Weak<ItemAcceptor>>,
 	pub specialization: ItemType,
@@ -74,7 +74,7 @@ impl Item {
 		specialization: ItemType,
 	) -> Arc<Self> {
 		let item = Item {
-			node: Arc::downgrade(node),
+			spatial: node.aspects.get::<Spatial>().unwrap(),
 			type_info,
 			captured_acceptor: Default::default(),
 			specialization,
@@ -101,7 +101,7 @@ impl Item {
 	}
 	fn make_alias(&self, client: &Arc<Client>, alias_list: &AliasList) -> Result<Arc<Node>> {
 		Alias::create(
-			&self.node.upgrade().unwrap(),
+			&self.spatial.node().unwrap(),
 			client,
 			self.type_info.alias_info.clone() + ITEM_ASPECT_ALIAS_INFO.clone(),
 			Some(alias_list),
@@ -205,10 +205,10 @@ impl ItemUI {
 		item.specialization.send_ui_item_created(&node, &item_alias);
 	}
 	fn handle_capture_item(&self, item: &Item, acceptor: &ItemAcceptor) {
-		let Some(item_alias) = self.item_aliases.get(item) else {
+		let Some(item_alias) = self.item_aliases.get_from_aspect(item) else {
 			return;
 		};
-		let Some(acceptor_alias) = self.acceptor_aliases.get(acceptor) else {
+		let Some(acceptor_alias) = self.acceptor_aliases.get_from_aspect(acceptor) else {
 			return;
 		};
 		let _ = item_ui_client::capture_item(
@@ -218,10 +218,10 @@ impl ItemUI {
 		);
 	}
 	fn handle_release_item(&self, item: &Item, acceptor: &ItemAcceptor) {
-		let Some(item_alias) = self.item_aliases.get(item) else {
+		let Some(item_alias) = self.item_aliases.get_from_aspect(item) else {
 			return;
 		};
-		let Some(acceptor_alias) = self.acceptor_aliases.get(acceptor) else {
+		let Some(acceptor_alias) = self.acceptor_aliases.get_from_aspect(acceptor) else {
 			return;
 		};
 		let _ = item_ui_client::release_item(
@@ -231,7 +231,10 @@ impl ItemUI {
 		);
 	}
 	fn handle_destroy_item(&self, item: &Item) {
-		let Some(item_alias) = self.item_aliases.get(item) else {
+		let Some(item_alias) = self
+			.item_aliases
+			.get_from_original_node(item.spatial.node.clone())
+		else {
 			return;
 		};
 		let _ = item_ui_client::destroy_item(&self.node.upgrade().unwrap(), item_alias.id);
@@ -272,7 +275,7 @@ impl ItemUI {
 		(acceptor.type_info.new_acceptor_fn)(&node, &acceptor_alias, &acceptor_field_alias);
 	}
 	fn handle_destroy_acceptor(&self, acceptor: &ItemAcceptor) {
-		let acceptor_alias = self.acceptor_aliases.get(acceptor).unwrap();
+		let acceptor_alias = self.acceptor_aliases.get_from_aspect(acceptor).unwrap();
 		let _ = item_ui_client::destroy_acceptor(&self.node.upgrade().unwrap(), acceptor_alias.id);
 
 		self.acceptor_aliases
@@ -335,7 +338,7 @@ impl ItemAcceptor {
 		let Some(node) = self.spatial.node() else {
 			return;
 		};
-		let alias = self.accepted_aliases.get(item).unwrap();
+		let alias = self.accepted_aliases.get_from_aspect(item).unwrap();
 		let _ = item_acceptor_client::release_item(&node, alias.id);
 	}
 }

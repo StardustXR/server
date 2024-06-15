@@ -40,7 +40,7 @@ impl Transform {
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
 pub struct Spatial {
-	node: Weak<Node>,
+	pub node: Weak<Node>,
 	parent: Mutex<Option<Arc<Spatial>>>,
 	old_parent: Mutex<Option<Arc<Spatial>>>,
 	transform: Mutex<Mat4>,
