@@ -132,7 +132,7 @@ async fn main() {
 		_ = stereokit_loop => (),
 		_ = tokio::signal::ctrl_c() => unsafe {sk_quit(QuitReason::SystemClose)},
 	}
-	println!("Stopping...");
+	info!("Stopping...");
 	if let Some(project_dirs) = project_dirs {
 		save_session(&project_dirs).await;
 	}

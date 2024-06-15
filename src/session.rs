@@ -10,6 +10,7 @@ use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 use tokio::task::LocalSet;
+use tracing::info;
 
 pub async fn save_session(project_dirs: &ProjectDirs) {
 	let session_id = nanoid::nanoid!();
@@ -31,7 +32,7 @@ pub async fn save_session(project_dirs: &ProjectDirs) {
 		});
 	}
 	local_set.await;
-	println!("Session ID for restore is {session_id}");
+	info!("Session ID for restore is {session_id}");
 }
 
 pub fn launch_start(cli_args: &CliArgs, project_dirs: &ProjectDirs) -> Vec<Child> {
