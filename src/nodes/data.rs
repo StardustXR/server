@@ -20,6 +20,8 @@ lazy_static! {
 	pub static ref KEYMAPS: Mutex<SlotMap<DefaultKey, String>> = Mutex::new(SlotMap::default());
 }
 
+// TODO: probably just use d-bus for this stuff (custom protocol for exporting spatials as refs) because the mask stuff is just too confusing
+
 static PULSE_SENDER_REGISTRY: Registry<PulseSender> = Registry::new();
 pub static PULSE_RECEIVER_REGISTRY: Registry<PulseReceiver> = Registry::new();
 
