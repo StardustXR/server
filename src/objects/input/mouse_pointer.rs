@@ -14,7 +14,7 @@ use color_eyre::eyre::Result;
 use glam::{vec3, Mat4, Vec3};
 use mint::Vector2;
 use serde::{Deserialize, Serialize};
-use slotmap::DefaultKey;
+use slotmap::{DefaultKey, Key as SlotKey};
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
 use stereokit_rust::system::{Input, Key};
@@ -48,7 +48,7 @@ impl Default for MouseEvent {
 pub struct KeyboardEvent {
 	pub keyboard: (),
 	pub xkbv1: (),
-	pub keymap_id: String,
+	pub keymap_id: u64,
 	pub keys: Vec<i32>,
 }
 impl Default for KeyboardEvent {
@@ -56,7 +56,7 @@ impl Default for KeyboardEvent {
 		Self {
 			keyboard: (),
 			xkbv1: (),
-			keymap_id: "flatscreen".to_string(),
+			keymap_id: 0,
 			keys: Default::default(),
 		}
 	}
@@ -97,12 +97,17 @@ impl MousePointer {
 
 		Ok(MousePointer {
 			node,
-			keymap,
 			spatial,
 			pointer,
 			capture: None,
 			mouse_datamap: Default::default(),
-			keyboard_datamap: Default::default(),
+			keyboard_datamap: KeyboardEvent {
+				keyboard: (),
+				xkbv1: (),
+				keymap_id: keymap.data().as_ffi(),
+				keys: vec![],
+			},
+			keymap,
 			keyboard_sender,
 		})
 	}
