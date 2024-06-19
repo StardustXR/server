@@ -35,9 +35,16 @@ auto_link_exclude_list = [
 
 [profile.dev.package."*"]
 opt-level = 3
+
 [profile.release]
-strip = true
+opt-level = 3
+debug = "line-tables-only"
+strip = "symbols"
+debug-assertions = true
+overflow-checks = false
 lto = true
+panic = 'unwind'
+
 
 [dependencies]
 color-eyre = { version = "0.6.3", default-features = false }
