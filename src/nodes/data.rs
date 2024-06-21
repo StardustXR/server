@@ -108,7 +108,7 @@ impl PulseSender {
 				.get_aspect::<PulseReceiver>()
 				.unwrap()
 				.field
-				.spatial_ref()
+				.spatial
 				.node()
 				.unwrap(),
 			&tx_client,

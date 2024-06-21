@@ -1,5 +1,5 @@
 use crate::core::client::INTERNAL_CLIENT;
-use crate::nodes::fields::Field;
+use crate::nodes::fields::{Field, FieldTrait};
 use crate::nodes::input::{InputDataType, InputHandler, INPUT_HANDLER_REGISTRY};
 use crate::nodes::{
 	input::{Hand, InputMethod, Joint},

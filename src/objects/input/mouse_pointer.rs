@@ -4,7 +4,7 @@ use crate::{
 		data::{
 			mask_matches, pulse_receiver_client, PulseSender, KEYMAPS, PULSE_RECEIVER_REGISTRY,
 		},
-		fields::Ray,
+		fields::{FieldTrait, Ray},
 		input::{InputDataType, InputHandler, InputMethod, Pointer, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
 		Node,

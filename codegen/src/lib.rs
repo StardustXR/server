@@ -382,6 +382,11 @@ fn generate_handler(member: &Member) -> TokenStream {
 			quote!(let (#argument_names): (#argument_types) = stardust_xr::schemas::flex::deserialize(_message.as_ref())?;)
 		})
 		.unwrap_or_default();
+	let serialize = generate_argument_serialize(
+		"result",
+		&member.return_type.clone().unwrap_or(ArgumentType::Empty),
+		false,
+	);
 	let argument_uses = member
 		.arguments
 		.iter()
@@ -399,7 +404,8 @@ fn generate_handler(member: &Member) -> TokenStream {
 			node.add_local_method(#opcode, |_node, _calling_client, _message, _method_response| {
 				_method_response.wrap_async(async move {
 					#deserialize
-					Ok((Self::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await?, Vec::new()))
+					let result = Self::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await?;
+					Ok((#serialize, Vec::new()))
 				});
 			});
 		},

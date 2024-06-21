@@ -260,7 +260,7 @@ impl ItemUI {
 			return;
 		};
 
-		let Some(acceptor_field_node) = acceptor.field.spatial_ref().node() else {
+		let Some(acceptor_field_node) = acceptor.field.spatial.node() else {
 			return;
 		};
 		let Ok(acceptor_field_alias) = Alias::create(

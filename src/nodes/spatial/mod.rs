@@ -1,17 +1,19 @@
 pub mod zone;
 
 use self::zone::Zone;
-use super::fields::Field;
-use super::{Aspect, Node};
+use super::alias::Alias;
+use super::fields::{Field, FieldTrait};
+use super::Aspect;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use crate::create_interface;
-use crate::nodes::OWNED_ASPECT_ALIAS_INFO;
-use color_eyre::eyre::{eyre, Result};
+use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
+use color_eyre::eyre::{eyre, OptionExt, Result};
 use glam::{vec3a, Mat4, Quat, Vec3};
 use mint::Vector3;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
+use rustc_hash::FxHashMap;
 use std::fmt::Debug;
 use std::ptr;
 use std::sync::{Arc, Weak};
@@ -35,6 +37,10 @@ impl Transform {
 
 		Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
 	}
+}
+
+lazy_static::lazy_static! {
+	pub static ref EXPORTED_SPATIALS: Mutex<FxHashMap<u64, Arc<Node>>> = Mutex::new(FxHashMap::default());
 }
 
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
@@ -354,6 +360,13 @@ impl SpatialAspect for Spatial {
 		}
 		Ok(())
 	}
+
+	// legit gotta find a way to remove old ones, this just keeps the node alive
+	async fn export_spatial(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<u64> {
+		let id = rand::random();
+		EXPORTED_SPATIALS.lock().insert(id, node);
+		Ok(id)
+	}
 }
 impl PartialEq for Spatial {
 	fn eq(&self, other: &Self) -> bool {
@@ -425,6 +438,26 @@ impl InterfaceAspect for SpatialInterface {
 		let space = Spatial::add_to(&node, Some(parent.clone()), transform, false);
 		Zone::add_to(&node, space, field);
 		Ok(())
+	}
+
+	async fn import_spatial_ref(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		uid: u64,
+	) -> Result<Arc<Node>> {
+		EXPORTED_SPATIALS
+			.lock()
+			.get(&uid)
+			.map(|s| {
+				Alias::create(
+					s,
+					&calling_client,
+					SPATIAL_REF_ASPECT_ALIAS_INFO.clone(),
+					None,
+				)
+				.unwrap()
+			})
+			.ok_or_eyre("Couldn't find spatial with that ID")
 	}
 }
 

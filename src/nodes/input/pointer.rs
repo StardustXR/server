@@ -1,6 +1,6 @@
 use super::{InputDataTrait, InputLink, Pointer};
 use crate::nodes::{
-	fields::{Field, Ray, RayMarchResult},
+	fields::{Field, FieldTrait, Ray, RayMarchResult},
 	spatial::Spatial,
 };
 use glam::{vec3, Mat4, Quat};

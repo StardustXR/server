@@ -1,5 +1,8 @@
 use super::{InputDataTrait, InputLink, Tip};
-use crate::nodes::{fields::Field, spatial::Spatial};
+use crate::nodes::{
+	fields::{Field, FieldTrait},
+	spatial::Spatial,
+};
 use glam::{Mat4, Quat};
 use std::sync::Arc;
 

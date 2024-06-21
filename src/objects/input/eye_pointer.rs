@@ -1,7 +1,7 @@
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		fields::Ray,
+		fields::{FieldTrait, Ray},
 		input::{InputDataType, InputMethod, Pointer, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
 		Node,
@@ -46,9 +46,11 @@ impl EyePointer {
 	}
 	pub fn update(&self) {
 		let ray = Input::get_eyes();
-		self.spatial.set_local_transform(
-			Mat4::from_rotation_translation(ray.orientation.into(), ray.position.into()),
-		);
+		self.spatial
+			.set_local_transform(Mat4::from_rotation_translation(
+				ray.orientation.into(),
+				ray.position.into(),
+			));
 		{
 			// Set pointer input datamap
 			*self.pointer.datamap.lock() = Datamap::from_typed(EyeDatamap { eye: 2 }).unwrap();

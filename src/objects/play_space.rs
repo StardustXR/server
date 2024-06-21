@@ -11,7 +11,7 @@ use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
 		data::PulseReceiver,
-		fields::{r#box::BoxField, Field},
+		fields::{Field, Shape},
 		spatial::Spatial,
 		Node,
 	},
@@ -41,7 +41,7 @@ impl PlaySpace {
 	pub fn new() -> Result<Self> {
 		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph()?;
 		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
-		BoxField::add_to(&node, [0.0; 3].into());
+		Field::add_to(&node, Shape::Box([0.0; 3].into()))?;
 		let field = node.get_aspect::<Field>()?.clone();
 
 		let pulse_rx = PulseReceiver::add_to(
@@ -59,12 +59,12 @@ impl PlaySpace {
 	}
 	pub fn update(&self) {
 		let pose = World::get_bounds_pose();
-		self.spatial.set_local_transform(
-			Mat4::from_rotation_translation(pose.orientation.into(), pose.position.into()),
-		);
-		let Field::Box(box_field) = self.field.as_ref() else {
-			return;
-		};
-		box_field.set_size([World::get_bounds_size().x, 0.0, World::get_bounds_size().y].into());
+		self.spatial
+			.set_local_transform(Mat4::from_rotation_translation(
+				pose.orientation.into(),
+				pose.position.into(),
+			));
+		*self.field.shape.lock() =
+			Shape::Box([World::get_bounds_size().x, 0.0, World::get_bounds_size().y].into());
 	}
 }

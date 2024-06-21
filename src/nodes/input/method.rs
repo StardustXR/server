@@ -105,7 +105,7 @@ impl InputMethod {
 			return;
 		};
 
-		let Some(handler_field_node) = handler.field.spatial_ref().node() else {
+		let Some(handler_field_node) = handler.field.spatial.node() else {
 			return;
 		};
 		// Handler's field

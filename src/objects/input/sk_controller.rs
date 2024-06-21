@@ -1,6 +1,7 @@
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
+		fields::FieldTrait,
 		input::{InputDataType, InputHandler, InputMethod, Tip, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
 		Node,

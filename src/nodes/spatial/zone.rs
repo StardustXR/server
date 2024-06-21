@@ -6,7 +6,7 @@ use crate::{
 	core::{client::Client, registry::Registry},
 	nodes::{
 		alias::{get_original, Alias, AliasList},
-		fields::Field,
+		fields::{Field, FieldTrait},
 		Aspect, Node,
 	},
 };

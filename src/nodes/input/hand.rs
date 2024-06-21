@@ -1,5 +1,5 @@
 use super::{Finger, Hand, InputDataTrait, InputLink, Joint, Thumb};
-use crate::nodes::fields::Field;
+use crate::nodes::fields::{Field, FieldTrait};
 use crate::nodes::spatial::Spatial;
 use glam::{vec3a, Mat4, Quat};
 use std::sync::Arc;
