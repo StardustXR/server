@@ -1,18 +1,23 @@
+use crate::nodes::spatial::Spatial;
+use glam::{vec3, Mat4};
 use input::{
 	eye_pointer::EyePointer, mouse_pointer::MousePointer, sk_controller::SkController,
 	sk_hand::SkHand,
 };
 use play_space::PlaySpace;
+use std::sync::Arc;
 use stereokit_rust::{
 	sk::{DisplayMode, MainThreadToken, Sk},
-	system::{Handed, World},
+	system::{Handed, Input, World},
 	util::Device,
 };
 
+pub mod hmd;
 pub mod input;
 pub mod play_space;
 
 pub struct ServerObjects {
+	hmd: Arc<Spatial>,
 	mouse_pointer: Option<MousePointer>,
 	hands: Option<(SkHand, SkHand)>,
 	controllers: Option<(SkController, SkController)>,
@@ -20,8 +25,9 @@ pub struct ServerObjects {
 	play_space: Option<PlaySpace>,
 }
 impl ServerObjects {
-	pub fn new(intentional_flatscreen: bool, sk: &Sk) -> ServerObjects {
+	pub fn new(intentional_flatscreen: bool, sk: &Sk, hmd: Arc<Spatial>) -> ServerObjects {
 		ServerObjects {
+			hmd,
 			mouse_pointer: intentional_flatscreen
 				.then(MousePointer::new)
 				.transpose()
@@ -50,6 +56,14 @@ impl ServerObjects {
 	}
 
 	pub fn update(&mut self, sk: &Sk, token: &MainThreadToken) {
+		let hmd_pose = Input::get_head();
+		self.hmd
+			.set_local_transform(Mat4::from_scale_rotation_translation(
+				vec3(1.0, 1.0, 1.0),
+				hmd_pose.orientation.into(),
+				hmd_pose.position.into(),
+			));
+
 		if let Some(mouse_pointer) = self.mouse_pointer.as_mut() {
 			mouse_pointer.update();
 		}

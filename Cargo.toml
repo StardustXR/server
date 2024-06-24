@@ -56,7 +56,7 @@ nanoid = "0.4.0"
 once_cell = "1.19.0"
 parking_lot = "0.12.3"
 portable-atomic = { version = "1.6.0", features = ["float", "std"] }
-rustc-hash = "1.1.0"
+rustc-hash = "2.0.0"
 tokio = { version = "1.38.0", features = ["rt-multi-thread", "signal", "time"] }
 send_wrapper = "0.6.0"
 prisma = "0.1.1"
@@ -75,6 +75,7 @@ wayland-backend = "0.3.4"
 toml = "0.8.14"
 global_counter = "=0.2.2"
 slotmap = "1.0.7"
+zbus = { version = "4.3.0", default-features = false, features = ["tokio"] }
 
 [dependencies.smithay]
 # git = "https://github.com/technobaboo/smithay.git"

@@ -6,7 +6,7 @@ use super::{
 use crate::{
 	core::{registry::OwnedRegistry, task},
 	nodes::{
-		audio, data, drawable, fields, hmd, input, items,
+		audio, data, drawable, fields, input, items,
 		root::{ClientState, Root},
 		spatial, Node,
 	},
@@ -108,7 +108,6 @@ impl Client {
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
 		let _ = client.root.set(Root::create(&client, state.root)?);
-		hmd::make_alias(&client)?;
 		spatial::create_interface(&client)?;
 		fields::create_interface(&client)?;
 		drawable::create_interface(&client)?;

@@ -8,12 +8,14 @@ mod wayland;
 
 use crate::core::destroy_queue;
 use crate::nodes::items::camera;
-use crate::nodes::{audio, drawable, hmd, input};
+use crate::nodes::{audio, drawable, input};
 
 use clap::Parser;
 use core::client::Client;
 use core::task;
 use directories::ProjectDirs;
+use nodes::spatial::Spatial;
+use objects::hmd::HMD;
 use objects::ServerObjects;
 use once_cell::sync::OnceCell;
 use session::{launch_start, save_session};
@@ -33,6 +35,7 @@ use tokio::sync::Notify;
 use tracing::metadata::LevelFilter;
 use tracing::{debug_span, error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use zbus::Connection;
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -107,6 +110,13 @@ async fn main() {
 		error!("Unable to get Stardust project directories, default skybox and startup script will not work.");
 	}
 
+	let dbus_connection = Connection::session().await.unwrap();
+	let hmd = HMD::create(&dbus_connection).await;
+	dbus_connection
+		.request_name("org.stardustxr.HMD")
+		.await
+		.unwrap();
+
 	let sk_ready_notifier = Arc::new(Notify::new());
 	let stereokit_loop = tokio::task::spawn_blocking({
 		let sk_ready_notifier = sk_ready_notifier.clone();
@@ -119,6 +129,7 @@ async fn main() {
 				project_dirs,
 				flatscreen,
 				overlay_priority,
+				hmd,
 			)
 		}
 	});
@@ -148,6 +159,7 @@ fn stereokit_loop(
 	project_dirs: Option<ProjectDirs>,
 	intentional_flatscreen: bool,
 	overlay_priority: Option<u32>,
+	hmd: Arc<Spatial>,
 ) {
 	let sk = SkSettings::default()
 		.app_name("Stardust XR")
@@ -206,7 +218,7 @@ fn stereokit_loop(
 	sk_ready_notifier.notify_waiters();
 	info!("Stardust ready!");
 
-	let mut objects = ServerObjects::new(intentional_flatscreen, &sk);
+	let mut objects = ServerObjects::new(intentional_flatscreen, &sk, hmd);
 
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
@@ -215,7 +227,6 @@ fn stereokit_loop(
 			let _span = debug_span!("StereoKit step");
 			let _span = _span.enter();
 
-			hmd::frame();
 			camera::update(token);
 			#[cfg(feature = "wayland")]
 			wayland.frame_event();
