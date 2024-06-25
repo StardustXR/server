@@ -1,33 +1,47 @@
-use crate::nodes::spatial::Spatial;
+#![allow(unused)]
+
+use crate::{
+	core::client::INTERNAL_CLIENT,
+	nodes::{
+		fields::{Field, Shape, EXPORTED_FIELDS},
+		spatial::{Spatial, EXPORTED_SPATIALS},
+		Node,
+	},
+};
 use glam::{vec3, Mat4};
 use input::{
 	eye_pointer::EyePointer, mouse_pointer::MousePointer, sk_controller::SkController,
 	sk_hand::SkHand,
 };
-use play_space::PlaySpace;
 use std::sync::Arc;
 use stereokit_rust::{
 	sk::{DisplayMode, MainThreadToken, Sk},
 	system::{Handed, Input, World},
 	util::Device,
 };
+use zbus::{interface, Connection};
 
-pub mod hmd;
 pub mod input;
 pub mod play_space;
 
 pub struct ServerObjects {
 	hmd: Arc<Spatial>,
+	play_space: Option<Arc<Spatial>>,
 	mouse_pointer: Option<MousePointer>,
 	hands: Option<(SkHand, SkHand)>,
 	controllers: Option<(SkController, SkController)>,
 	eye_pointer: Option<EyePointer>,
-	play_space: Option<PlaySpace>,
 }
 impl ServerObjects {
-	pub fn new(intentional_flatscreen: bool, sk: &Sk, hmd: Arc<Spatial>) -> ServerObjects {
+	pub fn new(
+		intentional_flatscreen: bool,
+		sk: &Sk,
+		hmd: Arc<Spatial>,
+		play_space: Option<Arc<Spatial>>,
+	) -> ServerObjects {
 		ServerObjects {
 			hmd,
+			play_space,
 			mouse_pointer: intentional_flatscreen
 				.then(MousePointer::new)
 				.transpose()
@@ -51,7 +65,6 @@ impl ServerObjects {
 			.then(EyePointer::new)
 			.transpose()
 			.unwrap(),
-			play_space: World::has_bounds().then(|| PlaySpace::new().ok()).flatten(),
 		}
 	}
 
@@ -63,6 +76,14 @@ impl ServerObjects {
 				hmd_pose.orientation.into(),
 				hmd_pose.position.into(),
 			));
+
+		if let Some(play_space) = self.play_space.as_ref() {
+			let pose = World::get_bounds_pose();
+			play_space.set_local_transform(Mat4::from_rotation_translation(
+				pose.orientation.into(),
+				pose.position.into(),
+			));
+		}
 
 		if let Some(mouse_pointer) = self.mouse_pointer.as_mut() {
 			mouse_pointer.update();
@@ -78,8 +99,52 @@ impl ServerObjects {
 		if let Some(eye_pointer) = self.eye_pointer.as_ref() {
 			eye_pointer.update();
 		}
-		if let Some(play_space) = self.play_space.as_ref() {
-			play_space.update();
-		}
+	}
+}
+
+pub struct SpatialRef(u64);
+impl SpatialRef {
+	pub async fn create(connection: &Connection, path: &str) -> Arc<Node> {
+		let node = Arc::new(Node::generate(&INTERNAL_CLIENT, false));
+		Spatial::add_to(&node, None, Mat4::IDENTITY, false);
+		let uid: u64 = rand::random();
+		EXPORTED_SPATIALS.lock().insert(uid, node.clone());
+		connection
+			.object_server()
+			.at(path, Self(uid))
+			.await
+			.unwrap();
+		node
+	}
+}
+#[interface(name = "org.stardustxr.SpatialRef")]
+impl SpatialRef {
+	#[zbus(property)]
+	fn uid(&self) -> u64 {
+		self.0
+	}
+}
+
+pub struct FieldRef(u64);
+impl FieldRef {
+	pub async fn create(connection: &Connection, path: &str, shape: Shape) -> Arc<Node> {
+		let node = Arc::new(Node::generate(&INTERNAL_CLIENT, false));
+		Spatial::add_to(&node, None, Mat4::IDENTITY, false);
+		Field::add_to(&node, shape).unwrap();
+		let uid: u64 = rand::random();
+		EXPORTED_FIELDS.lock().insert(uid, node.clone());
+		connection
+			.object_server()
+			.at(path, Self(uid))
+			.await
+			.unwrap();
+		node
+	}
+}
+#[interface(name = "org.stardustxr.FieldRef")]
+impl FieldRef {
+	#[zbus(property)]
+	fn uid(&self) -> u64 {
+		self.0
 	}
 }
