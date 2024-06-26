@@ -291,8 +291,10 @@ impl Model {
 		}
 		drop(parts);
 
-		if self.space.node().unwrap().enabled() {
-			sk_model.draw(token, self.space.global_transform(), None, None);
+		if let Some(node) = self.space.node() {
+			if node.enabled() {
+				sk_model.draw(token, self.space.global_transform(), None, None);
+			}
 		}
 	}
 }
