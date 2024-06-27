@@ -24,7 +24,7 @@ use smithay::{
 	reexports::wayland_server::{self, protocol::wl_surface::WlSurface, Resource},
 	wayland::compositor::{self, SurfaceData},
 };
-use std::{cell::RefCell, ffi::c_void, sync::Arc, time::Duration};
+use std::{ffi::c_void, sync::Arc, time::Duration};
 use stereokit_rust::{
 	material::{Material, Transparency},
 	shader::Shader,
@@ -121,7 +121,7 @@ impl CoreSurface {
 		let mapped = compositor::with_states(&wl_surface, |data| {
 			data.data_map
 				.get::<RendererSurfaceStateUserData>()
-				.map(|surface_states| surface_states.borrow().buffer().is_some())
+				.map(|surface_states| surface_states.lock().unwrap().buffer().is_some())
 				.unwrap_or(false)
 		});
 
@@ -135,7 +135,9 @@ impl CoreSurface {
 			let Some(renderer_surface_state) = data
 				.data_map
 				.get::<RendererSurfaceStateUserData>()
-				.map(RefCell::borrow)
+				.map(std::sync::Mutex::lock)
+				.map(Result::ok)
+				.flatten()
 			else {
 				return;
 			};

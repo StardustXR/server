@@ -160,7 +160,7 @@ impl FieldRefAspect for Field {
 	) -> Result<f32> {
 		let reference_space = space.get_aspect::<Spatial>()?;
 		let field = node.get_aspect::<Field>()?;
-		Ok(field.distance(&reference_space, point.into()).into())
+		Ok(field.distance(&reference_space, point.into()))
 	}
 
 	async fn normal(

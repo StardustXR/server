@@ -150,7 +150,7 @@ impl SeatWrapper {
 		};
 		pointer.motion(
 			&mut state,
-			Some((surface, (0, 0).into())),
+			Some((surface, (0.0, 0.0).into())),
 			&MotionEvent {
 				location: (position.x as f64, position.y as f64).into(),
 				serial: SERIAL_COUNTER.next_serial(),
@@ -261,7 +261,7 @@ impl SeatWrapper {
 		};
 		touch.down(
 			&mut state.lock(),
-			Some((surface, (0, 0).into())),
+			Some((surface, (0.0, 0.0).into())),
 			&DownEvent {
 				slot: Some(id).into(),
 				location: (position.x as f64, position.y as f64).into(),
@@ -283,7 +283,7 @@ impl SeatWrapper {
 		};
 		touch.motion(
 			&mut state.lock(),
-			Some((surface, (0, 0).into())),
+			Some((surface, (0.0, 0.0).into())),
 			&touch::MotionEvent {
 				slot: Some(id).into(),
 				location: (position.x as f64, position.y as f64).into(),

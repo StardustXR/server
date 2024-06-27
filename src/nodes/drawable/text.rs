@@ -163,8 +163,10 @@ impl Drop for Text {
 
 pub fn draw_all(token: &MainThreadToken) {
 	for text in TEXT_REGISTRY.get_valid_contents() {
-		if text.space.node().unwrap().enabled() {
-			text.draw(token);
+		if let Some(node) = text.space.node() {
+			if node.enabled() {
+				text.draw(token);
+			}
 		}
 	}
 }

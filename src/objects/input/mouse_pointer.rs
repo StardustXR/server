@@ -45,21 +45,12 @@ impl Default for MouseEvent {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Default)]
 pub struct KeyboardEvent {
 	pub keyboard: (),
 	pub xkbv1: (),
 	pub keymap_id: u64,
 	pub keys: Vec<i32>,
-}
-impl Default for KeyboardEvent {
-	fn default() -> Self {
-		Self {
-			keyboard: (),
-			xkbv1: (),
-			keymap_id: 0,
-			keys: Default::default(),
-		}
-	}
 }
 
 #[allow(unused)]

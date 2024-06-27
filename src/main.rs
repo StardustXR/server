@@ -234,7 +234,7 @@ fn stereokit_loop(
 		intentional_flatscreen,
 		&sk,
 		hmd,
-		World::has_bounds().then(move || play_space),
+		World::has_bounds().then_some(play_space),
 	);
 	if World::has_bounds() && World::get_bounds_size().x != 0.0 && World::get_bounds_size().y != 0.0
 	{

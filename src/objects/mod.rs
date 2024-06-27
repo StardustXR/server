@@ -89,8 +89,8 @@ impl ServerObjects {
 			mouse_pointer.update();
 		}
 		if let Some((left_hand, right_hand)) = self.hands.as_mut() {
-			left_hand.update(&sk, token);
-			right_hand.update(&sk, token);
+			left_hand.update(sk, token);
+			right_hand.update(sk, token);
 		}
 		if let Some((left_controller, right_controller)) = self.controllers.as_mut() {
 			left_controller.update(token);

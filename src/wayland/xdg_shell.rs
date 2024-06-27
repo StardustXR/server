@@ -427,7 +427,11 @@ impl Backend for XdgBackend {
 				.clone()
 		});
 		let toplevel_cached_state = compositor::with_states(toplevel.wl_surface(), |states| {
-			*states.cached_state.current::<SurfaceCachedState>()
+			states
+				.cached_state
+				.get::<SurfaceCachedState>()
+				.current()
+				.clone()
 		});
 		let toplevel_core_surface = CoreSurface::from_wl_surface(toplevel.wl_surface()).unwrap();
 

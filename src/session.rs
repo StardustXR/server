@@ -55,7 +55,7 @@ pub fn restore_session(session_dir: &Path) -> Vec<Child> {
 		.filter_map(Result::ok)
 		.filter_map(|c| ClientStateParsed::from_file(&c.path()))
 		.filter_map(ClientStateParsed::launch_command)
-		.filter_map(|startup_command| run_client(startup_command))
+		.filter_map(run_client)
 		.collect()
 }
 

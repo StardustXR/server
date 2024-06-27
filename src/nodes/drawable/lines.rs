@@ -101,8 +101,10 @@ impl Drop for Lines {
 
 pub fn draw_all(token: &MainThreadToken) {
 	for lines in LINES_REGISTRY.get_valid_contents() {
-		if lines.space.node().unwrap().enabled() {
-			lines.draw(token);
+		if let Some(node) = lines.space.node() {
+			if node.enabled() {
+				lines.draw(token);
+			}
 		}
 	}
 }
