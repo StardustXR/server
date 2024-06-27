@@ -73,12 +73,13 @@ impl SkHand {
 				hand.thumb.proximal = convert_joint(sk_hand.fingers[0][2]);
 				hand.thumb.metacarpal = convert_joint(sk_hand.fingers[0][1]);
 
-				for (finger, sk_finger) in [
+				for (finger, mut sk_finger) in [
 					(&mut hand.index, sk_hand.fingers[1]),
 					(&mut hand.middle, sk_hand.fingers[2]),
 					(&mut hand.ring, sk_hand.fingers[3]),
 					(&mut hand.little, sk_hand.fingers[4]),
 				] {
+					sk_finger[4].radius = 0.0;
 					finger.tip = convert_joint(sk_finger[4]);
 					finger.distal = convert_joint(sk_finger[3]);
 					finger.intermediate = convert_joint(sk_finger[2]);
