@@ -13,9 +13,11 @@ use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
 use stereokit_rust::{
+	material::Material,
 	model::Model,
 	sk::MainThreadToken,
 	system::{Handed, Input},
+	util::Color128,
 };
 
 #[derive(Default, Deserialize, Serialize)]
@@ -30,6 +32,7 @@ pub struct SkController {
 	input: Arc<InputMethod>,
 	handed: Handed,
 	model: Model,
+	material: Material,
 	capture: Option<Arc<InputHandler>>,
 	datamap: ControllerDatamap,
 }
@@ -37,7 +40,15 @@ impl SkController {
 	pub fn new(handed: Handed) -> Result<Self> {
 		let _node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph()?;
 		Spatial::add_to(&_node, None, Mat4::IDENTITY, false);
-		let model = Model::from_memory("cursor.glb", include_bytes!("cursor.glb"), None)?;
+		let model = Model::copy(Model::from_memory(
+			"cursor.glb",
+			include_bytes!("cursor.glb"),
+			None,
+		)?);
+		let model_nodes = model.get_nodes();
+		let mut model_node = model_nodes.visuals().next().unwrap();
+		let material = Material::copy(model_node.get_material().unwrap());
+		model_node.material(&material);
 		let tip = InputDataType::Tip(Tip::default());
 		let input = InputMethod::add_to(
 			&_node,
@@ -49,6 +60,7 @@ impl SkController {
 			input,
 			handed,
 			model,
+			material,
 			capture: None,
 			datamap: Default::default(),
 		})
@@ -62,6 +74,11 @@ impl SkController {
 				controller.aim.orientation.into(),
 				controller.aim.position.into(),
 			);
+			self.material.color_tint(if self.capture.is_none() {
+				Color128::new_rgb(1.0, 1.0, 1.0)
+			} else {
+				Color128::new_rgb(0.0, 1.0, 0.75)
+			});
 			self.model.draw(
 				token,
 				world_transform * Mat4::from_scale(Vec3::ONE * 0.02),
