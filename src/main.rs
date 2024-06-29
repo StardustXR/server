@@ -37,7 +37,7 @@ use tracing::{debug_span, error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use zbus::Connection;
 
-#[derive(Parser)]
+#[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
 struct CliArgs {
 	/// Force flatscreen mode and use the mouse pointer as a 3D pointer
@@ -81,7 +81,7 @@ async fn main() {
 		.with_filter(EnvFilter::from_default_env());
 	registry.with(log_layer).init();
 
-	let cli_args = Arc::new(CliArgs::parse());
+	let cli_args = CliArgs::parse();
 
 	let socket_path =
 		server::get_free_socket_path().expect("Unable to find a free stardust socket path");
@@ -128,15 +128,13 @@ async fn main() {
 	let stereokit_loop = tokio::task::spawn_blocking({
 		let sk_ready_notifier = sk_ready_notifier.clone();
 		let project_dirs = project_dirs.clone();
-		let flatscreen = cli_args.flatscreen;
-		let overlay_priority = cli_args.overlay_priority;
+		let cli_args = cli_args.clone();
 		let dbus_connection = dbus_connection.clone();
 		move || {
 			stereokit_loop(
 				sk_ready_notifier,
 				project_dirs,
-				flatscreen,
-				overlay_priority,
+				cli_args,
 				dbus_connection,
 				hmd,
 				play_space,
@@ -167,15 +165,14 @@ async fn main() {
 fn stereokit_loop(
 	sk_ready_notifier: Arc<Notify>,
 	project_dirs: Option<ProjectDirs>,
-	intentional_flatscreen: bool,
-	overlay_priority: Option<u32>,
+	args: CliArgs,
 	dbus_connection: Arc<Connection>,
 	hmd: Arc<Spatial>,
 	play_space: Arc<Spatial>,
 ) {
 	let sk = SkSettings::default()
 		.app_name("Stardust XR")
-		.mode(if intentional_flatscreen {
+		.mode(if args.flatscreen {
 			AppMode::Simulator
 		} else {
 			AppMode::XR
@@ -191,8 +188,8 @@ fn stereokit_loop(
 			Some(LevelFilter::OFF) => LogLevel::None,
 			None => LogLevel::Warning,
 		})
-		.overlay_app(overlay_priority.is_some())
-		.overlay_priority(overlay_priority.unwrap_or(u32::MAX))
+		.overlay_app(args.overlay_priority.is_some())
+		.overlay_priority(args.overlay_priority.unwrap_or(u32::MAX))
 		.disable_desktop_input_window(true)
 		.render_scaling(2.0)
 		.init()
