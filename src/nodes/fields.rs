@@ -145,6 +145,8 @@ impl Field {
 			shape: Mutex::new(shape),
 		};
 		node.add_aspect(field);
+		<Field as FieldRefAspect>::add_node_members(node);
+		<Field as FieldAspect>::add_node_members(node);
 		Ok(())
 	}
 }
