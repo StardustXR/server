@@ -230,12 +230,7 @@ fn stereokit_loop(
 	sk_ready_notifier.notify_waiters();
 	info!("Stardust ready!");
 
-	let mut objects = ServerObjects::new(
-		intentional_flatscreen,
-		&sk,
-		hmd,
-		World::has_bounds().then_some(play_space),
-	);
+	let mut objects = ServerObjects::new(&sk, hmd, World::has_bounds().then_some(play_space));
 	if World::has_bounds() && World::get_bounds_size().x != 0.0 && World::get_bounds_size().y != 0.0
 	{
 		let dbus_connection = dbus_connection.clone();

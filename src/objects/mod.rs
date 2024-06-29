@@ -16,7 +16,7 @@ use input::{
 use std::sync::Arc;
 use stereokit_rust::{
 	sk::{DisplayMode, MainThreadToken, Sk},
-	system::{Handed, Input, World},
+	system::{Handed, Input, Key, World},
 	util::Device,
 };
 use zbus::{interface, Connection};
@@ -24,47 +24,47 @@ use zbus::{interface, Connection};
 pub mod input;
 pub mod play_space;
 
+enum Inputs {
+	XR {
+		controllers: (SkController, SkController),
+		hands: (SkHand, SkHand),
+		eye_pointer: Option<EyePointer>,
+	},
+	MousePointer(MousePointer),
+	Controllers((SkController, SkController)),
+	Hands((SkHand, SkHand)),
+}
+
 pub struct ServerObjects {
 	hmd: Arc<Spatial>,
 	play_space: Option<Arc<Spatial>>,
-	mouse_pointer: Option<MousePointer>,
-	hands: Option<(SkHand, SkHand)>,
-	controllers: Option<(SkController, SkController)>,
-	eye_pointer: Option<EyePointer>,
+	inputs: Inputs,
 }
 impl ServerObjects {
-	pub fn new(
-		intentional_flatscreen: bool,
-		sk: &Sk,
-		hmd: Arc<Spatial>,
-		play_space: Option<Arc<Spatial>>,
-	) -> ServerObjects {
+	pub fn new(sk: &Sk, hmd: Arc<Spatial>, play_space: Option<Arc<Spatial>>) -> ServerObjects {
+		let inputs = if sk.get_active_display_mode() == DisplayMode::MixedReality {
+			Inputs::XR {
+				controllers: (
+					SkController::new(Handed::Left).unwrap(),
+					SkController::new(Handed::Right).unwrap(),
+				),
+				hands: (
+					SkHand::new(Handed::Left).unwrap(),
+					SkHand::new(Handed::Right).unwrap(),
+				),
+				eye_pointer: Device::has_eye_gaze()
+					.then(EyePointer::new)
+					.transpose()
+					.unwrap(),
+			}
+		} else {
+			Inputs::MousePointer(MousePointer::new().unwrap())
+		};
+
 		ServerObjects {
 			hmd,
 			play_space,
-			mouse_pointer: intentional_flatscreen
-				.then(MousePointer::new)
-				.transpose()
-				.unwrap(),
-			hands: (!intentional_flatscreen)
-				.then(|| {
-					let left = SkHand::new(Handed::Left).ok();
-					let right = SkHand::new(Handed::Right).ok();
-					left.zip(right)
-				})
-				.flatten(),
-			controllers: (!intentional_flatscreen)
-				.then(|| {
-					let left = SkController::new(Handed::Left).ok();
-					let right = SkController::new(Handed::Right).ok();
-					left.zip(right)
-				})
-				.flatten(),
-			eye_pointer: (sk.get_active_display_mode() == DisplayMode::MixedReality
-				&& Device::has_eye_gaze())
-			.then(EyePointer::new)
-			.transpose()
-			.unwrap(),
+			inputs,
 		}
 	}
 
@@ -85,19 +85,47 @@ impl ServerObjects {
 			));
 		}
 
-		if let Some(mouse_pointer) = self.mouse_pointer.as_mut() {
-			mouse_pointer.update();
+		if sk.get_active_display_mode() != DisplayMode::MixedReality {
+			if Input::key(Key::F6).is_just_inactive() {
+				self.inputs = Inputs::MousePointer(MousePointer::new().unwrap());
+			}
+			if Input::key(Key::F7).is_just_inactive() {
+				self.inputs = Inputs::Controllers((
+					SkController::new(Handed::Left).unwrap(),
+					SkController::new(Handed::Right).unwrap(),
+				));
+			}
+			if Input::key(Key::F8).is_just_inactive() {
+				self.inputs = Inputs::Hands((
+					SkHand::new(Handed::Left).unwrap(),
+					SkHand::new(Handed::Right).unwrap(),
+				));
+			}
 		}
-		if let Some((left_hand, right_hand)) = self.hands.as_mut() {
-			left_hand.update(sk, token);
-			right_hand.update(sk, token);
-		}
-		if let Some((left_controller, right_controller)) = self.controllers.as_mut() {
-			left_controller.update(token);
-			right_controller.update(token);
-		}
-		if let Some(eye_pointer) = self.eye_pointer.as_ref() {
-			eye_pointer.update();
+
+		match &mut self.inputs {
+			Inputs::XR {
+				controllers: (left_controller, right_controller),
+				hands: (left_hand, right_hand),
+				eye_pointer,
+			} => {
+				left_hand.update(sk, token);
+				right_hand.update(sk, token);
+				left_controller.update(token);
+				right_controller.update(token);
+				if let Some(eye_pointer) = eye_pointer {
+					eye_pointer.update();
+				}
+			}
+			Inputs::MousePointer(mouse_pointer) => mouse_pointer.update(),
+			Inputs::Controllers((left, right)) => {
+				left.update(token);
+				right.update(token);
+			}
+			Inputs::Hands((left, right)) => {
+				left.update(sk, token);
+				right.update(sk, token);
+			}
 		}
 	}
 }

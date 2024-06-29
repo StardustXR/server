@@ -44,8 +44,7 @@ impl Default for MouseEvent {
 	}
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct KeyboardEvent {
 	pub keyboard: (),
 	pub xkbv1: (),
@@ -370,9 +369,9 @@ fn map_key(key: Key) -> Option<u32> {
 		Key::F3 => Some(input_event_codes::KEY_F3!()),
 		Key::F4 => Some(input_event_codes::KEY_F4!()),
 		Key::F5 => Some(input_event_codes::KEY_F5!()),
-		Key::F6 => Some(input_event_codes::KEY_F6!()),
-		Key::F7 => Some(input_event_codes::KEY_F7!()),
-		Key::F8 => Some(input_event_codes::KEY_F8!()),
+		// Key::F6 => Some(input_event_codes::KEY_F6!()),
+		// Key::F7 => Some(input_event_codes::KEY_F7!()),
+		// Key::F8 => Some(input_event_codes::KEY_F8!()),
 		Key::F9 => Some(input_event_codes::KEY_F9!()),
 		Key::F10 => Some(input_event_codes::KEY_F10!()),
 		Key::F11 => Some(input_event_codes::KEY_F11!()),
