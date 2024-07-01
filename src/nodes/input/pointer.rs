@@ -1,4 +1,4 @@
-use super::{InputDataTrait, InputLink, Pointer};
+use super::{InputDataTrait, InputHandler, InputMethod, Pointer};
 use crate::nodes::{
 	fields::{Field, FieldTrait, Ray, RayMarchResult},
 	spatial::Spatial,
@@ -33,13 +33,13 @@ impl InputDataTrait for Pointer {
 		let ray_info = self.ray_march(space, field);
 		ray_info.min_distance
 	}
-	fn update_to(&mut self, input_link: &InputLink, mut local_to_handler_matrix: Mat4) {
-		local_to_handler_matrix =
+	fn transform(&mut self, method: &InputMethod, handler: &InputHandler) {
+		let local_to_handler_matrix =
 			Mat4::from_rotation_translation(self.orientation.into(), self.origin.into())
-				* local_to_handler_matrix;
+				* Spatial::space_to_space_matrix(Some(&method.spatial), Some(&handler.spatial));
 		let (_, orientation, origin) = local_to_handler_matrix.to_scale_rotation_translation();
 
-		let ray_march = self.ray_march(&input_link.method.spatial, &input_link.handler.field);
+		let ray_march = self.ray_march(&method.spatial, &handler.field);
 		let direction = local_to_handler_matrix
 			.transform_vector3(vec3(0.0, 0.0, -1.0))
 			.normalize();

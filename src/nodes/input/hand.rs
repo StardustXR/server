@@ -1,4 +1,4 @@
-use super::{Finger, Hand, InputDataTrait, InputLink, Joint, Thumb};
+use super::{Finger, Hand, InputDataTrait, InputHandler, InputMethod, Joint, Thumb};
 use crate::nodes::fields::{Field, FieldTrait};
 use crate::nodes::spatial::Spatial;
 use glam::{vec3a, Mat4, Quat};
@@ -67,7 +67,9 @@ impl InputDataTrait for Hand {
 
 		min_distance
 	}
-	fn update_to(&mut self, input_link: &InputLink, local_to_handler_matrix: Mat4) {
+	fn transform(&mut self, method: &InputMethod, handler: &InputHandler) {
+		let local_to_handler_matrix =
+			Spatial::space_to_space_matrix(Some(&method.spatial), Some(&handler.spatial));
 		let mut joints: Vec<&mut Joint> = Vec::new();
 
 		joints.extend([&mut self.palm, &mut self.wrist]);
@@ -101,10 +103,7 @@ impl InputDataTrait for Hand {
 			let (_, rotation, position) = joint_matrix.to_scale_rotation_translation();
 			joint.position = position.into();
 			joint.rotation = rotation.into();
-			joint.distance = input_link
-				.handler
-				.field
-				.distance(&input_link.handler.spatial, position.into());
+			joint.distance = handler.field.distance(&handler.spatial, position.into());
 		}
 	}
 }

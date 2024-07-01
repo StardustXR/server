@@ -1,5 +1,5 @@
 use super::{
-	input_method_client, InputDataTrait, InputDataType, InputHandler, InputMethodAspect,
+	input_method_client, InputData, InputDataTrait, InputDataType, InputHandler, InputMethodAspect,
 	InputMethodRefAspect, INPUT_HANDLER_REGISTRY, INPUT_METHOD_REF_ASPECT_ALIAS_INFO,
 	INPUT_METHOD_REGISTRY,
 };
@@ -131,6 +131,27 @@ impl InputMethod {
 		self.handler_aliases.remove_aspect(handler);
 		self.handler_field_aliases
 			.remove_aspect(handler.field.as_ref());
+	}
+
+	pub(super) fn serialize(&self, alias_id: u64, handler: &Arc<InputHandler>) -> InputData {
+		let mut input = self.data.lock().clone();
+		input.transform(&self, &handler);
+
+		InputData {
+			id: alias_id,
+			input,
+			distance: self.distance(&handler.field),
+			datamap: self.datamap.lock().clone(),
+			order: self
+				.handler_order
+				.lock()
+				.iter()
+				.enumerate()
+				.find(|(_, h)| h.ptr_eq(&Arc::downgrade(handler)))
+				.unwrap()
+				.0 as u32,
+			captured: self.captures.get_valid_contents().contains(handler),
+		}
 	}
 }
 impl Aspect for InputMethod {

@@ -6,7 +6,6 @@ mod tip;
 
 pub use handler::*;
 pub use method::*;
-use rustc_hash::FxHashMap;
 
 use super::fields::Field;
 use super::spatial::Spatial;
@@ -16,61 +15,33 @@ use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::{core::client::Client, nodes::Node};
 use crate::{core::registry::Registry, nodes::spatial::Transform};
 use color_eyre::eyre::Result;
-use glam::Mat4;
 use stardust_xr::values::Datamap;
-use std::sync::{Arc, Weak};
-use tracing::{debug_span, instrument};
+use std::sync::Arc;
+use tracing::debug_span;
 
 static INPUT_METHOD_REGISTRY: Registry<InputMethod> = Registry::new();
 pub static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
 
 stardust_xr_server_codegen::codegen_input_protocol!();
 
-pub struct InputLink {
-	method: Arc<InputMethod>,
-	handler: Arc<InputHandler>,
-}
-impl InputLink {
-	fn from(method: Arc<InputMethod>, handler: Arc<InputHandler>) -> Self {
-		InputLink { method, handler }
-	}
-
-	#[instrument(level = "debug", skip(self))]
-	fn serialize(&self, id: u64, order: u32, captured: bool, datamap: Datamap) -> InputData {
-		let mut input = self.method.data.lock().clone();
-		input.update_to(
-			self,
-			Spatial::space_to_space_matrix(Some(&self.method.spatial), Some(&self.handler.spatial)),
-		);
-
-		InputData {
-			id,
-			input,
-			distance: self.method.distance(&self.handler.field),
-			datamap,
-			order,
-			captured,
-		}
-	}
-}
 pub trait InputDataTrait {
+	fn transform(&mut self, method: &InputMethod, handler: &InputHandler);
 	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
-	fn update_to(&mut self, input_link: &InputLink, local_to_handler_matrix: Mat4);
 }
 impl InputDataTrait for InputDataType {
+	fn transform(&mut self, method: &InputMethod, handler: &InputHandler) {
+		match self {
+			InputDataType::Pointer(i) => i.transform(method, handler),
+			InputDataType::Hand(i) => i.transform(method, handler),
+			InputDataType::Tip(i) => i.transform(method, handler),
+		}
+	}
+
 	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
 		match self {
 			InputDataType::Pointer(i) => i.distance(space, field),
 			InputDataType::Hand(i) => i.distance(space, field),
 			InputDataType::Tip(i) => i.distance(space, field),
-		}
-	}
-
-	fn update_to(&mut self, input_link: &InputLink, local_to_handler_matrix: Mat4) {
-		match self {
-			InputDataType::Pointer(i) => i.update_to(input_link, local_to_handler_matrix),
-			InputDataType::Hand(i) => i.update_to(input_link, local_to_handler_matrix),
-			InputDataType::Tip(i) => i.update_to(input_link, local_to_handler_matrix),
 		}
 	}
 }
@@ -135,56 +106,43 @@ pub fn process_input() {
 		for method_alias in handler.method_aliases.get_aliases() {
 			method_alias.set_enabled(false);
 		}
-	}
-	let mut handler_input: FxHashMap<u64, (Arc<Node>, Vec<Arc<Node>>, Vec<InputData>)> =
-		Default::default();
-	// const LIMIT: usize = 50;
-	for method in methods {
-		debug_span!("Process input method").in_scope(|| {
-			// Get all valid input handlers and convert them to InputLink objects
-			let input_links: Vec<InputLink> = debug_span!("Generate input links").in_scope(|| {
-				method
-					.handler_order
+
+		let Some(handler_node) = handler.spatial.node() else {
+			continue;
+		};
+		if !handler_node.enabled() {
+			continue;
+		}
+
+		let (methods, datas) = methods
+			.clone()
+			// filter out methods without the handler in their handler order
+			.filter(|a| {
+				a.handler_order
 					.lock()
 					.iter()
-					.filter_map(Weak::upgrade)
-					.filter(|handler| {
-						let Some(node) = handler.spatial.node() else {
-							return false;
-						};
-						node.enabled()
-					})
-					.map(|handler| InputLink::from(method.clone(), handler))
-					.collect()
-			});
+					.any(|h| h.ptr_eq(&Arc::downgrade(&handler)))
+			})
+			// filter out methods without the proper alias
+			.filter_map(|m| {
+				Some((
+					handler
+						.method_aliases
+						.get_from_original_node(m.spatial.node.clone())?,
+					m,
+				))
+			})
+			// make sure the input method alias is enabled
+			.inspect(|(a, _)| {
+				a.set_enabled(true);
+			})
+			// serialize the data
+			.map(|(a, m)| (a.clone(), m.serialize(a.get_id(), &handler)))
+			.unzip::<_, _, Vec<_>, Vec<_>>();
 
-			// Iterate over the distance links and send input to them
-			for (i, input_link) in input_links.into_iter().enumerate() {
-				let handler = input_link.handler.spatial.node().unwrap();
-				handler_input
-					.entry(handler.id)
-					.or_insert_with(|| (handler.clone(), Vec::new(), Vec::new()));
-				let (_, methods, datas) = handler_input.get_mut(&handler.id).unwrap();
-
-				let method_alias = input_link
-					.handler
-					.method_aliases
-					.get_from_aspect(input_link.method.as_ref())
-					.unwrap();
-				method_alias.set_enabled(true);
-				datas.push(input_link.serialize(
-					method_alias.id,
-					i as u32,
-					method.captures.contains(&input_link.handler),
-					method.datamap.lock().clone(),
-				));
-				methods.push(method_alias);
-			}
-			method.capture_requests.clear();
-		});
+		let _ = input_handler_client::input(&handler_node, &methods, &datas);
 	}
-
-	for (_, (handler, methods, data)) in handler_input {
-		let _ = input_handler_client::input(&handler, &methods, &data);
+	for method in methods {
+		method.capture_requests.clear();
 	}
 }
