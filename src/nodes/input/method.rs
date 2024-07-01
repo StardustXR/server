@@ -22,11 +22,11 @@ pub struct InputMethod {
 	pub data: Mutex<InputDataType>,
 	pub datamap: Mutex<Datamap>,
 
-	pub capture_requests: Registry<InputHandler>,
-	pub captures: Registry<InputHandler>,
 	handler_aliases: AliasList,
 	handler_field_aliases: AliasList,
 	pub(super) handler_order: Mutex<Vec<Weak<InputHandler>>>,
+	pub capture_requests: Registry<InputHandler>,
+	pub captures: Registry<InputHandler>,
 }
 impl InputMethod {
 	pub fn add_to(
@@ -39,11 +39,11 @@ impl InputMethod {
 			data: Mutex::new(data),
 			datamap: Mutex::new(datamap),
 
-			capture_requests: Registry::new(),
-			captures: Registry::new(),
 			handler_aliases: AliasList::default(),
 			handler_field_aliases: AliasList::default(),
 			handler_order: Mutex::new(Vec::new()),
+			capture_requests: Registry::new(),
+			captures: Registry::new(),
 		};
 		<InputMethod as InputMethodRefAspect>::add_node_members(node);
 		<InputMethod as InputMethodAspect>::add_node_members(node);

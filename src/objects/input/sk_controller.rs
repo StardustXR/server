@@ -4,7 +4,7 @@ use crate::{
 		fields::FieldTrait,
 		input::{InputDataType, InputHandler, InputMethod, Tip, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
-		Node,
+		Node, OwnedNode,
 	},
 };
 use color_eyre::eyre::Result;
@@ -28,7 +28,7 @@ struct ControllerDatamap {
 }
 
 pub struct SkController {
-	_node: Arc<Node>,
+	_node: OwnedNode,
 	input: Arc<InputMethod>,
 	handed: Handed,
 	model: Model,
@@ -38,8 +38,8 @@ pub struct SkController {
 }
 impl SkController {
 	pub fn new(handed: Handed) -> Result<Self> {
-		let _node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph()?;
-		Spatial::add_to(&_node, None, Mat4::IDENTITY, false);
+		let _node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
+		Spatial::add_to(&_node.0, None, Mat4::IDENTITY, false);
 		let model = Model::copy(Model::from_memory(
 			"cursor.glb",
 			include_bytes!("cursor.glb"),
@@ -51,7 +51,7 @@ impl SkController {
 		model_node.material(&material);
 		let tip = InputDataType::Tip(Tip::default());
 		let input = InputMethod::add_to(
-			&_node,
+			&_node.0,
 			tip,
 			Datamap::from_typed(ControllerDatamap::default())?,
 		)?;

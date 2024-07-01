@@ -50,6 +50,13 @@ pub type Method = fn(Arc<Node>, Arc<Client>, Message, MethodResponseSender);
 
 stardust_xr_server_codegen::codegen_node_protocol!();
 
+pub struct OwnedNode(pub Arc<Node>);
+impl Drop for OwnedNode {
+	fn drop(&mut self) {
+		self.0.destroy();
+	}
+}
+
 pub struct Node {
 	enabled: AtomicBool,
 	id: u64,
@@ -94,6 +101,14 @@ impl Node {
 			.ok_or_else(|| eyre!("Internal: Unable to get client"))?
 			.scenegraph
 			.add_node(self))
+	}
+	pub fn add_to_scenegraph_owned(self) -> Result<OwnedNode> {
+		Ok(OwnedNode(
+			self.get_client()
+				.ok_or_else(|| eyre!("Internal: Unable to get client"))?
+				.scenegraph
+				.add_node(self),
+		))
 	}
 	pub fn enabled(&self) -> bool {
 		self.enabled.load(Ordering::Relaxed)

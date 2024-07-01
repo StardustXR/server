@@ -7,7 +7,7 @@ use crate::{
 		fields::{FieldTrait, Ray},
 		input::{InputDataType, InputHandler, InputMethod, Pointer, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
-		Node,
+		Node, OwnedNode,
 	},
 };
 use color_eyre::eyre::Result;
@@ -54,7 +54,7 @@ pub struct KeyboardEvent {
 
 #[allow(unused)]
 pub struct MousePointer {
-	node: Arc<Node>,
+	node: OwnedNode,
 	keymap: DefaultKey,
 	spatial: Arc<Spatial>,
 	pointer: Arc<InputMethod>,
@@ -65,10 +65,10 @@ pub struct MousePointer {
 }
 impl MousePointer {
 	pub fn new() -> Result<Self> {
-		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph()?;
-		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
+		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
+		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
 		let pointer = InputMethod::add_to(
-			&node,
+			&node.0,
 			InputDataType::Pointer(Pointer::default()),
 			Datamap::from_typed(MouseEvent::default())?,
 		)?;
@@ -80,7 +80,7 @@ impl MousePointer {
 		);
 
 		let keyboard_sender = PulseSender::add_to(
-			&node,
+			&node.0,
 			Datamap::from_typed(KeyboardEvent::default()).unwrap(),
 		)
 		.unwrap();
@@ -287,7 +287,7 @@ impl MousePointer {
 			if !self.keyboard_datamap.keys.is_empty() {
 				pulse_receiver_client::data(
 					&rx.node.upgrade().unwrap(),
-					&self.node,
+					&self.node.0,
 					&Datamap::from_typed(&self.keyboard_datamap).unwrap(),
 				)
 				.unwrap();

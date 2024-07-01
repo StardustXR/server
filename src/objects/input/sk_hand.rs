@@ -1,6 +1,7 @@
 use crate::core::client::INTERNAL_CLIENT;
 use crate::nodes::fields::{Field, FieldTrait};
 use crate::nodes::input::{InputDataType, InputHandler, INPUT_HANDLER_REGISTRY};
+use crate::nodes::OwnedNode;
 use crate::nodes::{
 	input::{Hand, InputMethod, Joint},
 	spatial::Spatial,
@@ -32,7 +33,7 @@ struct HandDatamap {
 }
 
 pub struct SkHand {
-	_node: Arc<Node>,
+	_node: OwnedNode,
 	handed: Handed,
 	input: Arc<InputMethod>,
 	capture: Option<Arc<InputHandler>>,
@@ -40,14 +41,14 @@ pub struct SkHand {
 }
 impl SkHand {
 	pub fn new(handed: Handed) -> Result<Self> {
-		let _node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph()?;
-		Spatial::add_to(&_node, None, Mat4::IDENTITY, false);
+		let _node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
+		Spatial::add_to(&_node.0, None, Mat4::IDENTITY, false);
 		let hand = InputDataType::Hand(Hand {
 			right: handed == Handed::Right,
 			..Default::default()
 		});
 		let datamap = Datamap::from_typed(HandDatamap::default())?;
-		let input = InputMethod::add_to(&_node, hand, datamap)?;
+		let input = InputMethod::add_to(&_node.0, hand, datamap)?;
 
 		Input::hand_visible(handed, false);
 		Ok(SkHand {

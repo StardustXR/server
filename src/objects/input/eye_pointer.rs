@@ -4,7 +4,7 @@ use crate::{
 		fields::{FieldTrait, Ray},
 		input::{InputDataType, InputMethod, Pointer, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
-		Node,
+		Node, OwnedNode,
 	},
 };
 use color_eyre::eyre::Result;
@@ -28,21 +28,26 @@ pub struct KeyboardEvent {
 }
 
 pub struct EyePointer {
+	node: OwnedNode,
 	spatial: Arc<Spatial>,
 	pointer: Arc<InputMethod>,
 }
 impl EyePointer {
 	pub fn new() -> Result<Self> {
-		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph()?;
-		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
+		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
+		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
 		let pointer = InputMethod::add_to(
-			&node,
+			&node.0,
 			InputDataType::Pointer(Pointer::default()),
 			Datamap::from_typed(EyeDatamap::default())?,
 		)
 		.unwrap();
 
-		Ok(EyePointer { spatial, pointer })
+		Ok(EyePointer {
+			node,
+			spatial,
+			pointer,
+		})
 	}
 	pub fn update(&self) {
 		let ray = Input::get_eyes();
