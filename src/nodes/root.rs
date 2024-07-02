@@ -9,13 +9,17 @@ use color_eyre::eyre::{bail, Result};
 use glam::Mat4;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::info;
 
 static ROOT_REGISTRY: Registry<Root> = Registry::new();
 
 stardust_xr_server_codegen::codegen_root_protocol!();
 
-pub struct Root(Arc<Node>);
+pub struct Root {
+	node: Arc<Node>,
+	connect_instant: Instant,
+}
 impl Root {
 	pub fn create(client: &Arc<Client>, transform: Mat4) -> Result<Arc<Self>> {
 		let node = Node::from_id(client, 0, false);
@@ -23,26 +27,31 @@ impl Root {
 		let node = node.add_to_scenegraph()?;
 		let _ = Spatial::add_to(&node, None, transform, false);
 
-		Ok(ROOT_REGISTRY.add(Root(node)))
+		Ok(ROOT_REGISTRY.add(Root {
+			node,
+			connect_instant: Instant::now(),
+		}))
 	}
 
 	pub fn send_frame_events(delta: f64) {
-		let info = FrameInfo {
-			delta: delta as f32,
-			elapsed: 0.0,
-		};
 		for root in ROOT_REGISTRY.get_valid_contents() {
-			let _ = root_client::frame(&root.0, &info);
+			let _ = root_client::frame(
+				&root.node,
+				&FrameInfo {
+					delta: delta as f32,
+					elapsed: root.connect_instant.elapsed().as_secs_f32(),
+				},
+			);
 		}
 	}
 
 	pub fn set_transform(&self, transform: Mat4) {
-		let spatial = self.0.get_aspect::<Spatial>().unwrap();
+		let spatial = self.node.get_aspect::<Spatial>().unwrap();
 		spatial.set_spatial_parent(None).unwrap();
 		spatial.set_local_transform(transform);
 	}
 	pub async fn save_state(&self) -> Result<ClientState> {
-		Ok(root_client::save_state(&self.0).await?.0)
+		Ok(root_client::save_state(&self.node).await?.0)
 	}
 }
 impl RootAspect for Root {
