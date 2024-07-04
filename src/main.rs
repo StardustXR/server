@@ -122,7 +122,7 @@ async fn main() {
 	dbus_connection
 		.request_name("org.stardustxr.HMD")
 		.await
-		.unwrap();
+		.expect("Another instance of the server is running. This is not supported currently (but is planned).");
 
 	let sk_ready_notifier = Arc::new(Notify::new());
 	let stereokit_loop = tokio::task::spawn_blocking({
