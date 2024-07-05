@@ -548,7 +548,7 @@ impl Backend for XdgBackend {
 		toplevel.with_pending_state(|s| {
 			s.size = Some((size.x.max(16) as i32, size.y.max(16) as i32).into())
 		});
-		toplevel.send_configure();
+		toplevel.send_pending_configure();
 	}
 	fn set_toplevel_focused_visuals(&self, focused: bool) {
 		let Some(toplevel) = self.toplevel.lock().clone() else {
