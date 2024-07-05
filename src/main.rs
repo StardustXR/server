@@ -177,7 +177,6 @@ fn stereokit_loop(
 		} else {
 			AppMode::XR
 		})
-		.blend_preference(DisplayBlend::AnyTransparent)
 		.depth_mode(DepthMode::D32)
 		.log_filter(match EnvFilter::from_default_env().max_level_hint() {
 			Some(LevelFilter::ERROR) => LogLevel::Error,
