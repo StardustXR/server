@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use stereokit_rust::material::Material;
 use stereokit_rust::shader::Shader;
-use stereokit_rust::sk::{sk_quit, AppMode, DepthMode, DisplayBlend, QuitReason, SkSettings};
+use stereokit_rust::sk::{sk_quit, AppMode, DepthMode, QuitReason, SkSettings};
 use stereokit_rust::system::{LogLevel, Renderer, World};
 use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
 use stereokit_rust::ui::Ui;
@@ -67,7 +67,10 @@ async fn main() {
 	let registry = tracing_subscriber::registry();
 
 	#[cfg(feature = "profile_app")]
-	let registry = registry.with(tracing_tracy::TracyLayer::new().with_filter(LevelFilter::DEBUG));
+	let registry = registry.with(
+		tracing_tracy::TracyLayer::new(tracing_tracy::DefaultConfig::default())
+			.with_filter(LevelFilter::DEBUG),
+	);
 
 	#[cfg(feature = "profile_tokio")]
 	let (console_layer, _) = console_subscriber::ConsoleLayer::builder().build();
