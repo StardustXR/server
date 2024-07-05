@@ -31,8 +31,8 @@ use smithay::{
 	wayland::{
 		compositor,
 		shell::xdg::{
-			Configure, PopupSurface, PositionerState, ShellClient, SurfaceCachedState,
-			ToplevelSurface, XdgShellHandler, XdgShellState, XdgToplevelSurfaceData,
+			PopupSurface, PositionerState, ShellClient, SurfaceCachedState, ToplevelSurface,
+			XdgShellHandler, XdgShellState, XdgToplevelSurfaceData,
 		},
 	},
 };
@@ -87,6 +87,7 @@ impl XdgShellHandler for WaylandState {
 		});
 		toplevel.send_configure();
 		utils::insert_data(toplevel.wl_surface(), SurfaceId::Toplevel);
+		utils::insert_data(toplevel.wl_surface(), Mutex::new(Vector2::from([0_u32; 2])));
 		CoreSurface::add_to(
 			toplevel.wl_surface(),
 			{
@@ -118,10 +119,19 @@ impl XdgShellHandler for WaylandState {
 					else {
 						return;
 					};
+					let Some(old_size) =
+						utils::get_data::<Mutex<Vector2<u32>>>(toplevel.wl_surface())
+					else {
+						return;
+					};
+					let mut old_size = old_size.lock();
 					let Some(size) = core_surface.size() else {
 						return;
 					};
-					panel_item.toplevel_size_changed(size);
+					if *old_size != size {
+						panel_item.toplevel_size_changed(size);
+						*old_size = size;
+					}
 				}
 			},
 		);
@@ -191,9 +201,7 @@ impl XdgShellHandler for WaylandState {
 		let Some(panel_item) = surface_panel_item(&parent) else {
 			return;
 		};
-		if popup.send_configure().is_err() {
-			return;
-		}
+		let _ = popup.send_configure();
 		utils::insert_data(popup.wl_surface(), SurfaceId::Child(uid));
 		utils::insert_data(popup.wl_surface(), Arc::downgrade(&panel_item));
 		CoreSurface::add_to(
@@ -307,20 +315,6 @@ impl XdgShellHandler for WaylandState {
 		};
 		panel_item.toplevel_fullscreen_active(true);
 	}
-
-	fn ack_configure(&mut self, surface: WlSurface, configure: Configure) {
-		let Some(panel_item) = surface_panel_item(&surface) else {
-			return;
-		};
-		match configure {
-			Configure::Toplevel(t) => {
-				if let Some(size) = t.state.size {
-					panel_item.toplevel_size_changed([size.w as u32, size.h as u32].into())
-				}
-			}
-			Configure::Popup(_p) => (),
-		}
-	}
 }
 delegate_xdg_shell!(WaylandState);
 
@@ -357,7 +351,8 @@ impl XdgBackend {
 
 		self.popups.lock().insert(id, (popup, positioner));
 
-		panel_item.create_child(id, &self.child_data(id).unwrap());
+		let child_data = self.child_data(id).unwrap();
+		panel_item.create_child(id, &child_data);
 	}
 	pub fn reposition_popup(&self, id: u64, _popup: PopupSurface, positioner: PositionerState) {
 		let mut popups = self.popups.lock();
@@ -381,9 +376,13 @@ impl XdgBackend {
 
 	fn child_data(&self, id: u64) -> Option<ChildInfo> {
 		let (popup, positioner) = self.popups.lock().get(&id)?.clone();
+		let parent_surface = popup.get_parent_surface()?;
+		let parent = utils::get_data::<SurfaceId>(&parent_surface)?
+			.as_ref()
+			.clone();
 		Some(ChildInfo {
 			id,
-			parent: (*utils::get_data::<SurfaceId>(&popup.get_parent_surface()?)?).clone(),
+			parent,
 			geometry: positioner.get_geometry().into(),
 		})
 	}
@@ -546,7 +545,9 @@ impl Backend for XdgBackend {
 		let Some(toplevel) = self.toplevel.lock().clone() else {
 			return;
 		};
-		toplevel.with_pending_state(|s| s.size = Some((size.x as i32, size.y as i32).into()));
+		toplevel.with_pending_state(|s| {
+			s.size = Some((size.x.max(16) as i32, size.y.max(16) as i32).into())
+		});
 		toplevel.send_configure();
 	}
 	fn set_toplevel_focused_visuals(&self, focused: bool) {
