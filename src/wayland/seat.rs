@@ -124,18 +124,9 @@ impl SeatWrapper {
 		if keyboard.current_focus() == Some(surface.clone()) {
 			keyboard.set_focus(state, None, SERIAL_COUNTER.next_serial());
 		}
-		let touch = self.seat.get_touch().unwrap();
 		for (id, touch_surface) in self.touches.lock().iter() {
 			if touch_surface.id() == surface.id() {
 				self.touch_up(*id);
-				touch.up(
-					state,
-					&UpEvent {
-						slot: Some(*id).into(),
-						serial: SERIAL_COUNTER.next_serial(),
-						time: 0,
-					},
-				)
 			}
 		}
 	}
@@ -307,6 +298,7 @@ impl SeatWrapper {
 				time: 0,
 			},
 		);
+		touch.frame(&mut state.lock());
 	}
 	pub fn reset_input(&self) {
 		for id in self.touches.lock().keys() {
