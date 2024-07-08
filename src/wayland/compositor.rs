@@ -3,6 +3,7 @@ use crate::wayland::surface::CoreSurface;
 use super::state::{ClientState, WaylandState};
 use portable_atomic::{AtomicU32, Ordering};
 use smithay::{
+	backend::renderer::utils::on_commit_buffer_handler,
 	delegate_compositor,
 	reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
 	wayland::compositor::{self, CompositorClientState, CompositorHandler, CompositorState},
@@ -17,6 +18,8 @@ impl CompositorHandler for WaylandState {
 
 	fn commit(&mut self, surface: &WlSurface) {
 		debug!(?surface, "Surface commit");
+		// Let smithay handle buffer management (has to be done here as RendererSurfaceStates is not thread safe)
+		on_commit_buffer_handler::<WaylandState>(&surface);
 		let mut count = 0;
 		let core_surface = compositor::with_states(surface, |data| {
 			let count_new = data
