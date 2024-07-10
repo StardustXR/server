@@ -35,6 +35,7 @@ use tokio::sync::Notify;
 use tracing::metadata::LevelFilter;
 use tracing::{debug_span, error, info};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+use zbus::fdo::ObjectManager;
 use zbus::Connection;
 
 #[derive(Debug, Clone, Parser)]
@@ -126,6 +127,12 @@ async fn main() {
 		.request_name("org.stardustxr.HMD")
 		.await
 		.expect("Another instance of the server is running. This is not supported currently (but is planned).");
+
+	dbus_connection
+		.object_server()
+		.at("/", ObjectManager)
+		.await
+		.expect("Couldn't add the object manager");
 
 	let sk_ready_notifier = Arc::new(Notify::new());
 	let stereokit_loop = tokio::task::spawn_blocking({
