@@ -5,7 +5,7 @@ use crate::{
 	nodes::{
 		fields::{Field, Shape, EXPORTED_FIELDS},
 		spatial::{Spatial, EXPORTED_SPATIALS},
-		Node,
+		Node, OwnedNode,
 	},
 };
 use glam::{vec3, Mat4};
@@ -14,14 +14,13 @@ use input::{
 	sk_hand::SkHand,
 };
 use play_space::PlaySpaceBounds;
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 use stereokit_rust::{
 	sk::{DisplayMode, MainThreadToken, Sk},
 	system::{Handed, Input, Key, World},
 	util::Device,
 };
-use tokio::task::AbortHandle;
-use zbus::{interface, Connection};
+use zbus::{interface, object_server::Interface, zvariant::OwnedObjectPath, Connection};
 
 pub mod input;
 pub mod play_space;
@@ -44,8 +43,8 @@ enum Inputs {
 
 pub struct ServerObjects {
 	connection: Connection,
-	hmd: (Arc<Spatial>, AbortHandle),
-	play_space: Option<(Arc<Spatial>, AbortHandle)>,
+	hmd: (Arc<Spatial>, ObjectHandle<SpatialRef>),
+	play_space: Option<(Arc<Spatial>, ObjectHandle<SpatialRef>)>,
 	inputs: Inputs,
 }
 impl ServerObjects {
@@ -68,9 +67,18 @@ impl ServerObjects {
 		}
 
 		let inputs = if sk.get_active_display_mode() == DisplayMode::MixedReality {
+			tokio::task::spawn({
+				let connection = connection.clone();
+				async move {
+					connection
+						.request_name("org.stardustxr.Controllers")
+						.await
+						.unwrap();
+				}
+			});
 			Inputs::XR {
-				controller_left: SkController::new(Handed::Left).unwrap(),
-				controller_right: SkController::new(Handed::Right).unwrap(),
+				controller_left: SkController::new(&connection, Handed::Left).unwrap(),
+				controller_right: SkController::new(&connection, Handed::Right).unwrap(),
 				hand_left: SkHand::new(Handed::Left).unwrap(),
 				hand_right: SkHand::new(Handed::Right).unwrap(),
 				eye_pointer: Device::has_eye_gaze()
@@ -156,35 +164,44 @@ impl ServerObjects {
 		}
 	}
 }
-impl Drop for ServerObjects {
+
+pub struct ObjectHandle<I: Interface>(Connection, OwnedObjectPath, PhantomData<I>);
+impl<I: Interface> Drop for ObjectHandle<I> {
 	fn drop(&mut self) {
-		self.hmd.1.abort();
-		if let Some((_, play_space)) = self.play_space.take() {
-			play_space.abort();
-		}
+		let connection = self.0.clone();
+		let object_path = self.1.clone();
+		tokio::task::spawn(async move {
+			connection.object_server().remove::<I, _>(object_path);
+		});
 	}
 }
 
-pub struct SpatialRef(u64);
+pub struct SpatialRef(u64, OwnedNode);
 impl SpatialRef {
-	pub fn create(connection: &Connection, path: &str) -> (Arc<Spatial>, AbortHandle) {
-		let node = Arc::new(Node::generate(&INTERNAL_CLIENT, false));
-		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
+	pub fn create(connection: &Connection, path: &str) -> (Arc<Spatial>, ObjectHandle<SpatialRef>) {
+		let node = OwnedNode(Arc::new(Node::generate(&INTERNAL_CLIENT, false)));
+		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
 		let uid: u64 = rand::random();
-		EXPORTED_SPATIALS.lock().insert(uid, node.clone());
+		EXPORTED_SPATIALS.lock().insert(uid, node.0.clone());
 
-		let connection = connection.clone();
-		let path = path.to_string();
-		(
-			spatial,
-			tokio::task::spawn(async move {
+		tokio::task::spawn({
+			let connection = connection.clone();
+			let path = path.to_string();
+			async move {
 				connection
 					.object_server()
-					.at(path, Self(uid))
+					.at(path, Self(uid, node))
 					.await
 					.unwrap();
-			})
-			.abort_handle(),
+			}
+		});
+		(
+			spatial,
+			ObjectHandle(
+				connection.clone(),
+				OwnedObjectPath::try_from(path.to_string()).unwrap(),
+				PhantomData,
+			),
 		)
 	}
 }
@@ -196,27 +213,37 @@ impl SpatialRef {
 	}
 }
 
-pub struct FieldRef(u64);
+pub struct FieldRef(u64, OwnedNode);
 impl FieldRef {
-	pub fn create(connection: &Connection, path: &str, shape: Shape) -> (Arc<Field>, AbortHandle) {
-		let node = Arc::new(Node::generate(&INTERNAL_CLIENT, false));
-		Spatial::add_to(&node, None, Mat4::IDENTITY, false);
-		let field = Field::add_to(&node, shape).unwrap();
+	pub fn create(
+		connection: &Connection,
+		path: &str,
+		shape: Shape,
+	) -> (Arc<Field>, ObjectHandle<FieldRef>) {
+		let node = OwnedNode(Arc::new(Node::generate(&INTERNAL_CLIENT, false)));
+		Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
+		let field = Field::add_to(&node.0, shape).unwrap();
 		let uid: u64 = rand::random();
-		EXPORTED_FIELDS.lock().insert(uid, node.clone());
+		EXPORTED_FIELDS.lock().insert(uid, node.0.clone());
 
-		let connection = connection.clone();
-		let path = path.to_string();
-		(
-			field,
-			tokio::task::spawn(async move {
+		tokio::task::spawn({
+			let connection = connection.clone();
+			let path = path.to_string();
+			async move {
 				connection
 					.object_server()
-					.at(path, Self(uid))
+					.at(path, Self(uid, node))
 					.await
 					.unwrap();
-			})
-			.abort_handle(),
+			}
+		});
+		(
+			field,
+			ObjectHandle(
+				connection.clone(),
+				OwnedObjectPath::try_from(path.to_string()).unwrap(),
+				PhantomData,
+			),
 		)
 	}
 }

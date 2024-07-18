@@ -6,6 +6,7 @@ use crate::{
 		spatial::Spatial,
 		Node, OwnedNode,
 	},
+	objects::{ObjectHandle, SpatialRef},
 };
 use color_eyre::eyre::Result;
 use glam::{Mat4, Vec2, Vec3};
@@ -19,6 +20,7 @@ use stereokit_rust::{
 	system::{Handed, Input},
 	util::Color128,
 };
+use zbus::Connection;
 
 #[derive(Default, Deserialize, Serialize)]
 struct ControllerDatamap {
@@ -28,7 +30,7 @@ struct ControllerDatamap {
 }
 
 pub struct SkController {
-	_node: OwnedNode,
+	object_handle: ObjectHandle<SpatialRef>,
 	input: Arc<InputMethod>,
 	handed: Handed,
 	model: Model,
@@ -37,9 +39,15 @@ pub struct SkController {
 	datamap: ControllerDatamap,
 }
 impl SkController {
-	pub fn new(handed: Handed) -> Result<Self> {
-		let _node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
-		Spatial::add_to(&_node.0, None, Mat4::IDENTITY, false);
+	pub fn new(connection: &Connection, handed: Handed) -> Result<Self> {
+		let (spatial, object_handle) = SpatialRef::create(
+			connection,
+			&("/org/stardustxr/Controller/".to_string()
+				+ match handed {
+					Handed::Left => "left",
+					_ => "right",
+				}),
+		);
 		let model = Model::copy(Model::from_memory(
 			"cursor.glb",
 			include_bytes!("cursor.glb"),
@@ -51,12 +59,12 @@ impl SkController {
 		model_node.material(&material);
 		let tip = InputDataType::Tip(Tip::default());
 		let input = InputMethod::add_to(
-			&_node.0,
+			&spatial.node().unwrap(),
 			tip,
 			Datamap::from_typed(ControllerDatamap::default())?,
 		)?;
 		Ok(SkController {
-			_node,
+			object_handle,
 			input,
 			handed,
 			model,
