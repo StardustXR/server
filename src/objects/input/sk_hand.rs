@@ -7,6 +7,7 @@ use crate::nodes::{
 	spatial::Spatial,
 	Node,
 };
+use crate::objects::{ObjectHandle, SpatialRef};
 use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,7 @@ use std::sync::Arc;
 use stereokit_rust::sk::{DisplayMode, MainThreadToken, Sk};
 use stereokit_rust::system::{HandJoint, HandSource, Handed, Input, LinePoint, Lines};
 use stereokit_rust::util::Color128;
+use zbus::Connection;
 
 fn convert_joint(joint: HandJoint) -> Joint {
 	Joint {
@@ -34,13 +36,23 @@ struct HandDatamap {
 
 pub struct SkHand {
 	_node: OwnedNode,
+	palm_spatial: Arc<Spatial>,
+	palm_object: ObjectHandle<SpatialRef>,
 	handed: Handed,
 	input: Arc<InputMethod>,
 	capture: Option<Arc<InputHandler>>,
 	datamap: HandDatamap,
 }
 impl SkHand {
-	pub fn new(handed: Handed) -> Result<Self> {
+	pub fn new(connection: &Connection, handed: Handed) -> Result<Self> {
+		let (palm_spatial, palm_object) = SpatialRef::create(
+			connection,
+			&("/org/stardustxr/Hand/".to_string()
+				+ match handed {
+					Handed::Left => "left",
+					_ => "right",
+				} + "/palm"),
+		);
 		let _node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
 		Spatial::add_to(&_node.0, None, Mat4::IDENTITY, false);
 		let hand = InputDataType::Hand(Hand {
@@ -53,6 +65,8 @@ impl SkHand {
 		Input::hand_visible(handed, false);
 		Ok(SkHand {
 			_node,
+			palm_spatial,
+			palm_object,
 			handed,
 			input,
 			capture: None,
@@ -92,6 +106,12 @@ impl SkHand {
 				hand.palm.rotation = Quat::from(sk_hand.palm.orientation).into();
 				hand.palm.radius =
 					(sk_hand.fingers[2][0].radius + sk_hand.fingers[2][1].radius) * 0.5;
+
+				self.palm_spatial
+					.set_local_transform(Mat4::from_rotation_translation(
+						hand.palm.rotation.into(),
+						hand.palm.position.into(),
+					));
 
 				hand.wrist.position = Vec3::from(sk_hand.wrist.position).into();
 				hand.wrist.rotation = Quat::from(sk_hand.wrist.orientation).into();

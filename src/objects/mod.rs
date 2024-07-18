@@ -66,21 +66,26 @@ impl ServerObjects {
 			});
 		}
 
+		tokio::task::spawn({
+			let connection = connection.clone();
+			async move {
+				connection
+					.request_name("org.stardustxr.Controllers")
+					.await
+					.unwrap();
+				connection
+					.request_name("org.stardustxr.Hands")
+					.await
+					.unwrap();
+			}
+		});
+
 		let inputs = if sk.get_active_display_mode() == DisplayMode::MixedReality {
-			tokio::task::spawn({
-				let connection = connection.clone();
-				async move {
-					connection
-						.request_name("org.stardustxr.Controllers")
-						.await
-						.unwrap();
-				}
-			});
 			Inputs::XR {
 				controller_left: SkController::new(&connection, Handed::Left).unwrap(),
 				controller_right: SkController::new(&connection, Handed::Right).unwrap(),
-				hand_left: SkHand::new(Handed::Left).unwrap(),
-				hand_right: SkHand::new(Handed::Right).unwrap(),
+				hand_left: SkHand::new(&connection, Handed::Left).unwrap(),
+				hand_right: SkHand::new(&connection, Handed::Right).unwrap(),
 				eye_pointer: Device::has_eye_gaze()
 					.then(EyePointer::new)
 					.transpose()
@@ -130,8 +135,8 @@ impl ServerObjects {
 			// }
 			if Input::key(Key::F8).is_just_inactive() {
 				self.inputs = Inputs::Hands {
-					left: SkHand::new(Handed::Left).unwrap(),
-					right: SkHand::new(Handed::Right).unwrap(),
+					left: SkHand::new(&self.connection, Handed::Left).unwrap(),
+					right: SkHand::new(&self.connection, Handed::Right).unwrap(),
 				};
 			}
 		}
