@@ -17,6 +17,7 @@ use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
 use serde::{de::DeserializeOwned, Serialize};
+use spatial::Spatial;
 use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::{deserialize, serialize};
@@ -112,6 +113,15 @@ impl Node {
 	}
 	pub fn enabled(&self) -> bool {
 		self.enabled.load(Ordering::Relaxed)
+			&& if let Ok(spatial) = self.get_aspect::<Spatial>() {
+				spatial
+					.global_transform()
+					.to_scale_rotation_translation()
+					.0
+					.length_squared() > 0.0
+			} else {
+				true
+			}
 	}
 	pub fn set_enabled(&self, enabled: bool) {
 		self.enabled.store(enabled, Ordering::Relaxed)
