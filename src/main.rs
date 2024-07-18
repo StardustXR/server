@@ -14,9 +14,7 @@ use clap::Parser;
 use core::client::Client;
 use core::task;
 use directories::ProjectDirs;
-use nodes::spatial::Spatial;
-use objects::play_space::PlaySpaceBounds;
-use objects::{ServerObjects, SpatialRef};
+use objects::ServerObjects;
 use once_cell::sync::OnceCell;
 use session::{launch_start, save_session};
 use stardust_xr::server;
@@ -26,7 +24,7 @@ use std::time::Duration;
 use stereokit_rust::material::Material;
 use stereokit_rust::shader::Shader;
 use stereokit_rust::sk::{sk_quit, AppMode, DepthMode, QuitReason, SkSettings};
-use stereokit_rust::system::{LogLevel, Renderer, World};
+use stereokit_rust::system::{LogLevel, Renderer};
 use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
 use stereokit_rust::ui::Ui;
 use stereokit_rust::util::{Color128, Time};
@@ -114,15 +112,7 @@ async fn main() {
 		error!("Unable to get Stardust project directories, default skybox and startup script will not work.");
 	}
 
-	let dbus_connection = Arc::new(Connection::session().await.unwrap());
-	let hmd = SpatialRef::create(&dbus_connection, "/org/stardustxr/HMD")
-		.await
-		.get_aspect::<Spatial>()
-		.unwrap();
-	let play_space = SpatialRef::create(&dbus_connection, "/org/stardustxr/PlaySpace")
-		.await
-		.get_aspect::<Spatial>()
-		.unwrap();
+	let dbus_connection = Connection::session().await.unwrap();
 	dbus_connection
 		.request_name("org.stardustxr.HMD")
 		.await
@@ -140,16 +130,7 @@ async fn main() {
 		let project_dirs = project_dirs.clone();
 		let cli_args = cli_args.clone();
 		let dbus_connection = dbus_connection.clone();
-		move || {
-			stereokit_loop(
-				sk_ready_notifier,
-				project_dirs,
-				cli_args,
-				dbus_connection,
-				hmd,
-				play_space,
-			)
-		}
+		move || stereokit_loop(sk_ready_notifier, project_dirs, cli_args, dbus_connection)
 	});
 	sk_ready_notifier.notified().await;
 	let mut startup_children = project_dirs
@@ -176,9 +157,7 @@ fn stereokit_loop(
 	sk_ready_notifier: Arc<Notify>,
 	project_dirs: Option<ProjectDirs>,
 	args: CliArgs,
-	dbus_connection: Arc<Connection>,
-	hmd: Arc<Spatial>,
-	play_space: Arc<Spatial>,
+	dbus_connection: Connection,
 ) {
 	let sk = SkSettings::default()
 		.app_name("Stardust XR")
@@ -236,26 +215,7 @@ fn stereokit_loop(
 	sk_ready_notifier.notify_waiters();
 	info!("Stardust ready!");
 
-	let mut objects = ServerObjects::new(&sk, hmd, World::has_bounds().then_some(play_space));
-	if World::has_bounds() && World::get_bounds_size().x != 0.0 && World::get_bounds_size().y != 0.0
-	{
-		let dbus_connection = dbus_connection.clone();
-		tokio::task::spawn(async move {
-			PlaySpaceBounds::create(&dbus_connection).await;
-			dbus_connection
-				.request_name("org.stardustxr.PlaySpace")
-				.await
-				.unwrap();
-		});
-	} else {
-		tokio::task::spawn(async move {
-			dbus_connection
-				.object_server()
-				.remove::<SpatialRef, _>("/org/stardustxr/PlaySpace")
-				.await
-				.unwrap();
-		});
-	}
+	let mut objects = ServerObjects::new(dbus_connection.clone(), &sk);
 
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;

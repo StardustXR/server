@@ -138,16 +138,16 @@ pub struct Field {
 	pub shape: Mutex<Shape>,
 }
 impl Field {
-	pub fn add_to(node: &Arc<Node>, shape: Shape) -> Result<()> {
+	pub fn add_to(node: &Arc<Node>, shape: Shape) -> Result<Arc<Field>> {
 		let spatial = node.get_aspect::<Spatial>()?;
 		let field = Field {
 			spatial,
 			shape: Mutex::new(shape),
 		};
-		node.add_aspect(field);
+		let field = node.add_aspect(field);
 		<Field as FieldRefAspect>::add_node_members(node);
 		<Field as FieldAspect>::add_node_members(node);
-		Ok(())
+		Ok(field)
 	}
 }
 impl Aspect for Field {

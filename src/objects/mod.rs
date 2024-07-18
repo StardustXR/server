@@ -13,12 +13,14 @@ use input::{
 	eye_pointer::EyePointer, mouse_pointer::MousePointer, sk_controller::SkController,
 	sk_hand::SkHand,
 };
+use play_space::PlaySpaceBounds;
 use std::sync::Arc;
 use stereokit_rust::{
 	sk::{DisplayMode, MainThreadToken, Sk},
 	system::{Handed, Input, Key, World},
 	util::Device,
 };
+use tokio::task::AbortHandle;
 use zbus::{interface, Connection};
 
 pub mod input;
@@ -31,17 +33,35 @@ enum Inputs {
 		eye_pointer: Option<EyePointer>,
 	},
 	MousePointer(MousePointer),
-	Controllers((SkController, SkController)),
+	// Controllers((SkController, SkController)),
 	Hands((SkHand, SkHand)),
 }
 
 pub struct ServerObjects {
-	hmd: Arc<Spatial>,
-	play_space: Option<Arc<Spatial>>,
+	connection: Connection,
+	hmd: (Arc<Spatial>, AbortHandle),
+	play_space: Option<(Arc<Spatial>, AbortHandle)>,
 	inputs: Inputs,
 }
 impl ServerObjects {
-	pub fn new(sk: &Sk, hmd: Arc<Spatial>, play_space: Option<Arc<Spatial>>) -> ServerObjects {
+	pub fn new(connection: Connection, sk: &Sk) -> ServerObjects {
+		let hmd = SpatialRef::create(&connection, "/org/stardustxr/HMD");
+
+		let play_space = (World::has_bounds()
+			&& World::get_bounds_size().x != 0.0
+			&& World::get_bounds_size().y != 0.0)
+			.then(|| SpatialRef::create(&connection, "/org/stardustxr/PlaySpace"));
+		if play_space.is_some() {
+			let dbus_connection = connection.clone();
+			tokio::task::spawn(async move {
+				PlaySpaceBounds::create(&dbus_connection).await;
+				dbus_connection
+					.request_name("org.stardustxr.PlaySpace")
+					.await
+					.unwrap();
+			});
+		}
+
 		let inputs = if sk.get_active_display_mode() == DisplayMode::MixedReality {
 			Inputs::XR {
 				controllers: (
@@ -62,6 +82,7 @@ impl ServerObjects {
 		};
 
 		ServerObjects {
+			connection,
 			hmd,
 			play_space,
 			inputs,
@@ -71,6 +92,7 @@ impl ServerObjects {
 	pub fn update(&mut self, sk: &Sk, token: &MainThreadToken) {
 		let hmd_pose = Input::get_head();
 		self.hmd
+			.0
 			.set_local_transform(Mat4::from_scale_rotation_translation(
 				vec3(1.0, 1.0, 1.0),
 				hmd_pose.orientation.into(),
@@ -79,22 +101,24 @@ impl ServerObjects {
 
 		if let Some(play_space) = self.play_space.as_ref() {
 			let pose = World::get_bounds_pose();
-			play_space.set_local_transform(Mat4::from_rotation_translation(
-				pose.orientation.into(),
-				pose.position.into(),
-			));
+			play_space
+				.0
+				.set_local_transform(Mat4::from_rotation_translation(
+					pose.orientation.into(),
+					pose.position.into(),
+				));
 		}
 
 		if sk.get_active_display_mode() != DisplayMode::MixedReality {
 			if Input::key(Key::F6).is_just_inactive() {
 				self.inputs = Inputs::MousePointer(MousePointer::new().unwrap());
 			}
-			if Input::key(Key::F7).is_just_inactive() {
-				self.inputs = Inputs::Controllers((
-					SkController::new(Handed::Left).unwrap(),
-					SkController::new(Handed::Right).unwrap(),
-				));
-			}
+			// if Input::key(Key::F7).is_just_inactive() {
+			// 	self.inputs = Inputs::Controllers((
+			// 		SkController::new(Handed::Left).unwrap(),
+			// 		SkController::new(Handed::Right).unwrap(),
+			// 	));
+			// }
 			if Input::key(Key::F8).is_just_inactive() {
 				self.inputs = Inputs::Hands((
 					SkHand::new(Handed::Left).unwrap(),
@@ -118,10 +142,10 @@ impl ServerObjects {
 				}
 			}
 			Inputs::MousePointer(mouse_pointer) => mouse_pointer.update(),
-			Inputs::Controllers((left, right)) => {
-				left.update(token);
-				right.update(token);
-			}
+			// Inputs::Controllers((left, right)) => {
+			// 	left.update(token);
+			// 	right.update(token);
+			// }
 			Inputs::Hands((left, right)) => {
 				left.update(sk, token);
 				right.update(sk, token);
@@ -129,20 +153,36 @@ impl ServerObjects {
 		}
 	}
 }
+impl Drop for ServerObjects {
+	fn drop(&mut self) {
+		self.hmd.1.abort();
+		if let Some((_, play_space)) = self.play_space.take() {
+			play_space.abort();
+		}
+	}
+}
 
 pub struct SpatialRef(u64);
 impl SpatialRef {
-	pub async fn create(connection: &Connection, path: &str) -> Arc<Node> {
+	pub fn create(connection: &Connection, path: &str) -> (Arc<Spatial>, AbortHandle) {
 		let node = Arc::new(Node::generate(&INTERNAL_CLIENT, false));
-		Spatial::add_to(&node, None, Mat4::IDENTITY, false);
+		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
 		let uid: u64 = rand::random();
 		EXPORTED_SPATIALS.lock().insert(uid, node.clone());
-		connection
-			.object_server()
-			.at(path, Self(uid))
-			.await
-			.unwrap();
-		node
+
+		let connection = connection.clone();
+		let path = path.to_string();
+		(
+			spatial,
+			tokio::task::spawn(async move {
+				connection
+					.object_server()
+					.at(path, Self(uid))
+					.await
+					.unwrap();
+			})
+			.abort_handle(),
+		)
 	}
 }
 #[interface(name = "org.stardustxr.SpatialRef")]
@@ -155,18 +195,26 @@ impl SpatialRef {
 
 pub struct FieldRef(u64);
 impl FieldRef {
-	pub async fn create(connection: &Connection, path: &str, shape: Shape) -> Arc<Node> {
+	pub fn create(connection: &Connection, path: &str, shape: Shape) -> (Arc<Field>, AbortHandle) {
 		let node = Arc::new(Node::generate(&INTERNAL_CLIENT, false));
 		Spatial::add_to(&node, None, Mat4::IDENTITY, false);
-		Field::add_to(&node, shape).unwrap();
+		let field = Field::add_to(&node, shape).unwrap();
 		let uid: u64 = rand::random();
 		EXPORTED_FIELDS.lock().insert(uid, node.clone());
-		connection
-			.object_server()
-			.at(path, Self(uid))
-			.await
-			.unwrap();
-		node
+
+		let connection = connection.clone();
+		let path = path.to_string();
+		(
+			field,
+			tokio::task::spawn(async move {
+				connection
+					.object_server()
+					.at(path, Self(uid))
+					.await
+					.unwrap();
+			})
+			.abort_handle(),
+		)
 	}
 }
 #[interface(name = "org.stardustxr.FieldRef")]
