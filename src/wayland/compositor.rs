@@ -18,10 +18,10 @@ impl CompositorHandler for WaylandState {
 
 	fn commit(&mut self, surface: &WlSurface) {
 		debug!(?surface, "Surface commit");
-		// Let smithay handle buffer management (has to be done here as RendererSurfaceStates is not thread safe)
-		on_commit_buffer_handler::<WaylandState>(&surface);
+
+		on_commit_buffer_handler::<WaylandState>(surface);
 		let mut count = 0;
-		let core_surface = compositor::with_states(surface, |data| {
+		compositor::with_states(surface, |data| {
 			let count_new = data
 				.data_map
 				.insert_if_missing_threadsafe(|| AtomicU32::new(0));
@@ -33,7 +33,7 @@ impl CompositorHandler for WaylandState {
 
 			data.data_map.get::<Arc<CoreSurface>>().cloned()
 		});
-		if let Some(core_surface) = core_surface {
+		if let Some(core_surface) = CoreSurface::from_wl_surface(surface) {
 			core_surface.commit(count);
 		}
 	}
