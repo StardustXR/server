@@ -28,13 +28,18 @@ pub mod play_space;
 
 enum Inputs {
 	XR {
-		controllers: (SkController, SkController),
-		hands: (SkHand, SkHand),
+		controller_left: SkController,
+		controller_right: SkController,
+		hand_left: SkHand,
+		hand_right: SkHand,
 		eye_pointer: Option<EyePointer>,
 	},
 	MousePointer(MousePointer),
 	// Controllers((SkController, SkController)),
-	Hands((SkHand, SkHand)),
+	Hands {
+		left: SkHand,
+		right: SkHand,
+	},
 }
 
 pub struct ServerObjects {
@@ -64,14 +69,10 @@ impl ServerObjects {
 
 		let inputs = if sk.get_active_display_mode() == DisplayMode::MixedReality {
 			Inputs::XR {
-				controllers: (
-					SkController::new(Handed::Left).unwrap(),
-					SkController::new(Handed::Right).unwrap(),
-				),
-				hands: (
-					SkHand::new(Handed::Left).unwrap(),
-					SkHand::new(Handed::Right).unwrap(),
-				),
+				controller_left: SkController::new(Handed::Left).unwrap(),
+				controller_right: SkController::new(Handed::Right).unwrap(),
+				hand_left: SkHand::new(Handed::Left).unwrap(),
+				hand_right: SkHand::new(Handed::Right).unwrap(),
 				eye_pointer: Device::has_eye_gaze()
 					.then(EyePointer::new)
 					.transpose()
@@ -120,23 +121,25 @@ impl ServerObjects {
 			// 	));
 			// }
 			if Input::key(Key::F8).is_just_inactive() {
-				self.inputs = Inputs::Hands((
-					SkHand::new(Handed::Left).unwrap(),
-					SkHand::new(Handed::Right).unwrap(),
-				));
+				self.inputs = Inputs::Hands {
+					left: SkHand::new(Handed::Left).unwrap(),
+					right: SkHand::new(Handed::Right).unwrap(),
+				};
 			}
 		}
 
 		match &mut self.inputs {
 			Inputs::XR {
-				controllers: (left_controller, right_controller),
-				hands: (left_hand, right_hand),
+				controller_left,
+				controller_right,
+				hand_left,
+				hand_right,
 				eye_pointer,
 			} => {
-				left_hand.update(sk, token);
-				right_hand.update(sk, token);
-				left_controller.update(token);
-				right_controller.update(token);
+				controller_left.update(token);
+				controller_right.update(token);
+				hand_left.update(sk, token);
+				hand_right.update(sk, token);
 				if let Some(eye_pointer) = eye_pointer {
 					eye_pointer.update();
 				}
@@ -146,7 +149,7 @@ impl ServerObjects {
 			// 	left.update(token);
 			// 	right.update(token);
 			// }
-			Inputs::Hands((left, right)) => {
+			Inputs::Hands { left, right } => {
 				left.update(sk, token);
 				right.update(sk, token);
 			}
