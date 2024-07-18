@@ -1396,7 +1396,7 @@ dependencies = [
 [[package]]
 name = "macros"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/StereoKit-rust.git#6a2a3832b511c47f0dd986df606fa9fddfd04f65"
+source = "git+https://github.com/technobaboo/StereoKit-rust.git#a9c39dc0ff93fc4b3648a2242c5cda39701e083e"
 
 [[package]]
 name = "manifest-dir-macros"
@@ -2432,7 +2432,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "stereokit-rust"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/StereoKit-rust.git#6a2a3832b511c47f0dd986df606fa9fddfd04f65"
+source = "git+https://github.com/technobaboo/StereoKit-rust.git#a9c39dc0ff93fc4b3648a2242c5cda39701e083e"
 dependencies = [
  "android_logger",
  "bitflags 2.6.0",
