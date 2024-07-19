@@ -184,6 +184,13 @@ impl SkHand {
 					};
 					node.enabled()
 				})
+				// filter out all the fields with disabled handlers
+				.filter(|handler| {
+					let Some(node) = handler.field.spatial.node() else {
+						return false;
+					};
+					node.enabled()
+				})
 				// get the unsigned distance to the handler's field (unsigned so giant fields won't always eat input)
 				.map(|handler| {
 					(

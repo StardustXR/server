@@ -207,6 +207,13 @@ impl MousePointer {
 					};
 					node.enabled()
 				})
+				// filter out all the fields with disabled handlers
+				.filter(|handler| {
+					let Some(node) = handler.field.spatial.node() else {
+						return false;
+					};
+					node.enabled()
+				})
 				// ray march to all the enabled handlers' fields
 				.map(|handler| {
 					let result = handler.field.ray_march(Ray {
