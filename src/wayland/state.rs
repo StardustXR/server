@@ -146,7 +146,7 @@ impl WaylandState {
 		);
 		let _output_global = output.create_global::<Self>(&display_handle);
 		let mode = Mode {
-			size: (2048, 2048).into(),
+			size: (1024, 1024).into(),
 			refresh: 60000,
 		};
 		output.change_current_state(
