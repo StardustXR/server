@@ -1339,7 +1339,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e310b3a6b5907f99202fcdb4960ff45b93735d7c7d96b760fcff8db2dc0e103d"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -1396,7 +1396,7 @@ dependencies = [
 [[package]]
 name = "macros"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/StereoKit-rust.git#a9c39dc0ff93fc4b3648a2242c5cda39701e083e"
+source = "git+https://github.com/technobaboo/StereoKit-rust.git#1182bd13fcfcd149c8e02c1c3e04f0db1e963a68"
 
 [[package]]
 name = "manifest-dir-macros"
@@ -2432,7 +2432,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "stereokit-rust"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/StereoKit-rust.git#a9c39dc0ff93fc4b3648a2242c5cda39701e083e"
+source = "git+https://github.com/technobaboo/StereoKit-rust.git#1182bd13fcfcd149c8e02c1c3e04f0db1e963a68"
 dependencies = [
  "android_logger",
  "bitflags 2.6.0",
