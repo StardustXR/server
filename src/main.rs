@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use stereokit_rust::material::Material;
 use stereokit_rust::shader::Shader;
-use stereokit_rust::sk::{sk_quit, AppMode, DepthMode, QuitReason, SkSettings};
+use stereokit_rust::sk::{sk_quit, AppMode, DepthMode, OriginMode, QuitReason, SkSettings};
 use stereokit_rust::system::{LogLevel, Renderer};
 use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
 use stereokit_rust::ui::Ui;
@@ -179,6 +179,7 @@ fn stereokit_loop(
 		.overlay_app(args.overlay_priority.is_some())
 		.overlay_priority(args.overlay_priority.unwrap_or(u32::MAX))
 		.disable_desktop_input_window(true)
+		.origin(OriginMode::Local)
 		.render_scaling(2.0)
 		.init()
 		.expect("StereoKit failed to initialize");
