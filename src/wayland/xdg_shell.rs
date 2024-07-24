@@ -356,7 +356,12 @@ impl XdgBackend {
 		Some(ChildInfo {
 			id,
 			parent,
-			geometry: positioner.get_geometry().into(),
+			geometry: positioner
+				.get_unconstrained_geometry(Rectangle {
+					loc: (-100000, -100000).into(),
+					size: (200000, 200000).into(),
+				})
+				.into(),
 		})
 	}
 }
