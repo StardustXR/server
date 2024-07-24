@@ -43,6 +43,13 @@ struct CliArgs {
 	#[clap(short, long, action)]
 	flatscreen: bool,
 
+	/// If monado insists on emulating them, set this flag...we want the raw input
+	#[clap(long)]
+	disable_controllers: bool,
+	/// If monado insists on emulating , set this flag...we want the raw input
+	#[clap(long)]
+	disable_hands: bool,
+
 	/// Run Stardust XR as an overlay with given priority
 	#[clap(id = "PRIORITY", short = 'o', long = "overlay", action)]
 	overlay_priority: Option<u32>,
@@ -216,7 +223,12 @@ fn stereokit_loop(
 	sk_ready_notifier.notify_waiters();
 	info!("Stardust ready!");
 
-	let mut objects = ServerObjects::new(dbus_connection.clone(), &sk);
+	let mut objects = ServerObjects::new(
+		dbus_connection.clone(),
+		&sk,
+		args.disable_controllers,
+		args.disable_hands,
+	);
 
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;

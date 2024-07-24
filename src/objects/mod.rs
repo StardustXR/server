@@ -46,9 +46,16 @@ pub struct ServerObjects {
 	hmd: (Arc<Spatial>, ObjectHandle<SpatialRef>),
 	play_space: Option<(Arc<Spatial>, ObjectHandle<SpatialRef>)>,
 	inputs: Inputs,
+	disable_controllers: bool,
+	disable_hands: bool,
 }
 impl ServerObjects {
-	pub fn new(connection: Connection, sk: &Sk) -> ServerObjects {
+	pub fn new(
+		connection: Connection,
+		sk: &Sk,
+		disable_controllers: bool,
+		disable_hands: bool,
+	) -> ServerObjects {
 		let hmd = SpatialRef::create(&connection, "/org/stardustxr/HMD");
 
 		let play_space = (World::has_bounds()
@@ -100,6 +107,8 @@ impl ServerObjects {
 			hmd,
 			play_space,
 			inputs,
+			disable_controllers,
+			disable_hands,
 		}
 	}
 
@@ -149,10 +158,14 @@ impl ServerObjects {
 				hand_right,
 				eye_pointer,
 			} => {
-				controller_left.update(token);
-				controller_right.update(token);
-				hand_left.update(sk, token);
-				hand_right.update(sk, token);
+				if !self.disable_controllers {
+					controller_left.update(token);
+					controller_right.update(token);
+				}
+				if !self.disable_hands {
+					hand_left.update(sk, token);
+					hand_right.update(sk, token);
+				}
 				if let Some(eye_pointer) = eye_pointer {
 					eye_pointer.update();
 				}
