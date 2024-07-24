@@ -2,7 +2,7 @@ use super::{
 	seat::{handle_cursor, SeatWrapper},
 	state::{ClientState, WaylandState},
 	surface::CoreSurface,
-	utils,
+	utils::WlSurfaceExt,
 };
 use crate::nodes::{
 	drawable::model::ModelPart,
@@ -29,7 +29,7 @@ use smithay::{
 	},
 	utils::{Logical, Rectangle, Serial},
 	wayland::{
-		compositor,
+		compositor::{self, add_post_commit_hook},
 		shell::xdg::{
 			PopupSurface, PositionerState, ShellClient, SurfaceCachedState, ToplevelSurface,
 			XdgShellHandler, XdgShellState, XdgToplevelSurfaceData,
@@ -49,20 +49,12 @@ impl From<Rectangle<i32, Logical>> for Geometry {
 }
 
 fn surface_panel_item(wl_surface: &WlSurface) -> Option<Arc<PanelItem<XdgBackend>>> {
-	let panel_item = utils::get_data::<Weak<PanelItem<XdgBackend>>>(wl_surface)
-		.as_deref()
+	let panel_item = wl_surface
+		.get_data::<Weak<PanelItem<XdgBackend>>>()
+		.as_ref()
 		.and_then(Weak::upgrade);
 	if panel_item.is_none() {
 		warn!("Couldn't get panel item");
-		// println!("panel item not found at \n{}\n\n", {
-		// 	let backtrace = Backtrace::force_capture().to_string();
-		// 	let mut split_backtrace = backtrace
-		// 		.split('\n')
-		// 		.map(|s| s.to_string())
-		// 		.collect::<Vec<_>>();
-		// 	split_backtrace.resize(4, "".to_string());
-		// 	split_backtrace.join("\n")
-		// });
 	}
 	panel_item
 }
@@ -76,6 +68,7 @@ impl XdgShellHandler for WaylandState {
 	fn client_destroyed(&mut self, _client: ShellClient) {}
 
 	fn new_toplevel(&mut self, toplevel: ToplevelSurface) {
+		toplevel.wl_surface().insert_data(SurfaceId::Toplevel(()));
 		toplevel.with_pending_state(|s| {
 			s.decoration_mode = Some(Mode::ServerSide);
 			s.states.set(State::TiledTop);
@@ -86,44 +79,50 @@ impl XdgShellHandler for WaylandState {
 			s.states.unset(State::Fullscreen);
 		});
 		toplevel.send_configure();
-		utils::insert_data(toplevel.wl_surface(), SurfaceId::Toplevel);
-		utils::insert_data(toplevel.wl_surface(), Mutex::new(Vector2::from([0_u32; 2])));
-		CoreSurface::add_to(
+		toplevel
+			.wl_surface()
+			.insert_data(Mutex::new(Vector2::from([0_u32; 2])));
+
+		CoreSurface::add_to(toplevel.wl_surface());
+		add_post_commit_hook(
 			toplevel.wl_surface(),
-			{
-				let toplevel = toplevel.clone();
-				move || {
-					let wl_surface = toplevel.wl_surface().client().unwrap();
-					let client_state = wl_surface.get_data::<ClientState>().unwrap();
-					let (node, panel_item) = PanelItem::create(
-						Box::new(XdgBackend::create(
-							toplevel.clone(),
-							client_state.seat.clone(),
-						)),
-						client_state.pid,
-					);
-					handle_cursor(&panel_item, panel_item.backend.seat.cursor_info_rx.clone());
-					utils::insert_data(toplevel.wl_surface(), Arc::downgrade(&panel_item));
-					utils::insert_data_raw(toplevel.wl_surface(), node);
+			|state: &mut WaylandState, _dh, surf| {
+				if surface_panel_item(surf).is_some() {
+					return;
 				}
+				let client = surf.client().unwrap();
+				let client_state = client.get_data::<ClientState>().unwrap();
+				let Some(toplevel) = state
+					.xdg_shell
+					.toplevel_surfaces()
+					.iter()
+					.find(|s| s.wl_surface() == surf)
+				else {
+					return;
+				};
+				let (node, panel_item) = PanelItem::create(
+					Box::new(XdgBackend::create(
+						toplevel.clone(),
+						client_state.seat.clone(),
+					)),
+					client_state.pid,
+				);
+				handle_cursor(&panel_item, panel_item.backend.seat.cursor_info_rx.clone());
+				surf.insert_data(Arc::downgrade(&panel_item));
+				surf.insert_data(node);
 			},
-			{
-				let toplevel = toplevel.clone();
-				move |_c| {
-					let Some(panel_item) = surface_panel_item(toplevel.wl_surface()) else {
-						// if the wayland toplevel isn't mapped, hammer it again with a configure until it cooperates
-						toplevel.send_configure();
-						return;
-					};
-					let Some(core_surface) = CoreSurface::from_wl_surface(toplevel.wl_surface())
-					else {
-						return;
-					};
-					let Some(old_size) =
-						utils::get_data::<Mutex<Vector2<u32>>>(toplevel.wl_surface())
-					else {
-						return;
-					};
+		);
+
+		add_post_commit_hook(
+			toplevel.wl_surface(),
+			|_state: &mut WaylandState, _dh, surf| {
+				let Some(panel_item) = surface_panel_item(surf) else {
+					return;
+				};
+				let Some(core_surface) = CoreSurface::from_wl_surface(surf) else {
+					return;
+				};
+				surf.get_data_raw::<Mutex<Vector2<u32>>, _, _>(|old_size| {
 					let mut old_size = old_size.lock();
 					let Some(size) = core_surface.size() else {
 						return;
@@ -132,94 +131,79 @@ impl XdgShellHandler for WaylandState {
 						panel_item.toplevel_size_changed(size);
 						*old_size = size;
 					}
-				}
+				});
 			},
 		);
 	}
 	fn toplevel_destroyed(&mut self, toplevel: ToplevelSurface) {
-		if let Some(core_surface) = CoreSurface::from_wl_surface(toplevel.wl_surface()) {
-			core_surface.decycle();
-		}
 		let Some(panel_item) = surface_panel_item(toplevel.wl_surface()) else {
 			return;
 		};
 		panel_item.backend.seat.unfocus(toplevel.wl_surface(), self);
 		panel_item.backend.toplevel.lock().take();
 		panel_item.backend.popups.lock().clear();
-		panel_item.drop_toplevel();
-		// println!(
-		// 	"Dropping toplevel resulted in {} references",
-		// 	Arc::strong_count(&panel_item)
-		// );
 	}
 	fn app_id_changed(&mut self, toplevel: ToplevelSurface) {
 		let Some(panel_item) = surface_panel_item(toplevel.wl_surface()) else {
 			return;
 		};
 
-		panel_item.toplevel_app_id_changed(&compositor::with_states(
-			toplevel.wl_surface(),
-			|states| {
-				states
-					.data_map
-					.get::<XdgToplevelSurfaceData>()
-					.unwrap()
-					.lock()
-					.unwrap()
-					.app_id
-					.clone()
-					.unwrap()
-			},
-		))
+		panel_item.toplevel_app_id_changed(
+			&toplevel
+				.wl_surface()
+				.get_data_raw::<XdgToplevelSurfaceData, _, _>(|d| {
+					d.lock().unwrap().app_id.clone().unwrap()
+				})
+				.unwrap_or_default(),
+		)
 	}
 	fn title_changed(&mut self, toplevel: ToplevelSurface) {
 		let Some(panel_item) = surface_panel_item(toplevel.wl_surface()) else {
 			return;
 		};
 
-		panel_item.toplevel_title_changed(&compositor::with_states(
-			toplevel.wl_surface(),
-			|states| {
-				states
-					.data_map
-					.get::<XdgToplevelSurfaceData>()
-					.unwrap()
-					.lock()
-					.unwrap()
-					.title
-					.clone()
-					.unwrap()
-			},
-		))
+		panel_item.toplevel_title_changed(
+			&toplevel
+				.wl_surface()
+				.get_data_raw::<XdgToplevelSurfaceData, _, _>(|d| {
+					d.lock().unwrap().title.clone().unwrap()
+				})
+				.unwrap_or_default(),
+		)
 	}
 
 	fn new_popup(&mut self, popup: PopupSurface, positioner: PositionerState) {
 		let uid = rand::thread_rng().gen_range(0..u64::MAX);
+		popup.wl_surface().insert_data(SurfaceId::Child(uid));
 		let Some(parent) = popup.get_parent_surface() else {
 			return;
 		};
+		let _ = popup.send_configure();
+		CoreSurface::add_to(popup.wl_surface());
+
 		let Some(panel_item) = surface_panel_item(&parent) else {
 			return;
 		};
-		let _ = popup.send_configure();
-		utils::insert_data(popup.wl_surface(), SurfaceId::Child(uid));
-		utils::insert_data(popup.wl_surface(), Arc::downgrade(&panel_item));
-		CoreSurface::add_to(
+		let panel_item_weak = Arc::downgrade(&panel_item);
+		add_post_commit_hook(
 			popup.wl_surface(),
-			{
-				let popup = popup.clone();
-				move || {
-					panel_item.backend.new_popup(uid, popup.clone(), positioner);
+			move |state: &mut WaylandState, _dh, surf| {
+				if surface_panel_item(surf).is_some() {
+					return;
 				}
-			},
-			{
-				let popup = popup.clone();
-				move |_c| {
-					if surface_panel_item(popup.wl_surface()).is_none() {
-						// if the popup toplevel isn't mapped, hammer it again with a configure until it cooperates
-						let _ = popup.send_configure();
-					};
-				}
+				surf.insert_data(panel_item_weak.clone());
+				let Some(panel) = surface_panel_item(surf) else {
+					return;
+				};
+				let Some(popup) = state
+					.xdg_shell
+					.popup_surfaces()
+					.iter()
+					.find(|p| p.wl_surface() == surf)
+				else {
+					return;
+				};
+				panel.backend.new_popup(uid, popup.clone(), positioner);
 			},
 		);
 	}
@@ -232,26 +216,17 @@ impl XdgShellHandler for WaylandState {
 		let Some(panel_item) = surface_panel_item(popup.wl_surface()) else {
 			return;
 		};
-		let Some(SurfaceId::Child(uid)) = utils::get_data::<SurfaceId>(popup.wl_surface())
-			.as_deref()
-			.cloned()
-		else {
+		let Some(SurfaceId::Child(uid)) = popup.wl_surface().get_data::<SurfaceId>() else {
 			return;
 		};
 
 		panel_item.backend.reposition_popup(uid, popup, positioner)
 	}
 	fn popup_destroyed(&mut self, popup: PopupSurface) {
-		if let Some(core_surface) = CoreSurface::from_wl_surface(popup.wl_surface()) {
-			core_surface.decycle();
-		}
 		let Some(panel_item) = surface_panel_item(popup.wl_surface()) else {
 			return;
 		};
-		let Some(SurfaceId::Child(uid)) = utils::get_data::<SurfaceId>(popup.wl_surface())
-			.as_deref()
-			.cloned()
-		else {
+		let Some(SurfaceId::Child(uid)) = popup.wl_surface().get_data::<SurfaceId>() else {
 			return;
 		};
 		panel_item.backend.seat.unfocus(popup.wl_surface(), self);
@@ -375,11 +350,9 @@ impl XdgBackend {
 	}
 
 	fn child_data(&self, id: u64) -> Option<ChildInfo> {
-		let (popup, positioner) = self.popups.lock().get(&id)?.clone();
-		let parent_surface = popup.get_parent_surface()?;
-		let parent = utils::get_data::<SurfaceId>(&parent_surface)?
-			.as_ref()
-			.clone();
+		let (popup, positioner) = self.popups.lock().get(&id).unwrap().clone();
+		let parent = popup.get_parent_surface().unwrap();
+		let parent = parent.get_data::<SurfaceId>().unwrap();
 		Some(ChildInfo {
 			id,
 			parent,
@@ -426,11 +399,7 @@ impl Backend for XdgBackend {
 				.clone()
 		});
 		let toplevel_cached_state = compositor::with_states(toplevel.wl_surface(), |states| {
-			states
-				.cached_state
-				.get::<SurfaceCachedState>()
-				.current()
-				.clone()
+			*states.cached_state.get::<SurfaceCachedState>().current()
 		});
 		let toplevel_core_surface = CoreSurface::from_wl_surface(toplevel.wl_surface()).unwrap();
 

@@ -1339,7 +1339,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e310b3a6b5907f99202fcdb4960ff45b93735d7c7d96b760fcff8db2dc0e103d"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -2285,7 +2285,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 [[package]]
 name = "smithay"
 version = "0.3.0"
-source = "git+https://github.com/smithay/smithay.git#f208cd758416e4495e9eb8b27a96c523e92817a6"
+source = "git+https://github.com/smithay/smithay.git#c6aab182a3c9f106d9c7a0ea34187f90403e59e7"
 dependencies = [
  "appendlist",
  "bitflags 2.6.0",

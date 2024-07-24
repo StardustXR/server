@@ -110,12 +110,6 @@ impl<B: Backend> PanelItem<B> {
 
 		(node, panel_item)
 	}
-	pub fn drop_toplevel(&self) {
-		let Some(node) = self.node.upgrade() else {
-			return;
-		};
-		node.destroy();
-	}
 }
 
 // Remote signals

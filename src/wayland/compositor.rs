@@ -33,9 +33,6 @@ impl CompositorHandler for WaylandState {
 
 			data.data_map.get::<Arc<CoreSurface>>().cloned()
 		});
-		if let Some(core_surface) = CoreSurface::from_wl_surface(surface) {
-			core_surface.commit(count);
-		}
 	}
 
 	fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {

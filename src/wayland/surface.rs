@@ -1,4 +1,4 @@
-use super::utils;
+use super::utils::WlSurfaceExt;
 use crate::{
 	core::{delta::Delta, destroy_queue, registry::Registry},
 	nodes::{
@@ -50,41 +50,24 @@ pub struct CoreSurface {
 	sk_tex: OnceCell<Mutex<TexWrapper>>,
 	sk_mat: OnceCell<Mutex<MaterialWrapper>>,
 	material_offset: Mutex<Delta<u32>>,
-	on_mapped: Mutex<Box<dyn Fn() + Send + Sync>>,
-	on_commit: Mutex<Box<dyn Fn(u32) + Send + Sync>>,
 	pub pending_material_applications: Registry<ModelPart>,
 }
 
 impl CoreSurface {
-	pub fn add_to(
-		surface: &WlSurface,
-		on_mapped: impl Fn() + Send + Sync + 'static,
-		on_commit: impl Fn(u32) + Send + Sync + 'static,
-	) {
+	pub fn add_to(surface: &WlSurface) {
 		let core_surface = CORE_SURFACES.add(CoreSurface {
 			weak_surface: surface.downgrade(),
 			mapped_data: Mutex::new(None),
 			sk_tex: OnceCell::new(),
 			sk_mat: OnceCell::new(),
 			material_offset: Mutex::new(Delta::new(0)),
-			on_mapped: Mutex::new(Box::new(on_mapped) as Box<dyn Fn() + Send + Sync>),
-			on_commit: Mutex::new(Box::new(on_commit) as Box<dyn Fn(u32) + Send + Sync>),
 			pending_material_applications: Registry::new(),
 		});
-		utils::insert_data_raw(surface, core_surface);
-	}
-
-	pub fn commit(&self, count: u32) {
-		(*self.on_commit.lock())(count);
+		surface.insert_data(core_surface);
 	}
 
 	pub fn from_wl_surface(surf: &WlSurface) -> Option<Arc<CoreSurface>> {
-		utils::get_data(surf)
-	}
-
-	pub fn decycle(&self) {
-		*self.on_mapped.lock() = Box::new(|| {});
-		*self.on_commit.lock() = Box::new(|_| {});
+		surf.get_data()
 	}
 
 	pub fn process(&self, renderer: &mut GlesRenderer) {
@@ -128,14 +111,12 @@ impl CoreSurface {
 		}
 
 		let mut mapped_data = self.mapped_data.lock();
-		let just_mapped = mapped_data.is_none();
 		self.with_states(|data| {
 			let Some(renderer_surface_state) = data
 				.data_map
 				.get::<RendererSurfaceStateUserData>()
 				.map(std::sync::Mutex::lock)
-				.map(Result::ok)
-				.flatten()
+				.and_then(Result::ok)
 			else {
 				return;
 			};
@@ -181,9 +162,6 @@ impl CoreSurface {
 			*mapped_data = Some(new_mapped_data);
 		});
 		drop(mapped_data);
-		if just_mapped {
-			(*self.on_mapped.lock())();
-		}
 		self.apply_surface_materials();
 	}
 
