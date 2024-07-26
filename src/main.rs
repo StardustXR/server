@@ -232,31 +232,29 @@ fn stereokit_loop(
 
 	let mut last_frame_delta = Duration::ZERO;
 	let mut sleep_duration = Duration::ZERO;
-	debug_span!("StereoKit").in_scope(|| {
-		while let Some(token) = sk.step() {
-			let _span = debug_span!("StereoKit step");
-			let _span = _span.enter();
+	while let Some(token) = sk.step() {
+		let _span = debug_span!("StereoKit step");
+		let _span = _span.enter();
 
-			camera::update(token);
-			#[cfg(feature = "wayland")]
-			wayland.frame_event();
-			destroy_queue::clear();
+		camera::update(token);
+		#[cfg(feature = "wayland")]
+		wayland.frame_event();
+		destroy_queue::clear();
 
-			objects.update(&sk, token);
-			input::process_input();
-			nodes::root::Root::send_frame_events(Time::get_step_unscaled());
-			adaptive_sleep(
-				&mut last_frame_delta,
-				&mut sleep_duration,
-				Duration::from_micros(250),
-			);
+		objects.update(&sk, token);
+		input::process_input();
+		nodes::root::Root::send_frame_events(Time::get_step_unscaled());
+		adaptive_sleep(
+			&mut last_frame_delta,
+			&mut sleep_duration,
+			Duration::from_micros(250),
+		);
 
-			#[cfg(feature = "wayland")]
-			wayland.update();
-			drawable::draw(token);
-			audio::update();
-		}
-	});
+		#[cfg(feature = "wayland")]
+		wayland.update();
+		drawable::draw(token);
+		audio::update();
+	}
 
 	info!("Cleanly shut down StereoKit");
 	#[cfg(feature = "wayland")]

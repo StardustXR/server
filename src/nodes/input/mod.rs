@@ -17,7 +17,6 @@ use crate::{core::registry::Registry, nodes::spatial::Transform};
 use color_eyre::eyre::Result;
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
-use tracing::debug_span;
 
 static INPUT_METHOD_REGISTRY: Registry<InputMethod> = Registry::new();
 pub static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
@@ -91,17 +90,15 @@ impl InterfaceAspect for InputInterface {
 #[tracing::instrument(level = "debug")]
 pub fn process_input() {
 	// Iterate over all valid input methods
-	let methods = debug_span!("Get valid methods").in_scope(|| {
-		INPUT_METHOD_REGISTRY
-			.get_valid_contents()
-			.into_iter()
-			.filter(|method| {
-				let Some(node) = method.spatial.node() else {
-					return false;
-				};
-				node.enabled()
-			})
-	});
+	let methods = INPUT_METHOD_REGISTRY
+		.get_valid_contents()
+		.into_iter()
+		.filter(|method| {
+			let Some(node) = method.spatial.node() else {
+				return false;
+			};
+			node.enabled()
+		});
 	for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
 		for method_alias in handler.method_aliases.get_aliases() {
 			method_alias.set_enabled(false);
