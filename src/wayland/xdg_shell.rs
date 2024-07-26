@@ -16,6 +16,7 @@ use parking_lot::Mutex;
 use rand::Rng;
 use rustc_hash::FxHashMap;
 use smithay::{
+	backend::renderer::utils::RendererSurfaceStateUserData,
 	delegate_xdg_shell,
 	reexports::{
 		wayland_protocols::xdg::{
@@ -48,7 +49,7 @@ impl From<Rectangle<i32, Logical>> for Geometry {
 	}
 }
 
-fn surface_panel_item(wl_surface: &WlSurface) -> Option<Arc<PanelItem<XdgBackend>>> {
+pub fn surface_panel_item(wl_surface: &WlSurface) -> Option<Arc<PanelItem<XdgBackend>>> {
 	let panel_item = wl_surface
 		.get_data::<Weak<PanelItem<XdgBackend>>>()
 		.as_ref()
@@ -119,14 +120,18 @@ impl XdgShellHandler for WaylandState {
 				let Some(panel_item) = surface_panel_item(surf) else {
 					return;
 				};
-				let Some(core_surface) = CoreSurface::from_wl_surface(surf) else {
+				let Some(size) = surf
+					.get_data_raw::<RendererSurfaceStateUserData, _, _>(|surface_states| {
+						surface_states.lock().unwrap().surface_size()
+					})
+					.flatten()
+				else {
 					return;
 				};
+				let size = [size.w as u32, size.h as u32].into();
 				surf.get_data_raw::<Mutex<Vector2<u32>>, _, _>(|old_size| {
 					let mut old_size = old_size.lock();
-					let Some(size) = core_surface.size() else {
-						return;
-					};
+
 					if *old_size != size {
 						panel_item.toplevel_size_changed(size);
 						*old_size = size;
@@ -295,13 +300,15 @@ delegate_xdg_shell!(WaylandState);
 
 pub struct XdgBackend {
 	toplevel: Mutex<Option<ToplevelSurface>>,
+	pub subsurfaces: Mutex<FxHashMap<u64, WlSurface>>,
 	popups: Mutex<FxHashMap<u64, (PopupSurface, PositionerState)>>,
-	pub seat: Arc<SeatWrapper>,
+	seat: Arc<SeatWrapper>,
 }
 impl XdgBackend {
 	pub fn create(toplevel: ToplevelSurface, seat: Arc<SeatWrapper>) -> Self {
 		XdgBackend {
 			toplevel: Mutex::new(Some(toplevel)),
+			subsurfaces: Mutex::new(FxHashMap::default()),
 			popups: Mutex::new(FxHashMap::default()),
 			seat,
 		}
@@ -317,6 +324,24 @@ impl XdgBackend {
 	}
 	fn panel_item(&self) -> Option<Arc<PanelItem<XdgBackend>>> {
 		surface_panel_item(self.toplevel.lock().clone()?.wl_surface())
+	}
+
+	pub fn new_subsurface(&self, id: u64, surface: WlSurface) {
+		let Some(panel_item) = self.panel_item() else {
+			return;
+		};
+
+		self.subsurfaces.lock().insert(id, surface);
+
+		let child_data = self.child_data(id).unwrap();
+		panel_item.create_child(id, &child_data);
+	}
+	pub fn drop_subsurface(&self, id: u64) {
+		let Some(panel_item) = self.panel_item() else {
+			return;
+		};
+		panel_item.destroy_child(id);
+		self.subsurfaces.lock().remove(&id);
 	}
 
 	pub fn new_popup(&self, id: u64, popup: PopupSurface, positioner: PositionerState) {
@@ -347,6 +372,7 @@ impl XdgBackend {
 			return;
 		};
 		panel_item.destroy_child(id);
+		self.popups.lock().remove(&id);
 	}
 
 	fn child_data(&self, id: u64) -> Option<ChildInfo> {

@@ -22,7 +22,6 @@ use smithay::{
 	desktop::utils::send_frames_surface_tree,
 	output::Output,
 	reexports::wayland_server::{self, protocol::wl_surface::WlSurface, Resource},
-	wayland::compositor::{self, SurfaceData},
 };
 use std::{ffi::c_void, sync::Arc, time::Duration};
 use stereokit_rust::{
@@ -99,70 +98,77 @@ impl CoreSurface {
 			return;
 		}
 
-		let mapped = compositor::with_states(&wl_surface, |data| {
-			data.data_map
-				.get::<RendererSurfaceStateUserData>()
-				.map(|surface_states| surface_states.lock().unwrap().buffer().is_some())
-				.unwrap_or(false)
-		});
+		self.update_textures(renderer);
+		self.apply_surface_materials();
+	}
+
+	pub fn update_textures(&self, renderer: &mut GlesRenderer) {
+		let Some(wl_surface) = self.wl_surface() else {
+			return;
+		};
+		let mapped = wl_surface
+			.get_data_raw::<RendererSurfaceStateUserData, _, _>(|surface_states| {
+				surface_states.lock().unwrap().buffer().is_some()
+			})
+			.unwrap_or(false);
 
 		if !mapped {
 			return;
 		}
 
 		let mut mapped_data = self.mapped_data.lock();
-		self.with_states(|data| {
-			let Some(renderer_surface_state) = data
-				.data_map
-				.get::<RendererSurfaceStateUserData>()
-				.map(std::sync::Mutex::lock)
-				.and_then(Result::ok)
-			else {
-				return;
-			};
-			let Some(smithay_tex) = renderer_surface_state
-				.texture::<GlesRenderer>(renderer.id())
-				.cloned()
-			else {
-				return;
-			};
 
-			let Some(sk_tex) = self.sk_tex.get() else {
-				return;
-			};
-			let Some(sk_mat) = self.sk_mat.get() else {
-				return;
-			};
-			sk_tex
-				.lock()
-				.0
-				.set_native_surface(
-					smithay_tex.tex_id() as usize as *mut c_void,
-					TexType::ImageNomips,
-					smithay::backend::renderer::gles::ffi::RGBA8.into(),
-					smithay_tex.width() as i32,
-					smithay_tex.height() as i32,
-					1,
-					false,
-				)
-				.sample_mode(TexSample::Point)
-				.address_mode(TexAddress::Clamp);
+		let Some(smithay_tex) = wl_surface
+			.get_data_raw::<RendererSurfaceStateUserData, _, _>(|surface_states| {
+				surface_states
+					.lock()
+					.unwrap()
+					.texture::<GlesRenderer>(renderer.id())
+					.cloned()
+			})
+			.flatten()
+		else {
+			return;
+		};
 
-			if let Some(material_offset) = self.material_offset.lock().delta() {
-				sk_mat.lock().0.queue_offset(*material_offset as i32);
-			}
+		let Some(sk_tex) = self.sk_tex.get() else {
+			return;
+		};
+		let Some(sk_mat) = self.sk_mat.get() else {
+			return;
+		};
+		sk_tex
+			.lock()
+			.0
+			.set_native_surface(
+				smithay_tex.tex_id() as usize as *mut c_void,
+				TexType::ImageNomips,
+				smithay::backend::renderer::gles::ffi::RGBA8.into(),
+				smithay_tex.width() as i32,
+				smithay_tex.height() as i32,
+				1,
+				false,
+			)
+			.sample_mode(TexSample::Point)
+			.address_mode(TexAddress::Clamp);
 
-			let Some(surface_size) = renderer_surface_state.surface_size() else {
-				return;
-			};
-			let new_mapped_data = CoreSurfaceData {
-				size: Vector2::from([surface_size.w as u32, surface_size.h as u32]),
-				wl_tex: Some(SendWrapper::new(smithay_tex)),
-			};
-			*mapped_data = Some(new_mapped_data);
-		});
-		drop(mapped_data);
-		self.apply_surface_materials();
+		if let Some(material_offset) = self.material_offset.lock().delta() {
+			sk_mat.lock().0.queue_offset(*material_offset as i32);
+		}
+
+		let Some(surface_size) = wl_surface
+			.get_data_raw::<RendererSurfaceStateUserData, _, _>(|surface_states| {
+				surface_states.lock().unwrap().surface_size()
+			})
+			.flatten()
+		else {
+			return;
+		};
+		let new_mapped_data = CoreSurfaceData {
+			size: Vector2::from([surface_size.w as u32, surface_size.h as u32]),
+			wl_tex: Some(SendWrapper::new(smithay_tex)),
+		};
+		*mapped_data = Some(new_mapped_data);
 	}
 
 	pub fn frame(&self, output: Output) {
@@ -199,11 +205,6 @@ impl CoreSurface {
 
 	pub fn wl_surface(&self) -> Option<WlSurface> {
 		self.weak_surface.upgrade().ok()
-	}
-
-	pub fn with_states<T, F: FnOnce(&SurfaceData) -> T>(&self, f: F) -> Option<T> {
-		self.wl_surface()
-			.map(|wl_surface| compositor::with_states(&wl_surface, f))
 	}
 
 	pub fn size(&self) -> Option<Vector2<u32>> {

@@ -1,6 +1,5 @@
-use crate::wayland::surface::CoreSurface;
-
 use super::state::{ClientState, WaylandState};
+use crate::wayland::surface::CoreSurface;
 use portable_atomic::{AtomicU32, Ordering};
 use smithay::{
 	backend::renderer::utils::on_commit_buffer_handler,
@@ -38,6 +37,34 @@ impl CompositorHandler for WaylandState {
 	fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
 		&client.get_data::<ClientState>().unwrap().compositor_state
 	}
+
+	// fn new_subsurface(&mut self, surface: &WlSurface, parent: &WlSurface) {
+	// 	let Some(panel_item) = surface_panel_item(parent) else {
+	// 		return;
+	// 	};
+	// 	let uid = surface.insert_data(Arc::downgrade(&panel_item));
+	// }
+
+	// fn destroyed(&mut self, surface: &WlSurface) {
+	// 	let Some(panel_item) = surface_panel_item(surface) else {
+	// 		return;
+	// 	};
+	// 	let Some((id, _)) = panel_item
+	// 		.backend
+	// 		.subsurfaces
+	// 		.lock()
+	// 		.iter()
+	// 		.find(|(_, d)| *d == surface)
+	// 	else {
+	// 		return;
+	// 	};
+	// 	panel_item.backend.drop_subsurface(*id);
+
+	// 	// self..lock().insert(id, (popup, positioner));
+
+	// 	let child_data = self.child_data(id).unwrap();
+	// 	panel_item.create_child(id, &child_data);
+	// }
 }
 
 delegate_compositor!(WaylandState);
