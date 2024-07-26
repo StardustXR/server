@@ -187,7 +187,6 @@ fn stereokit_loop(
 		.overlay_priority(args.overlay_priority.unwrap_or(u32::MAX))
 		.disable_desktop_input_window(true)
 		.origin(OriginMode::Local)
-		.render_scaling(2.0)
 		.init()
 		.expect("StereoKit failed to initialize");
 	info!("Init StereoKit");

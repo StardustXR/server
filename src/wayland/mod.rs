@@ -17,7 +17,7 @@ use parking_lot::Mutex;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::egl::EGLContext;
 use smithay::backend::renderer::gles::GlesRenderer;
-use smithay::backend::renderer::ImportDma;
+use smithay::backend::renderer::{ImportDma, Renderer};
 use smithay::output::Output;
 use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::DisplayHandle;
@@ -195,6 +195,7 @@ impl Wayland {
 		for core_surface in CORE_SURFACES.get_valid_contents() {
 			core_surface.process(&mut self.renderer);
 		}
+		let _ = self.renderer.cleanup_texture_cache();
 
 		self.display.flush_clients(None);
 	}
