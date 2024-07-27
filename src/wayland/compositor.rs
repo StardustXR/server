@@ -1,11 +1,22 @@
-use super::state::{ClientState, WaylandState};
-use crate::wayland::surface::CoreSurface;
+use super::{
+	state::{ClientState, WaylandState},
+	utils::WlSurfaceExt,
+	xdg_shell::{surface_panel_item, ChildInfoExt},
+};
+use crate::{
+	nodes::items::panel::{ChildInfo, Geometry, SurfaceId},
+	wayland::surface::CoreSurface,
+};
+use parking_lot::Mutex;
 use portable_atomic::{AtomicU32, Ordering};
+use rand::Rng;
 use smithay::{
-	backend::renderer::utils::on_commit_buffer_handler,
+	backend::renderer::utils::{on_commit_buffer_handler, RendererSurfaceStateUserData},
 	delegate_compositor,
 	reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
-	wayland::compositor::{self, CompositorClientState, CompositorHandler, CompositorState},
+	wayland::compositor::{
+		self, add_post_commit_hook, CompositorClientState, CompositorHandler, CompositorState,
+	},
 };
 use std::sync::Arc;
 use tracing::debug;
@@ -38,33 +49,79 @@ impl CompositorHandler for WaylandState {
 		&client.get_data::<ClientState>().unwrap().compositor_state
 	}
 
-	// fn new_subsurface(&mut self, surface: &WlSurface, parent: &WlSurface) {
-	// 	let Some(panel_item) = surface_panel_item(parent) else {
-	// 		return;
-	// 	};
-	// 	let uid = surface.insert_data(Arc::downgrade(&panel_item));
-	// }
+	fn new_subsurface(&mut self, surface: &WlSurface, parent: &WlSurface) {
+		let id = rand::thread_rng().gen_range(0..u64::MAX);
+		surface.insert_data(SurfaceId::Child(id));
+		CoreSurface::add_to(surface);
+		let Some(parent_surface_id) = parent.get_data::<SurfaceId>() else {
+			return;
+		};
+		surface.insert_data(Mutex::new(ChildInfo {
+			id,
+			parent: parent_surface_id,
+			geometry: Geometry {
+				origin: [0; 2].into(),
+				size: [256; 2].into(),
+			},
+			z_order: 1,
+		}));
 
-	// fn destroyed(&mut self, surface: &WlSurface) {
-	// 	let Some(panel_item) = surface_panel_item(surface) else {
-	// 		return;
-	// 	};
-	// 	let Some((id, _)) = panel_item
-	// 		.backend
-	// 		.subsurfaces
-	// 		.lock()
-	// 		.iter()
-	// 		.find(|(_, d)| *d == surface)
-	// 	else {
-	// 		return;
-	// 	};
-	// 	panel_item.backend.drop_subsurface(*id);
+		let Some(panel_item) = surface_panel_item(parent) else {
+			return;
+		};
+		let panel_item_weak = Arc::downgrade(&panel_item);
+		add_post_commit_hook(surface, move |_: &mut WaylandState, _dh, surf| {
+			if surface_panel_item(surf).is_some() {
+				return;
+			}
+			surf.insert_data(panel_item_weak.clone());
 
-	// 	// self..lock().insert(id, (popup, positioner));
+			let Some(panel_item) = surface_panel_item(surf) else {
+				return;
+			};
+			panel_item.backend.new_child(surf);
+		});
 
-	// 	let child_data = self.child_data(id).unwrap();
-	// 	panel_item.create_child(id, &child_data);
-	// }
+		add_post_commit_hook(surface, move |_: &mut WaylandState, _dh, surf| {
+			let Some(view) = surf
+				.get_data_raw::<RendererSurfaceStateUserData, _, _>(|s| s.lock().ok()?.view())
+				.flatten()
+			else {
+				return;
+			};
+			let mut changed = false;
+			surf.get_data_raw::<Mutex<ChildInfo>, _, _>(|c| {
+				let mut info = c.lock();
+				if info.geometry.origin.x != view.offset.x
+					&& info.geometry.origin.y != view.offset.y
+				{
+					changed = true;
+				}
+				if info.geometry.size.x != view.dst.w as u32
+					&& info.geometry.size.y != view.dst.h as u32
+				{
+					changed = true;
+				}
+				info.geometry.size = [view.dst.w as u32, view.dst.h as u32].into();
+			});
+
+			let Some(panel_item) = surface_panel_item(surf) else {
+				return;
+			};
+			if changed {
+				panel_item.backend.reposition_child(surf);
+			}
+		});
+	}
+
+	fn destroyed(&mut self, surface: &WlSurface) {
+		let Some(panel_item) = surface_panel_item(surface) else {
+			return;
+		};
+		if surface.get_child_info().is_some() {
+			panel_item.backend.drop_child(surface);
+		}
+	}
 }
 
 delegate_compositor!(WaylandState);
