@@ -135,7 +135,7 @@ impl InputMethod {
 
 	pub(super) fn serialize(&self, alias_id: u64, handler: &Arc<InputHandler>) -> InputData {
 		let mut input = self.data.lock().clone();
-		input.transform(&self, &handler);
+		input.transform(self, handler);
 
 		InputData {
 			id: alias_id,

@@ -90,8 +90,7 @@ impl CompositorHandler for WaylandState {
 				return;
 			};
 			let mut changed = false;
-			surf.get_data_raw::<Mutex<ChildInfo>, _, _>(|c| {
-				let mut info = c.lock();
+			surf.with_child_info(|info| {
 				if info.geometry.origin.x != view.offset.x
 					&& info.geometry.origin.y != view.offset.y
 				{

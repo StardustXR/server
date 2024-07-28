@@ -49,6 +49,49 @@ impl From<Rectangle<i32, Logical>> for Geometry {
 	}
 }
 
+// pub trait ToplevelInfoExt {
+// 	fn get_toplevel_info(&self) -> Option<ToplevelInfo>;
+// 	fn with_toplevel_info<O, F: FnOnce(&mut ToplevelInfo) -> O>(&self, f: F) -> Option<O>;
+// 	fn get_toplevel_state(&self) -> Option<ToplevelState>;
+
+// 	fn get_app_id(&self) -> Option<String>;
+// 	fn get_title(&self) -> Option<String>;
+// }
+// impl ToplevelInfoExt for WlSurface {
+// 	fn get_toplevel_info(&self) -> Option<ToplevelInfo> {
+// 		self.get_data_raw::<Mutex<ToplevelInfo>, _, _>(|c| c.lock().clone())
+// 	}
+// 	fn with_toplevel_info<O, F: FnOnce(&mut ToplevelInfo) -> O>(&self, f: F) -> Option<O> {
+// 		self.get_data_raw::<Mutex<ToplevelInfo>, _, _>(|r| (f)(&mut r.lock()))
+// 	}
+// 	fn get_toplevel_state(&self) -> Option<ToplevelState> {
+// 		self.get_data_raw::<XdgToplevelSurfaceData, _, _>(|r| r.lock().unwrap().current.clone())
+// 	}
+
+// 	fn get_app_id(&self) -> Option<String> {
+// 		self.get_data_raw::<XdgToplevelSurfaceData, _, _>(|d| {
+// 			d.lock().unwrap().app_id.clone().unwrap()
+// 		})
+// 	}
+// 	fn get_title(&self) -> Option<String> {
+// 		self.get_data_raw::<XdgToplevelSurfaceData, _, _>(|d| {
+// 			d.lock().unwrap().title.clone().unwrap()
+// 		})
+// 	}
+// }
+pub trait ChildInfoExt {
+	fn get_child_info(&self) -> Option<ChildInfo>;
+	fn with_child_info<O, F: FnOnce(&mut ChildInfo) -> O>(&self, f: F) -> Option<O>;
+}
+impl ChildInfoExt for WlSurface {
+	fn get_child_info(&self) -> Option<ChildInfo> {
+		self.get_data_raw::<Mutex<ChildInfo>, _, _>(|c| c.lock().clone())
+	}
+	fn with_child_info<O, F: FnOnce(&mut ChildInfo) -> O>(&self, f: F) -> Option<O> {
+		self.get_data_raw::<Mutex<ChildInfo>, _, _>(|r| (f)(&mut r.lock()))
+	}
+}
+
 pub fn surface_panel_item(wl_surface: &WlSurface) -> Option<Arc<PanelItem<XdgBackend>>> {
 	let panel_item = wl_surface
 		.get_data::<Weak<PanelItem<XdgBackend>>>()
@@ -226,16 +269,14 @@ impl XdgShellHandler for WaylandState {
 			return;
 		};
 
-		popup
-			.wl_surface()
-			.get_data_raw::<Mutex<ChildInfo>, _, _>(|ci| {
-				ci.lock().geometry = positioner
-					.get_unconstrained_geometry(Rectangle {
-						loc: (-100000, -100000).into(),
-						size: (200000, 200000).into(),
-					})
-					.into()
-			});
+		popup.wl_surface().with_child_info(|ci| {
+			ci.geometry = positioner
+				.get_unconstrained_geometry(Rectangle {
+					loc: (-100000, -100000).into(),
+					size: (200000, 200000).into(),
+				})
+				.into()
+		});
 
 		panel_item.backend.reposition_child(popup.wl_surface());
 	}
@@ -307,19 +348,9 @@ impl XdgShellHandler for WaylandState {
 }
 delegate_xdg_shell!(WaylandState);
 
-pub trait ChildInfoExt {
-	fn get_child_info(&self) -> Option<ChildInfo>;
-}
-impl ChildInfoExt for WlSurface {
-	fn get_child_info(&self) -> Option<ChildInfo> {
-		self.get_data_raw::<Mutex<ChildInfo>, _, _>(|c| c.lock().clone())
-	}
-}
-
 pub struct XdgBackend {
 	toplevel: Mutex<Option<ToplevelSurface>>,
 	pub children: Mutex<FxHashMap<u64, WlSurface>>,
-	// popups: Mutex<FxHashMap<u64, (PopupSurface, PositionerState)>>,
 	seat: Arc<SeatWrapper>,
 }
 impl XdgBackend {
@@ -371,10 +402,6 @@ impl XdgBackend {
 		};
 		panel_item.destroy_child(child_info.id);
 		self.children.lock().remove(&child_info.id);
-	}
-
-	fn child_info(&self, id: u64) -> Option<ChildInfo> {
-		self.children.lock().get(&id).unwrap().get_child_info()
 	}
 }
 impl Backend for XdgBackend {
@@ -475,8 +502,8 @@ impl Backend for XdgBackend {
 		let children = self
 			.children
 			.lock()
-			.keys()
-			.map(|k| self.child_info(*k).unwrap())
+			.values()
+			.filter_map(|v| v.get_child_info())
 			.collect();
 
 		Ok(PanelItemInitData {
