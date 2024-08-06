@@ -154,11 +154,8 @@ impl MousePointer {
 				direction: vec3(0.0, 0.0, -1.0),
 				space: space.clone(),
 			});
-			if result.deepest_point_distance > 0.0 && result.min_distance < 0.05 {
-				Some(result.deepest_point_distance)
-			} else {
-				None
-			}
+			let valid = result.deepest_point_distance > 0.0 && result.min_distance < 0.05;
+			valid.then(|| result.deepest_point_distance)
 		};
 
 		self.capture_manager.update_capture(&self.pointer);
