@@ -25,7 +25,7 @@ pub struct InputMethod {
 	handler_aliases: AliasList,
 	handler_field_aliases: AliasList,
 	pub(super) handler_order: Mutex<Vec<Weak<InputHandler>>>,
-	pub capture_requests: Registry<InputHandler>,
+	pub internal_capture_requests: Registry<InputHandler>,
 	pub captures: Registry<InputHandler>,
 }
 impl InputMethod {
@@ -42,7 +42,7 @@ impl InputMethod {
 			handler_aliases: AliasList::default(),
 			handler_field_aliases: AliasList::default(),
 			handler_order: Mutex::new(Vec::new()),
-			capture_requests: Registry::new(),
+			internal_capture_requests: Registry::new(),
 			captures: Registry::new(),
 		};
 		<InputMethod as InputMethodRefAspect>::add_node_members(node);
@@ -167,7 +167,9 @@ impl InputMethodRefAspect for InputMethod {
 		let input_method = node.get_aspect::<InputMethod>()?;
 		let input_handler = handler.get_aspect::<InputHandler>()?;
 
-		input_method.capture_requests.add_raw(&input_handler);
+		input_method
+			.internal_capture_requests
+			.add_raw(&input_handler);
 		Ok(())
 	}
 }

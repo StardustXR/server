@@ -139,7 +139,7 @@ impl SkHand {
 		if let Some(capture) = &self.capture {
 			if !self
 				.input
-				.capture_requests
+				.internal_capture_requests
 				.get_valid_contents()
 				.contains(capture)
 			{
@@ -150,7 +150,7 @@ impl SkHand {
 		if self.capture.is_none() {
 			self.capture = self
 				.input
-				.capture_requests
+				.internal_capture_requests
 				.get_valid_contents()
 				.into_iter()
 				.map(|handler| (handler.clone(), self.compare_distance(&handler.field).abs()))

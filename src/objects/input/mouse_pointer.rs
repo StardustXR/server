@@ -150,7 +150,7 @@ impl MousePointer {
 		if let Some(capture) = &self.capture {
 			if !self
 				.pointer
-				.capture_requests
+				.internal_capture_requests
 				.get_valid_contents()
 				.contains(capture)
 			{
@@ -161,7 +161,7 @@ impl MousePointer {
 		if self.capture.is_none() {
 			if let Some(new_capture) = self
 				.pointer
-				.capture_requests
+				.internal_capture_requests
 				.get_valid_contents()
 				.into_iter()
 				.map(|h| {
