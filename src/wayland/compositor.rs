@@ -64,6 +64,7 @@ impl CompositorHandler for WaylandState {
 				size: [256; 2].into(),
 			},
 			z_order: 1,
+			receives_input: false,
 		}));
 
 		let Some(panel_item) = surface_panel_item(parent) else {

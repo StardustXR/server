@@ -10,7 +10,7 @@ use crate::nodes::{
 		Backend, ChildInfo, Geometry, PanelItem, PanelItemInitData, SurfaceId, ToplevelInfo,
 	},
 };
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use mint::Vector2;
 use parking_lot::Mutex;
 use rand::Rng;
@@ -239,6 +239,7 @@ impl XdgShellHandler for WaylandState {
 				})
 				.into(),
 			z_order: 1,
+			receives_input: true,
 		}));
 
 		let Some(panel_item) = surface_panel_item(&parent) else {
@@ -421,31 +422,31 @@ impl Backend for XdgBackend {
 				size,
 			});
 
-		let toplevel = self.toplevel.lock().clone().unwrap();
-		let app_id = compositor::with_states(toplevel.wl_surface(), |states| {
-			states
+		let toplevel = self
+			.toplevel
+			.lock()
+			.clone()
+			.ok_or(eyre!("Internal: no toplevel"))?;
+		let (app_id, title) = compositor::with_states(toplevel.wl_surface(), |states| {
+			let xdg_toplevel_data = states
 				.data_map
 				.get::<XdgToplevelSurfaceData>()
-				.unwrap()
+				.ok_or(eyre!("Internal: XdgToplevelSurfaceData not found"))?;
+
+			let locked_data = xdg_toplevel_data
 				.lock()
-				.unwrap()
-				.title
-				.clone()
-		});
-		let title = compositor::with_states(toplevel.wl_surface(), |states| {
-			states
-				.data_map
-				.get::<XdgToplevelSurfaceData>()
-				.unwrap()
-				.lock()
-				.unwrap()
-				.app_id
-				.clone()
-		});
+				.map_err(|_| eyre!("Internal: Failed to lock XdgToplevelSurfaceData"))?;
+
+			Ok::<_, color_eyre::eyre::Report>((
+				locked_data.app_id.clone(),
+				locked_data.title.clone(),
+			))
+		})?;
 		let toplevel_cached_state = compositor::with_states(toplevel.wl_surface(), |states| {
 			*states.cached_state.get::<SurfaceCachedState>().current()
 		});
-		let toplevel_core_surface = CoreSurface::from_wl_surface(toplevel.wl_surface()).unwrap();
+		let toplevel_core_surface = CoreSurface::from_wl_surface(toplevel.wl_surface())
+			.ok_or(eyre!("Internal: Failed to get CoreSurface from WlSurface"))?;
 
 		let size = toplevel
 			.current_state()
