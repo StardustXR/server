@@ -19,6 +19,8 @@ use stereokit_rust::system::{HandJoint, HandSource, Handed, Input, LinePoint, Li
 use stereokit_rust::util::Color128;
 use zbus::Connection;
 
+use super::{get_sorted_handlers, CaptureManager};
+
 fn convert_joint(joint: HandJoint) -> Joint {
 	Joint {
 		position: Vec3::from(joint.position).into(),
@@ -40,7 +42,7 @@ pub struct SkHand {
 	palm_object: ObjectHandle<SpatialRef>,
 	handed: Handed,
 	input: Arc<InputMethod>,
-	capture: Option<Arc<InputHandler>>,
+	capture_manager: CaptureManager,
 	datamap: HandDatamap,
 }
 impl SkHand {
@@ -69,7 +71,7 @@ impl SkHand {
 			palm_object,
 			handed,
 			input,
-			capture: None,
+			capture_manager: CaptureManager::default(),
 			datamap: Default::default(),
 		})
 	}
@@ -122,7 +124,7 @@ impl SkHand {
 
 				self.draw(
 					token,
-					if self.capture.is_none() {
+					if self.capture_manager.capture.is_none() {
 						Color128::new_rgb(1.0, 1.0, 1.0)
 					} else {
 						Color128::new_rgb(0.0, 1.0, 0.75)
@@ -135,88 +137,34 @@ impl SkHand {
 		self.datamap.grab_strength = sk_hand.grip_activation;
 		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 
-		// remove the capture when it's removed from captures list
-		if let Some(capture) = &self.capture {
-			if !self
-				.input
-				.internal_capture_requests
-				.get_valid_contents()
-				.contains(capture)
-			{
-				self.capture.take();
-			}
-		}
-		// add the capture that's the closest if we don't have one
-		if self.capture.is_none() {
-			self.capture = self
-				.input
-				.internal_capture_requests
-				.get_valid_contents()
-				.into_iter()
-				.map(|handler| (handler.clone(), self.compare_distance(&handler.field).abs()))
-				.reduce(|(handlers_a, distance_a), (handlers_b, distance_b)| {
-					if distance_a < distance_b {
-						(handlers_a, distance_a)
-					} else {
-						(handlers_b, distance_b)
-					}
-				})
-				.map(|(rx, _)| rx);
-		}
+		let distance_calculator = |space: &Arc<Spatial>, data: &InputDataType, field: &Field| {
+			let InputDataType::Hand(hand) = data else {
+				return None;
+			};
+			let thumb_tip_distance = field.distance(space, hand.thumb.tip.position.into());
+			let index_tip_distance = field.distance(space, hand.index.tip.position.into());
+			let middle_tip_distance = field.distance(space, hand.middle.tip.position.into());
+			let ring_tip_distance = field.distance(space, hand.ring.tip.position.into());
 
-		// make sure that if something is captured only send input to it
-		self.input.captures.clear();
-		if let Some(capture) = &self.capture {
-			self.input.set_handler_order([capture].into_iter());
-			self.input.captures.add_raw(capture);
+			Some(
+				(thumb_tip_distance * 0.3)
+					+ (index_tip_distance * 0.4)
+					+ (middle_tip_distance * 0.15)
+					+ (ring_tip_distance * 0.15),
+			)
+		};
+
+		self.capture_manager.update_capture(&self.input);
+		self.capture_manager
+			.set_new_capture(&self.input, distance_calculator);
+		self.capture_manager.apply_capture(&self.input);
+
+		if self.capture_manager.capture.is_some() {
 			return;
 		}
 
-		// send input to all the input handlers that are the closest to the ray as possible
-		self.input.set_handler_order(
-			INPUT_HANDLER_REGISTRY
-				.get_valid_contents()
-				.into_iter()
-				// filter out all the disabled handlers
-				.filter(|handler| {
-					let Some(node) = handler.spatial.node() else {
-						return false;
-					};
-					node.enabled()
-				})
-				// filter out all the fields with disabled handlers
-				.filter(|handler| {
-					let Some(node) = handler.field.spatial.node() else {
-						return false;
-					};
-					node.enabled()
-				})
-				// get the unsigned distance to the handler's field (unsigned so giant fields won't always eat input)
-				.map(|handler| {
-					(
-						vec![handler.clone()],
-						self.compare_distance(&handler.field).abs(),
-					)
-				})
-				// .inspect(|(_, result)| {
-				// 	dbg!(result);
-				// })
-				// now collect all handlers that are same distance if they're the closest
-				.reduce(|(mut handlers_a, distance_a), (handlers_b, distance_b)| {
-					if (distance_a - distance_b).abs() < 0.001 {
-						// distance is basically the same (within 1mm)
-						handlers_a.extend(handlers_b);
-						(handlers_a, distance_a)
-					} else if distance_a < distance_b {
-						(handlers_a, distance_a)
-					} else {
-						(handlers_b, distance_b)
-					}
-				})
-				.map(|(rx, _)| rx)
-				.unwrap_or_default()
-				.iter(),
-		);
+		let sorted_handlers = get_sorted_handlers(&self.input, distance_calculator);
+		self.input.set_handler_order(sorted_handlers.iter());
 	}
 
 	fn draw(&self, token: &MainThreadToken, color: Color128, hand: &Hand) {
@@ -263,17 +211,6 @@ impl SkHand {
 				joint_to_line_point(&hand.ring.metacarpal, color),
 			],
 		);
-		// little
-		Lines::add_list(
-			token,
-			&[
-				joint_to_line_point(&hand.little.tip, color),
-				joint_to_line_point(&hand.little.distal, color),
-				joint_to_line_point(&hand.little.intermediate, color),
-				joint_to_line_point(&hand.little.proximal, color),
-				joint_to_line_point(&hand.little.metacarpal, color),
-			],
-		);
 
 		// palm
 		Lines::add_list(
@@ -288,22 +225,6 @@ impl SkHand {
 				joint_to_line_point(&hand.wrist, color),
 			],
 		);
-	}
-
-	fn compare_distance(&self, field: &Field) -> f32 {
-		let InputDataType::Hand(hand) = &*self.input.data.lock() else {
-			return INFINITY;
-		};
-		let spatial = &self.input.spatial;
-		let thumb_tip_distance = field.distance(spatial, hand.thumb.tip.position.into());
-		let index_tip_distance = field.distance(spatial, hand.index.tip.position.into());
-		let middle_tip_distance = field.distance(spatial, hand.middle.tip.position.into());
-		let ring_tip_distance = field.distance(spatial, hand.ring.tip.position.into());
-
-		(thumb_tip_distance * 0.3)
-			+ (index_tip_distance * 0.4)
-			+ (middle_tip_distance * 0.15)
-			+ (ring_tip_distance * 0.15)
 	}
 }
 

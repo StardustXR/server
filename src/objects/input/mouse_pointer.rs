@@ -20,6 +20,8 @@ use std::sync::Arc;
 use stereokit_rust::system::{Input, Key};
 use xkbcommon::xkb::{Context, Keymap, FORMAT_TEXT_V1};
 
+use super::{get_sorted_handlers, CaptureManager, DistanceCalculator};
+
 #[derive(Deserialize, Serialize)]
 struct MouseEvent {
 	select: f32,
@@ -58,7 +60,7 @@ pub struct MousePointer {
 	keymap: DefaultKey,
 	spatial: Arc<Spatial>,
 	pointer: Arc<InputMethod>,
-	capture: Option<Arc<InputHandler>>,
+	capture_manager: CaptureManager,
 	mouse_datamap: MouseEvent,
 	keyboard_datamap: KeyboardEvent,
 	keyboard_sender: Arc<PulseSender>,
@@ -89,7 +91,7 @@ impl MousePointer {
 			node,
 			spatial,
 			pointer,
-			capture: None,
+			capture_manager: CaptureManager::default(),
 			mouse_datamap: Default::default(),
 			keyboard_datamap: KeyboardEvent {
 				keyboard: (),
@@ -146,108 +148,30 @@ impl MousePointer {
 	}
 
 	fn target_pointer_input(&mut self) {
-		// remove the capture when it's removed from captures list
-		if let Some(capture) = &self.capture {
-			if !self
-				.pointer
-				.internal_capture_requests
-				.get_valid_contents()
-				.contains(capture)
-			{
-				self.capture.take();
+		let distance_calculator: DistanceCalculator = |space, data, field| {
+			let result = field.ray_march(Ray {
+				origin: vec3(0.0, 0.0, 0.0),
+				direction: vec3(0.0, 0.0, -1.0),
+				space: space.clone(),
+			});
+			if result.deepest_point_distance > 0.0 && result.min_distance < 0.05 {
+				Some(result.deepest_point_distance)
+			} else {
+				None
 			}
-		}
-		// add the capture that's the closest if we don't have one
-		if self.capture.is_none() {
-			if let Some(new_capture) = self
-				.pointer
-				.internal_capture_requests
-				.get_valid_contents()
-				.into_iter()
-				.map(|h| {
-					(
-						h.clone(),
-						h.field.ray_march(Ray {
-							origin: vec3(0.0, 0.0, 0.0),
-							direction: vec3(0.0, 0.0, -1.0),
-							space: self.spatial.clone(),
-						}),
-					)
-				})
-				.reduce(|(handlers_a, result_a), (handlers_b, result_b)| {
-					if result_a.min_distance < result_b.min_distance {
-						(handlers_a, result_a)
-					} else {
-						(handlers_b, result_b)
-					}
-				})
-				.map(|(rx, _)| rx)
-			{
-				self.capture = Some(new_capture.clone());
-			}
-		}
+		};
 
-		// make sure that if something is captured only send input to it
-		self.pointer.captures.clear();
-		if let Some(capture) = &self.capture {
-			self.pointer.set_handler_order([capture].into_iter());
-			self.pointer.captures.add_raw(capture);
+		self.capture_manager.update_capture(&self.pointer);
+		self.capture_manager
+			.set_new_capture(&self.pointer, distance_calculator);
+		self.capture_manager.apply_capture(&self.pointer);
+
+		if self.capture_manager.capture.is_some() {
 			return;
 		}
 
-		// send input to all the input handlers that are the closest to the ray as possible
-		self.pointer.set_handler_order(
-			INPUT_HANDLER_REGISTRY
-				.get_valid_contents()
-				.into_iter()
-				// filter out all the disabled handlers
-				.filter(|handler| {
-					let Some(node) = handler.spatial.node() else {
-						return false;
-					};
-					node.enabled()
-				})
-				// filter out all the fields with disabled handlers
-				.filter(|handler| {
-					let Some(node) = handler.field.spatial.node() else {
-						return false;
-					};
-					node.enabled()
-				})
-				// ray march to all the enabled handlers' fields
-				.map(|handler| {
-					let result = handler.field.ray_march(Ray {
-						origin: vec3(0.0, 0.0, 0.0),
-						direction: vec3(0.0, 0.0, -1.0),
-						space: self.spatial.clone(),
-					});
-					(vec![handler], result)
-				})
-				// make sure the field isn't at the pointer origin and that it's being hit
-				.filter(|(_, result)| {
-					result.deepest_point_distance > 0.01 && result.min_distance < 0.0
-				})
-				// .inspect(|(_, result)| {
-				// 	dbg!(result);
-				// })
-				// now collect all handlers that are same distance if they're the closest
-				.reduce(|(mut handlers_a, result_a), (handlers_b, result_b)| {
-					if (result_a.deepest_point_distance - result_b.deepest_point_distance).abs()
-						< 0.001
-					{
-						// distance is basically the same
-						handlers_a.extend(handlers_b);
-						(handlers_a, result_a)
-					} else if result_a.deepest_point_distance < result_b.deepest_point_distance {
-						(handlers_a, result_a)
-					} else {
-						(handlers_b, result_b)
-					}
-				})
-				.map(|(rx, _)| rx)
-				.unwrap_or_default()
-				.iter(),
-		);
+		let sorted_handlers = get_sorted_handlers(&self.pointer, distance_calculator);
+		self.pointer.set_handler_order(sorted_handlers.iter());
 	}
 
 	fn send_keyboard_input(&mut self) {

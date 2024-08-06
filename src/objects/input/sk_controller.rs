@@ -1,7 +1,8 @@
+use super::{get_sorted_handlers, CaptureManager};
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		fields::FieldTrait,
+		fields::{Field, FieldTrait},
 		input::{InputDataType, InputHandler, InputMethod, Tip, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
 		Node, OwnedNode,
@@ -35,7 +36,7 @@ pub struct SkController {
 	handed: Handed,
 	model: Model,
 	material: Material,
-	capture: Option<Arc<InputHandler>>,
+	capture_manager: CaptureManager,
 	datamap: ControllerDatamap,
 }
 impl SkController {
@@ -69,7 +70,7 @@ impl SkController {
 			handed,
 			model,
 			material,
-			capture: None,
+			capture_manager: CaptureManager::default(),
 			datamap: Default::default(),
 		})
 	}
@@ -82,11 +83,12 @@ impl SkController {
 				controller.aim.orientation.into(),
 				controller.aim.position.into(),
 			);
-			self.material.color_tint(if self.capture.is_none() {
-				Color128::new_rgb(1.0, 1.0, 1.0)
-			} else {
-				Color128::new_rgb(0.0, 1.0, 0.75)
-			});
+			self.material
+				.color_tint(if self.capture_manager.capture.is_none() {
+					Color128::new_rgb(1.0, 1.0, 1.0)
+				} else {
+					Color128::new_rgb(0.0, 1.0, 0.75)
+				});
 			self.model.draw(
 				token,
 				world_transform * Mat4::from_scale(Vec3::ONE * 0.02),
@@ -100,98 +102,20 @@ impl SkController {
 		self.datamap.scroll = controller.stick.into();
 		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 
-		// remove the capture when it's removed from captures list
-		if let Some(capture) = &self.capture {
-			if !self
-				.input
-				.internal_capture_requests
-				.get_valid_contents()
-				.contains(capture)
-			{
-				self.capture.take();
-			}
-		}
-		// add the capture that's the closest if we don't have one
-		if self.capture.is_none() {
-			self.capture = self
-				.input
-				.internal_capture_requests
-				.get_valid_contents()
-				.into_iter()
-				.map(|handler| {
-					(
-						handler.clone(),
-						handler
-							.field
-							.distance(&self.input.spatial, [0.0; 3].into())
-							.abs(),
-					)
-				})
-				.reduce(|(handlers_a, distance_a), (handlers_b, distance_b)| {
-					if distance_a < distance_b {
-						(handlers_a, distance_a)
-					} else {
-						(handlers_b, distance_b)
-					}
-				})
-				.map(|(rx, _)| rx);
-		}
+		let distance_calculator = |space: &Arc<Spatial>, _data: &InputDataType, field: &Field| {
+			Some(field.distance(space, [0.0; 3].into()).abs())
+		};
 
-		// make sure that if something is captured only send input to it
-		self.input.captures.clear();
-		if let Some(capture) = &self.capture {
-			self.input.set_handler_order([capture].into_iter());
-			self.input.captures.add_raw(capture);
+		self.capture_manager.update_capture(&self.input);
+		self.capture_manager
+			.set_new_capture(&self.input, distance_calculator);
+		self.capture_manager.apply_capture(&self.input);
+
+		if self.capture_manager.capture.is_some() {
 			return;
 		}
 
-		// send input to all the input handlers that are the closest to the ray as possible
-		self.input.set_handler_order(
-			INPUT_HANDLER_REGISTRY
-				.get_valid_contents()
-				.into_iter()
-				// filter out all the disabled handlers
-				.filter(|handler| {
-					let Some(node) = handler.spatial.node() else {
-						return false;
-					};
-					node.enabled()
-				})
-				// filter out all the fields with disabled handlers
-				.filter(|handler| {
-					let Some(node) = handler.field.spatial.node() else {
-						return false;
-					};
-					node.enabled()
-				})
-				// get the unsigned distance to the handler's field (unsigned so giant fields won't always eat input)
-				.map(|handler| {
-					(
-						vec![handler.clone()],
-						handler
-							.field
-							.distance(&self.input.spatial, [0.0; 3].into())
-							.abs(),
-					)
-				})
-				// .inspect(|(_, result)| {
-				// 	dbg!(result);
-				// })
-				// now collect all handlers that are same distance if they're the closest
-				.reduce(|(mut handlers_a, distance_a), (handlers_b, distance_b)| {
-					if (distance_a - distance_b).abs() < 0.001 {
-						// distance is basically the same (within 1mm)
-						handlers_a.extend(handlers_b);
-						(handlers_a, distance_a)
-					} else if distance_a < distance_b {
-						(handlers_a, distance_a)
-					} else {
-						(handlers_b, distance_b)
-					}
-				})
-				.map(|(rx, _)| rx)
-				.unwrap_or_default()
-				.iter(),
-		);
+		let sorted_handlers = get_sorted_handlers(&self.input, distance_calculator);
+		self.input.set_handler_order(sorted_handlers.iter());
 	}
 }
