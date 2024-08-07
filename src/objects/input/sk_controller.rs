@@ -56,7 +56,7 @@ impl SkController {
 		)?);
 		let model_nodes = model.get_nodes();
 		let mut model_node = model_nodes.visuals().next().unwrap();
-		let material = Material::copy(model_node.get_material().unwrap());
+		let material = Material::copy(&model_node.get_material().unwrap());
 		model_node.material(&material);
 		let tip = InputDataType::Tip(Tip::default());
 		let input = InputMethod::add_to(

@@ -22,15 +22,15 @@ rustPlatform.buildRustPackage rec {
   };
   CPM_SOURCE_CACHE = "./build";
   postPatch = ''
-    sk=$(echo $cargoDepsCopy/stereokit-sys-*/StereoKit)
+    sk=$(echo $cargoDepsCopy/stereokit-rust-*/StereoKit)
     mkdir -p $sk/build/cpm
 
     # This is not ideal, the original approach was to fetch the exact cmake
     # file version that was wanted from GitHub directly, but at least this way it comes from Nixpkgs.. so meh
-    cp ${cpm-cmake}/share/cpm/CPM.cmake $sk/build/cpm/CPM_0.32.2.cmake
+    cp ${cpm-cmake}/share/cpm/CPM.cmake $sk/build/cpm/CPM_0.38.7.cmake
   '';
   nativeBuildInputs = [
-    cmake pkg-config llvmPackages.libcxxClang
+    cmake cpm-cmake pkg-config llvmPackages.libcxxClang
   ];
   buildInputs = [
     openxr-loader libGL mesa xorg.libX11 fontconfig libxkbcommon

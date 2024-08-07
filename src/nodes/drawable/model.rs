@@ -82,7 +82,7 @@ pub struct ModelPart {
 impl ModelPart {
 	fn create_for_model(model: &Arc<Model>, sk_model: &SKModel) {
 		HOLDOUT_MATERIAL.get_or_init(|| {
-			let mut mat = Material::copy(Material::unlit());
+			let mut mat = Material::copy(&Material::unlit());
 			mat.transparency(Transparency::None);
 			mat.color_tint(Color128::BLACK_TRANSPARENT);
 			Arc::new(MaterialWrapper(mat))

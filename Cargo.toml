@@ -71,7 +71,7 @@ serde_repr = "0.1.19"
 toml = "0.8.14"
 
 # mathy stuffs
-glam = { version = "0.27.0", features = ["mint", "serde"] }
+glam = { version = "0.28.0", features = ["mint", "serde"] }
 mint = "0.5.9"
 tokio = { version = "1.38.0", features = ["rt-multi-thread", "signal", "time"] }
 prisma = "0.1.1"
@@ -104,6 +104,8 @@ features = [
 optional = true
 
 [dependencies.stereokit-rust]
+# path = "../StereoKit-rust"
+# git = "https://github.com/mvvvv/StereoKit-rust.git"
 git = "https://github.com/technobaboo/StereoKit-rust.git"
 default-features = false
 
