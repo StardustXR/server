@@ -9,7 +9,6 @@ use crate::{
 		items::camera::TexWrapper,
 	},
 };
-use mint::Vector2;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
@@ -35,7 +34,6 @@ pub static CORE_SURFACES: Registry<CoreSurface> = Registry::new();
 
 pub struct CoreSurfaceData {
 	wl_tex: Option<SendWrapper<GlesTexture>>,
-	pub size: Vector2<u32>,
 }
 impl Drop for CoreSurfaceData {
 	fn drop(&mut self) {
@@ -156,16 +154,7 @@ impl CoreSurface {
 			sk_mat.lock().0.queue_offset(*material_offset as i32);
 		}
 
-		let Some(surface_size) = wl_surface
-			.get_data_raw::<RendererSurfaceStateUserData, _, _>(|surface_states| {
-				surface_states.lock().unwrap().surface_size()
-			})
-			.flatten()
-		else {
-			return;
-		};
 		let new_mapped_data = CoreSurfaceData {
-			size: Vector2::from([surface_size.w as u32, surface_size.h as u32]),
 			wl_tex: Some(SendWrapper::new(smithay_tex)),
 		};
 		*mapped_data = Some(new_mapped_data);
@@ -205,10 +194,6 @@ impl CoreSurface {
 
 	pub fn wl_surface(&self) -> Option<WlSurface> {
 		self.weak_surface.upgrade().ok()
-	}
-
-	pub fn size(&self) -> Option<Vector2<u32>> {
-		self.mapped_data.lock().as_ref().map(|d| d.size)
 	}
 }
 impl Drop for CoreSurface {

@@ -1,4 +1,4 @@
-use super::{state::WaylandState, surface::CoreSurface};
+use super::{state::WaylandState, surface::CoreSurface, utils::WlSurfaceExt};
 use crate::{
 	core::task,
 	nodes::{
@@ -76,8 +76,7 @@ pub struct CursorInfo {
 }
 impl CursorInfo {
 	pub fn cursor_data(&self) -> Option<Geometry> {
-		let cursor_size =
-			CoreSurface::from_wl_surface(&self.surface.as_ref()?.upgrade().ok()?)?.size()?;
+		let cursor_size = self.surface.as_ref()?.upgrade().ok()?.get_size()?;
 		Some(Geometry {
 			origin: [self.hotspot_x, self.hotspot_y].into(),
 			size: cursor_size,

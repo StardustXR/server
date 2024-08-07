@@ -2,7 +2,7 @@ use super::{
 	seat::{handle_cursor, SeatWrapper},
 	state::{ClientState, WaylandState},
 	surface::CoreSurface,
-	utils::WlSurfaceExt,
+	utils::*,
 };
 use crate::nodes::{
 	drawable::model::ModelPart,
@@ -16,7 +16,6 @@ use parking_lot::Mutex;
 use rand::Rng;
 use rustc_hash::FxHashMap;
 use smithay::{
-	backend::renderer::utils::RendererSurfaceStateUserData,
 	delegate_xdg_shell,
 	reexports::{
 		wayland_protocols::xdg::{
@@ -30,15 +29,24 @@ use smithay::{
 	},
 	utils::{Logical, Rectangle, Serial},
 	wayland::{
-		compositor::{self, add_post_commit_hook},
+		compositor::add_post_commit_hook,
 		shell::xdg::{
-			PopupSurface, PositionerState, ShellClient, SurfaceCachedState, ToplevelSurface,
-			XdgShellHandler, XdgShellState, XdgToplevelSurfaceData,
+			PopupSurface, PositionerState, ShellClient, ToplevelSurface, XdgShellHandler,
+			XdgShellState,
 		},
 	},
 };
 use std::sync::{Arc, Weak};
 use tracing::warn;
+
+fn get_unconstrained_popup_geometry(positioner: &PositionerState) -> Geometry {
+	positioner
+		.get_unconstrained_geometry(Rectangle {
+			loc: (-100000, -100000).into(),
+			size: (200000, 200000).into(),
+		})
+		.into()
+}
 
 impl From<Rectangle<i32, Logical>> for Geometry {
 	fn from(value: Rectangle<i32, Logical>) -> Self {
@@ -46,49 +54,6 @@ impl From<Rectangle<i32, Logical>> for Geometry {
 			origin: [value.loc.x, value.loc.y].into(),
 			size: [value.size.w as u32, value.size.h as u32].into(),
 		}
-	}
-}
-
-// pub trait ToplevelInfoExt {
-// 	fn get_toplevel_info(&self) -> Option<ToplevelInfo>;
-// 	fn with_toplevel_info<O, F: FnOnce(&mut ToplevelInfo) -> O>(&self, f: F) -> Option<O>;
-// 	fn get_toplevel_state(&self) -> Option<ToplevelState>;
-
-// 	fn get_app_id(&self) -> Option<String>;
-// 	fn get_title(&self) -> Option<String>;
-// }
-// impl ToplevelInfoExt for WlSurface {
-// 	fn get_toplevel_info(&self) -> Option<ToplevelInfo> {
-// 		self.get_data_raw::<Mutex<ToplevelInfo>, _, _>(|c| c.lock().clone())
-// 	}
-// 	fn with_toplevel_info<O, F: FnOnce(&mut ToplevelInfo) -> O>(&self, f: F) -> Option<O> {
-// 		self.get_data_raw::<Mutex<ToplevelInfo>, _, _>(|r| (f)(&mut r.lock()))
-// 	}
-// 	fn get_toplevel_state(&self) -> Option<ToplevelState> {
-// 		self.get_data_raw::<XdgToplevelSurfaceData, _, _>(|r| r.lock().unwrap().current.clone())
-// 	}
-
-// 	fn get_app_id(&self) -> Option<String> {
-// 		self.get_data_raw::<XdgToplevelSurfaceData, _, _>(|d| {
-// 			d.lock().unwrap().app_id.clone().unwrap()
-// 		})
-// 	}
-// 	fn get_title(&self) -> Option<String> {
-// 		self.get_data_raw::<XdgToplevelSurfaceData, _, _>(|d| {
-// 			d.lock().unwrap().title.clone().unwrap()
-// 		})
-// 	}
-// }
-pub trait ChildInfoExt {
-	fn get_child_info(&self) -> Option<ChildInfo>;
-	fn with_child_info<O, F: FnOnce(&mut ChildInfo) -> O>(&self, f: F) -> Option<O>;
-}
-impl ChildInfoExt for WlSurface {
-	fn get_child_info(&self) -> Option<ChildInfo> {
-		self.get_data_raw::<Mutex<ChildInfo>, _, _>(|c| c.lock().clone())
-	}
-	fn with_child_info<O, F: FnOnce(&mut ChildInfo) -> O>(&self, f: F) -> Option<O> {
-		self.get_data_raw::<Mutex<ChildInfo>, _, _>(|r| (f)(&mut r.lock()))
 	}
 }
 
@@ -123,11 +88,76 @@ impl XdgShellHandler for WaylandState {
 			s.states.unset(State::Fullscreen);
 		});
 		toplevel.send_configure();
+
+		let initial_size = toplevel
+			.wl_surface()
+			.get_size()
+			.unwrap_or(Vector2::from([0; 2]));
+
+		let initial_toplevel_info = ToplevelInfo {
+			parent: toplevel.wl_surface().get_parent(),
+			title: toplevel.wl_surface().get_title(),
+			app_id: toplevel.wl_surface().get_app_id(),
+			size: initial_size,
+			min_size: toplevel
+				.wl_surface()
+				.min_size()
+				.map(|s| Vector2::from([s.x as f32, s.y as f32])),
+			max_size: toplevel
+				.wl_surface()
+				.max_size()
+				.map(|s| Vector2::from([s.x as f32, s.y as f32])),
+			logical_rectangle: toplevel
+				.wl_surface()
+				.get_geometry()
+				.map(|r| r.into())
+				.unwrap_or(Geometry {
+					origin: [0; 2].into(),
+					size: initial_size,
+				}),
+		};
 		toplevel
 			.wl_surface()
-			.insert_data(Mutex::new(Vector2::from([0_u32; 2])));
+			.insert_data(Mutex::new(initial_toplevel_info));
 
 		CoreSurface::add_to(toplevel.wl_surface());
+
+		add_post_commit_hook(
+			toplevel.wl_surface(),
+			|_state: &mut WaylandState, _dh, surf| {
+				let parent = surf.get_parent();
+				let new_size = surf.get_size().unwrap_or(Vector2::from([0; 2]));
+				let min_size = surf
+					.min_size()
+					.map(|s| Vector2::from([s.x as f32, s.y as f32]));
+				let max_size = surf
+					.max_size()
+					.map(|s| Vector2::from([s.x as f32, s.y as f32]));
+				let logical_rectangle = surf.get_geometry().unwrap_or_default();
+
+				let mut size_changed = false;
+				surf.with_toplevel_info(|info| {
+					info.parent = parent;
+					if new_size != info.size {
+						info.size = new_size;
+						size_changed = true;
+					}
+					info.min_size = min_size;
+					info.max_size = max_size;
+					info.logical_rectangle = logical_rectangle;
+				});
+
+				if size_changed {
+					let Some(panel_item) = surface_panel_item(surf) else {
+						return;
+					};
+					if let Some(toplevel_info) = surf.get_toplevel_info() {
+						panel_item.toplevel_size_changed(toplevel_info.size);
+					}
+				}
+			},
+		);
+
 		add_post_commit_hook(
 			toplevel.wl_surface(),
 			|state: &mut WaylandState, _dh, surf| {
@@ -156,32 +186,6 @@ impl XdgShellHandler for WaylandState {
 				surf.insert_data(node);
 			},
 		);
-
-		add_post_commit_hook(
-			toplevel.wl_surface(),
-			|_state: &mut WaylandState, _dh, surf| {
-				let Some(panel_item) = surface_panel_item(surf) else {
-					return;
-				};
-				let Some(size) = surf
-					.get_data_raw::<RendererSurfaceStateUserData, _, _>(|surface_states| {
-						surface_states.lock().unwrap().surface_size()
-					})
-					.flatten()
-				else {
-					return;
-				};
-				let size = [size.w as u32, size.h as u32].into();
-				surf.get_data_raw::<Mutex<Vector2<u32>>, _, _>(|old_size| {
-					let mut old_size = old_size.lock();
-
-					if *old_size != size {
-						panel_item.toplevel_size_changed(size);
-						*old_size = size;
-					}
-				});
-			},
-		);
 	}
 	fn toplevel_destroyed(&mut self, toplevel: ToplevelSurface) {
 		let Some(panel_item) = surface_panel_item(toplevel.wl_surface()) else {
@@ -192,32 +196,35 @@ impl XdgShellHandler for WaylandState {
 		panel_item.backend.children.lock().clear();
 	}
 	fn app_id_changed(&mut self, toplevel: ToplevelSurface) {
-		let Some(panel_item) = surface_panel_item(toplevel.wl_surface()) else {
+		let wl_surface = toplevel.wl_surface();
+		let Some(app_id) = wl_surface.get_app_id() else {
 			return;
 		};
 
-		panel_item.toplevel_app_id_changed(
-			&toplevel
-				.wl_surface()
-				.get_data_raw::<XdgToplevelSurfaceData, _, _>(|d| {
-					d.lock().unwrap().app_id.clone().unwrap()
-				})
-				.unwrap_or_default(),
-		)
+		wl_surface.with_toplevel_info(|info| {
+			info.app_id = Some(app_id.clone());
+		});
+
+		let Some(panel_item) = surface_panel_item(wl_surface) else {
+			return;
+		};
+		panel_item.toplevel_app_id_changed(&app_id)
 	}
+
 	fn title_changed(&mut self, toplevel: ToplevelSurface) {
-		let Some(panel_item) = surface_panel_item(toplevel.wl_surface()) else {
+		let wl_surface = toplevel.wl_surface();
+		let Some(title) = wl_surface.get_title() else {
 			return;
 		};
 
-		panel_item.toplevel_title_changed(
-			&toplevel
-				.wl_surface()
-				.get_data_raw::<XdgToplevelSurfaceData, _, _>(|d| {
-					d.lock().unwrap().title.clone().unwrap()
-				})
-				.unwrap_or_default(),
-		)
+		wl_surface.with_toplevel_info(|info| {
+			info.title = Some(title.clone());
+		});
+
+		let Some(panel_item) = surface_panel_item(wl_surface) else {
+			return;
+		};
+		panel_item.toplevel_title_changed(&title)
 	}
 
 	fn new_popup(&mut self, popup: PopupSurface, positioner: PositionerState) {
@@ -232,12 +239,7 @@ impl XdgShellHandler for WaylandState {
 		popup.wl_surface().insert_data(Mutex::new(ChildInfo {
 			id,
 			parent: parent.get_data::<SurfaceId>().unwrap(),
-			geometry: positioner
-				.get_unconstrained_geometry(Rectangle {
-					loc: (-100000, -100000).into(),
-					size: (200000, 200000).into(),
-				})
-				.into(),
+			geometry: get_unconstrained_popup_geometry(&positioner),
 			z_order: 1,
 			receives_input: true,
 		}));
@@ -271,12 +273,7 @@ impl XdgShellHandler for WaylandState {
 		};
 
 		popup.wl_surface().with_child_info(|ci| {
-			ci.geometry = positioner
-				.get_unconstrained_geometry(Rectangle {
-					loc: (-100000, -100000).into(),
-					size: (200000, 200000).into(),
-				})
-				.into()
+			ci.geometry = get_unconstrained_popup_geometry(&positioner);
 		});
 
 		panel_item.backend.reposition_child(popup.wl_surface());
@@ -359,7 +356,6 @@ impl XdgBackend {
 		XdgBackend {
 			toplevel: Mutex::new(Some(toplevel)),
 			children: Mutex::new(FxHashMap::default()),
-			// popups: Mutex::new(FxHashMap::default()),
 			seat,
 		}
 	}
@@ -415,90 +411,18 @@ impl Backend for XdgBackend {
 			.clone()
 			.and_then(|s| s.upgrade().ok())
 			.as_ref()
-			.and_then(CoreSurface::from_wl_surface)
-			.and_then(|c| c.size())
+			.and_then(|c| c.get_size())
 			.map(|size| Geometry {
 				origin: [0; 2].into(),
 				size,
 			});
 
-		let toplevel = self
+		let toplevel_info = self
 			.toplevel
 			.lock()
-			.clone()
-			.ok_or(eyre!("Internal: no toplevel"))?;
-		let (app_id, title) = compositor::with_states(toplevel.wl_surface(), |states| {
-			let xdg_toplevel_data = states
-				.data_map
-				.get::<XdgToplevelSurfaceData>()
-				.ok_or(eyre!("Internal: XdgToplevelSurfaceData not found"))?;
-
-			let locked_data = xdg_toplevel_data
-				.lock()
-				.map_err(|_| eyre!("Internal: Failed to lock XdgToplevelSurfaceData"))?;
-
-			Ok::<_, color_eyre::eyre::Report>((
-				locked_data.app_id.clone(),
-				locked_data.title.clone(),
-			))
-		})?;
-		let toplevel_cached_state = compositor::with_states(toplevel.wl_surface(), |states| {
-			*states.cached_state.get::<SurfaceCachedState>().current()
-		});
-		let toplevel_core_surface = CoreSurface::from_wl_surface(toplevel.wl_surface())
-			.ok_or(eyre!("Internal: Failed to get CoreSurface from WlSurface"))?;
-
-		let size = toplevel
-			.current_state()
-			.size
-			.map(|s| Vector2::from([s.w as u32, s.h as u32]))
-			.or_else(|| toplevel_core_surface.size())
-			.unwrap_or(Vector2::from([0; 2]));
-		let parent = toplevel
-			.parent()
 			.as_ref()
-			.and_then(surface_panel_item)
-			.and_then(|p| p.node.upgrade())
-			.map(|p| p.get_id());
-		let toplevel = ToplevelInfo {
-			parent,
-			title,
-			app_id,
-			size,
-			min_size: if toplevel_cached_state.min_size.w != 0
-				&& toplevel_cached_state.min_size.h != 0
-			{
-				Some(
-					[
-						toplevel_cached_state.min_size.w as f32,
-						toplevel_cached_state.min_size.h as f32,
-					]
-					.into(),
-				)
-			} else {
-				None
-			},
-			max_size: if toplevel_cached_state.max_size.w != 0
-				&& toplevel_cached_state.max_size.h != 0
-			{
-				Some(
-					[
-						toplevel_cached_state.max_size.w as f32,
-						toplevel_cached_state.max_size.h as f32,
-					]
-					.into(),
-				)
-			} else {
-				None
-			},
-			logical_rectangle: toplevel_cached_state
-				.geometry
-				.map(Into::into)
-				.unwrap_or_else(|| Geometry {
-					origin: [0; 2].into(),
-					size,
-				}),
-		};
+			.and_then(|toplevel| toplevel.wl_surface().get_toplevel_info())
+			.ok_or(eyre!("Internal: no toplevel or ToplevelInfo"))?;
 
 		let children = self
 			.children
@@ -509,7 +433,7 @@ impl Backend for XdgBackend {
 
 		Ok(PanelItemInitData {
 			cursor,
-			toplevel,
+			toplevel: toplevel_info,
 			children,
 			pointer_grab: None,
 			keyboard_grab: None,

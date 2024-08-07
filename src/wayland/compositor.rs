@@ -1,7 +1,7 @@
 use super::{
 	state::{ClientState, WaylandState},
-	utils::WlSurfaceExt,
-	xdg_shell::{surface_panel_item, ChildInfoExt},
+	utils::{ChildInfoExt, WlSurfaceExt},
+	xdg_shell::surface_panel_item,
 };
 use crate::{
 	nodes::items::panel::{ChildInfo, Geometry, SurfaceId},

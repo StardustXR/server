@@ -22,6 +22,15 @@ use std::sync::{Arc, Weak};
 use tracing::{debug, info};
 
 stardust_xr_server_codegen::codegen_item_panel_protocol!();
+impl Default for Geometry {
+	fn default() -> Self {
+		Geometry {
+			origin: [0, 0].into(),
+			size: [0, 0].into(),
+		}
+	}
+}
+
 lazy_static! {
 	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
 		type_name: "panel",
