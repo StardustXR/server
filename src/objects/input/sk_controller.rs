@@ -23,9 +23,11 @@ use stereokit_rust::{
 };
 use zbus::Connection;
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Default, Debug, Deserialize, Serialize)]
 struct ControllerDatamap {
 	select: f32,
+	middle: f32,
+	context: f32,
 	grab: f32,
 	scroll: Vec2,
 }
@@ -97,9 +99,14 @@ impl SkController {
 			);
 			self.input.spatial.set_local_transform(world_transform);
 		}
-		self.datamap.select = controller.trigger;
-		self.datamap.grab = controller.grip;
-		self.datamap.scroll = controller.stick.into();
+
+		self.datamap = ControllerDatamap {
+			select: controller.trigger,
+			middle: controller.stick_click.is_active() as u32 as f32,
+			context: controller.is_x2_pressed() as u32 as f32,
+			grab: controller.grip,
+			scroll: controller.stick.into(),
+		};
 		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 
 		let distance_calculator = |space: &Arc<Spatial>, _data: &InputDataType, field: &Field| {

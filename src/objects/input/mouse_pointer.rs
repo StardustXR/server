@@ -22,7 +22,7 @@ use xkbcommon::xkb::{Context, Keymap, FORMAT_TEXT_V1};
 
 use super::{get_sorted_handlers, CaptureManager, DistanceCalculator};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct MouseEvent {
 	select: f32,
 	middle: f32,
@@ -117,36 +117,20 @@ impl MousePointer {
 		);
 		{
 			// Set pointer input datamap
-			self.mouse_datamap.select = if Input::key(Key::MouseLeft).is_active() {
-				1.0f32
-			} else {
-				0.0f32
+			self.mouse_datamap = MouseEvent {
+				select: Input::key(Key::MouseLeft).is_active() as u32 as f32,
+				middle: Input::key(Key::MouseCenter).is_active() as u32 as f32,
+				context: Input::key(Key::MouseRight).is_active() as u32 as f32,
+				grab: Input::key(Key::MouseBack).is_active() as u32 as f32,
+				scroll_continuous: [0.0, mouse.scroll_change / 120.0].into(),
+				scroll_discrete: [0.0, mouse.scroll_change / 120.0].into(),
+				raw_input_events: vec![],
 			};
-			self.mouse_datamap.middle = if Input::key(Key::MouseCenter).is_active() {
-				1.0f32
-			} else {
-				0.0f32
-			};
-			self.mouse_datamap.context = if Input::key(Key::MouseRight).is_active() {
-				1.0f32
-			} else {
-				0.0f32
-			};
-			self.mouse_datamap.grab = if Input::key(Key::MouseBack).is_active()
-				|| Input::key(Key::MouseForward).is_active()
-			{
-				1.0f32
-			} else {
-				0.0f32
-			};
-			self.mouse_datamap.scroll_continuous = [0.0, mouse.scroll_change / 120.0].into();
-			self.mouse_datamap.scroll_discrete = [0.0, mouse.scroll_change / 120.0].into();
 			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).unwrap();
 		}
 		self.target_pointer_input();
 		self.send_keyboard_input();
 	}
-
 	fn target_pointer_input(&mut self) {
 		let distance_calculator: DistanceCalculator = |space, data, field| {
 			let result = field.ray_march(Ray {
@@ -154,7 +138,8 @@ impl MousePointer {
 				direction: vec3(0.0, 0.0, -1.0),
 				space: space.clone(),
 			});
-			let valid = result.deepest_point_distance > 0.0 && result.min_distance < 0.05;
+			let valid =
+				result.deepest_point_distance > 0.0 && result.min_distance.is_sign_negative();
 			valid.then(|| result.deepest_point_distance)
 		};
 
