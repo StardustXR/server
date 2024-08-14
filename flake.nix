@@ -37,10 +37,12 @@
       perSystem = { config, self', inputs', pkgs, system, ... }: {
         _module.args.pkgs = import inputs.nixpkgs { inherit system; overlays = [ inputs.self.overlays.default ]; };
         overlayAttrs = config.packages;
-        packages = {
+        packages = let
+          meshoptimizer = pkgs.callPackage ./nix/meshoptimizer.nix {};
+        in {
           default = self'.packages.${name};
           gnome-graphical-test = self'.checks.gnome-graphical-test;
-          "${name}" = pkgs.callPackage ./nix/stardust-xr-server.nix { inherit name src; };
+          "${name}" = pkgs.callPackage ./nix/stardust-xr-server.nix { inherit name src meshoptimizer; };
         };
         apps.default = {
           type = "app";

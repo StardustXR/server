@@ -12,6 +12,7 @@
 , cpm-cmake
 , pkg-config
 , llvmPackages
+, meshoptimizer
 }:
 
 rustPlatform.buildRustPackage rec {
@@ -30,11 +31,10 @@ rustPlatform.buildRustPackage rec {
     cp ${cpm-cmake}/share/cpm/CPM.cmake $sk/build/cpm/CPM_0.38.7.cmake
   '';
   nativeBuildInputs = [
-    cmake cpm-cmake pkg-config llvmPackages.libcxxClang
+    cmake pkg-config llvmPackages.libcxxClang
   ];
   buildInputs = [
-    openxr-loader libGL mesa xorg.libX11 fontconfig libxkbcommon
+    openxr-loader libGL mesa xorg.libX11 fontconfig libxkbcommon meshoptimizer
   ];
   LIBCLANG_PATH = "${libclang.lib}/lib";
 }
-

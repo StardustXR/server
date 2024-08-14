@@ -1397,7 +1397,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -2488,12 +2488,12 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "stereokit-macros"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/StereoKit-rust.git#e6e3b15f173208d7a7564852b526d6323bac6f43"
+source = "git+https://github.com/technobaboo/StereoKit-rust.git#7dc90dc23537f7b71605612a8ce3a5e6f0a54eae"
 
 [[package]]
 name = "stereokit-rust"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/StereoKit-rust.git#e6e3b15f173208d7a7564852b526d6323bac6f43"
+source = "git+https://github.com/technobaboo/StereoKit-rust.git#7dc90dc23537f7b71605612a8ce3a5e6f0a54eae"
 dependencies = [
  "android_logger",
  "bitflags 2.6.0",
