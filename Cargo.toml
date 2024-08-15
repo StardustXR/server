@@ -109,6 +109,7 @@ optional = true
 # path = "../StereoKit-rust"
 # git = "https://github.com/mvvvv/StereoKit-rust.git"
 git = "https://github.com/technobaboo/StereoKit-rust.git"
+features = ["force-local-deps"]
 default-features = false
 
 [dependencies.stardust-xr]
