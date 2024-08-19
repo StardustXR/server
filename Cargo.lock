@@ -27,6 +27,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "android-activity"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef6978589202a00cd7e118380c448a08b6ed394c3a8df3a430d0898e3a42d046"
+dependencies = [
+ "android-properties",
+ "bitflags 2.6.0",
+ "cc",
+ "cesu8",
+ "jni",
+ "jni-sys",
+ "libc",
+ "log",
+ "ndk",
+ "ndk-context",
+ "ndk-sys",
+ "num_enum 0.7.2",
+ "thiserror",
+]
+
+[[package]]
+name = "android-properties"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fc7eb209b1518d6bb87b283c20095f5228ecda460da70b44f0802523dea6da04"
+
+[[package]]
 name = "android_log-sys"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -479,6 +506,10 @@ name = "cc"
 version = "1.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2aba8f4e9906c7ce3c73463f62a7f0c65183ada1a2d47e397cc8810827f9694f"
+dependencies = [
+ "jobserver",
+ "libc",
+]
 
 [[package]]
 name = "cesu8"
@@ -1360,6 +1391,15 @@ name = "jni-sys"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8eaf4bc02d17cbdd7ff4c7438cafcdf7fb9a4613313ad11b4f8fefe7d3fa0130"
+
+[[package]]
+name = "jobserver"
+version = "0.1.32"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48d1dbcbbeb6a7fec7e059840aa538bd62aaccf972c7346c4d9d2059312853d0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "kdl"
@@ -2488,13 +2528,14 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "stereokit-macros"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/StereoKit-rust.git#7dc90dc23537f7b71605612a8ce3a5e6f0a54eae"
+source = "git+https://github.com/mvvvv/StereoKit-rust.git#2bfa9a812422a2b5b98db9979b5a4cc28cea151e"
 
 [[package]]
 name = "stereokit-rust"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/StereoKit-rust.git#7dc90dc23537f7b71605612a8ce3a5e6f0a54eae"
+source = "git+https://github.com/mvvvv/StereoKit-rust.git#2bfa9a812422a2b5b98db9979b5a4cc28cea151e"
 dependencies = [
+ "android-activity",
  "android_logger",
  "bitflags 2.6.0",
  "cmake",
