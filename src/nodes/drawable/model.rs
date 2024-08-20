@@ -9,7 +9,7 @@ use color_eyre::eyre::{bail, eyre, Result};
 use glam::{Mat4, Vec2, Vec3};
 use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Mutex;
-use rustc_hash::{FxHashMap, FxHashSet};
+use rustc_hash::FxHashMap;
 use stardust_xr::values::ResourceID;
 use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
@@ -57,17 +57,25 @@ unsafe impl Send for MaterialWrapper {}
 unsafe impl Sync for MaterialWrapper {}
 
 #[derive(Default)]
-struct MaterialRegistry(Mutex<FxHashSet<Arc<MaterialWrapper>>>);
+struct MaterialRegistry(Mutex<FxHashMap<u64, String>>);
 impl MaterialRegistry {
 	fn add_or_get(&self, material: Arc<MaterialWrapper>) -> Arc<MaterialWrapper> {
 		let mut lock = self.0.lock();
+		let hash = {
+			use std::hash::{Hash, Hasher};
+			let mut hasher = std::collections::hash_map::DefaultHasher::new();
+			material.hash(&mut hasher);
+			hasher.finish()
+		};
 
-		if let Some(existing) = lock.get(&material) {
-			existing.clone()
-		} else {
-			lock.insert(material.clone());
-			material
+		if let Some(id) = lock.get(&hash) {
+			if let Ok(existing) = Material::find(id) {
+				return Arc::new(MaterialWrapper(existing));
+			}
 		}
+
+		lock.insert(hash, material.0.get_id().to_string());
+		material
 	}
 }
 
