@@ -14,6 +14,7 @@ impl Default for Joint {
 		}
 	}
 }
+#[allow(clippy::derivable_impls)]
 impl Default for Finger {
 	fn default() -> Self {
 		Finger {
@@ -25,6 +26,7 @@ impl Default for Finger {
 		}
 	}
 }
+#[allow(clippy::derivable_impls)]
 impl Default for Thumb {
 	fn default() -> Self {
 		Thumb {
@@ -35,6 +37,7 @@ impl Default for Thumb {
 		}
 	}
 }
+#[allow(clippy::derivable_impls)]
 impl Default for Hand {
 	fn default() -> Self {
 		Hand {

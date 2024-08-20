@@ -140,7 +140,7 @@ impl MousePointer {
 			});
 			let valid =
 				result.deepest_point_distance > 0.0 && result.min_distance.is_sign_negative();
-			valid.then(|| result.deepest_point_distance)
+			valid.then_some(result.deepest_point_distance)
 		};
 
 		self.capture_manager.update_capture(&self.pointer);

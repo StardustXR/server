@@ -35,20 +35,12 @@ impl WlSurfaceExt for WlSurface {
 	}
 	fn get_current_surface_state(&self) -> SurfaceCachedState {
 		compositor::with_states(self, |states| {
-			states
-				.cached_state
-				.get::<SurfaceCachedState>()
-				.current()
-				.clone()
+			*states.cached_state.get::<SurfaceCachedState>().current()
 		})
 	}
 	fn get_pending_surface_state(&self) -> SurfaceCachedState {
 		compositor::with_states(self, |states| {
-			states
-				.cached_state
-				.get::<SurfaceCachedState>()
-				.pending()
-				.clone()
+			*states.cached_state.get::<SurfaceCachedState>().pending()
 		})
 	}
 	fn get_size(&self) -> Option<Vector2<u32>> {

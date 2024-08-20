@@ -107,14 +107,10 @@ impl XdgShellHandler for WaylandState {
 				.wl_surface()
 				.max_size()
 				.map(|s| Vector2::from([s.x as f32, s.y as f32])),
-			logical_rectangle: toplevel
-				.wl_surface()
-				.get_geometry()
-				.map(|r| r.into())
-				.unwrap_or(Geometry {
-					origin: [0; 2].into(),
-					size: initial_size,
-				}),
+			logical_rectangle: toplevel.wl_surface().get_geometry().unwrap_or(Geometry {
+				origin: [0; 2].into(),
+				size: initial_size,
+			}),
 		};
 		toplevel
 			.wl_surface()
