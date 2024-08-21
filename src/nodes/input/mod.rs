@@ -1,3 +1,5 @@
+#![allow(clippy::needless_question_mark)]
+
 mod hand;
 mod handler;
 mod method;

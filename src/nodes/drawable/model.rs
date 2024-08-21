@@ -1,3 +1,4 @@
+use super::{MaterialParameter, ModelAspect, ModelPartAspect, MODEL_PART_ASPECT_ALIAS_INFO};
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
@@ -6,25 +7,79 @@ use crate::nodes::spatial::Spatial;
 use crate::nodes::{Aspect, Node};
 use color_eyre::eyre::{bail, eyre, Result};
 use glam::{Mat4, Vec2, Vec3};
-use once_cell::sync::OnceCell;
+use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-
 use stardust_xr::values::ResourceID;
+use std::ffi::OsStr;
+use std::hash::{Hash, Hasher};
+use std::sync::{Arc, Weak};
 use stereokit_rust::material::Transparency;
 use stereokit_rust::maths::Bounds;
 use stereokit_rust::sk::MainThreadToken;
 use stereokit_rust::{material::Material, model::Model as SKModel, tex::Tex, util::Color128};
 
-use std::ffi::OsStr;
-use std::sync::{Arc, Weak};
-
-use super::{MaterialParameter, ModelAspect, ModelPartAspect, MODEL_PART_ASPECT_ALIAS_INFO};
-
 pub struct MaterialWrapper(pub Material);
+impl Hash for MaterialWrapper {
+	fn hash<H: Hasher>(&self, state: &mut H) {
+		self.0.get_shader().0.as_ptr().hash(state);
+		for param in self.0.get_all_param_info() {
+			param.to_string().hash(state)
+		}
+		self.0.get_chain().map(MaterialWrapper).hash(state)
+	}
+}
+impl PartialEq for MaterialWrapper {
+	fn eq(&self, other: &Self) -> bool {
+		if self.0.get_shader().0.as_ptr() != other.0.get_shader().0.as_ptr() {
+			return false;
+		}
+		if self.0.get_all_param_info().count() != other.0.get_all_param_info().count() {
+			return false;
+		}
+		for self_param in self.0.get_all_param_info() {
+			let Some(other_param) = other
+				.0
+				.get_all_param_info()
+				.get_data(self_param.get_name(), self_param.get_type())
+			else {
+				return false;
+			};
+			if self_param.to_string() != other_param.to_string() {
+				return false;
+			}
+		}
+		self.0.get_chain().map(MaterialWrapper) == other.0.get_chain().map(MaterialWrapper)
+	}
+}
+impl Eq for MaterialWrapper {}
 unsafe impl Send for MaterialWrapper {}
 unsafe impl Sync for MaterialWrapper {}
 
+#[derive(Default)]
+struct MaterialRegistry(Mutex<FxHashMap<u64, String>>);
+impl MaterialRegistry {
+	fn add_or_get(&self, material: Arc<MaterialWrapper>) -> Arc<MaterialWrapper> {
+		let mut lock = self.0.lock();
+		let hash = {
+			use std::hash::{Hash, Hasher};
+			let mut hasher = std::collections::hash_map::DefaultHasher::new();
+			material.hash(&mut hasher);
+			hasher.finish()
+		};
+
+		if let Some(id) = lock.get(&hash) {
+			if let Ok(existing) = Material::find(id) {
+				return Arc::new(MaterialWrapper(existing));
+			}
+		}
+
+		lock.insert(hash, material.0.get_id().to_string());
+		material
+	}
+}
+
+static MATERIAL_REGISTRY: Lazy<MaterialRegistry> = Lazy::new(MaterialRegistry::default);
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
 static HOLDOUT_MATERIAL: OnceCell<Arc<MaterialWrapper>> = OnceCell::new();
 
@@ -156,9 +211,10 @@ impl ModelPart {
 	}
 
 	pub fn replace_material(&self, replacement: Arc<MaterialWrapper>) {
+		let shared_material = MATERIAL_REGISTRY.add_or_get(replacement);
 		self.pending_material_replacement
 			.lock()
-			.replace(replacement);
+			.replace(shared_material);
 	}
 	/// only to be run on the main thread
 	pub fn replace_material_now(&self, replacement: &Material) {
@@ -172,7 +228,9 @@ impl ModelPart {
 		let Some(mut part) = nodes.get_index(self.id) else {
 			return;
 		};
-		part.material(replacement);
+		let shared_material =
+			MATERIAL_REGISTRY.add_or_get(Arc::new(MaterialWrapper(replacement.copy())));
+		part.material(&shared_material.0);
 	}
 
 	fn update(&self) {
@@ -202,18 +260,20 @@ impl ModelPart {
 			part.material(&material_replacement.0);
 		}
 
-		// todo: find all materials with identical parameters and batch them into 1 material again
 		'mat_params: {
 			let mut material_parameters = self.pending_material_parameters.lock();
 			if !material_parameters.is_empty() {
 				let Some(material) = part.get_material() else {
 					break 'mat_params;
 				};
-				let new_material = Material::copy(&material);
-				part.material(&new_material);
+				let new_material = material.copy();
 				for (parameter_name, parameter_value) in material_parameters.drain() {
 					parameter_value.apply_to_material(&client, &new_material, &parameter_name);
 				}
+
+				let shared_material =
+					MATERIAL_REGISTRY.add_or_get(Arc::new(MaterialWrapper(new_material)));
+				part.material(&shared_material.0);
 			}
 		}
 	}
