@@ -21,16 +21,17 @@ default = ["wayland"]
 wayland = ["dep:smithay"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy"]
+local_deps = ["stereokit-rust/force-local-deps"]
 
 [package.metadata.appimage]
 auto_link = true
 auto_link_exclude_list = [
-    "libc*",
-    "libdl*",
-    "libpthread*",
-    "ld-linux*",
-    "libGL*",
-    "libEGL*",
+	"libc*",
+	"libdl*",
+	"libpthread*",
+	"ld-linux*",
+	"libGL*",
+	"libEGL*",
 ]
 
 [profile.dev.package."*"]
@@ -97,20 +98,19 @@ git = "https://github.com/smithay/smithay.git"
 # path = "../smithay"
 default-features = false
 features = [
-    "desktop",
-    "backend_drm",
-    "backend_egl",
-    "renderer_gl",
-    "wayland_frontend",
+	"desktop",
+	"backend_drm",
+	"backend_egl",
+	"renderer_gl",
+	"wayland_frontend",
 ]
 optional = true
 
 [dependencies.stereokit-rust]
 # path = "../StereoKit-rust"
 # git = "https://github.com/mvvvv/StereoKit-rust.git"
-# features = ["no-event-loop"]
 git = "https://github.com/technobaboo/StereoKit-rust.git"
-# features = ["force-local-deps"]
+features = ["no-event-loop"]
 default-features = false
 
 [dependencies.stardust-xr]

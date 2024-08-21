@@ -1,6 +1,26 @@
-{ rustPlatform, src, name, libGL, mesa, xorg, fontconfig, libxkbcommon, libclang
-, cmake, cpm-cmake, pkg-config, llvmPackages, fetchFromGitHub, sk_gpu, libXau
-, libXdmcp, stdenv, lib }:
+{ rustPlatform
+, src
+, name
+, libGL
+, mesa
+, xorg
+, fontconfig
+, libxkbcommon
+, libclang
+
+, cmake
+, cpm-cmake
+, pkg-config
+, llvmPackages
+, fetchFromGitHub
+, sk_gpu
+, libXau
+
+, libXdmcp
+, stdenv
+, lib
+, openxr-loader
+}:
 
 rustPlatform.buildRustPackage rec {
   inherit src name;
@@ -8,18 +28,13 @@ rustPlatform.buildRustPackage rec {
     lockFile = (src + "/Cargo.lock");
     allowBuiltinFetchGit = true;
   };
+  buildFeatures = [ "local_deps" ];
   FORCE_LOCAL_DEPS = true;
   CPM_LOCAL_PACKAGES_ONLY = true;
   CPM_SOURCE_CACHE = "./build";
   CPM_USE_LOCAL_PACKAGES = true;
   CPM_DOWNLOAD_ALL = false;
 
-  openxr_loader = fetchFromGitHub {
-    owner = "KhronosGroup";
-    repo = "OpenXR-SDK";
-    rev = "288d3a7ebc1ad959f62d51da75baa3d27438c499";
-    sha256 = "sha256-RdmnBe26hqPmqwCHIJolF6bSmZRmIKVlGF+TXAY35ig=";
-  };
   meshoptimizer = fetchFromGitHub {
     owner = "zeux";
     repo = "meshoptimizer";
@@ -33,9 +48,9 @@ rustPlatform.buildRustPackage rec {
     sha256 = "sha256-zBRAXgG5Fi6+5uPQCI/RCGatY6O4ELuYBoKrPNn4K+8=";
   };
 
-  DEP_OPENXR_LOADER_SOURCE = "${openxr_loader}";
   DEP_MESHOPTIMIZER_SOURCE = "${meshoptimizer}";
   DEP_BASIS_UNIVERSAL_SOURCE = "${basis_universal}";
+  DEP_SK_GPU_SOURCE = "${sk_gpu}";
 
   postPatch = let libPath = lib.makeLibraryPath [ stdenv.cc.cc.lib ];
   in ''
@@ -65,6 +80,7 @@ rustPlatform.buildRustPackage rec {
     libxkbcommon
     libXau
     libXdmcp
+    openxr-loader
   ];
   LIBCLANG_PATH = "${libclang.lib}/lib";
 }
