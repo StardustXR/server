@@ -119,7 +119,7 @@ async fn main() {
 		error!("Unable to get Stardust project directories, default skybox and startup script will not work.");
 	}
 
-	let dbus_connection = Connection::session().await.unwrap();
+	let dbus_connection = Connection::session().await.expect("Could not open dbus session");
 	dbus_connection
 		.request_name("org.stardustxr.HMD")
 		.await
