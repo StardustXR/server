@@ -13,9 +13,7 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 		Registry(const_mutex(None))
 	}
 	fn lock(&self) -> MappedMutexGuard<FxHashMap<usize, Weak<T>>> {
-		MutexGuard::map(self.0.lock(), |r| {
-			r.get_or_insert_with(FxHashMap::default)
-		})
+		MutexGuard::map(self.0.lock(), |r| r.get_or_insert_with(FxHashMap::default))
 	}
 	pub fn add(&self, t: T) -> Arc<T>
 	where
@@ -118,9 +116,7 @@ impl<T: Send + Sync + ?Sized> OwnedRegistry<T> {
 		OwnedRegistry(const_mutex(None))
 	}
 	fn lock(&self) -> MappedMutexGuard<FxHashMap<usize, Arc<T>>> {
-		MutexGuard::map(self.0.lock(), |r| {
-			r.get_or_insert_with(FxHashMap::default)
-		})
+		MutexGuard::map(self.0.lock(), |r| r.get_or_insert_with(FxHashMap::default))
 	}
 	pub fn add(&self, t: T) -> Arc<T>
 	where
