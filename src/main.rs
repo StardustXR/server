@@ -54,6 +54,10 @@ struct CliArgs {
 	#[clap(id = "PRIORITY", short = 'o', long = "overlay", action)]
 	overlay_priority: Option<u32>,
 
+	/// Debug the clients started by the server
+	#[clap(short = 'd', long = "debug", action)]
+	debug_launched_clients: bool,
+
 	/// Run a script when ready for clients to connect. If this is not set the script at $HOME/.config/stardust/startup will be ran if it exists.
 	#[clap(id = "PATH", short = 'e', long = "execute-startup-script", action)]
 	startup_script: Option<PathBuf>,

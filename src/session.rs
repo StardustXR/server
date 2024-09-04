@@ -37,17 +37,22 @@ pub async fn save_session(project_dirs: &ProjectDirs) {
 
 pub fn launch_start(cli_args: &CliArgs, project_dirs: &ProjectDirs) -> Vec<Child> {
 	match (&cli_args.restore, &cli_args.startup_script) {
-		(Some(session_id), _) => {
-			restore_session(&project_dirs.state_dir().unwrap().join(session_id))
-		}
-		(None, Some(startup_script)) => {
-			run_script(&startup_script.clone().canonicalize().unwrap_or_default())
-		}
-		(None, None) => run_script(&project_dirs.config_dir().join("startup")),
+		(Some(session_id), _) => restore_session(
+			&project_dirs.state_dir().unwrap().join(session_id),
+			cli_args.debug_launched_clients,
+		),
+		(None, Some(startup_script)) => run_script(
+			&startup_script.clone().canonicalize().unwrap_or_default(),
+			cli_args.debug_launched_clients,
+		),
+		(None, None) => run_script(
+			&project_dirs.config_dir().join("startup"),
+			cli_args.debug_launched_clients,
+		),
 	}
 }
 
-pub fn restore_session(session_dir: &Path) -> Vec<Child> {
+pub fn restore_session(session_dir: &Path, debug_launched_clients: bool) -> Vec<Child> {
 	let Ok(clients) = session_dir.read_dir() else {
 		return Vec::new();
 	};
@@ -55,22 +60,24 @@ pub fn restore_session(session_dir: &Path) -> Vec<Child> {
 		.filter_map(Result::ok)
 		.filter_map(|c| ClientStateParsed::from_file(&c.path()))
 		.filter_map(ClientStateParsed::launch_command)
-		.filter_map(run_client)
+		.filter_map(|c| run_client(c, debug_launched_clients))
 		.collect()
 }
 
-pub fn run_script(script_path: &Path) -> Vec<Child> {
+pub fn run_script(script_path: &Path, debug_launched_clients: bool) -> Vec<Child> {
 	let _ = std::fs::set_permissions(script_path, std::fs::Permissions::from_mode(0o755));
 	let startup_command = Command::new(script_path);
-	run_client(startup_command)
+	run_client(startup_command, debug_launched_clients)
 		.map(|c| vec![c])
 		.unwrap_or_default()
 }
 
-pub fn run_client(mut command: Command) -> Option<Child> {
+pub fn run_client(mut command: Command, debug_launched_clients: bool) -> Option<Child> {
 	command.stdin(Stdio::null());
-	command.stdout(Stdio::null());
-	command.stderr(Stdio::null());
+	if !debug_launched_clients {
+		command.stdout(Stdio::null());
+		command.stderr(Stdio::null());
+	}
 	for (var, value) in connection_env() {
 		command.env(var, value);
 	}
