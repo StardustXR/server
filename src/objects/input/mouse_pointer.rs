@@ -18,7 +18,7 @@ use slotmap::{DefaultKey, Key as SlotKey};
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
 use stereokit_rust::system::{Input, Key};
-use xkbcommon::xkb::{Context, Keymap, FORMAT_TEXT_V1};
+use xkbcommon_rs::{xkb_keymap::CompileFlags, Context, Keymap, KeymapFormat};
 
 use super::{get_sorted_handlers, CaptureManager, DistanceCalculator};
 
@@ -75,10 +75,12 @@ impl MousePointer {
 			Datamap::from_typed(MouseEvent::default())?,
 		)?;
 
+		let context = Context::new(0).unwrap();
 		let keymap = KEYMAPS.lock().insert(
-			Keymap::new_from_names(&Context::new(0), "evdev", "", "", "", None, 0)
+			Keymap::new_from_names(context, None, CompileFlags::NO_FLAGS)
 				.unwrap()
-				.get_as_string(FORMAT_TEXT_V1),
+				.get_as_string(KeymapFormat::TextV1)
+				.unwrap(),
 		);
 
 		let keyboard_sender = PulseSender::add_to(

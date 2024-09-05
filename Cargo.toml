@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [features]
 default = ["wayland"]
-wayland = ["dep:smithay"]
+wayland = ["dep:smithay", "dep:wayland-scanner", "dep:wayland-backend"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy"]
 local_deps = ["stereokit-rust/force-local-deps"]
@@ -36,16 +36,17 @@ auto_link_exclude_list = [
 
 [profile.dev.package."*"]
 opt-level = 3
+debug = true
+strip = "none"
+debug-assertions = true
+overflow-checks = true
 
 [profile.release]
 opt-level = 3
 debug = "line-tables-only"
-strip = "symbols"
+strip = "none"
 debug-assertions = true
 overflow-checks = false
-lto = true
-panic = 'unwind'
-
 
 [dependencies]
 # small utility thingys
@@ -85,11 +86,11 @@ nix = "0.29.0"
 input-event-codes = "6.2.0"
 zbus = { version = "4.4.0", default-features = false, features = ["tokio"] }
 directories = "5.0.1"
-xkbcommon = { version = "0.8.0", default-features = false }
+xkbcommon-rs = "0.1.0"
 
 # wayland
-wayland-scanner = "0.31.4"
-wayland-backend = "0.3.6"
+wayland-backend = { version = "0.3.7", optional = true, default-features = false }
+wayland-scanner = { version = "0.31.4", optional = true }
 
 [dependencies.smithay]
 # git = "https://github.com/technobaboo/smithay.git"
@@ -97,14 +98,9 @@ wayland-backend = "0.3.6"
 git = "https://github.com/smithay/smithay.git"
 # path = "../smithay"
 default-features = false
-features = [
-	"desktop",
-	"backend_drm",
-	"backend_egl",
-	"renderer_gl",
-	"wayland_frontend",
-]
+features = ["desktop", "backend_drm", "renderer_gl", "wayland_frontend"]
 optional = true
+
 
 [dependencies.stereokit-rust]
 # path = "../StereoKit-rust"
