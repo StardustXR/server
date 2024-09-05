@@ -40,16 +40,17 @@ auto_link_exclude_list = [
 [profile.dev.package."*"]
 opt-level = 3
 debug = true
-strip = "none"
+strip = false
 debug-assertions = true
 overflow-checks = true
 
 [profile.release]
 opt-level = 3
 debug = "line-tables-only"
-strip = "none"
+strip = true
 debug-assertions = true
 overflow-checks = false
+lto = "thin"
 
 [dependencies]
 # small utility thingys
