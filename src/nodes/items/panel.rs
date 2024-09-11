@@ -122,6 +122,7 @@ impl<B: Backend> PanelItem<B> {
 			&ITEM_TYPE_INFO_PANEL,
 			ItemType::Panel(generic_panel_item),
 		);
+		node.add_aspect_raw(panel_item.clone());
 
 		(node, panel_item)
 	}
