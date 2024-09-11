@@ -130,7 +130,7 @@ impl Drop for Item {
 }
 
 pub enum ItemType {
-	Camera(CameraItem),
+	Camera(Arc<CameraItem>),
 	Panel(Arc<dyn PanelItemTrait>),
 }
 impl ItemType {

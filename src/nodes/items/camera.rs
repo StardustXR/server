@@ -74,22 +74,19 @@ pub struct CameraItem {
 #[allow(unused)]
 impl CameraItem {
 	pub fn add_to(node: &Arc<Node>, proj_matrix: Mat4, px_size: Vector2<u32>) {
-		Item::add_to(
-			node,
-			&ITEM_TYPE_INFO_CAMERA,
-			ItemType::Camera(CameraItem {
-				space: node.get_aspect::<Spatial>().unwrap().clone(),
-				frame_info: Mutex::new(FrameInfo {
-					proj_matrix,
-					px_size,
-				}),
-				sk_tex: OnceCell::new(),
-				sk_mat: OnceCell::new(),
-				applied_to: Registry::new(),
-				apply_to: Registry::new(),
+		let item = Arc::new(CameraItem {
+			space: node.get_aspect::<Spatial>().unwrap().clone(),
+			frame_info: Mutex::new(FrameInfo {
+				proj_matrix,
+				px_size,
 			}),
-		);
-		node.add_aspect(CameraItemUi);
+			sk_tex: OnceCell::new(),
+			sk_mat: OnceCell::new(),
+			applied_to: Registry::new(),
+			apply_to: Registry::new(),
+		});
+		Item::add_to(node, &ITEM_TYPE_INFO_CAMERA, ItemType::Camera(item.clone()));
+		node.add_aspect_raw(item);
 	}
 
 	fn frame_flex(
@@ -170,6 +167,9 @@ impl CameraItem {
 			)
 		}
 	}
+}
+impl Aspect for CameraItem {
+	impl_aspect_for_camera_item_aspect! {}
 }
 impl CameraItemAspect for CameraItem {}
 
