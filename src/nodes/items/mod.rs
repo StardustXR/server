@@ -47,6 +47,8 @@ pub struct TypeInfo {
 	pub ui: Mutex<Weak<ItemUI>>,
 	pub items: Registry<Item>,
 	pub acceptors: Registry<ItemAcceptor>,
+	pub add_ui_aspect: fn(node: &Node),
+	pub add_acceptor_aspect: fn(node: &Node),
 	pub new_acceptor_fn: fn(node: &Node, acceptor: &Arc<Node>, acceptor_field: &Arc<Node>),
 }
 impl Hash for TypeInfo {
@@ -81,7 +83,6 @@ impl Item {
 		};
 		let item = type_info.items.add(item);
 
-		<Item as ItemAspect>::add_node_members(node);
 		if let Some(ui) = type_info.ui.lock().upgrade() {
 			ui.handle_create_item(&item);
 		}
@@ -109,7 +110,7 @@ impl Item {
 	}
 }
 impl Aspect for Item {
-	const NAME: &'static str = "Item";
+	impl_aspect_for_item_aspect! {}
 }
 impl ItemAspect for Item {
 	fn release(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
@@ -285,7 +286,7 @@ impl ItemUI {
 	}
 }
 impl Aspect for ItemUI {
-	const NAME: &'static str = "Item";
+	impl_aspect_for_item_ui_aspect! {}
 }
 impl Drop for ItemUI {
 	fn drop(&mut self) {
@@ -343,7 +344,7 @@ impl ItemAcceptor {
 	}
 }
 impl Aspect for ItemAcceptor {
-	const NAME: &'static str = "ItemAcceptor";
+	impl_aspect_for_item_acceptor_aspect! {}
 }
 impl ItemAcceptorAspect for ItemAcceptor {}
 impl Drop for ItemAcceptor {
@@ -364,6 +365,7 @@ pub fn register_item_ui_flex(
 ) -> Result<()> {
 	let ui = Node::from_id(&calling_client, type_info.ui_node_id, true).add_to_scenegraph()?;
 	ItemUI::add_to(&ui, type_info)?;
+	(type_info.add_ui_aspect)(&ui);
 	Ok(())
 }
 fn create_item_acceptor_flex(
@@ -381,6 +383,7 @@ fn create_item_acceptor_flex(
 	let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 	Spatial::add_to(&node, Some(space.clone()), transform, false);
 	ItemAcceptor::add_to(&node, type_info, field);
+	(type_info.add_acceptor_aspect)(&node);
 	Ok(())
 }
 
@@ -391,6 +394,3 @@ fn acceptor_capture_item_flex(node: Arc<Node>, item: Arc<Node>) -> Result<()> {
 
 	Ok(())
 }
-
-struct ItemInterface;
-// create_interface!(ItemInterface);

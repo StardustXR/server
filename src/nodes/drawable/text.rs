@@ -1,6 +1,6 @@
 use crate::{
 	core::{client::Client, destroy_queue, registry::Registry, resource::get_resource_file},
-	nodes::{spatial::Spatial, Aspect, Node},
+	nodes::{spatial::Spatial, Node},
 };
 use color_eyre::eyre::{eyre, Result};
 use glam::{vec3, Mat4, Vec2};
@@ -53,7 +53,6 @@ impl Text {
 			text: Mutex::new(text),
 			data: Mutex::new(style),
 		});
-		<Text as TextAspect>::add_node_members(node);
 		node.add_aspect_raw(text.clone());
 
 		Ok(text)
@@ -131,9 +130,6 @@ impl Text {
 			}
 		}
 	}
-}
-impl Aspect for Text {
-	const NAME: &'static str = "Text";
 }
 impl TextAspect for Text {
 	fn set_character_height(

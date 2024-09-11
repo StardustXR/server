@@ -12,7 +12,6 @@ use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
-use std::f32::INFINITY;
 use std::sync::Arc;
 use stereokit_rust::sk::{DisplayMode, MainThreadToken, Sk};
 use stereokit_rust::system::{HandJoint, HandSource, Handed, Input, LinePoint, Lines};

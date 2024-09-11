@@ -4,7 +4,7 @@ use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::Spatial;
-use crate::nodes::{Aspect, Node};
+use crate::nodes::Node;
 use color_eyre::eyre::{bail, eyre, Result};
 use glam::{Mat4, Vec2, Vec3};
 use once_cell::sync::{Lazy, OnceCell};
@@ -204,7 +204,6 @@ impl ModelPart {
 			pending_material_replacement: Mutex::new(None),
 			aliases: AliasList::default(),
 		});
-		<ModelPart as ModelPartAspect>::add_node_members(&node);
 		node.add_aspect_raw(model_part.clone());
 		parts.push(model_part.clone());
 		Some(model_part)
@@ -278,9 +277,6 @@ impl ModelPart {
 		}
 	}
 }
-impl Aspect for ModelPart {
-	const NAME: &'static str = "ModelPart";
-}
 impl ModelPartAspect for ModelPart {
 	#[doc = "Set this model part's material to one that cuts a hole in the world. Often used for overlays/passthrough where you want to show the background through an object."]
 	fn apply_holdout_material(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
@@ -327,7 +323,6 @@ impl Model {
 			sk_model: OnceCell::new(),
 			parts: Mutex::new(Vec::default()),
 		});
-		<Model as ModelAspect>::add_node_members(node);
 		MODEL_REGISTRY.add_raw(&model);
 
 		// technically doing this in anything but the main thread isn't a good idea but dangit we need those model nodes ASAP
@@ -361,9 +356,6 @@ impl Model {
 // TODO: proper hread safety in stereokit_rust (probably just bind stereokit directly)
 unsafe impl Send for Model {}
 unsafe impl Sync for Model {}
-impl Aspect for Model {
-	const NAME: &'static str = "Model";
-}
 impl ModelAspect for Model {
 	#[doc = "Bind a model part to the node with the ID input."]
 	fn bind_model_part(
