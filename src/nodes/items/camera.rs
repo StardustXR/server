@@ -1,11 +1,9 @@
-use super::{
-	create_item_acceptor_flex, register_item_ui_flex, Item, ItemAcceptor, ItemInterface, ItemType,
-};
+use super::{create_item_acceptor_flex, register_item_ui_flex, Item, ItemType};
 use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
 use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
+use crate::nodes::Aspect;
 use crate::{
 	core::{client::Client, registry::Registry, scenegraph::MethodResponseSender},
-	create_interface,
 	nodes::{
 		drawable::{
 			model::{MaterialWrapper, ModelPart},
@@ -48,6 +46,12 @@ lazy_static! {
 		ui: Default::default(),
 		items: Registry::new(),
 		acceptors: Registry::new(),
+		add_acceptor_aspect: |node| {
+			node.add_aspect(CameraItemAcceptor);
+		},
+		add_ui_aspect: |node| {
+			node.add_aspect(CameraItemUi);
+		},
 		new_acceptor_fn: |node, acceptor, acceptor_field| {
 			let _ = camera_item_ui_client::create_acceptor(node, acceptor, acceptor_field);
 		}
@@ -85,7 +89,7 @@ impl CameraItem {
 				apply_to: Registry::new(),
 			}),
 		);
-		// <CameraItem as CameraItemAspect>::node_methods(node);
+		node.add_aspect(CameraItemUi);
 	}
 
 	fn frame_flex(
@@ -169,7 +173,17 @@ impl CameraItem {
 }
 impl CameraItemAspect for CameraItem {}
 
-impl CameraItemAcceptorAspect for ItemAcceptor {
+pub struct CameraItemUi;
+impl Aspect for CameraItemUi {
+	impl_aspect_for_camera_item_ui_aspect! {}
+}
+impl CameraItemUiAspect for CameraItemUi {}
+
+pub struct CameraItemAcceptor;
+impl Aspect for CameraItemAcceptor {
+	impl_aspect_for_camera_item_acceptor_aspect! {}
+}
+impl CameraItemAcceptorAspect for CameraItemAcceptor {
 	fn capture_item(node: Arc<Node>, _calling_client: Arc<Client>, item: Arc<Node>) -> Result<()> {
 		super::acceptor_capture_item_flex(node, item)
 	}
@@ -184,8 +198,7 @@ pub fn update(token: &MainThreadToken) {
 	}
 }
 
-create_interface!(ItemInterface);
-impl InterfaceAspect for ItemInterface {
+impl InterfaceAspect for Interface {
 	#[doc = "Create a camera item at a specific location"]
 	fn create_camera_item(
 		_node: Arc<Node>,
@@ -206,19 +219,21 @@ impl InterfaceAspect for ItemInterface {
 	}
 
 	#[doc = "Register this client to manage camera items and create default 3D UI for them."]
-	fn register_camera_item_ui(_node: Arc<Node>, calling_client: Arc<Client>) -> Result<()> {
+	fn register_camera_item_ui(node: Arc<Node>, calling_client: Arc<Client>) -> Result<()> {
+		node.add_aspect(CameraItemUi);
 		register_item_ui_flex(calling_client, &ITEM_TYPE_INFO_CAMERA)
 	}
 
 	#[doc = "Create an item acceptor to allow temporary ownership of a given type of item. Creates a node at `/item/camera/acceptor/<name>`."]
 	fn create_camera_item_acceptor(
-		_node: Arc<Node>,
+		node: Arc<Node>,
 		calling_client: Arc<Client>,
 		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,
 	) -> Result<()> {
+		node.add_aspect(CameraItemAcceptor);
 		create_item_acceptor_flex(
 			calling_client,
 			id,

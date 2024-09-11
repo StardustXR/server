@@ -1,5 +1,5 @@
 use super::spatial::Spatial;
-use super::Node;
+use super::{Aspect, Node};
 use crate::core::client::Client;
 use crate::core::client_state::ClientStateParsed;
 use crate::core::registry::Registry;
@@ -23,14 +23,14 @@ pub struct Root {
 impl Root {
 	pub fn create(client: &Arc<Client>, transform: Mat4) -> Result<Arc<Self>> {
 		let node = Node::from_id(client, 0, false);
-		<Self as RootAspect>::add_node_members(&node);
 		let node = node.add_to_scenegraph()?;
 		let _ = Spatial::add_to(&node, None, transform, false);
-
-		Ok(ROOT_REGISTRY.add(Root {
-			node,
+		let root_aspect = node.add_aspect(Root {
+			node: node.clone(),
 			connect_instant: Instant::now(),
-		}))
+		});
+		ROOT_REGISTRY.add_raw(&root_aspect);
+		Ok(root_aspect)
 	}
 
 	pub fn send_frame_events(delta: f64) {
@@ -53,6 +53,9 @@ impl Root {
 	pub async fn save_state(&self) -> Result<ClientState> {
 		Ok(root_client::save_state(&self.node).await?.0)
 	}
+}
+impl Aspect for Root {
+	impl_aspect_for_root_aspect! {}
 }
 impl RootAspect for Root {
 	async fn get_state(_node: Arc<Node>, calling_client: Arc<Client>) -> Result<ClientState> {

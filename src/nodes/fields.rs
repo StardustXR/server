@@ -5,7 +5,6 @@ use super::spatial::{
 };
 use super::{Aspect, Node};
 use crate::core::client::Client;
-use crate::create_interface;
 use crate::nodes::spatial::Transform;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
@@ -145,15 +144,59 @@ impl Field {
 			shape: Mutex::new(shape),
 		};
 		let field = node.add_aspect(field);
-		<Field as FieldRefAspect>::add_node_members(node);
-		<Field as FieldAspect>::add_node_members(node);
+		node.add_aspect(FieldRef);
 		Ok(field)
 	}
 }
 impl Aspect for Field {
-	const NAME: &'static str = "Field";
+	impl_aspect_for_field_aspect! {}
 }
-impl FieldRefAspect for Field {
+impl FieldAspect for Field {
+	fn set_shape(node: Arc<Node>, _calling_client: Arc<Client>, shape: Shape) -> Result<()> {
+		let field = node.get_aspect::<Field>()?;
+		*field.shape.lock() = shape;
+		Ok(())
+	}
+
+	async fn export_field(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<u64> {
+		let id = rand::random();
+		EXPORTED_FIELDS.lock().insert(id, node);
+		Ok(id)
+	}
+}
+impl FieldTrait for Field {
+	fn spatial_ref(&self) -> &Spatial {
+		&self.spatial
+	}
+	fn local_distance(&self, p: Vec3A) -> f32 {
+		match self.shape.lock().clone() {
+			Shape::Box(size) => {
+				let q = vec3(
+					p.x.abs() - (size.x * 0.5_f32),
+					p.y.abs() - (size.y * 0.5_f32),
+					p.z.abs() - (size.z * 0.5_f32),
+				);
+				let v = vec3a(q.x.max(0_f32), q.y.max(0_f32), q.z.max(0_f32));
+				v.length() + q.x.max(q.y.max(q.z)).min(0_f32)
+			}
+			Shape::Cylinder(CylinderShape { length, radius }) => {
+				let d = vec2(p.xy().length().abs() - radius, p.z.abs() - (length * 0.5));
+				d.x.max(d.y).min(0.0) + d.max(vec2(0.0, 0.0)).length()
+			}
+			Shape::Sphere(radius) => p.length() - radius,
+			Shape::Torus(TorusShape { radius_a, radius_b }) => {
+				let q = vec2(p.xz().length() - radius_a, p.y);
+				q.length() - radius_b
+			}
+		}
+	}
+}
+
+pub struct FieldRef;
+impl Aspect for FieldRef {
+	impl_aspect_for_field_ref_aspect! {}
+}
+impl FieldRefAspect for FieldRef {
 	async fn distance(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
@@ -205,50 +248,8 @@ impl FieldRefAspect for Field {
 		}))
 	}
 }
-impl FieldAspect for Field {
-	fn set_shape(node: Arc<Node>, _calling_client: Arc<Client>, shape: Shape) -> Result<()> {
-		let field = node.get_aspect::<Field>()?;
-		*field.shape.lock() = shape;
-		Ok(())
-	}
 
-	async fn export_field(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<u64> {
-		let id = rand::random();
-		EXPORTED_FIELDS.lock().insert(id, node);
-		Ok(id)
-	}
-}
-impl FieldTrait for Field {
-	fn spatial_ref(&self) -> &Spatial {
-		&self.spatial
-	}
-	fn local_distance(&self, p: Vec3A) -> f32 {
-		match self.shape.lock().clone() {
-			Shape::Box(size) => {
-				let q = vec3(
-					p.x.abs() - (size.x * 0.5_f32),
-					p.y.abs() - (size.y * 0.5_f32),
-					p.z.abs() - (size.z * 0.5_f32),
-				);
-				let v = vec3a(q.x.max(0_f32), q.y.max(0_f32), q.z.max(0_f32));
-				v.length() + q.x.max(q.y.max(q.z)).min(0_f32)
-			}
-			Shape::Cylinder(CylinderShape { length, radius }) => {
-				let d = vec2(p.xy().length().abs() - radius, p.z.abs() - (length * 0.5));
-				d.x.max(d.y).min(0.0) + d.max(vec2(0.0, 0.0)).length()
-			}
-			Shape::Sphere(radius) => p.length() - radius,
-			Shape::Torus(TorusShape { radius_a, radius_b }) => {
-				let q = vec2(p.xz().length() - radius_a, p.y);
-				q.length() - radius_b
-			}
-		}
-	}
-}
-
-create_interface!(FieldInterface);
-pub struct FieldInterface;
-impl InterfaceAspect for FieldInterface {
+impl InterfaceAspect for Interface {
 	async fn import_field_ref(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,

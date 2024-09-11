@@ -9,7 +9,7 @@ use crate::{
 		alias::{Alias, AliasList},
 		fields::{Field, FIELD_ALIAS_INFO},
 		spatial::Spatial,
-		Aspect, Node,
+		Node,
 	},
 };
 use color_eyre::eyre::Result;
@@ -45,13 +45,12 @@ impl InputMethod {
 			internal_capture_requests: Registry::new(),
 			captures: Registry::new(),
 		};
-		<InputMethod as InputMethodRefAspect>::add_node_members(node);
-		<InputMethod as InputMethodAspect>::add_node_members(node);
 		for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
 			method.handle_new_handler(&handler);
 		}
 		let method = INPUT_METHOD_REGISTRY.add(method);
 		node.add_aspect_raw(method.clone());
+		node.add_aspect(InputMethodRef);
 		Ok(method)
 	}
 
@@ -154,25 +153,6 @@ impl InputMethod {
 		}
 	}
 }
-impl Aspect for InputMethod {
-	const NAME: &'static str = "InputMethod";
-}
-impl InputMethodRefAspect for InputMethod {
-	#[doc = "Have the input handler that this method reference came from capture the method for the next frame."]
-	fn request_capture(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		handler: Arc<Node>,
-	) -> Result<()> {
-		let input_method = node.get_aspect::<InputMethod>()?;
-		let input_handler = handler.get_aspect::<InputHandler>()?;
-
-		input_method
-			.internal_capture_requests
-			.add_raw(&input_handler);
-		Ok(())
-	}
-}
 impl InputMethodAspect for InputMethod {
 	#[doc = "Set the spatial input component of this input method. You must keep the same input data type throughout the entire thing."]
 	fn set_input(
@@ -229,5 +209,23 @@ impl InputMethodAspect for InputMethod {
 impl Drop for InputMethod {
 	fn drop(&mut self) {
 		INPUT_METHOD_REGISTRY.remove(self);
+	}
+}
+
+pub struct InputMethodRef;
+impl InputMethodRefAspect for InputMethodRef {
+	#[doc = "Have the input handler that this method reference came from capture the method for the next frame."]
+	fn request_capture(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		handler: Arc<Node>,
+	) -> Result<()> {
+		let input_method = node.get_aspect::<InputMethod>()?;
+		let input_handler = handler.get_aspect::<InputHandler>()?;
+
+		input_method
+			.internal_capture_requests
+			.add_raw(&input_handler);
+		Ok(())
 	}
 }

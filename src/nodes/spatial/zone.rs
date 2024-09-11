@@ -7,7 +7,7 @@ use crate::{
 	nodes::{
 		alias::{get_original, Alias, AliasList},
 		fields::{Field, FieldTrait},
-		Aspect, Node,
+		Node,
 	},
 };
 use color_eyre::eyre::Result;
@@ -73,7 +73,6 @@ impl Zone {
 			intersecting: AliasList::default(),
 			captured: AliasList::default(),
 		});
-		<Zone as ZoneAspect>::add_node_members(node);
 		node.add_aspect_raw(zone.clone());
 		zone
 	}
@@ -123,9 +122,6 @@ impl Zone {
 
 		Ok(())
 	}
-}
-impl Aspect for Zone {
-	const NAME: &'static str = "Zone";
 }
 impl ZoneAspect for Zone {
 	fn update(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {

@@ -11,7 +11,7 @@ pub use method::*;
 
 use super::fields::Field;
 use super::spatial::Spatial;
-use crate::create_interface;
+use super::Aspect;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::{core::client::Client, nodes::Node};
@@ -24,6 +24,16 @@ static INPUT_METHOD_REGISTRY: Registry<InputMethod> = Registry::new();
 pub static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
 
 stardust_xr_server_codegen::codegen_input_protocol!();
+
+impl Aspect for InputHandler {
+	impl_aspect_for_input_handler_aspect! {}
+}
+impl Aspect for InputMethod {
+	impl_aspect_for_input_method_aspect! {}
+}
+impl Aspect for InputMethodRef {
+	impl_aspect_for_input_method_ref_aspect! {}
+}
 
 pub trait InputDataTrait {
 	fn transform(&mut self, method: &InputMethod, handler: &InputHandler);
@@ -47,9 +57,7 @@ impl InputDataTrait for InputDataType {
 	}
 }
 
-create_interface!(InputInterface);
-pub struct InputInterface;
-impl InterfaceAspect for InputInterface {
+impl InterfaceAspect for Interface {
 	#[doc = "Create an input method node"]
 	fn create_input_method(
 		_node: Arc<Node>,
