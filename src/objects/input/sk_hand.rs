@@ -210,6 +210,17 @@ impl SkHand {
 				joint_to_line_point(&hand.ring.metacarpal, color),
 			],
 		);
+		// little
+		Lines::add_list(
+			token,
+			&[
+				joint_to_line_point(&hand.little.tip, color),
+				joint_to_line_point(&hand.little.distal, color),
+				joint_to_line_point(&hand.little.intermediate, color),
+				joint_to_line_point(&hand.little.proximal, color),
+				joint_to_line_point(&hand.little.metacarpal, color),
+			],
+		);
 
 		// palm
 		Lines::add_list(
