@@ -8,14 +8,12 @@ pub mod text;
 use self::{lines::Lines, model::Model, text::Text};
 use super::{
 	spatial::{Spatial, Transform},
-	Node,
+	Aspect, Node,
 };
+use crate::core::{client::Client, resource::get_resource_file};
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
-use crate::{
-	core::{client::Client, resource::get_resource_file},
-	create_interface,
-};
 use color_eyre::eyre::{self, Result};
+use model::ModelPart;
 use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
@@ -43,10 +41,20 @@ static QUEUED_SKYLIGHT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static QUEUED_SKYTEX: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 stardust_xr_server_codegen::codegen_drawable_protocol!();
-create_interface!(DrawableInterface);
+impl Aspect for Lines {
+	impl_aspect_for_lines_aspect! {}
+}
+impl Aspect for Model {
+	impl_aspect_for_model_aspect! {}
+}
+impl Aspect for ModelPart {
+	impl_aspect_for_model_part_aspect! {}
+}
+impl Aspect for Text {
+	impl_aspect_for_text_aspect! {}
+}
 
-pub struct DrawableInterface;
-impl InterfaceAspect for DrawableInterface {
+impl InterfaceAspect for Interface {
 	fn set_sky_tex(_node: Arc<Node>, calling_client: Arc<Client>, tex: ResourceID) -> Result<()> {
 		let resource_path = get_resource_file(&tex, &calling_client, &[OsStr::new("hdr")])
 			.ok_or(eyre::eyre!("Could not find resource"))?;

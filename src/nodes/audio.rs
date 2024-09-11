@@ -3,9 +3,7 @@ use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
-use crate::create_interface;
-use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
-use crate::nodes::spatial::{Spatial, Transform};
+use crate::nodes::spatial::{Spatial, Transform, SPATIAL_ASPECT_ALIAS_INFO};
 use color_eyre::eyre::{eyre, Result};
 use glam::{vec3, Vec4Swizzles};
 use once_cell::sync::OnceCell;
@@ -49,7 +47,6 @@ impl Sound {
 		};
 		let sound_arc = SOUND_REGISTRY.add(sound);
 		node.add_aspect_raw(sound_arc.clone());
-		<Sound as SoundAspect>::add_node_members(node);
 		Ok(sound_arc)
 	}
 
@@ -72,7 +69,7 @@ impl Sound {
 	}
 }
 impl Aspect for Sound {
-	const NAME: &'static str = "Sound";
+	impl_aspect_for_sound_aspect! {}
 }
 impl SoundAspect for Sound {
 	fn play(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
@@ -101,9 +98,7 @@ pub fn update() {
 	}
 }
 
-create_interface!(AudioInterface);
-struct AudioInterface;
-impl InterfaceAspect for AudioInterface {
+impl InterfaceAspect for Interface {
 	#[doc = "Create a sound node. WAV and MP3 are supported."]
 	fn create_sound(
 		_node: Arc<Node>,

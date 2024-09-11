@@ -1,7 +1,7 @@
 use super::{Line, LinesAspect};
 use crate::{
 	core::{client::Client, registry::Registry},
-	nodes::{spatial::Spatial, Aspect, Node},
+	nodes::{spatial::Spatial, Node},
 };
 use color_eyre::eyre::Result;
 use glam::Vec3;
@@ -40,7 +40,6 @@ impl Lines {
 			space: node.get_aspect::<Spatial>()?.clone(),
 			data: Mutex::new(lines),
 		});
-		<Lines as LinesAspect>::add_node_members(node);
 		node.add_aspect_raw(lines.clone());
 
 		Ok(lines)
@@ -82,9 +81,6 @@ impl Lines {
 			stereokit_rust::system::Lines::add_list(token, points.make_contiguous());
 		}
 	}
-}
-impl Aspect for Lines {
-	const NAME: &'static str = "Lines";
 }
 impl LinesAspect for Lines {
 	fn set_lines(node: Arc<Node>, _calling_client: Arc<Client>, lines: Vec<Line>) -> Result<()> {

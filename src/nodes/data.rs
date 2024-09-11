@@ -4,7 +4,6 @@ use super::spatial::{parse_transform, Spatial};
 use super::{Alias, Aspect, Node};
 use crate::core::client::Client;
 use crate::core::registry::Registry;
-use crate::create_interface;
 use crate::nodes::fields::FIELD_ALIAS_INFO;
 use crate::nodes::spatial::Transform;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
@@ -71,7 +70,6 @@ impl PulseSender {
 			field_aliases: AliasList::default(),
 		};
 
-		// <PulseSender as PulseSenderAspect>::add_node_members(node);
 		let sender = PULSE_SENDER_REGISTRY.add(sender);
 		node.add_aspect_raw(sender.clone());
 		for receiver in PULSE_RECEIVER_REGISTRY.get_valid_contents() {
@@ -134,7 +132,7 @@ impl PulseSender {
 	}
 }
 impl Aspect for PulseSender {
-	const NAME: &'static str = "PulseSender";
+	impl_aspect_for_pulse_sender_aspect! {}
 }
 impl PulseSenderAspect for PulseSender {}
 impl Drop for PulseSender {
@@ -161,7 +159,6 @@ impl PulseReceiver {
 		};
 		let receiver = PULSE_RECEIVER_REGISTRY.add(receiver);
 
-		<PulseReceiver as PulseReceiverAspect>::add_node_members(node);
 		node.add_aspect_raw(receiver.clone());
 		for sender in PULSE_SENDER_REGISTRY.get_valid_contents() {
 			sender.handle_new_receiver(&receiver);
@@ -170,7 +167,7 @@ impl PulseReceiver {
 	}
 }
 impl Aspect for PulseReceiver {
-	const NAME: &'static str = "PulseReceiver";
+	impl_aspect_for_pulse_receiver_aspect! {}
 }
 impl PulseReceiverAspect for PulseReceiver {
 	fn send_data(
@@ -199,9 +196,7 @@ impl Drop for PulseReceiver {
 	}
 }
 
-create_interface!(DataInterface);
-struct DataInterface;
-impl InterfaceAspect for DataInterface {
+impl InterfaceAspect for Interface {
 	fn create_pulse_sender(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,

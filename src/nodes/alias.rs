@@ -69,7 +69,33 @@ impl Alias {
 	}
 }
 impl Aspect for Alias {
-	const NAME: &'static str = "Alias";
+	fn name(&self) -> String {
+		"Alias".to_string()
+	}
+	fn id(&self) -> u64 {
+		0
+	}
+	fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync + 'static> {
+		self
+	}
+	fn run_signal(
+		&self,
+		_calling_client: Arc<Client>,
+		_node: Arc<Node>,
+		_signal: u64,
+		_message: super::Message,
+	) -> Result<(), stardust_xr::scenegraph::ScenegraphError> {
+		Ok(())
+	}
+	fn run_method(
+		&self,
+		_calling_client: Arc<Client>,
+		_node: Arc<Node>,
+		_method: u64,
+		_message: super::Message,
+		_response: crate::core::scenegraph::MethodResponseSender,
+	) {
+	}
 }
 
 pub fn get_original(node: Arc<Node>, stop_on_disabled: bool) -> Option<Arc<Node>> {

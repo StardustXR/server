@@ -1,5 +1,5 @@
 use super::{InputHandlerAspect, INPUT_HANDLER_REGISTRY, INPUT_METHOD_REGISTRY};
-use crate::nodes::{alias::AliasList, fields::Field, spatial::Spatial, Aspect, Node};
+use crate::nodes::{alias::AliasList, fields::Field, spatial::Spatial, Node};
 use color_eyre::eyre::Result;
 use std::sync::Arc;
 
@@ -22,9 +22,6 @@ impl InputHandler {
 		node.add_aspect_raw(handler);
 		Ok(())
 	}
-}
-impl Aspect for InputHandler {
-	const NAME: &'static str = "InputHandler";
 }
 impl InputHandlerAspect for InputHandler {}
 impl PartialEq for InputHandler {

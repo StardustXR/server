@@ -93,7 +93,6 @@ impl Drop for UnownedFd {
 
 pub struct Wayland {
 	display: Arc<DisplayWrapper>,
-	pub socket_name: Option<String>,
 	join_handle: JoinHandle<Result<()>>,
 	renderer: GlesRenderer,
 	output: Output,
@@ -133,7 +132,6 @@ impl Wayland {
 
 		Ok(Wayland {
 			display,
-			socket_name,
 			join_handle,
 			renderer,
 			output,

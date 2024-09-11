@@ -21,7 +21,7 @@ use spatial::Spatial;
 use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::{deserialize, serialize};
-use std::any::{Any, TypeId};
+use std::any::Any;
 use std::fmt::Debug;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
@@ -46,10 +46,25 @@ impl AsRef<[u8]> for Message {
 	}
 }
 
-pub type Signal = fn(Arc<Node>, Arc<Client>, Message) -> Result<()>;
-pub type Method = fn(Arc<Node>, Arc<Client>, Message, MethodResponseSender);
-
 stardust_xr_server_codegen::codegen_node_protocol!();
+
+pub struct Owned;
+impl Aspect for Owned {
+	impl_aspect_for_owned_aspect! {}
+}
+impl OwnedAspect for Owned {
+	fn set_enabled(node: Arc<Node>, _calling_client: Arc<Client>, enabled: bool) -> Result<()> {
+		node.set_enabled(enabled);
+		Ok(())
+	}
+
+	fn destroy(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
+		if node.destroyable {
+			node.destroy();
+		}
+		Ok(())
+	}
+}
 
 pub struct OwnedNode(pub Arc<Node>);
 impl Drop for OwnedNode {
@@ -64,8 +79,6 @@ pub struct Node {
 	client: Weak<Client>,
 	message_sender_handle: Option<MessageSenderHandle>,
 
-	local_signals: Mutex<FxHashMap<u64, Signal>>,
-	local_methods: Mutex<FxHashMap<u64, Method>>,
 	aliases: Registry<Alias>,
 	aspects: Aspects,
 	destroyable: bool,
@@ -87,13 +100,11 @@ impl Node {
 			client: Arc::downgrade(client),
 			message_sender_handle: client.message_sender_handle.clone(),
 			id,
-			local_signals: Default::default(),
-			local_methods: Default::default(),
 			aliases: Default::default(),
 			aspects: Default::default(),
 			destroyable,
 		};
-		<Node as OwnedAspect>::add_node_members(&node);
+		node.aspects.add(Owned);
 		node
 	}
 	pub fn add_to_scenegraph(self) -> Result<Arc<Node>> {
@@ -146,13 +157,6 @@ impl Node {
 	// 	Ok(serialize(pid)?.into())
 	// }
 
-	pub fn add_local_signal(&self, id: u64, signal: Signal) {
-		self.local_signals.lock().insert(id, signal);
-	}
-	pub fn add_local_method(&self, id: u64, method: Method) {
-		self.local_methods.lock().insert(id, method);
-	}
-
 	pub fn add_aspect<A: Aspect>(&self, aspect: A) -> Arc<A> {
 		self.aspects.add(aspect)
 	}
@@ -166,6 +170,7 @@ impl Node {
 	pub fn send_local_signal(
 		self: Arc<Self>,
 		calling_client: Arc<Client>,
+		aspect_id: u64,
 		method: u64,
 		message: Message,
 	) -> Result<(), ScenegraphError> {
@@ -177,22 +182,26 @@ impl Node {
 				.original
 				.upgrade()
 				.ok_or(ScenegraphError::BrokenAlias)?
-				.send_local_signal(calling_client, method, message)
+				.send_local_signal(calling_client, aspect_id, method, message)
 		} else {
-			let signal = self
-				.local_signals
+			let aspect = self
+				.aspects
+				.0
 				.lock()
-				.get(&method)
-				.cloned()
-				.ok_or(ScenegraphError::SignalNotFound)?;
-			signal(self, calling_client, message).map_err(|error| ScenegraphError::SignalError {
-				error: error.to_string(),
-			})
+				.get(&aspect_id)
+				.ok_or(ScenegraphError::AspectNotFound)?
+				.clone();
+			aspect
+				.run_signal(calling_client, self.clone(), method, message)
+				.map_err(|error| ScenegraphError::SignalError {
+					error: error.to_string(),
+				})
 		}
 	}
 	pub fn execute_local_method(
 		self: Arc<Self>,
 		calling_client: Arc<Client>,
+		aspect_id: u64,
 		method: u64,
 		message: Message,
 		response: MethodResponseSender,
@@ -208,6 +217,7 @@ impl Node {
 			};
 			alias.execute_local_method(
 				calling_client,
+				aspect_id,
 				method,
 				Message {
 					data: message.data.clone(),
@@ -216,14 +226,19 @@ impl Node {
 				response,
 			)
 		} else {
-			let Some(method) = self.local_methods.lock().get(&method).cloned() else {
-				response.send(Err(ScenegraphError::MethodNotFound));
+			let Some(aspect) = self.aspects.0.lock().get(&aspect_id).cloned() else {
+				response.send(Err(ScenegraphError::AspectNotFound));
 				return;
 			};
-			method(self, calling_client, message, response);
+			aspect.run_method(calling_client, self.clone(), method, message, response);
 		}
 	}
-	pub fn send_remote_signal(&self, method: u64, message: impl Into<Message>) -> Result<()> {
+	pub fn send_remote_signal(
+		&self,
+		aspect_id: u64,
+		method: u64,
+		message: impl Into<Message>,
+	) -> Result<()> {
 		let message = message.into();
 		self.aliases
 			.get_valid_contents()
@@ -233,6 +248,7 @@ impl Node {
 			.for_each(|node| {
 				// Beware! file descriptors will not be sent to aliases!!!
 				let _ = node.send_remote_signal(
+					aspect_id,
 					method,
 					Message {
 						data: message.data.clone(),
@@ -241,12 +257,13 @@ impl Node {
 				);
 			});
 		if let Some(handle) = self.message_sender_handle.as_ref() {
-			handle.signal(self.id, method, &message.data, message.fds)?;
+			handle.signal(self.id, aspect_id, method, &message.data, message.fds)?;
 		}
 		Ok(())
 	}
 	pub async fn execute_remote_method_typed<S: Serialize, D: DeserializeOwned>(
 		&self,
+		aspect_id: u64,
 		method: u64,
 		input: S,
 		fds: Vec<OwnedFd>,
@@ -258,7 +275,7 @@ impl Node {
 
 		let serialized = serialize(input)?;
 		let result = message_sender_handle
-			.method(self.id, method, &serialized, fds)?
+			.method(self.id, aspect_id, method, &serialized, fds)?
 			.await
 			.map_err(|e| eyre!(e))?;
 
@@ -271,23 +288,8 @@ impl Debug for Node {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Node")
 			.field("id", &self.id)
-			.field("local_signals", &self.local_signals.lock().keys())
-			.field("local_methods", &self.local_methods.lock().keys())
 			.field("destroyable", &self.destroyable)
 			.finish()
-	}
-}
-impl OwnedAspect for Node {
-	fn set_enabled(node: Arc<Node>, _calling_client: Arc<Client>, enabled: bool) -> Result<()> {
-		node.set_enabled(enabled);
-		Ok(())
-	}
-
-	fn destroy(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
-		if node.destroyable {
-			node.destroy();
-		}
-		Ok(())
 	}
 }
 impl Drop for Node {
@@ -297,12 +299,28 @@ impl Drop for Node {
 }
 
 pub trait Aspect: Any + Send + Sync + 'static {
-	const NAME: &'static str;
+	fn name(&self) -> String;
+	fn id(&self) -> u64;
+	fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync + 'static>;
+	fn run_signal(
+		&self,
+		calling_client: Arc<Client>,
+		node: Arc<Node>,
+		signal: u64,
+		message: Message,
+	) -> Result<(), stardust_xr::scenegraph::ScenegraphError>;
+	fn run_method(
+		&self,
+		calling_client: Arc<Client>,
+		node: Arc<Node>,
+		method: u64,
+		message: Message,
+		response: MethodResponseSender,
+	);
 }
 
 #[derive(Default)]
-struct Aspects(Mutex<FxHashMap<TypeId, Arc<dyn Any + Send + Sync + 'static>>>);
-
+struct Aspects(Mutex<FxHashMap<u64, Arc<dyn Aspect>>>);
 impl Aspects {
 	fn add<A: Aspect>(&self, t: A) -> Arc<A> {
 		let aspect = Arc::new(t);
@@ -310,18 +328,15 @@ impl Aspects {
 		aspect
 	}
 	fn add_raw<A: Aspect>(&self, aspect: Arc<A>) {
-		self.0.lock().insert(Self::type_key::<A>(), aspect);
+		let id = aspect.id();
+		self.0.lock().insert(id, aspect);
 	}
 	fn get<A: Aspect>(&self) -> Result<Arc<A>> {
 		self.0
 			.lock()
-			.get(&Self::type_key::<A>())
-			.and_then(|a| Arc::downcast(a.clone()).ok())
-			.ok_or(eyre!("Couldn't get aspect {}", A::NAME.to_lowercase()))
-	}
-
-	fn type_key<A: 'static>() -> TypeId {
-		TypeId::of::<A>()
+			.values()
+			.find_map(|a| Arc::downcast(a.clone().as_any()).ok())
+			.ok_or(eyre!("Couldn't get aspect"))
 	}
 }
 impl Drop for Aspects {

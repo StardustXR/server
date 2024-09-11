@@ -1,12 +1,13 @@
-use super::{create_item_acceptor_flex, register_item_ui_flex, ItemAcceptor, ItemInterface};
+use super::camera::CameraItemAcceptor;
+use super::{create_item_acceptor_flex, register_item_ui_flex};
 use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
 use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
+use crate::nodes::Aspect;
 use crate::{
 	core::{
 		client::{get_env, state, Client, INTERNAL_CLIENT},
 		registry::Registry,
 	},
-	create_interface,
 	nodes::{
 		drawable::model::ModelPart,
 		items::{Item, ItemType, TypeInfo},
@@ -39,6 +40,12 @@ lazy_static! {
 		ui: Default::default(),
 		items: Registry::new(),
 		acceptors: Registry::new(),
+		add_acceptor_aspect: |node| {
+			node.add_aspect(PanelItemUi);
+		},
+		add_ui_aspect: |node| {
+			node.add_aspect(PanelItemAcceptor);
+		},
 		new_acceptor_fn: |node, acceptor, acceptor_field| {
 			let _ = panel_item_ui_client::create_acceptor(node, acceptor, acceptor_field);
 		}
@@ -115,7 +122,6 @@ impl<B: Backend> PanelItem<B> {
 			&ITEM_TYPE_INFO_PANEL,
 			ItemType::Panel(generic_panel_item),
 		);
-		<Self as PanelItemAspect>::add_node_members(&node);
 
 		(node, panel_item)
 	}
@@ -198,8 +204,9 @@ impl<B: Backend> PanelItem<B> {
 	}
 }
 
-// make these stupid vectors u32 in the protocol somehow!!!!!!!1
-
+impl<B: Backend> Aspect for PanelItem<B> {
+	impl_aspect_for_panel_item_aspect! {}
+}
 #[allow(unused)]
 impl<B: Backend> PanelItemAspect for PanelItem<B> {
 	#[doc = "Apply the cursor as a material to a model."]
@@ -405,7 +412,17 @@ impl<B: Backend> PanelItemAspect for PanelItem<B> {
 	}
 }
 
-impl PanelItemAcceptorAspect for ItemAcceptor {
+pub struct PanelItemUi;
+impl Aspect for PanelItemUi {
+	impl_aspect_for_panel_item_ui_aspect! {}
+}
+impl PanelItemUiAspect for PanelItemUi {}
+
+pub struct PanelItemAcceptor;
+impl Aspect for PanelItemAcceptor {
+	impl_aspect_for_panel_item_acceptor_aspect! {}
+}
+impl PanelItemAcceptorAspect for PanelItemAcceptor {
 	fn capture_item(node: Arc<Node>, _calling_client: Arc<Client>, item: Arc<Node>) -> Result<()> {
 		super::acceptor_capture_item_flex(node, item)
 	}
@@ -435,22 +452,23 @@ impl<B: Backend> Drop for PanelItem<B> {
 	}
 }
 
-create_interface!(ItemInterface);
-impl InterfaceAspect for ItemInterface {
+impl InterfaceAspect for Interface {
 	#[doc = "Register this client to manage the items of a certain type and create default 3D UI for them."]
-	fn register_panel_item_ui(_node: Arc<Node>, calling_client: Arc<Client>) -> Result<()> {
+	fn register_panel_item_ui(node: Arc<Node>, calling_client: Arc<Client>) -> Result<()> {
+		node.add_aspect(CameraItemAcceptor);
 		register_item_ui_flex(calling_client, &ITEM_TYPE_INFO_PANEL)
 	}
 
 	#[doc = "Create an item acceptor to allow temporary ownership of a given type of item. Creates a node at `/item/<item_type>/acceptor/<name>`."]
 	fn create_panel_item_acceptor(
-		_node: Arc<Node>,
+		node: Arc<Node>,
 		calling_client: Arc<Client>,
 		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,
 	) -> Result<()> {
+		node.add_aspect(PanelItemAcceptor);
 		create_item_acceptor_flex(
 			calling_client,
 			id,

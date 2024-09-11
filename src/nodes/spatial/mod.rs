@@ -6,7 +6,6 @@ use super::fields::{Field, FieldTrait};
 use super::Aspect;
 use crate::core::client::Client;
 use crate::core::registry::Registry;
-use crate::create_interface;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
 use color_eyre::eyre::{eyre, OptionExt, Result};
 use glam::{vec3a, Mat4, Quat, Vec3};
@@ -37,6 +36,9 @@ impl Transform {
 
 		Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
 	}
+}
+impl Aspect for Zone {
+	impl_aspect_for_zone_aspect! {}
 }
 
 lazy_static::lazy_static! {
@@ -74,16 +76,14 @@ impl Spatial {
 		zoneable: bool,
 	) -> Arc<Spatial> {
 		let spatial = Spatial::new(Arc::downgrade(node), parent.clone(), transform);
-		<Spatial as SpatialAspect>::add_node_members(node);
 		if zoneable {
 			ZONEABLE_REGISTRY.add_raw(&spatial);
 		}
 		if let Some(parent) = parent {
 			parent.children.add_raw(&spatial);
 		}
-		<Spatial as SpatialRefAspect>::add_node_members(node);
-		<Spatial as SpatialAspect>::add_node_members(node);
 		node.add_aspect_raw(spatial.clone());
+		node.add_aspect(SpatialRef);
 		spatial
 	}
 
@@ -242,66 +242,7 @@ impl Spatial {
 	}
 }
 impl Aspect for Spatial {
-	const NAME: &'static str = "Spatial";
-}
-impl SpatialRefAspect for Spatial {
-	async fn get_local_bounding_box(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-	) -> Result<BoundingBox> {
-		let this_spatial = node.get_aspect::<Spatial>()?;
-		let bounds = this_spatial.get_bounding_box();
-
-		Ok(BoundingBox {
-			center: Vec3::from(bounds.center).into(),
-			size: Vec3::from(bounds.dimensions).into(),
-		})
-	}
-
-	async fn get_relative_bounding_box(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		relative_to: Arc<Node>,
-	) -> Result<BoundingBox> {
-		let this_spatial = node.get_aspect::<Spatial>()?;
-		let relative_spatial = relative_to.get_aspect::<Spatial>()?;
-		let center = Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
-			.transform_point3([0.0; 3].into());
-		let mut bounds = Bounds {
-			center: center.into(),
-			dimensions: [0.0; 3].into(),
-		};
-		bounds.grown_box(
-			this_spatial.get_bounding_box(),
-			Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial)),
-		);
-
-		Ok(BoundingBox {
-			center: Vec3::from(bounds.center).into(),
-			size: Vec3::from(bounds.dimensions).into(),
-		})
-	}
-
-	async fn get_transform(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		relative_to: Arc<Node>,
-	) -> Result<Transform> {
-		let this_spatial = node.get_aspect::<Spatial>()?;
-		let relative_spatial = relative_to.get_aspect::<Spatial>()?;
-
-		let (scale, rotation, position) = Spatial::space_to_space_matrix(
-			Some(this_spatial.as_ref()),
-			Some(relative_spatial.as_ref()),
-		)
-		.to_scale_rotation_translation();
-
-		Ok(Transform {
-			translation: Some(position.into()),
-			rotation: Some(rotation.into()),
-			scale: Some(scale.into()),
-		})
-	}
+	impl_aspect_for_spatial_aspect! {}
 }
 impl SpatialAspect for Spatial {
 	fn set_local_transform(
@@ -389,6 +330,70 @@ impl Drop for Spatial {
 	}
 }
 
+pub struct SpatialRef;
+impl Aspect for SpatialRef {
+	impl_aspect_for_spatial_ref_aspect! {}
+}
+impl SpatialRefAspect for SpatialRef {
+	async fn get_local_bounding_box(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+	) -> Result<BoundingBox> {
+		let this_spatial = node.get_aspect::<Spatial>()?;
+		let bounds = this_spatial.get_bounding_box();
+
+		Ok(BoundingBox {
+			center: Vec3::from(bounds.center).into(),
+			size: Vec3::from(bounds.dimensions).into(),
+		})
+	}
+
+	async fn get_relative_bounding_box(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		relative_to: Arc<Node>,
+	) -> Result<BoundingBox> {
+		let this_spatial = node.get_aspect::<Spatial>()?;
+		let relative_spatial = relative_to.get_aspect::<Spatial>()?;
+		let center = Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
+			.transform_point3([0.0; 3].into());
+		let mut bounds = Bounds {
+			center: center.into(),
+			dimensions: [0.0; 3].into(),
+		};
+		bounds.grown_box(
+			this_spatial.get_bounding_box(),
+			Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial)),
+		);
+
+		Ok(BoundingBox {
+			center: Vec3::from(bounds.center).into(),
+			size: Vec3::from(bounds.dimensions).into(),
+		})
+	}
+
+	async fn get_transform(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		relative_to: Arc<Node>,
+	) -> Result<Transform> {
+		let this_spatial = node.get_aspect::<Spatial>()?;
+		let relative_spatial = relative_to.get_aspect::<Spatial>()?;
+
+		let (scale, rotation, position) = Spatial::space_to_space_matrix(
+			Some(this_spatial.as_ref()),
+			Some(relative_spatial.as_ref()),
+		)
+		.to_scale_rotation_translation();
+
+		Ok(Transform {
+			translation: Some(position.into()),
+			rotation: Some(rotation.into()),
+			scale: Some(scale.into()),
+		})
+	}
+}
+
 pub fn parse_transform(transform: Transform, position: bool, rotation: bool, scale: bool) -> Mat4 {
 	let position = position
 		.then_some(transform.translation)
@@ -406,8 +411,7 @@ pub fn parse_transform(transform: Transform, position: bool, rotation: bool, sca
 	Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
 }
 
-pub struct SpatialInterface;
-impl InterfaceAspect for SpatialInterface {
+impl InterfaceAspect for Interface {
 	fn create_spatial(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
@@ -460,5 +464,3 @@ impl InterfaceAspect for SpatialInterface {
 			.ok_or_eyre("Couldn't find spatial with that ID")
 	}
 }
-
-create_interface!(SpatialInterface);

@@ -262,8 +262,6 @@ fn stereokit_loop(
 	}
 
 	info!("Cleanly shut down StereoKit");
-	#[cfg(feature = "wayland")]
-	drop(wayland);
 }
 
 fn adaptive_sleep(

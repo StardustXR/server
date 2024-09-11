@@ -86,19 +86,21 @@ fn map_method_return<T: Serialize>(
 impl scenegraph::Scenegraph for Scenegraph {
 	fn send_signal(
 		&self,
-		node: u64,
+		node_id: u64,
+		aspect_id: u64,
 		method: u64,
 		data: &[u8],
 		fds: Vec<OwnedFd>,
 	) -> Result<(), ScenegraphError> {
 		let Some(client) = self.get_client() else {
-			return Err(ScenegraphError::SignalNotFound);
+			return Err(ScenegraphError::NodeNotFound);
 		};
-		debug_span!("Handle signal", node, method).in_scope(|| {
-			self.get_node(node)
+		debug_span!("Handle signal", aspect_id, node_id, method).in_scope(|| {
+			self.get_node(node_id)
 				.ok_or(ScenegraphError::NodeNotFound)?
 				.send_local_signal(
 					client,
+					aspect_id,
 					method,
 					Message {
 						data: data.to_vec(),
@@ -109,23 +111,25 @@ impl scenegraph::Scenegraph for Scenegraph {
 	}
 	fn execute_method(
 		&self,
-		node: u64,
+		node_id: u64,
+		aspect_id: u64,
 		method: u64,
 		data: &[u8],
 		fds: Vec<OwnedFd>,
 		response: oneshot::Sender<Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError>>,
 	) {
 		let Some(client) = self.get_client() else {
-			let _ = response.send(Err(ScenegraphError::MethodNotFound));
+			let _ = response.send(Err(ScenegraphError::NodeNotFound));
 			return;
 		};
-		debug!(node, method, "Handle method");
-		let Some(node) = self.get_node(node) else {
+		debug!(aspect_id, node_id, method, "Handle method");
+		let Some(node) = self.get_node(node_id) else {
 			let _ = response.send(Err(ScenegraphError::NodeNotFound));
 			return;
 		};
 		node.execute_local_method(
 			client,
+			aspect_id,
 			method,
 			Message {
 				data: data.to_vec(),

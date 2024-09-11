@@ -64,11 +64,25 @@ fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 			};
 			let aspect = generate_aspect(&Aspect {
 				name: "interface".to_string(),
+				id: 0,
 				description: protocol.description.clone(),
 				inherits: vec![],
 				members: p.members,
 			});
-			quote!(#node_id #aspect)
+			quote! {
+				#node_id
+				#aspect
+				pub struct Interface;
+				impl crate::nodes::Aspect for Interface {
+					impl_aspect_for_interface_aspect!{}
+				}
+				pub fn create_interface(client: &std::sync::Arc<crate::core::client::Client>) -> color_eyre::eyre::Result<()>{
+					let node = crate::nodes::Node::from_id(client,INTERFACE_NODE_ID,false);
+					node.add_aspect(Interface);
+					node.add_to_scenegraph()?;
+					Ok(())
+				}
+			}
 		})
 		.unwrap_or_default();
 	let custom_enums = protocol
@@ -177,7 +191,7 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 		Span::call_site(),
 	);
 	let client_side_members = client_members
-		.map(generate_member)
+		.map(|m| generate_member(aspect.id, m))
 		.reduce(fold_tokens)
 		.map(|t| {
 			// TODO: properly import all dependencies
@@ -189,11 +203,6 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 			}
 		})
 		.unwrap_or_default();
-
-	let aspect_trait_name = Ident::new(
-		&format!("{}Aspect", &aspect.name.to_case(Case::Pascal)),
-		Span::call_site(),
-	);
 
 	let opcodes = aspect
 		.members
@@ -219,31 +228,87 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 	let alias_info = generate_alias_info(aspect);
 
 	let server_side_members = server_members
-		.map(generate_member)
+		.map(|m| generate_member(aspect.id, m))
 		.reduce(fold_tokens)
 		.unwrap_or_default();
-	let add_node_members = aspect
+	let aspect_trait_name = Ident::new(
+		&format!("{}Aspect", &aspect.name.to_case(Case::Pascal)),
+		Span::call_site(),
+	);
+	let run_signals = aspect
 		.members
 		.iter()
 		.filter(|m| m.side == Side::Server)
-		.map(generate_handler)
+		.filter(|m| m._type == MemberType::Signal)
+		.map(|m| generate_run_member(&aspect_trait_name, MemberType::Signal, m))
 		.reduce(fold_tokens)
-		.map(|members| {
-			quote! {
-				fn add_node_members(node: &crate::nodes::Node) {
-					#members
-				}
-			}
-		})
+		.unwrap_or_default();
+	let run_methods = aspect
+		.members
+		.iter()
+		.filter(|m| m.side == Side::Server)
+		.filter(|m| m._type == MemberType::Method)
+		.map(|m| generate_run_member(&aspect_trait_name, MemberType::Method, m))
+		.reduce(fold_tokens)
 		.unwrap_or_default();
 	let server_side_members = quote! {
 		#[doc = #description]
 		pub trait #aspect_trait_name {
-			#add_node_members
 			#server_side_members
 		}
 	};
-	quote!(#opcodes #alias_info #client_side_members #server_side_members)
+	let aspect_name = aspect.name.to_case(Case::Camel);
+	let aspect_macro_name = Ident::new(
+		&format!(
+			"impl_aspect_for_{}_aspect",
+			aspect.name.to_case(Case::Snake)
+		),
+		Span::call_site(),
+	);
+	let aspect_id = aspect.id;
+	let aspect_macro = quote! {
+		macro_rules! #aspect_macro_name {
+			() => {
+				fn name(&self) -> String {
+					#aspect_name.to_string()
+				}
+				fn id(&self) -> u64 {
+					#aspect_id
+				}
+				fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync + 'static> {
+					self
+				}
+				fn run_signal(
+					&self,
+					_calling_client: std::sync::Arc<crate::core::client::Client>,
+					_node: std::sync::Arc<crate::nodes::Node>,
+					_signal: u64,
+					_message: crate::nodes::Message
+				) -> Result<(), stardust_xr::scenegraph::ScenegraphError> {
+					match _signal {
+						#run_signals
+						_ => Err(stardust_xr::scenegraph::ScenegraphError::SignalNotFound)
+					}
+				}
+				fn run_method(
+					&self,
+					_calling_client: std::sync::Arc<crate::core::client::Client>,
+					_node: std::sync::Arc<crate::nodes::Node>,
+					_method: u64,
+					_message: crate::nodes::Message,
+					_method_response: crate::nodes::MethodResponseSender,
+				) {
+					match _method {
+						#run_methods
+						_ => {
+							let _ = _method_response.send(Err(stardust_xr::scenegraph::ScenegraphError::MethodNotFound));
+						}
+					}
+				}
+			};
+		}
+	};
+	quote!(#opcodes #alias_info #client_side_members #server_side_members #aspect_macro)
 }
 
 fn generate_alias_opcodes(aspect: &Aspect, side: Side, _type: MemberType) -> TokenStream {
@@ -293,8 +358,8 @@ fn generate_alias_info(aspect: &Aspect) -> TokenStream {
 	}
 }
 
-fn generate_member(member: &Member) -> TokenStream {
-	let id = member.opcode;
+fn generate_member(aspect_id: u64, member: &Member) -> TokenStream {
+	let opcode = member.opcode;
 	let name = Ident::new(&member.name.to_case(Case::Snake), Span::call_site());
 	let description = &member.description;
 
@@ -326,27 +391,21 @@ fn generate_member(member: &Member) -> TokenStream {
 		.unwrap_or_else(|| quote!(()));
 
 	match (side, _type) {
-		(Side::Client, MemberType::Method) => {
-			quote! {
-				#[doc = #description]
-				pub async fn #name(#argument_decls) -> color_eyre::eyre::Result<(#return_type, Vec<std::os::fd::OwnedFd>)> {
-					_node.execute_remote_method_typed(#id, &(#argument_uses), vec![]).await
-				}
-			}
-		}
 		(Side::Client, MemberType::Signal) => {
 			quote! {
 				#[doc = #description]
 				pub fn #name(#argument_decls) -> color_eyre::eyre::Result<()> {
 					let serialized = stardust_xr::schemas::flex::serialize((#argument_uses))?;
-					_node.send_remote_signal(#id, serialized)
+					_node.send_remote_signal(#aspect_id, #opcode, serialized)
 				}
 			}
 		}
-		(Side::Server, MemberType::Method) => {
+		(Side::Client, MemberType::Method) => {
 			quote! {
 				#[doc = #description]
-				fn #name(#argument_decls) -> impl std::future::Future<Output = color_eyre::eyre::Result<#return_type>> + Send + 'static;
+				pub async fn #name(#argument_decls) -> color_eyre::eyre::Result<(#return_type, Vec<std::os::fd::OwnedFd>)> {
+					_node.execute_remote_method_typed(#aspect_id, #opcode, &(#argument_uses), vec![]).await
+				}
 			}
 		}
 		(Side::Server, MemberType::Signal) => {
@@ -355,9 +414,15 @@ fn generate_member(member: &Member) -> TokenStream {
 				fn #name(#argument_decls) -> color_eyre::eyre::Result<()>;
 			}
 		}
+		(Side::Server, MemberType::Method) => {
+			quote! {
+				#[doc = #description]
+				fn #name(#argument_decls) -> impl std::future::Future<Output = color_eyre::eyre::Result<#return_type>> + Send + Sync + 'static;
+			}
+		}
 	}
 }
-fn generate_handler(member: &Member) -> TokenStream {
+fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) -> TokenStream {
 	let opcode = member.opcode;
 	let member_name_ident = Ident::new(&member.name, Span::call_site());
 
@@ -393,21 +458,19 @@ fn generate_handler(member: &Member) -> TokenStream {
 		.map(|a| generate_argument_deserialize(&a.name, &a._type, a.optional))
 		.reduce(|a, b| quote!(#a, #b))
 		.unwrap_or_default();
-	match member._type {
+	match _type {
 		MemberType::Signal => quote! {
-			node.add_local_signal(#opcode, |_node, _calling_client, _message| {
+			#opcode => (move || {
 				#deserialize
-				Self::#member_name_ident(_node, _calling_client.clone(), #argument_uses)
-			});
+				<Self as #aspect_name>::#member_name_ident(_node, _calling_client.clone(), #argument_uses)
+			})().map_err(|e: color_eyre::Report| stardust_xr::scenegraph::ScenegraphError::SignalError { error: e.to_string() }),
 		},
 		MemberType::Method => quote! {
-			node.add_local_method(#opcode, |_node, _calling_client, _message, _method_response| {
-				_method_response.wrap_async(async move {
-					#deserialize
-					let result = Self::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await?;
-					Ok((#serialize, Vec::new()))
-				});
-			});
+			#opcode => _method_response.wrap_async(async move {
+				#deserialize
+				let result = <Self as #aspect_name>::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await?;
+				Ok((#serialize, Vec::<std::os::fd::OwnedFd>::new()))
+			}),
 		},
 	}
 }
