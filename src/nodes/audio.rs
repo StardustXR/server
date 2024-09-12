@@ -85,6 +85,9 @@ impl SoundAspect for Sound {
 }
 impl Drop for Sound {
 	fn drop(&mut self) {
+		if let Some(instance) = self.instance.lock().take() {
+			instance.stop();
+		}
 		if let Some(sk_sound) = self.sk_sound.take() {
 			destroy_queue::add(sk_sound);
 		}
