@@ -1189,9 +1189,9 @@ dependencies = [
 
 [[package]]
 name = "glam"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "779ae4bf7e8421cf91c0b3b64e7e8b40b862fba4d393f59150042de7c4965a94"
+checksum = "c28091a37a5d09b555cb6628fd954da299b536433834f5b8e59eba78e0cbbf8a"
 dependencies = [
  "mint",
  "serde",
@@ -2814,12 +2814,12 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "stereokit-macros"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/StereoKit-rust.git#93829181d5eea954e15dba9d9bfb0ec62e98d400"
+source = "git+https://github.com/mvvvv/StereoKit-rust.git#1a0ba771a948e31044f0dd264efcc9f5be4682d5"
 
 [[package]]
 name = "stereokit-rust"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/StereoKit-rust.git#93829181d5eea954e15dba9d9bfb0ec62e98d400"
+source = "git+https://github.com/mvvvv/StereoKit-rust.git#1a0ba771a948e31044f0dd264efcc9f5be4682d5"
 dependencies = [
  "android-activity",
  "android_logger",
