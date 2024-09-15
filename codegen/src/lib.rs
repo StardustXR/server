@@ -196,6 +196,7 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 		.map(|t| {
 			// TODO: properly import all dependencies
 			quote! {
+				#[allow(clippy::all)]
 				pub mod #client_mod_name {
 					use super::*;
 					#t
@@ -252,12 +253,12 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 		.reduce(fold_tokens)
 		.unwrap_or_default();
 	let server_side_members = quote! {
+		#[allow(clippy::all)]
 		#[doc = #description]
 		pub trait #aspect_trait_name {
 			#server_side_members
 		}
 	};
-	let aspect_name = aspect.name.to_case(Case::Camel);
 	let aspect_macro_name = Ident::new(
 		&format!(
 			"impl_aspect_for_{}_aspect",
@@ -269,15 +270,13 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 	let aspect_macro = quote! {
 		macro_rules! #aspect_macro_name {
 			() => {
-				fn name(&self) -> String {
-					#aspect_name.to_string()
-				}
 				fn id(&self) -> u64 {
 					#aspect_id
 				}
 				fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync + 'static> {
 					self
 				}
+				#[allow(clippy::all)]
 				fn run_signal(
 					&self,
 					_calling_client: std::sync::Arc<crate::core::client::Client>,
@@ -290,6 +289,7 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 						_ => Err(stardust_xr::scenegraph::ScenegraphError::SignalNotFound)
 					}
 				}
+				#[allow(clippy::all)]
 				fn run_method(
 					&self,
 					_calling_client: std::sync::Arc<crate::core::client::Client>,
@@ -348,6 +348,7 @@ fn generate_alias_info(aspect: &Aspect) -> TokenStream {
 
 	quote! {
 		lazy_static::lazy_static! {
+			#[allow(clippy::all)]
 			pub static ref #aspect_alias_info_name: crate::nodes::alias::AliasInfo = crate::nodes::alias::AliasInfo {
 				server_signals: vec![#local_signals],
 				server_methods: vec![#local_methods],
@@ -444,7 +445,10 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 		.clone()
 		.zip(argument_types)
 		.map(|(argument_names, argument_types)| {
-			quote!(let (#argument_names): (#argument_types) = stardust_xr::schemas::flex::deserialize(_message.as_ref())?;)
+			quote!{
+				#[allow(unused_parens)]
+				let (#argument_names): (#argument_types) = stardust_xr::schemas::flex::deserialize(_message.as_ref())?;
+			}
 		})
 		.unwrap_or_default();
 	let serialize = generate_argument_serialize(

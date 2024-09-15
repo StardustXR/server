@@ -299,7 +299,6 @@ impl Drop for Node {
 }
 
 pub trait Aspect: Any + Send + Sync + 'static {
-	fn name(&self) -> String;
 	fn id(&self) -> u64;
 	fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync + 'static>;
 	fn run_signal(

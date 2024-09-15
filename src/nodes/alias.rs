@@ -69,9 +69,6 @@ impl Alias {
 	}
 }
 impl Aspect for Alias {
-	fn name(&self) -> String {
-		"Alias".to_string()
-	}
 	fn id(&self) -> u64 {
 		0
 	}
