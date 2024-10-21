@@ -88,7 +88,7 @@ prisma = "0.1.1"
 libc = "0.2.155"
 nix = "0.29.0"
 input-event-codes = "6.2.0"
-zbus = { version = "4.4.0", default-features = false, features = ["tokio"] }
+zbus = { version = "5.0.0", default-features = false, features = ["tokio"] }
 directories = "5.0.1"
 xkbcommon-rs = "0.1.0"
 
