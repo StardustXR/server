@@ -87,7 +87,7 @@ impl UnownedFd {
 }
 impl Drop for UnownedFd {
 	fn drop(&mut self) {
-		self.0.take().unwrap().into_inner().into_raw_fd();
+		let _ = self.0.take().unwrap().into_inner().into_raw_fd();
 	}
 }
 
