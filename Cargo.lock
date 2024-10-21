@@ -2698,7 +2698,7 @@ checksum = "2f2b15926089e5526bb2dd738a2eb0e59034356e06eb71e1cd912358c0e62c4d"
 [[package]]
 name = "stardust-xr"
 version = "0.45.0"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#22fcdda7937308a067a9f61ecbcffb0907739ecb"
+source = "git+https://github.com/StardustXR/core.git?branch=dev#8313d5ce425dfec9f460526d527536b52d58b963"
 dependencies = [
  "cluFlock",
  "dirs",
@@ -2718,7 +2718,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-schemas"
 version = "1.5.3"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#22fcdda7937308a067a9f61ecbcffb0907739ecb"
+source = "git+https://github.com/StardustXR/core.git?branch=dev#8313d5ce425dfec9f460526d527536b52d58b963"
 dependencies = [
  "flatbuffers",
  "flexbuffers",
