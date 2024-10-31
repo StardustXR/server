@@ -129,7 +129,8 @@ impl Node {
 					.global_transform()
 					.to_scale_rotation_translation()
 					.0
-					.length_squared() > 0.0
+					.length_squared()
+					> 0.0
 			} else {
 				true
 			}
@@ -176,7 +177,7 @@ impl Node {
 	) -> Result<(), ScenegraphError> {
 		if let Ok(alias) = self.get_aspect::<Alias>() {
 			if !alias.info.server_signals.iter().any(|e| *e == method) {
-				return Err(ScenegraphError::SignalNotFound);
+				return Err(ScenegraphError::MemberNotFound);
 			}
 			alias
 				.original
@@ -193,7 +194,7 @@ impl Node {
 				.clone();
 			aspect
 				.run_signal(calling_client, self.clone(), method, message)
-				.map_err(|error| ScenegraphError::SignalError {
+				.map_err(|error| ScenegraphError::MemberError {
 					error: error.to_string(),
 				})
 		}
@@ -208,7 +209,7 @@ impl Node {
 	) {
 		if let Ok(alias) = self.get_aspect::<Alias>() {
 			if !alias.info.server_methods.iter().any(|e| *e == method) {
-				response.send(Err(ScenegraphError::MethodNotFound));
+				response.send(Err(ScenegraphError::MemberNotFound));
 				return;
 			}
 			let Some(alias) = alias.original.upgrade() else {

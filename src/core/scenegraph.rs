@@ -60,7 +60,7 @@ impl MethodResponseSender {
 	// 	let _ = self.0.send(map_method_return(result));
 	// }
 	pub fn wrap_sync<F: FnOnce() -> color_eyre::eyre::Result<Message>>(self, f: F) {
-		self.send(f().map_err(|e| ScenegraphError::MethodError {
+		self.send(f().map_err(|e| ScenegraphError::MemberError {
 			error: e.to_string(),
 		}))
 	}
@@ -74,11 +74,11 @@ impl MethodResponseSender {
 fn map_method_return<T: Serialize>(
 	result: color_eyre::eyre::Result<(T, Vec<OwnedFd>)>,
 ) -> Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError> {
-	let (value, fds) = result.map_err(|e| ScenegraphError::MethodError {
+	let (value, fds) = result.map_err(|e| ScenegraphError::MemberError {
 		error: e.to_string(),
 	})?;
 
-	let serialized_value = serialize(value).map_err(|e| ScenegraphError::MethodError {
+	let serialized_value = serialize(value).map_err(|e| ScenegraphError::MemberError {
 		error: format!("Internal: Serialization failed: {e}"),
 	})?;
 	Ok((serialized_value, fds))
