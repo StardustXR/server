@@ -286,7 +286,7 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 				) -> Result<(), stardust_xr::scenegraph::ScenegraphError> {
 					match _signal {
 						#run_signals
-						_ => Err(stardust_xr::scenegraph::ScenegraphError::SignalNotFound)
+						_ => Err(stardust_xr::scenegraph::ScenegraphError::MemberNotFound)
 					}
 				}
 				#[allow(clippy::all)]
@@ -301,7 +301,7 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 					match _method {
 						#run_methods
 						_ => {
-							let _ = _method_response.send(Err(stardust_xr::scenegraph::ScenegraphError::MethodNotFound));
+							let _ = _method_response.send(Err(stardust_xr::scenegraph::ScenegraphError::MemberNotFound));
 						}
 					}
 				}
@@ -467,7 +467,7 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 			#opcode => (move || {
 				#deserialize
 				<Self as #aspect_name>::#member_name_ident(_node, _calling_client.clone(), #argument_uses)
-			})().map_err(|e: color_eyre::Report| stardust_xr::scenegraph::ScenegraphError::SignalError { error: e.to_string() }),
+			})().map_err(|e: color_eyre::Report| stardust_xr::scenegraph::ScenegraphError::MemberError { error: e.to_string() }),
 		},
 		MemberType::Method => quote! {
 			#opcode => _method_response.wrap_async(async move {
