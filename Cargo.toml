@@ -12,6 +12,9 @@ homepage = "https://stardustxr.org"
 [workspace]
 members = ["codegen"]
 
+[workspace.dependencies.stardust-xr]
+git = "https://github.com/StardustXR/core.git"
+
 [[bin]]
 name = "stardust-xr-server"
 path = "src/main.rs"
@@ -110,7 +113,7 @@ features = ["no-event-loop"]
 default-features = false
 
 [dependencies.stardust-xr]
-git = "https://github.com/StardustXR/core.git"
+workspace = true
 
 [dependencies.stardust-xr-server-codegen]
 path = "codegen"

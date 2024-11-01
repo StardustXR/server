@@ -2,7 +2,7 @@ use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
 use split_iter::Splittable;
-use stardust_xr_schemas::protocol::*;
+use stardust_xr::schemas::protocol::*;
 
 fn fold_tokens(a: TokenStream, b: TokenStream) -> TokenStream {
 	quote!(#a #b)
