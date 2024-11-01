@@ -111,7 +111,6 @@ default-features = false
 
 [dependencies.stardust-xr]
 git = "https://github.com/StardustXR/core.git"
-branch = "dev"
 
 [dependencies.stardust-xr-server-codegen]
 path = "codegen"

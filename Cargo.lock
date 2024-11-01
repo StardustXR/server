@@ -2716,7 +2716,7 @@ checksum = "2f2b15926089e5526bb2dd738a2eb0e59034356e06eb71e1cd912358c0e62c4d"
 [[package]]
 name = "stardust-xr"
 version = "0.45.0"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#c5591c713e85cc2df9c63583fb3026e6c93ccef7"
+source = "git+https://github.com/StardustXR/core.git#1bc94e67cad6b69fa3c509598b07bc5085cc65a3"
 dependencies = [
  "cluFlock",
  "dirs",
@@ -2727,7 +2727,7 @@ dependencies = [
  "rustc-hash",
  "serde",
  "shiva-color-rs",
- "stardust-xr-schemas",
+ "stardust-xr-schemas 1.5.3 (git+https://github.com/StardustXR/core.git)",
  "thiserror",
  "tokio",
  "tracing",
@@ -2737,6 +2737,25 @@ dependencies = [
 name = "stardust-xr-schemas"
 version = "1.5.3"
 source = "git+https://github.com/StardustXR/core.git?branch=dev#c5591c713e85cc2df9c63583fb3026e6c93ccef7"
+dependencies = [
+ "flatbuffers",
+ "flexbuffers",
+ "fnv",
+ "futures-util",
+ "kdl",
+ "manifest-dir-macros",
+ "random-string",
+ "serde",
+ "serde_repr",
+ "thiserror",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
+name = "stardust-xr-schemas"
+version = "1.5.3"
+source = "git+https://github.com/StardustXR/core.git#1bc94e67cad6b69fa3c509598b07bc5085cc65a3"
 dependencies = [
  "flatbuffers",
  "flexbuffers",
@@ -2802,7 +2821,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "split-iter",
- "stardust-xr-schemas",
+ "stardust-xr-schemas 1.5.3 (git+https://github.com/StardustXR/core.git?branch=dev)",
 ]
 
 [[package]]
