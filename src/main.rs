@@ -23,7 +23,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use stereokit_rust::material::Material;
 use stereokit_rust::shader::Shader;
-use stereokit_rust::sk::{sk_quit, AppMode, DepthMode, OriginMode, QuitReason, SkSettings};
+use stereokit_rust::sk::{
+	sk_quit, AppMode, DepthMode, DisplayBlend, OriginMode, QuitReason, SkSettings,
+};
 use stereokit_rust::system::{LogLevel, Renderer};
 use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
 use stereokit_rust::ui::Ui;
@@ -174,6 +176,7 @@ fn stereokit_loop(
 ) {
 	let sk = SkSettings::default()
 		.app_name("Stardust XR")
+		.blend_preference(DisplayBlend::AnyTransparent)
 		.mode(if args.flatscreen {
 			AppMode::Simulator
 		} else {
