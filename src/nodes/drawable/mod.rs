@@ -26,12 +26,12 @@ pub fn draw(token: &MainThreadToken) {
 	text::draw_all(token);
 
 	if let Some(skytex) = QUEUED_SKYTEX.lock().take() {
-		if let Ok(skytex) = SHCubemap::from_cubemap_equirectangular(skytex, true, 100) {
+		if let Ok(skytex) = SHCubemap::from_cubemap(skytex, true, 100) {
 			Renderer::skytex(skytex.tex);
 		}
 	}
 	if let Some(skylight) = QUEUED_SKYLIGHT.lock().take() {
-		if let Ok(skylight) = SHCubemap::from_cubemap_equirectangular(skylight, true, 100) {
+		if let Ok(skylight) = SHCubemap::from_cubemap(skylight, true, 100) {
 			Renderer::skylight(skylight.sh);
 		}
 	}

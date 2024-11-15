@@ -26,7 +26,7 @@ use stereokit_rust::shader::Shader;
 use stereokit_rust::sk::{
 	sk_quit, AppMode, DepthMode, DisplayBlend, OriginMode, QuitReason, SkSettings,
 };
-use stereokit_rust::system::{LogLevel, Renderer};
+use stereokit_rust::system::{Handed, Input, LogLevel, Renderer};
 use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
 use stereokit_rust::ui::Ui;
 use stereokit_rust::util::{Color128, Time};
@@ -204,13 +204,21 @@ fn stereokit_loop(
 	Material::default().shader(Shader::pbr_clip());
 	Ui::enable_far_interact(false);
 
+	let left_hand_material = Material::find("default/material_hand").unwrap();
+	let mut right_hand_material = left_hand_material.copy();
+	right_hand_material.id("right_hand");
+	Input::hand_material(Handed::Right, Some(Material::find("right_hand").unwrap()));
+
+	Input::hand_visible(Handed::Left, false);
+	Input::hand_visible(Handed::Right, false);
+
 	// Skytex/light stuff
 	{
 		if let Some(sky) = project_dirs
 			.as_ref()
 			.map(|dirs| dirs.config_dir().join("skytex.hdr"))
 			.filter(|f| f.exists())
-			.and_then(|p| SHCubemap::from_cubemap_equirectangular(p, true, 100).ok())
+			.and_then(|p| SHCubemap::from_cubemap(p, true, 100).ok())
 		{
 			sky.render_as_sky();
 		} else {
@@ -234,6 +242,7 @@ fn stereokit_loop(
 	let mut objects = ServerObjects::new(
 		dbus_connection.clone(),
 		&sk,
+		[left_hand_material, right_hand_material],
 		args.disable_controllers,
 		args.disable_hands,
 	);

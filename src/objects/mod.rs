@@ -16,6 +16,7 @@ use input::{
 use play_space::PlaySpaceBounds;
 use std::{marker::PhantomData, sync::Arc};
 use stereokit_rust::{
+	material::Material,
 	sk::{DisplayMode, MainThreadToken, Sk},
 	system::{Handed, Input, Key, World},
 	util::Device,
@@ -45,6 +46,7 @@ pub struct ServerObjects {
 	connection: Connection,
 	hmd: (Arc<Spatial>, ObjectHandle<SpatialRef>),
 	play_space: Option<(Arc<Spatial>, ObjectHandle<SpatialRef>)>,
+	hand_materials: [Material; 2],
 	inputs: Inputs,
 	disable_controllers: bool,
 	disable_hands: bool,
@@ -53,6 +55,7 @@ impl ServerObjects {
 	pub fn new(
 		connection: Connection,
 		sk: &Sk,
+		hand_materials: [Material; 2],
 		disable_controllers: bool,
 		disable_hands: bool,
 	) -> ServerObjects {
@@ -106,6 +109,7 @@ impl ServerObjects {
 			connection,
 			hmd,
 			play_space,
+			hand_materials,
 			inputs,
 			disable_controllers,
 			disable_hands,
@@ -132,6 +136,7 @@ impl ServerObjects {
 				));
 		}
 
+		#[allow(clippy::collapsible_if)]
 		if sk.get_active_display_mode() != DisplayMode::MixedReality {
 			if Input::key(Key::F6).is_just_inactive() {
 				self.inputs = Inputs::MousePointer(MousePointer::new().unwrap());
@@ -142,12 +147,12 @@ impl ServerObjects {
 			// 		SkController::new(Handed::Right).unwrap(),
 			// 	));
 			// }
-			if Input::key(Key::F8).is_just_inactive() {
-				self.inputs = Inputs::Hands {
-					left: SkHand::new(&self.connection, Handed::Left).unwrap(),
-					right: SkHand::new(&self.connection, Handed::Right).unwrap(),
-				};
-			}
+			// if Input::key(Key::F8).is_just_inactive() {
+			// 	self.inputs = Inputs::Hands {
+			// 		left: SkHand::new(&self.connection, Handed::Left).unwrap(),
+			// 		right: SkHand::new(&self.connection, Handed::Right).unwrap(),
+			// 	};
+			// }
 		}
 
 		match &mut self.inputs {
@@ -162,9 +167,11 @@ impl ServerObjects {
 					controller_left.update(token);
 					controller_right.update(token);
 				}
+				Input::hand_visible(Handed::Left, !self.disable_hands);
+				Input::hand_visible(Handed::Right, !self.disable_hands);
 				if !self.disable_hands {
-					hand_left.update(sk, token);
-					hand_right.update(sk, token);
+					hand_left.update(sk, token, &mut self.hand_materials[0]);
+					hand_right.update(sk, token, &mut self.hand_materials[1]);
 				}
 				if let Some(eye_pointer) = eye_pointer {
 					eye_pointer.update();
@@ -176,8 +183,8 @@ impl ServerObjects {
 			// 	right.update(token);
 			// }
 			Inputs::Hands { left, right } => {
-				left.update(sk, token);
-				right.update(sk, token);
+				left.update(sk, token, &mut self.hand_materials[0]);
+				right.update(sk, token, &mut self.hand_materials[1]);
 			}
 		}
 	}
