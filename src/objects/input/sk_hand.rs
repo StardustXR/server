@@ -13,6 +13,7 @@ use glam::{Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
+use stereokit_rust::material::Material;
 use stereokit_rust::sk::{DisplayMode, MainThreadToken, Sk};
 use stereokit_rust::system::{HandJoint, HandSource, Handed, Input, LinePoint, Lines};
 use stereokit_rust::util::Color128;
@@ -62,8 +63,8 @@ impl SkHand {
 		});
 		let datamap = Datamap::from_typed(HandDatamap::default())?;
 		let input = InputMethod::add_to(&_node.0, hand, datamap)?;
+		Input::hand_visible(handed, true);
 
-		Input::hand_visible(handed, false);
 		Ok(SkHand {
 			_node,
 			palm_spatial,
@@ -74,7 +75,7 @@ impl SkHand {
 			datamap: Default::default(),
 		})
 	}
-	pub fn update(&mut self, sk: &Sk, token: &MainThreadToken) {
+	pub fn update(&mut self, sk: &Sk, token: &MainThreadToken, material: &mut Material) {
 		let sk_hand = Input::hand(self.handed);
 		let real_hand = Input::hand_source(self.handed) as u32 == HandSource::Articulated as u32;
 		if let InputDataType::Hand(hand) = &mut *self.input.data.lock() {
@@ -121,15 +122,12 @@ impl SkHand {
 
 				hand.elbow = None;
 
-				self.draw(
-					token,
-					if self.capture_manager.capture.is_none() {
-						Color128::new_rgb(1.0, 1.0, 1.0)
-					} else {
-						Color128::new_rgb(0.0, 1.0, 0.75)
-					},
-					hand,
-				);
+				let hand_color = if self.capture_manager.capture.is_none() {
+					Color128::new_rgb(1.0, 1.0, 1.0)
+				} else {
+					Color128::new_rgb(0.0, 1.0, 0.75)
+				};
+				material.color_tint(hand_color);
 			}
 		}
 		self.datamap.pinch_strength = sk_hand.pinch_activation;
@@ -165,76 +163,10 @@ impl SkHand {
 		let sorted_handlers = get_sorted_handlers(&self.input, distance_calculator);
 		self.input.set_handler_order(sorted_handlers.iter());
 	}
-
-	fn draw(&self, token: &MainThreadToken, color: Color128, hand: &Hand) {
-		// thumb
-		Lines::add_list(
-			token,
-			&[
-				joint_to_line_point(&hand.thumb.tip, color),
-				joint_to_line_point(&hand.thumb.distal, color),
-				joint_to_line_point(&hand.thumb.proximal, color),
-				joint_to_line_point(&hand.thumb.metacarpal, color),
-			],
-		);
-		// index
-		Lines::add_list(
-			token,
-			&[
-				joint_to_line_point(&hand.index.tip, color),
-				joint_to_line_point(&hand.index.distal, color),
-				joint_to_line_point(&hand.index.intermediate, color),
-				joint_to_line_point(&hand.index.proximal, color),
-				joint_to_line_point(&hand.index.metacarpal, color),
-			],
-		);
-		// middle
-		Lines::add_list(
-			token,
-			&[
-				joint_to_line_point(&hand.middle.tip, color),
-				joint_to_line_point(&hand.middle.distal, color),
-				joint_to_line_point(&hand.middle.intermediate, color),
-				joint_to_line_point(&hand.middle.proximal, color),
-				joint_to_line_point(&hand.middle.metacarpal, color),
-			],
-		);
-		// ring
-		Lines::add_list(
-			token,
-			&[
-				joint_to_line_point(&hand.ring.tip, color),
-				joint_to_line_point(&hand.ring.distal, color),
-				joint_to_line_point(&hand.ring.intermediate, color),
-				joint_to_line_point(&hand.ring.proximal, color),
-				joint_to_line_point(&hand.ring.metacarpal, color),
-			],
-		);
-		// little
-		Lines::add_list(
-			token,
-			&[
-				joint_to_line_point(&hand.little.tip, color),
-				joint_to_line_point(&hand.little.distal, color),
-				joint_to_line_point(&hand.little.intermediate, color),
-				joint_to_line_point(&hand.little.proximal, color),
-				joint_to_line_point(&hand.little.metacarpal, color),
-			],
-		);
-
-		// palm
-		Lines::add_list(
-			token,
-			&[
-				joint_to_line_point(&hand.wrist, color),
-				joint_to_line_point(&hand.thumb.metacarpal, color),
-				joint_to_line_point(&hand.index.metacarpal, color),
-				joint_to_line_point(&hand.middle.metacarpal, color),
-				joint_to_line_point(&hand.ring.metacarpal, color),
-				joint_to_line_point(&hand.little.metacarpal, color),
-				joint_to_line_point(&hand.wrist, color),
-			],
-		);
+}
+impl Drop for SkHand {
+	fn drop(&mut self) {
+		Input::hand_visible(self.handed, false);
 	}
 }
 
