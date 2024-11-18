@@ -24,6 +24,7 @@ impl Hash for MaterialWrapper {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.0.get_shader().0.as_ptr().hash(state);
 		for param in self.0.get_all_param_info() {
+			param.value.hash(state);
 			param.to_string().hash(state)
 		}
 		self.0.get_chain().map(MaterialWrapper).hash(state)
