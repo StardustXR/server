@@ -2,11 +2,9 @@ use super::{get_sorted_handlers, CaptureManager, DistanceCalculator};
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		data::{
-			mask_matches, pulse_receiver_client, PulseSender, KEYMAPS, PULSE_RECEIVER_REGISTRY,
-		},
+		data::KEYMAPS,
 		fields::{Field, FieldTrait, Ray, EXPORTED_FIELDS},
-		input::{InputDataType, InputHandler, InputMethod, Pointer, INPUT_HANDLER_REGISTRY},
+		input::{InputDataType, InputMethod, Pointer},
 		spatial::Spatial,
 		Node, OwnedNode,
 	},
