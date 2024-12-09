@@ -14,6 +14,7 @@ use input::{
 	sk_hand::SkHand,
 };
 use play_space::PlaySpaceBounds;
+use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use std::{marker::PhantomData, sync::Arc};
 use stereokit_rust::{
 	material::Material,
@@ -116,7 +117,13 @@ impl ServerObjects {
 		}
 	}
 
-	pub fn update(&mut self, sk: &Sk, token: &MainThreadToken) {
+	pub fn update(
+		&mut self,
+		sk: &Sk,
+		token: &MainThreadToken,
+		dbus_connection: &Connection,
+		object_registry: &ObjectRegistry,
+	) {
 		let hmd_pose = Input::get_head();
 		self.hmd
 			.0
@@ -177,7 +184,9 @@ impl ServerObjects {
 					eye_pointer.update();
 				}
 			}
-			Inputs::MousePointer(mouse_pointer) => mouse_pointer.update(),
+			Inputs::MousePointer(mouse_pointer) => {
+				mouse_pointer.update(dbus_connection, object_registry)
+			}
 			// Inputs::Controllers((left, right)) => {
 			// 	left.update(token);
 			// 	right.update(token);
