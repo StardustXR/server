@@ -1,10 +1,11 @@
+use super::{get_sorted_handlers, CaptureManager, DistanceCalculator};
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
 		data::{
 			mask_matches, pulse_receiver_client, PulseSender, KEYMAPS, PULSE_RECEIVER_REGISTRY,
 		},
-		fields::{FieldTrait, Ray},
+		fields::{Field, FieldTrait, Ray, EXPORTED_FIELDS},
 		input::{InputDataType, InputHandler, InputMethod, Pointer, INPUT_HANDLER_REGISTRY},
 		spatial::Spatial,
 		Node, OwnedNode,
@@ -15,12 +16,16 @@ use glam::{vec3, Mat4, Vec3};
 use mint::Vector2;
 use serde::{Deserialize, Serialize};
 use slotmap::{DefaultKey, Key as SlotKey};
-use stardust_xr::values::Datamap;
+use stardust_xr::{
+	schemas::dbus::{interfaces::FieldRefProxy, object_registry::ObjectRegistry},
+	values::Datamap,
+};
 use std::sync::Arc;
 use stereokit_rust::system::{Input, Key};
+use tokio::task::JoinSet;
+use tokio::time::{timeout, Duration};
 use xkbcommon_rs::{xkb_keymap::CompileFlags, Context, Keymap, KeymapFormat};
-
-use super::{get_sorted_handlers, CaptureManager, DistanceCalculator};
+use zbus::{names::OwnedInterfaceName, Connection};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct MouseEvent {
@@ -46,12 +51,14 @@ impl Default for MouseEvent {
 	}
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
-pub struct KeyboardEvent {
-	pub keyboard: (),
-	pub xkbv1: (),
-	pub keymap_id: u64,
-	pub keys: Vec<i32>,
+#[zbus::proxy(
+	interface = "org.stardustxr.XKBv1",
+	default_service = "org.stardustxr.XKBv1"
+)]
+trait KeyboardHandler {
+	async fn keymap(&self, keymap_id: u64) -> zbus::Result<()>;
+	async fn key_state(&self, key: u32, pressed: bool) -> zbus::Result<()>;
+	async fn reset(&self) -> zbus::Result<()>;
 }
 
 #[allow(unused)]
@@ -62,8 +69,6 @@ pub struct MousePointer {
 	pointer: Arc<InputMethod>,
 	capture_manager: CaptureManager,
 	mouse_datamap: MouseEvent,
-	keyboard_datamap: KeyboardEvent,
-	keyboard_sender: Arc<PulseSender>,
 }
 impl MousePointer {
 	pub fn new() -> Result<Self> {
@@ -83,29 +88,16 @@ impl MousePointer {
 				.unwrap(),
 		);
 
-		let keyboard_sender = PulseSender::add_to(
-			&node.0,
-			Datamap::from_typed(KeyboardEvent::default()).unwrap(),
-		)
-		.unwrap();
-
 		Ok(MousePointer {
 			node,
 			spatial,
 			pointer,
 			capture_manager: CaptureManager::default(),
 			mouse_datamap: Default::default(),
-			keyboard_datamap: KeyboardEvent {
-				keyboard: (),
-				xkbv1: (),
-				keymap_id: keymap.data().as_ffi(),
-				keys: vec![],
-			},
 			keymap,
-			keyboard_sender,
 		})
 	}
-	pub fn update(&mut self) {
+	pub fn update(&mut self, dbus_connection: &Connection, object_registry: &ObjectRegistry) {
 		let mouse = Input::get_mouse();
 
 		let ray = mouse.get_ray();
@@ -131,7 +123,7 @@ impl MousePointer {
 			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).unwrap();
 		}
 		self.target_pointer_input();
-		self.send_keyboard_input();
+		self.send_keyboard_input(dbus_connection, object_registry);
 	}
 	fn target_pointer_input(&mut self) {
 		let distance_calculator: DistanceCalculator = |space, data, field| {
@@ -158,56 +150,98 @@ impl MousePointer {
 		self.pointer.set_handler_order(sorted_handlers.iter());
 	}
 
-	fn send_keyboard_input(&mut self) {
-		let rx = PULSE_RECEIVER_REGISTRY
-			.get_valid_contents()
-			.into_iter()
-			.filter(|rx| mask_matches(&rx.mask, &self.keyboard_sender.mask))
-			.map(|rx| {
-				let result = rx.field.ray_march(Ray {
-					origin: vec3(0.0, 0.0, 0.0),
-					direction: vec3(0.0, 0.0, -1.0),
-					space: self.spatial.clone(),
-				});
-				(rx, result)
-			})
-			.filter(|(_rx, result)| {
-				result.deepest_point_distance > 0.0 && result.min_distance < 0.05
-			})
-			.reduce(|(rx_a, result_a), (rx_b, result_b)| {
-				if result_a.deepest_point_distance < result_b.deepest_point_distance {
-					(rx_a, result_a)
-				} else {
-					(rx_b, result_b)
+	pub fn send_keyboard_input(
+		&mut self,
+		dbus_connection: &Connection,
+		object_registry: &ObjectRegistry,
+	) {
+		let keyboard_handlers = object_registry.get_objects("org.stardustxr.XKBv1");
+
+		// Spawn async task to handle keyboard input
+		tokio::spawn({
+			let keyboard_handlers = keyboard_handlers.clone();
+			let spatial = self.spatial.clone();
+			let keymap_id = self.keymap.data().as_ffi();
+			let dbus_connection = dbus_connection.clone();
+
+			async move {
+				let mut closest_handler = None;
+				let mut closest_distance = f32::MAX;
+
+				let mut join_set = JoinSet::new();
+				for handler in &keyboard_handlers {
+					let handler = handler.clone();
+					let dbus_connection = dbus_connection.clone();
+					join_set.spawn(async move {
+						timeout(Duration::from_millis(1), async {
+							let field_ref = handler
+								.to_typed_proxy::<FieldRefProxy>(&dbus_connection)
+								.await
+								.ok()?;
+							let uid = field_ref.uid().await.ok()?;
+							Some((handler, uid))
+						})
+						.await
+						.ok()
+						.flatten()
+					});
 				}
-			})
-			.map(|(rx, _)| rx);
+				while let Some(Ok(Some((handler, field_ref_id)))) = join_set.join_next().await {
+					let exported_fields = EXPORTED_FIELDS.lock();
+					dbg!(&*exported_fields);
+					let Some(field_ref_node) = exported_fields.get(&field_ref_id) else {
+						println!("didn't find a thing :(");
+						continue;
+					};
+					// println!("still sendin stuff :)");
+					let Ok(field_ref) = field_ref_node.get_aspect::<Field>() else {
+						continue;
+					};
+					drop(exported_fields);
 
-		if let Some(rx) = rx {
-			let keys = (8_u32..254)
-				.map(|i| unsafe { std::mem::transmute(i) })
-				.filter_map(|k| Some((map_key(k)?, Input::key(k))))
-				.filter_map(|(i, k)| {
-					if k.is_just_active() {
-						Some(i as i32)
-					} else if k.is_just_inactive() {
-						Some(-(i as i32))
-					} else {
-						None
+					let result = field_ref.ray_march(Ray {
+						origin: vec3(0.0, 0.0, 0.0),
+						direction: vec3(0.0, 0.0, -1.0),
+						space: spatial.clone(),
+					});
+
+					if result.deepest_point_distance > 0.0
+						&& result.min_distance < 0.05
+						&& result.deepest_point_distance < closest_distance
+					{
+						closest_distance = result.deepest_point_distance;
+						closest_handler = Some(handler);
 					}
-				})
-				.collect();
+				}
 
-			self.keyboard_datamap.keys = keys;
-			if !self.keyboard_datamap.keys.is_empty() {
-				pulse_receiver_client::data(
-					&rx.node.upgrade().unwrap(),
-					&self.node.0,
-					&Datamap::from_typed(&self.keyboard_datamap).unwrap(),
-				)
-				.unwrap();
+				let Some(handler) = closest_handler else {
+					return;
+				};
+				let Ok(keyboard_handler) = handler
+					.to_typed_proxy::<KeyboardHandlerProxy>(&dbus_connection)
+					.await
+				else {
+					return;
+				};
+
+				// Register keymap first
+				let _ = keyboard_handler.keymap(keymap_id).await;
+
+				// Send key states
+				for i in 8_u32..254 {
+					let key = unsafe { std::mem::transmute::<u32, stereokit_rust::system::Key>(i) };
+					let Some(mapped_key) = map_key(key) else {
+						continue;
+					};
+					let input_state = Input::key(key);
+					if input_state.is_just_active() {
+						let _ = keyboard_handler.key_state(mapped_key, true).await;
+					} else if input_state.is_just_inactive() {
+						let _ = keyboard_handler.key_state(mapped_key, false).await;
+					}
+				}
 			}
-		}
+		});
 	}
 }
 

@@ -17,6 +17,7 @@ use directories::ProjectDirs;
 use objects::ServerObjects;
 use once_cell::sync::OnceCell;
 use session::{launch_start, save_session};
+use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use stardust_xr::server;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -139,13 +140,25 @@ async fn main() {
 		.await
 		.expect("Couldn't add the object manager");
 
+	let object_registry = ObjectRegistry::new(&dbus_connection).await.expect(
+		"Couldn't make the object registry to find all objects with given interfaces in d-bus",
+	);
+
 	let sk_ready_notifier = Arc::new(Notify::new());
 	let stereokit_loop = tokio::task::spawn_blocking({
 		let sk_ready_notifier = sk_ready_notifier.clone();
 		let project_dirs = project_dirs.clone();
 		let cli_args = cli_args.clone();
 		let dbus_connection = dbus_connection.clone();
-		move || stereokit_loop(sk_ready_notifier, project_dirs, cli_args, dbus_connection)
+		move || {
+			stereokit_loop(
+				sk_ready_notifier,
+				project_dirs,
+				cli_args,
+				dbus_connection,
+				object_registry,
+			)
+		}
 	});
 	sk_ready_notifier.notified().await;
 	let mut startup_children = project_dirs
@@ -173,6 +186,7 @@ fn stereokit_loop(
 	project_dirs: Option<ProjectDirs>,
 	args: CliArgs,
 	dbus_connection: Connection,
+	object_registry: ObjectRegistry,
 ) {
 	let sk = SkSettings::default()
 		.app_name("Stardust XR")
@@ -258,7 +272,7 @@ fn stereokit_loop(
 		wayland.frame_event();
 		destroy_queue::clear();
 
-		objects.update(&sk, token);
+		objects.update(&sk, token, &dbus_connection, &object_registry);
 		input::process_input();
 		nodes::root::Root::send_frame_events(Time::get_step_unscaled());
 		adaptive_sleep(
