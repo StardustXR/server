@@ -1,10 +1,7 @@
 use super::{state::WaylandState, surface::CoreSurface, utils::WlSurfaceExt};
 use crate::{
 	core::task,
-	nodes::{
-		data::KEYMAPS,
-		items::panel::{Backend, Geometry, PanelItem},
-	},
+	nodes::items::panel::{Backend, Geometry, PanelItem, KEYMAPS},
 };
 use mint::Vector2;
 use parking_lot::Mutex;
@@ -203,7 +200,7 @@ impl SeatWrapper {
 		pointer.frame(&mut state);
 	}
 
-	pub fn keyboard_keys(&self, surface: WlSurface, keymap_id: u64, keys: Vec<i32>) {
+	pub fn keyboard_key(&self, surface: WlSurface, keymap_id: u64, key: u32, pressed: bool) {
 		let Some(state) = self.wayland_state.upgrade() else {
 			return;
 		};
@@ -226,20 +223,18 @@ impl SeatWrapper {
 		{
 			return;
 		}
-		for key in keys {
-			keyboard.input(
-				&mut state.lock(),
-				key.unsigned_abs(),
-				if key > 0 {
-					KeyState::Pressed
-				} else {
-					KeyState::Released
-				},
-				SERIAL_COUNTER.next_serial(),
-				0,
-				|_, _, _| FilterResult::Forward::<()>,
-			);
-		}
+		keyboard.input(
+			&mut state.lock(),
+			key,
+			if pressed {
+				KeyState::Pressed
+			} else {
+				KeyState::Released
+			},
+			SERIAL_COUNTER.next_serial(),
+			0,
+			|_, _, _| FilterResult::Forward::<()>,
+		);
 	}
 
 	pub fn touch_down(&self, surface: WlSurface, id: u32, position: Vector2<f32>) {

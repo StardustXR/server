@@ -515,11 +515,11 @@ impl Backend for XdgBackend {
 		self.seat.pointer_scroll(scroll_distance, scroll_steps)
 	}
 
-	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: u64, keys: Vec<i32>) {
+	fn keyboard_key(&self, surface: &SurfaceId, keymap_id: u64, key: u32, pressed: bool) {
 		let Some(surface) = self.wl_surface_from_id(surface) else {
 			return;
 		};
-		self.seat.keyboard_keys(surface, keymap_id, keys)
+		self.seat.keyboard_key(surface, keymap_id, key, pressed)
 	}
 
 	fn touch_down(&self, surface: &SurfaceId, id: u32, position: Vector2<f32>) {

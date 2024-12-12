@@ -15,10 +15,12 @@ use crate::{
 		Node,
 	},
 };
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{bail, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::Vector2;
+use parking_lot::Mutex;
+use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 use std::sync::{Arc, Weak};
 use tracing::{debug, info};
 
@@ -33,6 +35,7 @@ impl Default for Geometry {
 }
 
 lazy_static! {
+	pub static ref KEYMAPS: Mutex<SlotMap<DefaultKey, String>> = Mutex::new(SlotMap::default());
 	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
 		type_name: "panel",
 		alias_info: PANEL_ITEM_ASPECT_ALIAS_INFO.clone(),
@@ -72,7 +75,7 @@ pub trait Backend: Send + Sync + 'static {
 		scroll_steps: Option<Vector2<f32>>,
 	);
 
-	fn keyboard_keys(&self, surface: &SurfaceId, keymap_id: u64, keys: Vec<i32>);
+	fn keyboard_key(&self, surface: &SurfaceId, keymap_id: u64, key: u32, pressed: bool);
 
 	fn touch_down(&self, surface: &SurfaceId, id: u32, position: Vector2<f32>);
 	fn touch_move(&self, id: u32, position: Vector2<f32>);
@@ -349,19 +352,20 @@ impl<B: Backend> PanelItemAspect for PanelItem<B> {
 	}
 
 	#[doc = "Send a series of key presses and releases (positive keycode for pressed, negative for released)."]
-	fn keyboard_keys(
+	fn keyboard_key(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		surface: SurfaceId,
 		keymap_id: u64,
-		keys: Vec<i32>,
+		key: u32,
+		pressed: bool,
 	) -> Result<()> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
 		panel_item
 			.backend()
-			.keyboard_keys(&surface, keymap_id, keys);
+			.keyboard_key(&surface, keymap_id, key, pressed);
 		Ok(())
 	}
 
@@ -478,5 +482,37 @@ impl InterfaceAspect for Interface {
 			&ITEM_TYPE_INFO_PANEL,
 			field,
 		)
+	}
+
+	async fn register_keymap(
+		_node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		keymap: String,
+	) -> Result<u64> {
+		let mut keymaps = KEYMAPS.lock();
+		if let Some(found_keymap_id) = keymaps
+			.iter()
+			.filter(|(_k, v)| *v == &keymap)
+			.map(|(k, _v)| k)
+			.last()
+		{
+			return Ok(found_keymap_id.data().as_ffi());
+		}
+
+		let key = keymaps.insert(keymap);
+		Ok(key.data().as_ffi())
+	}
+
+	async fn get_keymap(
+		_node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		keymap_id: u64,
+	) -> Result<String> {
+		let keymaps = KEYMAPS.lock();
+		let Some(keymap) = keymaps.get(KeyData::from_ffi(keymap_id).into()) else {
+			bail!("Could not find keymap. Try registering it")
+		};
+
+		Ok(keymap.clone())
 	}
 }

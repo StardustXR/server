@@ -6,7 +6,7 @@ use super::{
 use crate::{
 	core::{registry::OwnedRegistry, task},
 	nodes::{
-		audio, data, drawable, fields, input, items,
+		audio, drawable, fields, input, items,
 		root::{ClientState, Root},
 		spatial, Node,
 	},
@@ -112,7 +112,6 @@ impl Client {
 		fields::create_interface(&client)?;
 		drawable::create_interface(&client)?;
 		audio::create_interface(&client)?;
-		data::create_interface(&client)?;
 		input::create_interface(&client)?;
 		items::camera::create_interface(&client)?;
 		items::panel::create_interface(&client)?;
