@@ -1,6 +1,5 @@
 pub mod alias;
 pub mod audio;
-pub mod data;
 pub mod drawable;
 pub mod fields;
 pub mod input;

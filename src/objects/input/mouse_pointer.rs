@@ -2,9 +2,9 @@ use super::{get_sorted_handlers, CaptureManager, DistanceCalculator};
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		data::KEYMAPS,
 		fields::{Field, FieldTrait, Ray, EXPORTED_FIELDS},
 		input::{InputDataType, InputMethod, Pointer},
+		items::panel::KEYMAPS,
 		spatial::Spatial,
 		Node, OwnedNode,
 	},
@@ -186,7 +186,6 @@ impl MousePointer {
 				}
 				while let Some(Ok(Some((handler, field_ref_id)))) = join_set.join_next().await {
 					let exported_fields = EXPORTED_FIELDS.lock();
-					dbg!(&*exported_fields);
 					let Some(field_ref_node) = exported_fields.get(&field_ref_id) else {
 						println!("didn't find a thing :(");
 						continue;

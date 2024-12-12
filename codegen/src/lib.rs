@@ -25,10 +25,6 @@ pub fn codegen_field_protocol(_input: proc_macro::TokenStream) -> proc_macro::To
 	codegen_protocol(FIELD_PROTOCOL)
 }
 #[proc_macro]
-pub fn codegen_data_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-	codegen_protocol(DATA_PROTOCOL)
-}
-#[proc_macro]
 pub fn codegen_audio_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 	codegen_protocol(AUDIO_PROTOCOL)
 }
@@ -578,6 +574,7 @@ fn argument_type_option_name(argument_type: &ArgumentType) -> String {
 		ArgumentType::Union(u) => u.clone(),
 		ArgumentType::Struct(s) => s.clone(),
 		ArgumentType::Node { _type, .. } => _type.clone(),
+		ArgumentType::Fd => "File Descriptor".to_string(),
 	}
 }
 fn generate_argument_type(
@@ -673,6 +670,9 @@ fn generate_argument_type(
 			} else {
 				quote!(std::sync::Arc<crate::nodes::Node>)
 			}
+		}
+		ArgumentType::Fd => {
+			quote!(&std::os::fd::OwnedFd)
 		}
 	};
 
