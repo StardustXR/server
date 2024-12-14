@@ -21,11 +21,10 @@ name = "stardust-xr-server"
 path = "src/main.rs"
 
 [features]
-default = ["wayland"]
-wayland = ["dep:smithay", "dep:wayland-scanner", "dep:wayland-backend"]
+# default = ["wayland"]
+# wayland = ["dep:smithay"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy"]
-local_deps = ["stereokit-rust/force-local-deps"]
 
 [package.metadata.appimage]
 auto_link = true
@@ -38,22 +37,12 @@ auto_link_exclude_list = [
 	"libEGL*",
 ]
 
-[profile.dev.package."*"]
-opt-level = 3
-debug = true
-strip = false
-debug-assertions = true
-overflow-checks = true
-
-[profile.release]
-opt-level = 3
-debug = "line-tables-only"
-strip = true
-debug-assertions = true
-overflow-checks = false
-lto = "thin"
-
 [dependencies]
+bevy = { version = "0.15", features = ["wayland"] }
+bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
+bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
+bevy_xr_utils = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
+openxr = "0.19"
 # small utility thingys
 once_cell = "1.19.0"
 nanoid = "0.4.0"
@@ -92,28 +81,24 @@ input-event-codes = "6.2.0"
 zbus = { version = "5.0.0", default-features = false, features = ["tokio"] }
 directories = "5.0.1"
 xkbcommon-rs = "0.1.0"
-
-# wayland
-wayland-backend = { version = "0.3.7", optional = true, default-features = false }
-wayland-scanner = { version = "0.31.4", optional = true }
 thiserror = "2.0.9"
-
-[dependencies.smithay]
-# git = "https://github.com/technobaboo/smithay.git"
-# git = "https://github.com/colinmarc/smithay.git"
-git = "https://github.com/smithay/smithay.git"
-# path = "../smithay"
-default-features = false
-features = ["desktop", "backend_drm", "renderer_gl", "wayland_frontend"]
-optional = true
-
-
-[dependencies.stereokit-rust]
-# path = "../StereoKit-rust"
-git = "https://github.com/mvvvv/StereoKit-rust.git"
-# git = "https://github.com/technobaboo/StereoKit-rust.git"
-features = ["no-event-loop"]
-default-features = false
+# wayland-scanner = "0.31.2"
+# wayland-backend = "0.3.4"
+#
+# [dependencies.smithay]
+# # git = "https://github.com/technobaboo/smithay.git"
+# # git = "https://github.com/colinmarc/smithay.git"
+# git = "https://github.com/smithay/smithay.git"
+# # path = "../smithay"
+# default-features = false
+# features = [
+#     "desktop",
+#     "backend_drm",
+#     "backend_egl",
+#     "renderer_gl",
+#     "wayland_frontend",
+# ]
+# optional = true
 
 [dependencies.stardust-xr]
 workspace = true

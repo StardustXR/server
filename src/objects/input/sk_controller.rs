@@ -8,19 +8,15 @@ use crate::{
 		Node, OwnedNode,
 	},
 	objects::{ObjectHandle, SpatialRef},
+	DefaultMaterial,
 };
+use bevy::{asset::Handle, prelude::Mesh};
+use bevy_mod_xr::hands::HandSide;
 use color_eyre::eyre::Result;
 use glam::{Mat4, Vec2, Vec3};
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
-use stereokit_rust::{
-	material::Material,
-	model::Model,
-	sk::MainThreadToken,
-	system::{Handed, Input},
-	util::Color128,
-};
 use zbus::Connection;
 
 #[derive(Default, Debug, Deserialize, Serialize)]
@@ -35,10 +31,9 @@ struct ControllerDatamap {
 pub struct SkController {
 	object_handle: ObjectHandle<SpatialRef>,
 	input: Arc<InputMethod>,
-	handed: Handed,
-	model: Model,
-	material: Material,
-	capture_manager: CaptureManager,
+	handed: HandSide,
+	color: bevy::color::Color,
+	capture: Option<Arc<InputHandler>>,
 	datamap: ControllerDatamap,
 }
 impl SkController {
