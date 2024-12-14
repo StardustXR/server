@@ -9,6 +9,7 @@ use crate::core::client::Client;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
+use bevy::math::bounding::{Aabb3d, BoundingVolume};
 use color_eyre::eyre::OptionExt;
 use glam::{vec3a, Mat4, Quat, Vec3};
 use mint::Vector3;
@@ -18,7 +19,6 @@ use rustc_hash::FxHashMap;
 use std::fmt::Debug;
 use std::ptr;
 use std::sync::{Arc, Weak};
-use stereokit_rust::maths::Bounds;
 
 stardust_xr_server_codegen::codegen_spatial_protocol!();
 impl Transform {
@@ -59,7 +59,7 @@ pub struct Spatial {
 	transform: Mutex<Mat4>,
 	zone: Mutex<Weak<Zone>>,
 	children: Registry<Spatial>,
-	pub bounding_box_calc: OnceCell<fn(&Node) -> Bounds>,
+	pub bounding_box_calc: OnceCell<fn(&Node) -> Aabb3d>,
 }
 
 impl Spatial {
@@ -103,17 +103,12 @@ impl Spatial {
 	}
 
 	// the output bounds are probably way bigger than they need to be
-	pub fn get_bounding_box(&self) -> Bounds {
-		let Some(node) = self.node() else {
-			return Bounds::default();
-		};
-		let mut bounds = self
-			.bounding_box_calc
-			.get()
-			.map(|b| (b)(&node))
-			.unwrap_or_default();
+	pub fn get_bounding_box(&self) -> Aabb3d {
+		let mut bounds = *self.bounding_box_calc.lock();
 		for child in self.children.get_valid_contents() {
-			bounds.grown_box(child.get_bounding_box(), child.local_transform());
+			let b = child.get_bounding_box();
+			let t = child.local_transform();
+			bounds = bounds.grown_box(&b, Some(t));
 		}
 		bounds
 	}
@@ -354,8 +349,8 @@ impl SpatialRefAspect for SpatialRef {
 		let bounds = this_spatial.get_bounding_box();
 
 		Ok(BoundingBox {
-			center: Vec3::from(bounds.center).into(),
-			size: Vec3::from(bounds.dimensions).into(),
+			center: Vec3::from(bounds.center()).into(),
+			size: Vec3::from(bounds.half_size() * 2.0).into(),
 		})
 	}
 
@@ -368,18 +363,18 @@ impl SpatialRefAspect for SpatialRef {
 		let relative_spatial = relative_to.get_aspect::<Spatial>()?;
 		let center = Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
 			.transform_point3([0.0; 3].into());
-		let mut bounds = Bounds {
-			center: center.into(),
-			dimensions: [0.0; 3].into(),
-		};
-		bounds.grown_box(
-			this_spatial.get_bounding_box(),
-			Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial)),
+		let mut bounds = Aabb3d::new(center, [0.0; 3]);
+		bounds = bounds.grown_box(
+			&this_spatial.get_bounding_box(),
+			Some(Spatial::space_to_space_matrix(
+				Some(&this_spatial),
+				Some(&relative_spatial),
+			)),
 		);
 
 		Ok(BoundingBox {
-			center: Vec3::from(bounds.center).into(),
-			size: Vec3::from(bounds.dimensions).into(),
+			center: Vec3::from(bounds.center()).into(),
+			size: Vec3::from(bounds.half_size() * 2.0).into(),
 		})
 	}
 

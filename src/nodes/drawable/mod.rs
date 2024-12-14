@@ -17,7 +17,6 @@ use model::ModelPart;
 use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
-use stereokit_rust::{sk::MainThreadToken, system::Renderer, tex::SHCubemap};
 
 // #[instrument(level = "debug", skip(sk))]
 pub fn draw(token: &MainThreadToken) {

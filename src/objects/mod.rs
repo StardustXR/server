@@ -8,26 +8,22 @@ use crate::{
 		Node, OwnedNode,
 	},
 };
+use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
 use glam::{vec3, Mat4};
 use input::{
 	eye_pointer::EyePointer, mouse_pointer::MousePointer, sk_controller::SkController,
 	sk_hand::SkHand,
 };
+use openxr::SpaceLocationFlags;
 use play_space::PlaySpaceBounds;
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use std::{marker::PhantomData, sync::Arc};
-use stereokit_rust::{
-	material::Material,
-	sk::{DisplayMode, MainThreadToken, Sk},
-	system::{Handed, Input, Key, World},
-	util::Device,
-};
 use zbus::{interface, object_server::Interface, zvariant::OwnedObjectPath, Connection};
 
 pub mod input;
 pub mod play_space;
 
-enum Inputs {
+pub(crate) enum Inputs {
 	XR {
 		controller_left: SkController,
 		controller_right: SkController,
@@ -43,39 +39,51 @@ enum Inputs {
 	},
 }
 
+struct ControllerInput {
+	pose: openxr::Space,
+	select: openxr::Action<f32>,
+	grab: openxr::Action<f32>,
+	scroll: openxr::Action<openxr::Vector2f>,
+}
+
 pub struct ServerObjects {
 	connection: Connection,
 	hmd: (Arc<Spatial>, ObjectHandle<SpatialRef>),
 	play_space: Option<(Arc<Spatial>, ObjectHandle<SpatialRef>)>,
-	hand_materials: [Material; 2],
-	inputs: Inputs,
-	disable_controllers: bool,
-	disable_hands: bool,
+	inputs: Option<Inputs>,
+	view_space: Option<openxr::Space>,
+	ref_space: Option<openxr::Space>,
 }
+
+pub struct TrackingRefs {
+	view_space: openxr::Space,
+	ref_space: openxr::Space,
+	left_controller_space: openxr::Space,
+	right_controller_space: openxr::Space,
+	left_hand_tracker: Option<openxr::HandTracker>,
+	right_hand_tracker: Option<openxr::HandTracker>,
+}
+
 impl ServerObjects {
-	pub fn new(
-		connection: Connection,
-		sk: &Sk,
-		hand_materials: [Material; 2],
-		disable_controllers: bool,
-		disable_hands: bool,
-	) -> ServerObjects {
+	pub fn new(connection: Connection) -> ServerObjects {
 		let hmd = SpatialRef::create(&connection, "/org/stardustxr/HMD");
 
-		let play_space = (World::has_bounds()
-			&& World::get_bounds_size().x != 0.0
-			&& World::get_bounds_size().y != 0.0)
-			.then(|| SpatialRef::create(&connection, "/org/stardustxr/PlaySpace"));
-		if play_space.is_some() {
-			let dbus_connection = connection.clone();
-			tokio::task::spawn(async move {
-				PlaySpaceBounds::create(&dbus_connection).await;
-				dbus_connection
-					.request_name("org.stardustxr.PlaySpace")
-					.await
-					.unwrap();
-			});
-		}
+		// TODO: implement in bevy_mod_openxr
+		// let play_space = (World::has_bounds()
+		// 	&& World::get_bounds_size().x != 0.0
+		// 	&& World::get_bounds_size().y != 0.0)
+		// 	.then(|| SpatialRef::create(&connection, "/org/stardustxr/PlaySpace"));
+		// let play_space = None;
+		// if play_space.is_some() {
+		// 	let dbus_connection = connection.clone();
+		// 	tokio::task::spawn(async move {
+		// 		PlaySpaceBounds::create(&dbus_connection).await;
+		// 		dbus_connection
+		// 			.request_name("org.stardustxr.PlaySpace")
+		// 			.await
+		// 			.unwrap();
+		// 	});
+		// }
 
 		tokio::task::spawn({
 			let connection = connection.clone();
@@ -91,111 +99,123 @@ impl ServerObjects {
 			}
 		});
 
-		let inputs = if sk.get_active_display_mode() == DisplayMode::MixedReality {
-			Inputs::XR {
-				controller_left: SkController::new(&connection, Handed::Left).unwrap(),
-				controller_right: SkController::new(&connection, Handed::Right).unwrap(),
-				hand_left: SkHand::new(&connection, Handed::Left).unwrap(),
-				hand_right: SkHand::new(&connection, Handed::Right).unwrap(),
-				eye_pointer: Device::has_eye_gaze()
-					.then(EyePointer::new)
-					.transpose()
-					.unwrap(),
-			}
-		} else {
-			Inputs::MousePointer(MousePointer::new().unwrap())
-		};
+		// let inputs = if sk.get_active_display_mode() == DisplayMode::MixedReality {
+		// 	Inputs::XR {
+		// 		controller_left: SkController::new(&connection, Handed::Left).unwrap(),
+		// 		controller_right: SkController::new(&connection, Handed::Right).unwrap(),
+		// 		hand_left: SkHand::new(&connection, Handed::Left).unwrap(),
+		// 		hand_right: SkHand::new(&connection, Handed::Right).unwrap(),
+		// 		// TODO: implement in bevy_mod_openxr
+		// 		eye_pointer: false.then(EyePointer::new).transpose().unwrap(),
+		// 	}
+		// } else {
+		// 	Inputs::MousePointer(MousePointer::new().unwrap())
+		// };
 
 		ServerObjects {
 			connection,
 			hmd,
-			play_space,
-			hand_materials,
-			inputs,
-			disable_controllers,
-			disable_hands,
+			play_space: None,
+			inputs: None,
+			ref_space: None,
+			view_space: None,
 		}
 	}
 
 	pub fn update(
 		&mut self,
-		sk: &Sk,
-		token: &MainThreadToken,
-		dbus_connection: &Connection,
-		object_registry: &ObjectRegistry,
+		session: Option<&openxr::Session<openxr::AnyGraphics>>,
+		time: Option<openxr::Time>,
 	) {
-		let hmd_pose = Input::get_head();
-		self.hmd
-			.0
-			.set_local_transform(Mat4::from_scale_rotation_translation(
-				vec3(1.0, 1.0, 1.0),
-				hmd_pose.orientation.into(),
-				hmd_pose.position.into(),
-			));
-
-		if let Some(play_space) = self.play_space.as_ref() {
-			let pose = World::get_bounds_pose();
-			play_space
-				.0
-				.set_local_transform(Mat4::from_rotation_translation(
-					pose.orientation.into(),
-					pose.position.into(),
-				));
-		}
-
-		#[allow(clippy::collapsible_if)]
-		if sk.get_active_display_mode() != DisplayMode::MixedReality {
-			if Input::key(Key::F6).is_just_inactive() {
-				self.inputs = Inputs::MousePointer(MousePointer::new().unwrap());
+		if let (Some(session), Some(ref_space), Some(time)) =
+			(session, self.ref_space.as_ref(), time)
+		{
+			'hmd: {
+				if let Some(view) = self.view_space.as_ref() {
+					let hmd_pose = match view.locate(ref_space, time) {
+						Ok(v) => v,
+						Err(err) => {
+							tracing::error!("error while locating hmd: {err}");
+							break 'hmd;
+						}
+					};
+					if hmd_pose.location_flags.contains(
+						SpaceLocationFlags::POSITION_TRACKED
+							| SpaceLocationFlags::ORIENTATION_TRACKED,
+					) {
+						self.hmd
+							.0
+							.set_local_transform(Mat4::from_scale_rotation_translation(
+								vec3(1.0, 1.0, 1.0),
+								hmd_pose.pose.orientation.to_quat(),
+								hmd_pose.pose.position.to_vec3(),
+							));
+					}
+				}
 			}
-			// if Input::key(Key::F7).is_just_inactive() {
-			// 	self.inputs = Inputs::Controllers((
-			// 		SkController::new(Handed::Left).unwrap(),
-			// 		SkController::new(Handed::Right).unwrap(),
-			// 	));
-			// }
-			// if Input::key(Key::F8).is_just_inactive() {
-			// 	self.inputs = Inputs::Hands {
-			// 		left: SkHand::new(&self.connection, Handed::Left).unwrap(),
-			// 		right: SkHand::new(&self.connection, Handed::Right).unwrap(),
-			// 	};
-			// }
 		}
+
+		// if let Some(play_space) = self.play_space.as_ref() {
+		// 	let pose = World::get_bounds_pose();
+		// 	play_space
+		// 		.0
+		// 		.set_local_transform(Mat4::from_rotation_translation(
+		// 			pose.orientation.into(),
+		// 			pose.position.into(),
+		// 		));
+		// }
+
+		// if sk.get_active_display_mode() != DisplayMode::MixedReality {
+		// 	if Input::key(Key::F6).is_just_inactive() {
+		// 		self.inputs = Inputs::MousePointer(MousePointer::new().unwrap());
+		// 	}
+		// 	// if Input::key(Key::F7).is_just_inactive() {
+		// 	// 	self.inputs = Inputs::Controllers((
+		// 	// 		SkController::new(Handed::Left).unwrap(),
+		// 	// 		SkController::new(Handed::Right).unwrap(),
+		// 	// 	));
+		// 	// }
+		// 	if Input::key(Key::F8).is_just_inactive() {
+		// 		self.inputs = Inputs::Hands {
+		// 			left: SkHand::new(&self.connection, Handed::Left).unwrap(),
+		// 			right: SkHand::new(&self.connection, Handed::Right).unwrap(),
+		// 		};
+		// 	}
+		// }
 
 		match &mut self.inputs {
-			Inputs::XR {
+			Some(Inputs::XR {
 				controller_left,
 				controller_right,
 				hand_left,
 				hand_right,
 				eye_pointer,
-			} => {
-				if !self.disable_controllers {
-					controller_left.update(token);
-					controller_right.update(token);
-				}
-				Input::hand_visible(Handed::Left, !self.disable_hands);
-				Input::hand_visible(Handed::Right, !self.disable_hands);
-				if !self.disable_hands {
-					hand_left.update(sk, token, &mut self.hand_materials[0]);
-					hand_right.update(sk, token, &mut self.hand_materials[1]);
-				}
+			}) => {
+				// controller_left.update(token);
+				// controller_right.update(token);
+				// hand_left.update(sk, token);
+				// hand_right.update(sk, token);
 				if let Some(eye_pointer) = eye_pointer {
 					eye_pointer.update();
 				}
 			}
-			Inputs::MousePointer(mouse_pointer) => {
-				mouse_pointer.update(dbus_connection, object_registry)
-			}
+			Some(Inputs::MousePointer(mouse_pointer)) => mouse_pointer.update(),
 			// Inputs::Controllers((left, right)) => {
 			// 	left.update(token);
 			// 	right.update(token);
 			// }
-			Inputs::Hands { left, right } => {
-				left.update(sk, token, &mut self.hand_materials[0]);
-				right.update(sk, token, &mut self.hand_materials[1]);
+			Some(Inputs::Hands { left, right }) => {
+				// left.update(sk, token);
+				// right.update(sk, token);
 			}
+			None => {}
 		}
+	}
+	pub fn set_inputs(&mut self, inputs: Inputs) {
+		self.inputs = Some(inputs);
+	}
+	pub fn unset_inputs(&mut self, inputs: Inputs) {
+		self.inputs = None;
 	}
 }
 
