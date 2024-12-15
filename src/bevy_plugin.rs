@@ -1,7 +1,6 @@
-use std::ops::Deref as _;
-
 use bevy::{
-	app::MainScheduleOrder, asset::embedded_asset, ecs::schedule::ScheduleLabel, prelude::*,
+	app::MainScheduleOrder, asset::embedded_asset, ecs::schedule::ScheduleLabel,
+	math::bounding::Aabb3d, prelude::*,
 };
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{session_available, XrSessionCreated};
@@ -47,6 +46,49 @@ pub enum BevyToStardustEvent {
 	MainSessionVisible(bool),
 }
 
+pub trait StardustAabb3dExt {
+	fn grown_box(&self, aabb: &Self, opt_box_transform: Option<impl Into<Mat4>>) -> Self;
+	fn grown_point(&self, pt: impl Into<Vec3>) -> Self;
+}
+impl StardustAabb3dExt for Aabb3d {
+	fn grown_box(&self, other: &Self, opt_box_transform: Option<impl Into<Mat4>>) -> Self {
+		let mat = opt_box_transform.map(|m| m.into());
+		let other_min = mat
+			.as_ref()
+			.map(|v| v.transform_point3a(other.min))
+			.unwrap_or(other.min);
+		let other_max = mat
+			.as_ref()
+			.map(|v| v.transform_point3a(other.max))
+			.unwrap_or(other.max);
+		let tmp = self.grown_point(other_min);
+		tmp.grown_point(other_max)
+	}
+
+	fn grown_point(&self, pt: impl Into<Vec3>) -> Self {
+		let pt = pt.into();
+		let mut min = self.min;
+		let mut max = self.max;
+		if pt.x > max.x {
+			max.x = pt.x;
+		} else if pt.x < min.x {
+			min.x = pt.x;
+		}
+		if pt.y > max.y {
+			max.y = pt.y;
+		} else if pt.y < min.y {
+			min.y = pt.y;
+		}
+		if pt.z > max.z {
+			max.z = pt.z;
+		} else if pt.z < min.z {
+			min.z = pt.z;
+		}
+
+		Aabb3d { min, max }
+	}
+}
+
 #[derive(ScheduleLabel, Hash, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StardustExtract;
 #[derive(Component, Hash, Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,4 +97,4 @@ pub struct TemporaryEntity;
 #[require(GlobalTransform)]
 pub struct ViewLocation;
 #[derive(Hash, Debug, Clone, Copy, PartialEq, Eq, Deref)]
-pub struct MainWorldEntity(Entity);
+pub struct MainWorldEntity(pub Entity);
