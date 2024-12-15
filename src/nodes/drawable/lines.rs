@@ -6,17 +6,12 @@ use crate::{
 };
 use bevy::{
 	app::Plugin,
-	asset::{Asset, Assets, RenderAssetUsages},
+	asset::{Assets, RenderAssetUsages},
 	color::{Color, ColorToComponents, Srgba},
 	math::{bounding::Aabb3d, Isometry3d},
-	pbr::{MaterialExtension, MeshMaterial3d, StandardMaterial},
+	pbr::{MeshMaterial3d, StandardMaterial},
 	prelude::{
 		AlphaMode, Commands, GlobalTransform, Mesh, Mesh3d, ResMut, Single, Transform, With,
-	},
-	reflect::Reflect,
-	render::{
-		primitives::Aabb,
-		render_resource::{AsBindGroup, ShaderRef},
 	},
 };
 use color_eyre::eyre::Result;
@@ -33,24 +28,25 @@ pub struct Lines {
 }
 impl Lines {
 	pub fn add_to(node: &Arc<Node>, lines: Vec<Line>) -> Result<Arc<Lines>> {
-		let _ = node
+		*node
 			.get_aspect::<Spatial>()
 			.unwrap()
 			.bounding_box_calc
-			.set(|node| {
-				if let Ok(lines) = node.get_aspect::<Lines>() {
-					return Aabb3d::from_point_cloud(
-						Isometry3d::IDENTITY,
-						lines
-							.data
-							.lock()
-							.iter()
-							.flat_map(|line| line.points.iter())
-							.map(|point| Vec3A::from(point.point)),
-					);
-				}
+			.lock() = {
+			if let Ok(lines) = node.get_aspect::<Lines>() {
+				Aabb3d::from_point_cloud(
+					Isometry3d::IDENTITY,
+					lines
+						.data
+						.lock()
+						.iter()
+						.flat_map(|line| line.points.iter())
+						.map(|point| Vec3A::from(point.point)),
+				)
+			} else {
 				Aabb3d::new(Vec3A::ZERO, Vec3A::ZERO)
-			});
+			}
+		};
 
 		let lines = LINES_REGISTRY.add(Lines {
 			space: node.get_aspect::<Spatial>()?.clone(),
