@@ -5,6 +5,7 @@ use bevy::{
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{session_available, XrSessionCreated};
 use openxr::ReferenceSpaceType;
+use stardust_xr::values::color::{color_space::LinearRgb, AlphaColor, Rgb};
 
 use crate::objects::Inputs;
 
@@ -86,6 +87,15 @@ impl StardustAabb3dExt for Aabb3d {
 		}
 
 		Aabb3d { min, max }
+	}
+}
+
+pub const fn convert_linear_rgba(c: AlphaColor<f32, Rgb<f32, LinearRgb>>) -> LinearRgba {
+	LinearRgba {
+		red: c.c.r,
+		green: c.c.g,
+		blue: c.c.b,
+		alpha: c.a,
 	}
 }
 
