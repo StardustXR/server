@@ -5,7 +5,7 @@ use bevy::{
 	prelude::*,
 };
 use bevy_mod_openxr::session::OxrSession;
-use bevy_mod_xr::session::{session_available, XrSessionCreated};
+use bevy_mod_xr::session::{session_available, XrFirst, XrSessionCreated};
 use openxr::ReferenceSpaceType;
 use stardust_xr::values::color::{color_space::LinearRgb, AlphaColor, Rgb};
 
@@ -18,6 +18,8 @@ pub struct DbusConnection(pub zbus::Connection);
 
 #[derive(ScheduleLabel, Hash, Debug, PartialEq, Eq, Clone)]
 pub struct InputUpdate;
+#[derive(ScheduleLabel, Hash, Debug, PartialEq, Eq, Clone)]
+pub struct StardustFirst;
 impl Plugin for StardustBevyPlugin {
 	fn build(&self, app: &mut App) {
 		app.init_schedule(StardustExtract);
@@ -29,6 +31,17 @@ impl Plugin for StardustBevyPlugin {
 		let mut schedule = Schedule::new(InputUpdate);
 		schedule.set_executor_kind(ExecutorKind::Simple);
 		app.add_schedule(schedule);
+
+		let mut schedule = Schedule::new(StardustFirst);
+		schedule.set_executor_kind(ExecutorKind::Simple);
+		app.add_schedule(schedule);
+
+		let labels = &mut app.world_mut().resource_mut::<MainScheduleOrder>().labels;
+		let xr_first_intern = (XrFirst).intern();
+		if labels.remove(0) != xr_first_intern {
+			panic!("first schedule was not XrFirst!");
+		}
+		labels.insert(0, (StardustFirst).intern());
 	}
 }
 

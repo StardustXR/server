@@ -111,24 +111,24 @@ fn update_controllers(
 				.spatial
 				.set_local_transform(world_transform);
 		}
-		controller.datamap.select = controller
-			.actions
-			.trigger
-			.state(&session, openxr::Path::NULL)
-			.map(|v| v.current_state)
-			.unwrap_or_default();
-		controller.datamap.grab = controller
-			.actions
-			.grip
-			.state(&session, openxr::Path::NULL)
-			.map(|v| v.current_state)
-			.unwrap_or_default();
-		controller.datamap.scroll = controller
-			.actions
-			.stick
-			.state(&session, openxr::Path::NULL)
-			.map(|v| v.current_state.to_vec2())
-			.unwrap_or_default();
+		// controller.datamap.select = controller
+		// 	.actions
+		// 	.trigger
+		// 	.state(&session, openxr::Path::NULL)
+		// 	.map(|v| v.current_state)
+		// 	.unwrap_or_default();
+		// controller.datamap.grab = controller
+		// 	.actions
+		// 	.grip
+		// 	.state(&session, openxr::Path::NULL)
+		// 	.map(|v| v.current_state)
+		// 	.unwrap_or_default();
+		// controller.datamap.scroll = controller
+		// 	.actions
+		// 	.stick
+		// 	.state(&session, openxr::Path::NULL)
+		// 	.map(|v| v.current_state.to_vec2())
+		// 	.unwrap_or_default();
 		*controller.input.datamap.lock() = Datamap::from_typed(&controller.datamap).unwrap();
 
 		// remove the capture when it's removed from captures list

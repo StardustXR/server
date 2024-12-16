@@ -49,12 +49,6 @@ impl Plugin for StardustOxrRenderPlugin {
 		)
 		.init_resource::<OxrViews>();
 
-		let labels = &mut app.world_mut().resource_mut::<MainScheduleOrder>().labels;
-		let xr_first_intern = (XrFirst).intern();
-		if labels.remove(0) != xr_first_intern {
-			panic!("first schedule was not XrFirst!");
-		}
-
 		let render_app = app.sub_app_mut(RenderApp);
 
 		render_app

@@ -12,7 +12,7 @@ use crate::core::destroy_queue;
 // use crate::nodes::items::camera;
 use crate::nodes::{audio, drawable, input};
 
-use bevy::app::{App, PluginGroup, Startup, Update};
+use bevy::app::{App, PluginGroup, PluginsState, Startup, Update};
 use bevy::asset::{AssetServer, Handle};
 use bevy::core_pipeline::Skybox;
 use bevy::image::Image;
@@ -20,12 +20,12 @@ use bevy::log::LogPlugin;
 use bevy::pbr::StandardMaterial;
 use bevy::prelude::{
 	on_event, resource_added, Camera3d, ClearColor, Commands, Entity, EventReader,
-	IntoSystemConfigs, Local, Query, Res, Resource, With,
+	IntoSystemConfigs, Local, Query, Res, Resource, With, World,
 };
 use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
 use bevy::time::Time;
 use bevy::utils::default;
-use bevy::winit::{WakeUp, WinitPlugin};
+use bevy::winit::{EventLoopProxyWrapper, WakeUp, WinitPlugin};
 use bevy::DefaultPlugins;
 use bevy_mod_openxr::action_set_syncing::{OxrActionSyncingPlugin, OxrSyncActionSet};
 use bevy_mod_openxr::exts::OxrExtensions;
@@ -37,7 +37,7 @@ use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_openxr::types::{AppInfo, Version};
 use bevy_mod_openxr::{add_xr_plugins, openxr_session_running};
 use bevy_mod_xr::session::{XrFirst, XrSessionCreated, XrSessionPlugin};
-use bevy_plugin::{DbusConnection, InputUpdate, StardustBevyPlugin};
+use bevy_plugin::{DbusConnection, InputUpdate, StardustBevyPlugin, StardustFirst};
 use clap::Parser;
 use core::client::Client;
 use core::task;
@@ -54,12 +54,11 @@ use oxr_render_plugin::StardustOxrRenderPlugin;
 use session::{launch_start, save_session};
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use stardust_xr::server;
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::net::UnixListener;
 use tokio::sync::Notify;
-use tracing::metadata::LevelFilter;
 use tracing::{debug_span, error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use zbus::fdo::ObjectManager;
@@ -99,10 +98,26 @@ struct CliArgs {
 }
 
 static STARDUST_INSTANCE: OnceCell<String> = OnceCell::new();
+static TOKIO: RuntimeWrapper = RuntimeWrapper(OnceCell::new());
 
-// #[tokio::main]
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
+struct RuntimeWrapper(OnceCell<tokio::runtime::Runtime>);
+impl Deref for RuntimeWrapper {
+	type Target = tokio::runtime::Runtime;
+
+	fn deref(&self) -> &Self::Target {
+		self.0.get().unwrap()
+	}
+}
+
+fn main() {
+	let runtime = tokio::runtime::Builder::new_multi_thread()
+		.enable_all()
+		.build()
+		.unwrap();
+	TOKIO.0.set(runtime).unwrap();
+	TOKIO.block_on(setup())
+}
+async fn setup() {
 	color_eyre::install().unwrap();
 
 	let registry = tracing_subscriber::registry();
@@ -245,7 +260,7 @@ fn stereokit_loop(
 						exts
 					},
 					blend_modes: Some(vec![
-						openxr::EnvironmentBlendMode::ALPHA_BLEND,
+						// openxr::EnvironmentBlendMode::ALPHA_BLEND,
 						openxr::EnvironmentBlendMode::OPAQUE,
 					]),
 					synchronous_pipeline_compilation: false,
@@ -262,6 +277,7 @@ fn stereokit_loop(
 			});
 		}
 		bevy_app.add_event::<OxrSyncActionSet>();
+		bevy_app.add_plugins(bevy_xr_utils::hand_gizmos::HandGizmosPlugin);
 	}
 	bevy_app.add_plugins(StardustBevyPlugin);
 	bevy_app.add_plugins((
@@ -343,16 +359,16 @@ fn stereokit_loop(
 		}
 	}
 
-	debug_span!("bevy").in_scope(|| loop {
+	bevy_app.insert_resource(objects);
+
+	let bevy_step = |world: &mut World| {
 		let _span = debug_span!("Bevy step");
 		let _span = _span.enter();
-
 		// camera::update(token);
 		#[cfg(feature = "wayland")]
 		wayland.frame_event();
 		destroy_queue::clear();
 
-		let world = bevy_app.world_mut();
 		let time = world.get_resource_mut::<OxrFrameState>().map(|mut s| {
 			let t = openxr::Time::from_nanos(
 				s.predicted_display_time.as_nanos() + s.predicted_display_period.as_nanos(),
@@ -369,7 +385,9 @@ fn stereokit_loop(
 		}
 		world.run_schedule(InputUpdate);
 		let session = world.remove_resource::<OxrSession>();
+		let mut objects = world.remove_resource::<ServerObjects>().unwrap();
 		objects.update(session.as_deref(), time);
+		world.insert_resource(objects);
 		if let Some(session) = session {
 			world.insert_resource(session);
 		}
@@ -382,15 +400,14 @@ fn stereokit_loop(
 			let mut waiter = world.remove_resource::<OxrFrameWaiter>().unwrap();
 			let state = waiter.wait().unwrap();
 			world.insert_resource(OxrFrameState(state));
+			world.insert_resource(waiter);
 			world.run_system_cached(update_cameras);
 		}
 		#[cfg(feature = "wayland")]
 		wayland.update();
-		bevy_app.update();
-		if let Some(exit) = bevy_app.should_exit() {
-			break;
-		}
-	});
+	};
+	bevy_app.add_systems(StardustFirst, bevy_step);
+	bevy_app.run();
 
 	#[cfg(feature = "wayland")]
 	drop(wayland);
