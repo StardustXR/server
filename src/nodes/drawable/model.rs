@@ -1,3 +1,4 @@
+use super::{MaterialParameter, ModelAspect, ModelPartAspect, MODEL_PART_ASPECT_ALIAS_INFO};
 use crate::bail;
 use crate::bevy_plugin::MainWorldEntity;
 use crate::core::client::Client;
@@ -6,10 +7,9 @@ use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::Spatial;
-use crate::nodes::{Aspect, Node};
+use crate::nodes::Node;
 use crate::DefaultMaterial;
 use bevy::app::{Plugin, PostUpdate};
-use bevy::asset::Handle;
 use bevy::asset::{AssetServer, Assets};
 use bevy::color::{Alpha, Color, LinearRgba, Srgba};
 use bevy::core::Name;
@@ -230,10 +230,6 @@ fn update_model_parts(
 					}
 					mat.0 = mats.add(new_material);
 				}
-
-				let shared_material =
-					MATERIAL_REGISTRY.add_or_get(Arc::new(MaterialWrapper(new_material)));
-				part.material(&shared_material.0);
 			}
 		}
 	}
@@ -303,7 +299,6 @@ fn create_model_parts_for_loaded_models(
 				pending_material_replacement: Mutex::new(None),
 				aliases: AliasList::default(),
 			});
-			<ModelPart as ModelPartAspect>::add_node_members(&node);
 			node.add_aspect_raw(model_part.clone());
 			parts.push(model_part.clone());
 		}

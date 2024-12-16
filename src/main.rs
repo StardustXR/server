@@ -4,7 +4,6 @@ mod core;
 mod nodes;
 mod objects;
 pub mod oxr_render_plugin;
-pub mod oxr_sync_actionset;
 mod session;
 #[cfg(feature = "wayland")]
 mod wayland;
@@ -17,6 +16,7 @@ use bevy::app::{App, PluginGroup, Startup, Update};
 use bevy::asset::{AssetServer, Handle};
 use bevy::core_pipeline::Skybox;
 use bevy::image::Image;
+use bevy::log::LogPlugin;
 use bevy::pbr::StandardMaterial;
 use bevy::prelude::{
 	on_event, resource_added, Camera3d, ClearColor, Commands, Entity, EventReader,
@@ -24,6 +24,8 @@ use bevy::prelude::{
 };
 use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
 use bevy::time::Time;
+use bevy::utils::default;
+use bevy::winit::{WakeUp, WinitPlugin};
 use bevy::DefaultPlugins;
 use bevy_mod_openxr::action_set_syncing::{OxrActionSyncingPlugin, OxrSyncActionSet};
 use bevy_mod_openxr::exts::OxrExtensions;
@@ -217,7 +219,13 @@ fn stereokit_loop(
 	let mut bevy_app = App::new();
 	let base = (DefaultPlugins)
 		.build()
-		.disable::<PipelinedRenderingPlugin>();
+		.disable::<PipelinedRenderingPlugin>()
+		.disable::<LogPlugin>()
+		.set({
+			let mut plugin = WinitPlugin::<WakeUp>::default();
+			plugin.run_on_any_thread = true;
+			plugin
+		});
 	if args.flatscreen {
 		bevy_app.add_plugins(base);
 	} else {
@@ -245,7 +253,7 @@ fn stereokit_loop(
 				})
 				.disable::<OxrRenderPlugin>()
 				.disable::<OxrActionSyncingPlugin>()
-				.add_after::<XrSessionPlugin>(StardustOxrRenderPlugin),
+				.add_after::<OxrInitPlugin>(StardustOxrRenderPlugin),
 		);
 		if let Some(priority) = args.overlay_priority {
 			bevy_app.insert_resource(OxrOverlaySettings {

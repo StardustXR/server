@@ -113,7 +113,7 @@ impl Client {
 		drawable::create_interface(&client)?;
 		audio::create_interface(&client)?;
 		input::create_interface(&client)?;
-		items::camera::create_interface(&client)?;
+		// items::camera::create_interface(&client)?;
 		items::panel::create_interface(&client)?;
 
 		let _ = client.state.set(state.apply_to(&client));
