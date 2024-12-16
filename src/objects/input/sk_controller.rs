@@ -1,6 +1,6 @@
 use super::{get_sorted_handlers, CaptureManager};
 use crate::{
-	bevy_plugin::DbusConnection,
+	bevy_plugin::{DbusConnection, InputUpdate},
 	core::client::INTERNAL_CLIENT,
 	nodes::{
 		fields::{Field, FieldTrait},
@@ -55,17 +55,18 @@ impl Plugin for StardustControllerPlugin {
 	fn build(&self, app: &mut App) {
 		embedded_asset!(app, "src/objects/input", "cursor.glb");
 		app.add_systems(XrSessionCreated, spawn_controllers);
+		app.add_systems(InputUpdate, update_controllers);
 	}
 }
 
 fn update_controllers(
 	mut mats: ResMut<Assets<DefaultMaterial>>,
-	mut query: Query<(&SkController, &mut Transform)>,
+	mut query: Query<(&mut SkController, &mut Transform)>,
 	time: Res<OxrFrameState>,
 	base_space: Res<XrPrimaryReferenceSpace>,
 	session: ResMut<OxrSession>,
 ) {
-	for (controller, mut transform) in &mut query {
+	for (mut controller, mut transform) in query.iter_mut() {
 		let input_node = controller.input.spatial.node().unwrap();
 		let location = (|| {
 			let location = match session.locate_space(
