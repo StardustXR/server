@@ -43,6 +43,7 @@ bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0
 bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
 bevy_xr_utils = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
 openxr = "0.19"
+winit = { version = "0.30", default-features = false, features = [] }
 # small utility thingys
 once_cell = "1.19.0"
 nanoid = "0.4.0"

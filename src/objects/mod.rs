@@ -7,7 +7,9 @@ use crate::{
 		spatial::{Spatial, EXPORTED_SPATIALS},
 		Node, OwnedNode,
 	},
+	TOKIO,
 };
+use bevy::prelude::Resource;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
 use glam::{vec3, Mat4};
 use input::{
@@ -46,6 +48,7 @@ struct ControllerInput {
 	scroll: openxr::Action<openxr::Vector2f>,
 }
 
+#[derive(Resource)]
 pub struct ServerObjects {
 	connection: Connection,
 	hmd: (Arc<Spatial>, ObjectHandle<SpatialRef>),
@@ -76,7 +79,7 @@ impl ServerObjects {
 		// let play_space = None;
 		// if play_space.is_some() {
 		// 	let dbus_connection = connection.clone();
-		// 	tokio::task::spawn(async move {
+		// 	TOKIO.spawn(async move {
 		// 		PlaySpaceBounds::create(&dbus_connection).await;
 		// 		dbus_connection
 		// 			.request_name("org.stardustxr.PlaySpace")
@@ -85,7 +88,7 @@ impl ServerObjects {
 		// 	});
 		// }
 
-		tokio::task::spawn({
+		TOKIO.spawn({
 			let connection = connection.clone();
 			async move {
 				connection
@@ -224,7 +227,7 @@ impl<I: Interface> Drop for ObjectHandle<I> {
 	fn drop(&mut self) {
 		let connection = self.0.clone();
 		let object_path = self.1.clone();
-		tokio::task::spawn(async move {
+		TOKIO.spawn(async move {
 			connection.object_server().remove::<I, _>(object_path);
 		});
 	}
@@ -238,7 +241,7 @@ impl SpatialRef {
 		let uid: u64 = rand::random();
 		EXPORTED_SPATIALS.lock().insert(uid, node.0.clone());
 
-		tokio::task::spawn({
+		TOKIO.spawn({
 			let connection = connection.clone();
 			let path = path.to_string();
 			async move {
@@ -280,7 +283,7 @@ impl FieldRef {
 		let uid: u64 = rand::random();
 		EXPORTED_FIELDS.lock().insert(uid, node.0.clone());
 
-		tokio::task::spawn({
+		TOKIO.spawn({
 			let connection = connection.clone();
 			let path = path.to_string();
 			async move {

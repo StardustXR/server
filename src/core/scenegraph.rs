@@ -1,6 +1,7 @@
 use crate::core::error::Result;
 use crate::nodes::alias::get_original;
 use crate::nodes::Node;
+use crate::TOKIO;
 use crate::{core::client::Client, nodes::Message};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -68,7 +69,7 @@ impl MethodResponseSender {
 		self,
 		f: impl Future<Output = Result<(T, Vec<OwnedFd>)>> + Send + 'static,
 	) {
-		tokio::task::spawn(async move { self.0.send(map_method_return(f.await)) });
+		TOKIO.spawn(async move { self.0.send(map_method_return(f.await)) });
 	}
 }
 fn map_method_return<T: Serialize>(

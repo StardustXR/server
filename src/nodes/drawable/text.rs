@@ -8,7 +8,7 @@ use crate::{
 	DefaultMaterial,
 };
 use bevy::{
-	app::{App, Plugin},
+	app::{App, Plugin, PostUpdate, PreUpdate},
 	asset::{AssetServer, Assets, RenderAssetUsages},
 	color::Color,
 	image::Image,
@@ -54,7 +54,8 @@ impl Plugin for StardustTextPlugin {
 		let (tx, rx) = crossbeam_channel::unbounded();
 		SPAWN_TEXT_SENDER.set(tx);
 		app.insert_resource(SpawnTextReader(rx));
-		todo!()
+		app.add_systems(PostUpdate, update_text);
+		app.add_systems(PreUpdate, spawn_text);
 	}
 }
 
