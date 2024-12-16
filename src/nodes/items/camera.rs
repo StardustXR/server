@@ -8,10 +8,7 @@ use crate::nodes::AspectIdentifier;
 use crate::{
 	core::{client::Client, registry::Registry, scenegraph::MethodResponseSender},
 	nodes::{
-		drawable::{
-			model::{MaterialWrapper, ModelPart},
-			shaders::UNLIT_SHADER_BYTES,
-		},
+		drawable::{model::ModelPart, shaders::UNLIT_SHADER_BYTES},
 		items::TypeInfo,
 		spatial::{Spatial, Transform},
 		Message, Node,
@@ -25,19 +22,7 @@ use parking_lot::Mutex;
 
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::Arc;
-use stereokit_rust::{
-	material::{Material, Transparency},
-	shader::Shader,
-	sk::MainThreadToken,
-	system::Renderer,
-	tex::{Tex, TexFormat, TexType},
-	util::Color128,
-};
 use tracing::error;
-
-pub struct TexWrapper(pub Tex);
-unsafe impl Send for TexWrapper {}
-unsafe impl Sync for TexWrapper {}
 
 stardust_xr_server_codegen::codegen_item_camera_protocol!();
 lazy_static! {
@@ -68,8 +53,8 @@ struct FrameInfo {
 pub struct CameraItem {
 	space: Arc<Spatial>,
 	frame_info: Mutex<FrameInfo>,
-	sk_tex: OnceCell<TexWrapper>,
-	sk_mat: OnceCell<Arc<MaterialWrapper>>,
+	sk_tex: OnceCell<()>,
+	sk_mat: OnceCell<Arc<()>>,
 	applied_to: Registry<ModelPart>,
 	apply_to: Registry<ModelPart>,
 }
