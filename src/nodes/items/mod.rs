@@ -1,7 +1,8 @@
-pub mod camera;
+// TODO: reimplement with bevy
+// pub mod camera;
 pub mod panel;
 
-use self::camera::CameraItem;
+// use self::camera::CameraItem;
 use self::panel::PanelItemTrait;
 use super::alias::AliasList;
 use super::fields::{Field, FIELD_ALIAS_INFO};
@@ -134,19 +135,19 @@ impl Drop for Item {
 }
 
 pub enum ItemType {
-	Camera(Arc<CameraItem>),
+	// Camera(CameraItem),
 	Panel(Arc<dyn PanelItemTrait>),
 }
 impl ItemType {
 	fn send_ui_item_created(&self, node: &Node, item: &Arc<Node>) {
 		match self {
-			ItemType::Camera(c) => c.send_ui_item_created(node, item),
+			// ItemType::Camera(c) => c.send_ui_item_created(node, item),
 			ItemType::Panel(p) => p.send_ui_item_created(node, item),
 		}
 	}
 	fn send_acceptor_item_created(&self, node: &Node, item: &Arc<Node>) {
 		match self {
-			ItemType::Camera(c) => c.send_acceptor_item_created(node, item),
+			// ItemType::Camera(c) => c.send_acceptor_item_created(node, item),
 			ItemType::Panel(p) => p.send_acceptor_item_created(node, item),
 		}
 	}

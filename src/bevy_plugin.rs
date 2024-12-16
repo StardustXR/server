@@ -1,6 +1,8 @@
 use bevy::{
-	app::MainScheduleOrder, asset::embedded_asset, ecs::schedule::ScheduleLabel,
-	math::bounding::Aabb3d, prelude::*,
+	app::MainScheduleOrder,
+	ecs::schedule::{ExecutorKind, ScheduleLabel},
+	math::bounding::Aabb3d,
+	prelude::*,
 };
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{session_available, XrSessionCreated};
@@ -11,6 +13,11 @@ use crate::objects::Inputs;
 
 pub struct StardustBevyPlugin;
 
+#[derive(Resource, Deref)]
+pub struct DbusConnection(pub zbus::Connection);
+
+#[derive(ScheduleLabel, Hash, Debug, PartialEq, Eq, Clone)]
+pub struct InputUpdate;
 impl Plugin for StardustBevyPlugin {
 	fn build(&self, app: &mut App) {
 		app.init_schedule(StardustExtract);
@@ -19,7 +26,9 @@ impl Plugin for StardustBevyPlugin {
 		labels.insert(labels.len() - 2, StardustExtract.intern());
 		app.add_systems(Startup, spawn_camera.run_if(not(session_available)));
 		app.add_systems(XrSessionCreated, make_view_space);
-		embedded_asset!(app, "src/objects/input", "objects/input/cursor.glb");
+		let mut schedule = Schedule::new(InputUpdate);
+		schedule.set_executor_kind(ExecutorKind::Simple);
+		app.add_schedule(schedule);
 	}
 }
 
