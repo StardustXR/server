@@ -38,7 +38,7 @@ auto_link_exclude_list = [
 ]
 
 [dependencies]
-bevy = { version = "0.15", features = ["wayland"] }
+bevy = { version = "0.15", features = ["wayland", "mp3", "wav"] }
 bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
 bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
 bevy_xr_utils = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }

@@ -18,24 +18,6 @@ use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
 
-// #[instrument(level = "debug", skip(sk))]
-pub fn draw(token: &MainThreadToken) {
-	lines::draw_all(token);
-	model::draw_all(token);
-	text::draw_all(token);
-
-	if let Some(skytex) = QUEUED_SKYTEX.lock().take() {
-		if let Ok(skytex) = SHCubemap::from_cubemap(skytex, true, 100) {
-			Renderer::skytex(skytex.tex);
-		}
-	}
-	if let Some(skylight) = QUEUED_SKYLIGHT.lock().take() {
-		if let Ok(skylight) = SHCubemap::from_cubemap(skylight, true, 100) {
-			Renderer::skylight(skylight.sh);
-		}
-	}
-}
-
 static QUEUED_SKYLIGHT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static QUEUED_SKYTEX: Mutex<Option<PathBuf>> = Mutex::new(None);
 
