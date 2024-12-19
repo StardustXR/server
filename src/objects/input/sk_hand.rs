@@ -10,6 +10,7 @@ use crate::nodes::{
 };
 use crate::objects::{ObjectHandle, SpatialRef};
 use crate::DefaultMaterial;
+use bevy::app::{Plugin, PostUpdate};
 use bevy::asset::{AssetServer, Assets, Handle};
 use bevy::prelude::{Commands, Component, Entity, Query, Res, ResMut};
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
@@ -17,6 +18,7 @@ use bevy_mod_openxr::resources::OxrFrameState;
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_openxr::spaces::OxrSpaceLocationFlags;
 use bevy_mod_xr::hands::{HandBone, HandSide};
+use bevy_mod_xr::session::XrSessionCreated;
 use bevy_mod_xr::spaces::XrPrimaryReferenceSpace;
 use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
@@ -31,6 +33,14 @@ fn update_joint(joint: &mut Joint, oxr_joint: openxr::HandJointLocation) {
 	let flags = OxrSpaceLocationFlags(oxr_joint.location_flags);
 	if flags.pos_valid() && flags.rot_valid() {
 		*joint = convert_joint(oxr_joint);
+	}
+}
+
+pub struct StardustHandPlugin;
+impl Plugin for StardustHandPlugin {
+	fn build(&self, app: &mut bevy::prelude::App) {
+		app.add_systems(XrSessionCreated, create_hands);
+		app.add_systems(PostUpdate, update_hands);
 	}
 }
 
@@ -76,7 +86,7 @@ fn update_hands(
 					update_joint(&mut finger.distal, joints[finger_index + 3]);
 					update_joint(&mut finger.intermediate, joints[finger_index + 2]);
 					update_joint(&mut finger.proximal, joints[finger_index + 1]);
-					update_joint(&mut finger.metacarpal, joints[finger_index + 0]);
+					update_joint(&mut finger.metacarpal, joints[finger_index]);
 					// Why?
 					finger.tip.radius = 0.0;
 				}

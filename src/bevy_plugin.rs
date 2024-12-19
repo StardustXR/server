@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 use bevy::{
 	app::MainScheduleOrder,
 	ecs::schedule::{ExecutorKind, ScheduleLabel},
@@ -6,12 +8,24 @@ use bevy::{
 };
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{session_available, XrFirst, XrSessionCreated};
+use once_cell::sync::OnceCell;
 use openxr::ReferenceSpaceType;
 use stardust_xr::values::color::{color_space::LinearRgb, AlphaColor, Rgb};
 
-use crate::objects::Inputs;
-
 pub struct StardustBevyPlugin;
+
+pub static DESTROY_ENTITY: DestroySender = DestroySender(OnceCell::new());
+
+pub struct DestroySender(OnceCell<crossbeam_channel::Sender<Entity>>);
+impl Deref for DestroySender {
+	type Target = crossbeam_channel::Sender<Entity>;
+
+	fn deref(&self) -> &Self::Target {
+		self.0.get().unwrap()
+	}
+}
+#[derive(Resource, Deref)]
+struct DestroyEntityReader(crossbeam_channel::Receiver<Entity>);
 
 #[derive(Resource, Deref)]
 pub struct DbusConnection(pub zbus::Connection);
@@ -22,6 +36,12 @@ pub struct InputUpdate;
 pub struct StardustFirst;
 impl Plugin for StardustBevyPlugin {
 	fn build(&self, app: &mut App) {
+		let (tx, rx) = crossbeam_channel::unbounded();
+		DESTROY_ENTITY
+			.0
+			.set(tx)
+			.expect("unable to set destroy entity sender, yell at schmarni pls thx");
+		app.insert_resource(DestroyEntityReader(rx));
 		app.init_schedule(StardustExtract);
 		let labels = &mut app.world_mut().resource_mut::<MainScheduleOrder>().labels;
 		info!("test: {labels:?}");
@@ -42,7 +62,22 @@ impl Plugin for StardustBevyPlugin {
 			panic!("first schedule was not XrFirst!");
 		}
 		labels.insert(0, (StardustFirst).intern());
+		app.add_systems(First, yeet_entities);
 	}
+}
+
+fn yeet_entities(
+	mut cmds: Commands,
+	query: Query<Entity, With<TemporaryEntity>>,
+	reader: Res<DestroyEntityReader>,
+) {
+	query
+		.iter()
+		.for_each(|e| cmds.entity(e).despawn_recursive());
+	reader
+		.0
+		.try_iter()
+		.for_each(|e| cmds.entity(e).despawn_recursive());
 }
 
 fn make_view_space(mut cmds: Commands, session: Res<OxrSession>) {
@@ -58,17 +93,6 @@ fn make_view_space(mut cmds: Commands, session: Res<OxrSession>) {
 fn spawn_camera(mut cmds: Commands) {
 	cmds.spawn((Camera3d::default(), ViewLocation));
 }
-
-#[derive(Deref, DerefMut, Resource)]
-pub struct BevyToStardustEvents(pub Vec<BevyToStardustEvent>);
-pub enum BevyToStardustEvent {
-	InputsCreated(Inputs),
-	SessionDestroyed,
-	SessionEnding,
-	SessionCreated(OxrSession),
-	MainSessionVisible(bool),
-}
-
 pub trait StardustAabb3dExt {
 	fn grown_box(&self, aabb: &Self, opt_box_transform: Option<impl Into<Mat4>>) -> Self;
 	fn grown_point(&self, pt: impl Into<Vec3>) -> Self;
