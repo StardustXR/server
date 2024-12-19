@@ -12,15 +12,16 @@ use crate::core::destroy_queue;
 // use crate::nodes::items::camera;
 use crate::nodes::{audio, drawable, input};
 
-use bevy::app::{App, PluginGroup, PluginsState, Startup, Update};
+use bevy::app::{App, PluginGroup, PluginsState, PostUpdate, Startup, Update};
 use bevy::asset::{AssetServer, Handle};
+use bevy::color::Color;
 use bevy::core_pipeline::Skybox;
 use bevy::image::Image;
 use bevy::log::LogPlugin;
 use bevy::pbr::StandardMaterial;
 use bevy::prelude::{
 	on_event, resource_added, Camera3d, ClearColor, Commands, Entity, EventReader,
-	IntoSystemConfigs, Local, Query, Res, Resource, With, World,
+	IntoSystemConfigs, Local, Query, Res, ResMut, Resource, Transform, With, World,
 };
 use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
 use bevy::time::Time;
@@ -34,9 +35,11 @@ use bevy_mod_openxr::init::{should_run_frame_loop, OxrInitPlugin};
 use bevy_mod_openxr::render::{update_cameras, OxrRenderPlugin};
 use bevy_mod_openxr::resources::{OxrFrameState, OxrFrameWaiter, OxrGraphicsInfo};
 use bevy_mod_openxr::session::OxrSession;
+use bevy_mod_openxr::spaces::OxrSpaceExt;
 use bevy_mod_openxr::types::{AppInfo, Version};
 use bevy_mod_openxr::{add_xr_plugins, openxr_session_running};
-use bevy_mod_xr::session::{XrFirst, XrSessionCreated, XrSessionPlugin};
+use bevy_mod_xr::session::{XrFirst, XrPreDestroySession, XrSessionCreated, XrSessionPlugin};
+use bevy_mod_xr::spaces::XrPrimaryReferenceSpace;
 use bevy_plugin::{DbusConnection, InputUpdate, StardustBevyPlugin, StardustFirst};
 use clap::Parser;
 use core::client::Client;
@@ -47,6 +50,7 @@ use nodes::drawable::lines::BevyLinesPlugin;
 use nodes::drawable::model::StardustModelPlugin;
 use nodes::drawable::text::StardustTextPlugin;
 use objects::input::sk_controller::StardustControllerPlugin;
+use objects::input::sk_hand::StardustHandPlugin;
 use objects::ServerObjects;
 use once_cell::sync::OnceCell;
 use openxr::OverlaySessionCreateFlagsEXTX;
@@ -260,7 +264,7 @@ fn stereokit_loop(
 						exts
 					},
 					blend_modes: Some(vec![
-						// openxr::EnvironmentBlendMode::ALPHA_BLEND,
+						openxr::EnvironmentBlendMode::ALPHA_BLEND,
 						openxr::EnvironmentBlendMode::OPAQUE,
 					]),
 					synchronous_pipeline_compilation: false,
@@ -283,6 +287,7 @@ fn stereokit_loop(
 	bevy_app.add_plugins((
 		BevyLinesPlugin,
 		StardustModelPlugin,
+		StardustHandPlugin,
 		StardustTextPlugin,
 		StardustSoundPlugin,
 		StardustControllerPlugin,
@@ -326,10 +331,36 @@ fn stereokit_loop(
 			cams.iter().for_each(|e| {
 				cmds.entity(e).remove::<Skybox>();
 			});
+			cmds.insert_resource(ClearColor(Color::NONE));
 		}
 		*last_hidden = env_hidden;
 	}
 	bevy_app.add_systems(XrSessionCreated, update_background);
+	bevy_app.add_systems(
+		PostUpdate,
+		(|mut objects: ResMut<ServerObjects>,
+		  ref_space: Res<XrPrimaryReferenceSpace>,
+		  session: Res<OxrSession>| {
+			objects
+				.ref_space
+				.replace(unsafe { ref_space.as_openxr_space(&session) });
+			objects.view_space.replace(
+				session
+					.deref()
+					.deref()
+					.create_reference_space(
+						openxr::ReferenceSpaceType::VIEW,
+						openxr::Posef::IDENTITY,
+					)
+					.unwrap(),
+			);
+		})
+		.run_if(on_event::<bevy_mod_xr::session::XrSessionCreatedEvent>),
+	);
+	bevy_app.add_systems(XrPreDestroySession, |mut objetcs: ResMut<ServerObjects>| {
+		objetcs.ref_space = None;
+		objetcs.view_space = None;
+	});
 	bevy_app.add_systems(
 		Update,
 		update_background.run_if(on_event::<OxrOverlaySessionEvent>),

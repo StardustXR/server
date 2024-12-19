@@ -169,7 +169,7 @@ pub fn draw_all(
 	let mat_handle = materials.add(material);
 	for lines in LINES_REGISTRY.get_valid_contents() {
 		if let Some(node) = lines.space.node() {
-			if node.enabled() {
+			if node.enabled() && !lines.data.lock().is_empty() {
 				// Does this rebuild the mesh every frame? yes, is this problematic? probably,
 				// would a shader work better? yes, do i care? not right now
 				let mut mesh = Mesh::new(

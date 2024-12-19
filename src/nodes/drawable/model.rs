@@ -1,6 +1,6 @@
 use super::{MaterialParameter, ModelAspect, ModelPartAspect, MODEL_PART_ASPECT_ALIAS_INFO};
 use crate::bail;
-use crate::bevy_plugin::MainWorldEntity;
+use crate::bevy_plugin::{MainWorldEntity, DESTROY_ENTITY};
 use crate::core::client::Client;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
@@ -8,8 +8,8 @@ use crate::core::resource::get_resource_file;
 use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::Spatial;
 use crate::nodes::Node;
-use crate::DefaultMaterial;
-use bevy::app::{Plugin, PostUpdate};
+use crate::{DefaultMaterial, TOKIO};
+use bevy::app::{Plugin, PostUpdate, PreUpdate, Update};
 use bevy::asset::{AssetServer, Assets};
 use bevy::color::{Alpha, Color, LinearRgba, Srgba};
 use bevy::core::Name;
@@ -18,23 +18,27 @@ use bevy::math::bounding::Aabb3d;
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::AlphaMode;
 use bevy::prelude::{
-	Children, Commands, Component, Deref, Entity, HierarchyQueryExt, Mesh3d, Parent, Query, Res,
-	ResMut, Resource, Transform, Visibility, With, Without,
+	BuildChildrenTransformExt, Children, Commands, Component, Deref, Entity, Has,
+	HierarchyQueryExt, Mesh3d, Parent, Query, Res, ResMut, Resource, Transform, Visibility, With,
+	Without,
 };
 use bevy::reflect::{GetField, PartialReflect, Reflect};
 use bevy::render::primitives::Aabb;
 use bevy::scene::SceneRoot;
 use color_eyre::eyre::eyre;
-use glam::{Vec2, Vec3};
+use bevy::tasks::futures_lite::FutureExt;
+use glam::{Mat4, Vec2, Vec3};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use stardust_xr::values::ResourceID;
-use tracing::{error, warn};
+use tokio::sync::Notify;
+use tracing::{error, info, warn};
 
 use std::ffi::OsStr;
+use std::future::IntoFuture;
 use std::ops::Deref;
-use std::path::PathBuf;
+use std::path::{self, PathBuf};
 use std::sync::{Arc, Weak};
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
@@ -132,7 +136,7 @@ impl MaterialParameter {
 }
 
 pub struct ModelPart {
-	entity: MainWorldEntity,
+	entity: OnceCell<Entity>,
 	path: String,
 	space: Arc<Spatial>,
 	model: Weak<Model>,
@@ -142,7 +146,7 @@ pub struct ModelPart {
 }
 
 #[derive(Component, Clone)]
-pub struct StardustModel(Arc<Model>);
+pub struct StardustModel(Weak<Model>);
 #[derive(Component, Clone)]
 pub struct UnprocessedModel;
 pub struct StardustModelPlugin;
@@ -151,7 +155,10 @@ impl Plugin for StardustModelPlugin {
 		let (tx, rx) = crossbeam_channel::unbounded();
 		LOAD_MODEL_SENDER.set(tx);
 		app.insert_resource(LoadModelReader(rx));
-		app.add_systems(PostUpdate, create_model_parts_for_loaded_models);
+		app.add_systems(Update, create_model_parts_for_loaded_models);
+		app.add_systems(PreUpdate, load_models);
+		app.add_systems(PostUpdate, update_models);
+		app.add_systems(PostUpdate, update_model_parts);
 	}
 }
 static LOAD_MODEL_SENDER: OnceCell<crossbeam_channel::Sender<(PathBuf, Arc<Model>)>> =
@@ -161,8 +168,11 @@ struct LoadModelReader(crossbeam_channel::Receiver<(PathBuf, Arc<Model>)>);
 
 fn update_models(mut query: Query<(&StardustModel, &mut Visibility, &mut Transform)>) {
 	for (model, mut vis, mut transform) in query.iter_mut() {
-		*transform = Transform::from_matrix(model.0.space.global_transform());
-		if let Some(node) = model.0.space.node() {
+		let Some(model) = model.0.upgrade() else {
+			continue;
+		};
+		*transform = Transform::from_matrix(model.space.global_transform());
+		if let Some(node) = model.space.node() {
 			*vis = match node.enabled() {
 				true => Visibility::Inherited,
 				false => Visibility::Hidden,
@@ -177,7 +187,7 @@ fn load_models(rx: Res<LoadModelReader>, mut cmds: Commands, asset_server: Res<A
 		let entity = cmds
 			.spawn((
 				SceneRoot(handle),
-				StardustModel(model.clone()),
+				StardustModel(Arc::downgrade(&model)),
 				UnprocessedModel,
 			))
 			.id();
@@ -186,29 +196,32 @@ fn load_models(rx: Res<LoadModelReader>, mut cmds: Commands, asset_server: Res<A
 }
 
 fn update_model_parts(
-	models: Query<&StardustModel>,
+	models: Query<&StardustModel, Without<UnprocessedModel>>,
 	mut mats: ResMut<Assets<DefaultMaterial>>,
 	mut part_query: Query<(
 		&mut Transform,
 		&mut MeshMaterial3d<DefaultMaterial>,
-		&mut Mesh3d,
+		Has<Parent>,
 	)>,
+	mut cmds: Commands,
 ) {
 	for model in &models {
-		let model = &model.0;
+		let Some(model) = model.0.upgrade() else {
+			continue;
+		};
 		for part in model.parts.lock().iter() {
-			let Ok((mut transform, mut mat, mut _mesh)) = part_query.get_mut(*part.entity) else {
+			let Some((entity, (mut transform, mut mat, has_parent))) = part
+				.entity
+				.get()
+				.and_then(|e| Some((*e, part_query.get_mut(*e).ok()?)))
+			else {
 				continue;
 			};
-			*transform = Transform::from_matrix(Spatial::space_to_space_matrix(
-				Some(&part.space),
-				Some(&model.space),
-			));
-			if let Some(material_replacement) = part.pending_material_replacement.lock().take() {
-				let material = material_replacement.deref().clone();
-				let mat_handle = mats.add(material);
-				mat.0 = mat_handle;
+			if has_parent {
+				cmds.entity(entity).remove_parent_in_place();
 			}
+			*transform = Transform::from_matrix(part.space.global_transform());
+
 			// todo: find all materials with identical parameters and batch them into 1 material again
 			'mat_params: {
 				let mut material_parameters = part.pending_material_parameters.lock();
@@ -237,36 +250,41 @@ fn update_model_parts(
 
 fn get_path(
 	entity: Entity,
-	query: &Query<(Entity, Option<&Parent>, &Transform, &Name, &Aabb), Without<SceneRoot>>,
-) -> Option<String> {
-	let (_, parent, _, name, _) = query.get(entity).ok()?;
-	let next = parent.and_then(|p| get_path(p.get(), query));
-	match next {
-		Some(next) => Some(format!("{name}/{next}")),
-		None => Some(name.to_string()),
-	}
+	query: &Query<(&Parent, &Name), Without<SceneRoot>>,
+	mut in_vec: Vec<String>,
+) -> Vec<String> {
+	let Ok((parent, name)) = query.get(entity) else {
+		return in_vec;
+	};
+	in_vec.push(name.to_string());
+	get_path(parent.get(), query, in_vec)
 }
 
 fn create_model_parts_for_loaded_models(
-	query: Query<(Entity, &StardustModel), With<UnprocessedModel>>,
+	query: Query<(Entity, &StardustModel), (With<UnprocessedModel>, With<Children>)>,
 	children: Query<&Children>,
-	gltf_model_parts: Query<
-		(Entity, Option<&Parent>, &Transform, &Name, &Aabb),
-		Without<SceneRoot>,
-	>,
+	gltf_model_parts: Query<(Entity, &Transform, &Aabb), Without<SceneRoot>>,
+	name_query: Query<(&Parent, &Name), Without<SceneRoot>>,
 	mut cmds: Commands,
 ) {
 	for (entity, model) in &query {
-		let model = &model.0;
-		let mut parts = model.parts.lock();
-		cmds.entity(entity).remove::<UnprocessedModel>();
-		for (entity, parent, transform, name, aabb) in children
-			.iter_descendants(entity)
+		info!("creating parts!");
+		let Some(model) = model.0.upgrade() else {
+			continue;
+		};
+		// let mut parts = model.parts.lock();
+		let mut parts = Vec::<Arc<ModelPart>>::new();
+		for (entity, transform, aabb) in children
+			.iter_descendants_depth_first(entity)
 			.filter_map(|e| gltf_model_parts.get(e).ok())
 		{
-			let parent_part = parent
-				.and_then(|e| gltf_model_parts.get(e.get()).ok())
-				.and_then(|(e, _, _, _, _)| parts.iter().find(|v| v.entity.0 == e));
+			let mut path_parts = get_path(entity, &name_query, Vec::new());
+			path_parts.remove(0);
+			path_parts.reverse();
+			let part_path = path_parts.join("/");
+			path_parts.pop();
+			let parent_path = path_parts.join("/");
+			let parent_part = parts.iter().find(|v| v.path == parent_path);
 
 			let Some(stardust_model_part) = model.space.node() else {
 				continue;
@@ -274,22 +292,51 @@ fn create_model_parts_for_loaded_models(
 			let Some(client) = stardust_model_part.get_client() else {
 				continue;
 			};
-			let part_path = get_path(entity, &gltf_model_parts).unwrap_or_else(|| name.to_string());
+			let model_part = model
+				.parts
+				.lock()
+				.iter()
+				.find(|v| v.path == part_path)
+				.cloned()
+				.map(|v| {
+					*v.space.bounding_box_calc.lock() = Aabb3d::new(aabb.center, aabb.half_extents);
+					if v.entity.set(entity).is_err() {
+						error!(
+							"trying to set entity for already init model part?!
+							please yell at schmarni if you see this"
+						);
+					};
 
-			let node = client.scenegraph.add_node(Node::generate(&client, false));
-			let spatial_parent = parent_part
-				.map(|n| n.space.clone())
-				.unwrap_or_else(|| model.space.clone());
+					if let Err(err) = v.space.set_spatial_parent(Some(
+						parent_part.map(|n| &n.space).unwrap_or_else(|| {
+							info!("model is spatial parent");
+							&model.space
+						}),
+					)) {
+						error!("error setting spatial parent for existing model part: {err}");
+					}
+					v.space.set_local_transform(transform.compute_matrix());
+					info!("not fresh {}", &v.path);
+					v
+				})
+				.unwrap_or_else(|| {
+					let node = client.scenegraph.add_node(Node::generate(&client, false));
+					let spatial_parent =
+						parent_part.map(|n| n.space.clone()).unwrap_or_else(|| {
+							info!("model is spatial parent");
+							model.space.clone()
+						});
 
-			let space = Spatial::add_to(
-				&node,
-				Some(spatial_parent),
-				transform.compute_matrix(),
-				false,
-			);
+					let space = Spatial::add_to(
+						&node,
+						Some(spatial_parent),
+						transform.compute_matrix(),
+						false,
+					);
 
-			*space.bounding_box_calc.lock() = Aabb3d::new(aabb.center, aabb.half_extents);
+					*space.bounding_box_calc.lock() = Aabb3d::new(aabb.center, aabb.half_extents);
 
+<<<<<<< HEAD
 			let model_part = Arc::new(ModelPart {
 				entity: MainWorldEntity(entity),
 				path: part_path,
@@ -300,8 +347,26 @@ fn create_model_parts_for_loaded_models(
 				aliases: AliasList::default(),
 			});
 			node.add_aspect_raw(model_part.clone());
+=======
+					let model_part = Arc::new(ModelPart {
+						entity: OnceCell::from(entity),
+						path: part_path,
+						space,
+						model: Arc::downgrade(&model),
+						pending_material_parameters: Mutex::new(FxHashMap::default()),
+						pending_material_replacement: Mutex::new(None),
+						aliases: AliasList::default(),
+					});
+					node.add_aspect_raw(model_part.clone());
+					info!("fresh {}", &model_part.path);
+					model_part
+				});
+>>>>>>> 0ec4c0f (refactor: get models fully working)
 			parts.push(model_part.clone());
 		}
+		cmds.entity(entity).remove::<UnprocessedModel>();
+		info!("created parts! {}", parts.len());
+		*model.parts.lock() = parts;
 	}
 }
 
@@ -375,11 +440,43 @@ impl ModelAspect for Model {
 		part_path: String,
 	) -> Result<()> {
 		let model = node.get_aspect::<Model>()?;
+<<<<<<< HEAD
 		let parts = model.parts.lock();
 		let Some(part) = parts.iter().find(|p| p.path == part_path) else {
 			let paths = parts.iter().map(|p| &p.path).collect::<Vec<_>>();
 			bail!("Couldn't find model part at path {part_path}, all available paths: {paths:?}",);
 		};
+=======
+		let mut parts = model.parts.lock();
+		let part =
+			parts
+				.iter()
+				.find(|p| p.path == part_path)
+				.cloned()
+				.unwrap_or_else(|| {
+					let paths = parts.iter().map(|p| &p.path).collect::<Vec<_>>();
+					error!("Couldn't find model part at path {part_path}, all available paths: {paths:?}");
+
+					let node = calling_client
+						.scenegraph
+						.add_node(Node::generate(&calling_client, false));
+
+					let space = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
+
+					let model_part = Arc::new(ModelPart {
+						entity: OnceCell::new(),
+						path: part_path,
+						space,
+						model: Arc::downgrade(&model),
+						pending_material_parameters: Mutex::new(FxHashMap::default()),
+						pending_material_replacement: Mutex::new(None),
+						aliases: AliasList::default(),
+					});
+					node.add_aspect_raw(model_part.clone());
+					parts.push(model_part.clone());
+					model_part
+				});
+>>>>>>> 0ec4c0f (refactor: get models fully working)
 		Alias::create_with_id(
 			&part.space.node().unwrap(),
 			&calling_client,
@@ -390,8 +487,18 @@ impl ModelAspect for Model {
 		Ok(())
 	}
 }
+impl Drop for ModelPart {
+	fn drop(&mut self) {
+		if let Some(e) = self.entity.get() {
+			_ = DESTROY_ENTITY.send(*e);
+		}
+	}
+}
 impl Drop for Model {
 	fn drop(&mut self) {
+		if let Some(e) = self.entity.get() {
+			_ = DESTROY_ENTITY.send(*e);
+		}
 		MODEL_REGISTRY.remove(self);
 	}
 }

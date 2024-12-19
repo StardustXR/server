@@ -20,6 +20,7 @@ use openxr::SpaceLocationFlags;
 use play_space::PlaySpaceBounds;
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use std::{marker::PhantomData, sync::Arc};
+use tracing::info;
 use zbus::{interface, object_server::Interface, zvariant::OwnedObjectPath, Connection};
 
 pub mod input;
@@ -54,8 +55,8 @@ pub struct ServerObjects {
 	hmd: (Arc<Spatial>, ObjectHandle<SpatialRef>),
 	play_space: Option<(Arc<Spatial>, ObjectHandle<SpatialRef>)>,
 	inputs: Option<Inputs>,
-	view_space: Option<openxr::Space>,
-	ref_space: Option<openxr::Space>,
+	pub view_space: Option<openxr::Space>,
+	pub ref_space: Option<openxr::Space>,
 }
 
 pub struct TrackingRefs {
@@ -125,7 +126,7 @@ impl ServerObjects {
 		}
 	}
 
-	pub fn update(
+	pub(crate) fn update(
 		&mut self,
 		session: Option<&openxr::Session<openxr::AnyGraphics>>,
 		time: Option<openxr::Time>,
