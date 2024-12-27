@@ -42,6 +42,7 @@ use bevy_mod_xr::session::{XrFirst, XrPreDestroySession, XrSessionCreated, XrSes
 use bevy_mod_xr::spaces::XrPrimaryReferenceSpace;
 use bevy_plugin::{DbusConnection, InputUpdate, StardustBevyPlugin, StardustFirst};
 use clap::Parser;
+use tracing::level_filters::LevelFilter;
 use core::client::Client;
 use core::task;
 use directories::ProjectDirs;
@@ -198,7 +199,7 @@ async fn setup() {
 		let cli_args = cli_args.clone();
 		let dbus_connection = dbus_connection.clone();
 		move || {
-			stereokit_loop(
+			bevy_loop(
 				sk_ready_notifier,
 				project_dirs,
 				cli_args,
@@ -228,7 +229,7 @@ async fn setup() {
 	info!("Cleanly shut down Stardust");
 }
 
-fn stereokit_loop(
+fn bevy_loop(
 	sk_ready_notifier: Arc<Notify>,
 	project_dirs: Option<ProjectDirs>,
 	args: CliArgs,
@@ -331,6 +332,7 @@ fn stereokit_loop(
 			cams.iter().for_each(|e| {
 				cmds.entity(e).remove::<Skybox>();
 			});
+		let _span = debug_span!("spawn");
 			cmds.insert_resource(ClearColor(Color::NONE));
 		}
 		*last_hidden = env_hidden;
@@ -392,7 +394,7 @@ fn stereokit_loop(
 
 	bevy_app.insert_resource(objects);
 
-	let bevy_step = |world: &mut World| {
+	fn bevy_step(world: &mut World) {
 		let _span = debug_span!("Bevy step");
 		let _span = _span.enter();
 		// camera::update(token);
@@ -428,6 +430,7 @@ fn stereokit_loop(
 			.run_system_cached(should_run_frame_loop)
 			.unwrap_or(true)
 		{
+			let _span = debug_span!("eeping").entered();
 			let mut waiter = world.remove_resource::<OxrFrameWaiter>().unwrap();
 			let state = waiter.wait().unwrap();
 			world.insert_resource(OxrFrameState(state));

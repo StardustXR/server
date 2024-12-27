@@ -19,6 +19,7 @@ use glam::{Vec3, Vec3A};
 use parking_lot::Mutex;
 use prisma::Lerp;
 use std::{collections::VecDeque, sync::Arc};
+use tracing::{debug_span, info};
 
 static LINES_REGISTRY: Registry<Lines> = Registry::new();
 
@@ -27,6 +28,7 @@ pub struct Lines {
 	data: Mutex<Vec<Line>>,
 }
 impl Lines {
+	#[tracing::instrument]
 	pub fn add_to(node: &Arc<Node>, lines: Vec<Line>) -> Result<Arc<Lines>> {
 		*node
 			.get_aspect::<Spatial>()
@@ -34,15 +36,15 @@ impl Lines {
 			.bounding_box_calc
 			.lock() = {
 			if let Ok(lines) = node.get_aspect::<Lines>() {
-				Aabb3d::from_point_cloud(
-					Isometry3d::IDENTITY,
+				Aabb3d::from_point_cloud(Isometry3d::IDENTITY, {
+					let _span = debug_span!("add_to data lock").entered();
 					lines
 						.data
 						.lock()
 						.iter()
 						.flat_map(|line| line.points.iter())
-						.map(|point| Vec3A::from(point.point)),
-				)
+						.map(|point| Vec3A::from(point.point))
+				})
 			} else {
 				Aabb3d::new(Vec3A::ZERO, Vec3A::ZERO)
 			}
@@ -59,7 +61,9 @@ impl Lines {
 
 	fn draw(&self, mesh: &mut Mesh, view: &GlobalTransform) -> Transform {
 		let transform_mat = self.space.global_transform();
+		let _span = debug_span!("draw data lock").entered();
 		let data = self.data.lock().clone();
+		drop(_span);
 		let global_to_view = view.compute_matrix().inverse();
 		let local_to_view = transform_mat.inverse() * global_to_view;
 		let view_to_local = local_to_view.inverse();
@@ -139,12 +143,11 @@ struct BevyLinePoint {
 	color: Srgba,
 	thickness: f32,
 }
-impl Aspect for Lines {
-	const NAME: &'static str = "Lines";
-}
 impl LinesAspect for Lines {
+	#[tracing::instrument]
 	fn set_lines(node: Arc<Node>, _calling_client: Arc<Client>, lines: Vec<Line>) -> Result<()> {
 		let lines_aspect = node.get_aspect::<Lines>()?;
+		let _span = debug_span!("set_lines data lock").entered();
 		*lines_aspect.data.lock() = lines;
 		Ok(())
 	}
@@ -167,9 +170,23 @@ pub fn draw_all(
 		..Default::default()
 	};
 	let mat_handle = materials.add(material);
-	for lines in LINES_REGISTRY.get_valid_contents() {
+	let _span = debug_span!("line registry get valid contents").entered();
+	let vec = LINES_REGISTRY.get_valid_contents();
+	drop(_span);
+	info!("len {}", vec.len());
+	for lines in vec {
+		let _span = debug_span!("outer if span").entered();
 		if let Some(node) = lines.space.node() {
-			if node.enabled() && !lines.data.lock().is_empty() {
+			let _span = debug_span!("lines_data lock").entered();
+			let w = lines.data.lock().is_empty();
+			drop(_span);
+			let _span = debug_span!("node enabled check").entered();
+			let e = node.enabled();
+			drop(_span);
+			let _span = debug_span!("if span").entered();
+			if e && !w {
+				let _span = debug_span!("create line mesh").entered();
+				info!("spawning line");
 				// Does this rebuild the mesh every frame? yes, is this problematic? probably,
 				// would a shader work better? yes, do i care? not right now
 				let mut mesh = Mesh::new(

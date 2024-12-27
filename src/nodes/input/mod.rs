@@ -8,6 +8,7 @@ mod tip;
 
 pub use handler::*;
 pub use method::*;
+use tracing::debug_span;
 
 use super::fields::Field;
 use super::spatial::Spatial;
@@ -140,6 +141,7 @@ pub fn process_input() {
 			.clone()
 			// filter out methods without the handler in their handler order
 			.filter(|a| {
+				let _span = debug_span!("handlder_order lock").entered();
 				a.handler_order
 					.lock()
 					.iter()

@@ -9,6 +9,11 @@ license = "GPLv2"
 repository = "https://github.com/StardustXR/stardust-xr-server/"
 homepage = "https://stardustxr.org"
 
+[patch.crates-io]
+tracing-tracy = { git = "https://github.com/nagisa/rust_tracy_client", tag = "tracy-client-v0.17.6" }
+tracy-client = { git = "https://github.com/nagisa/rust_tracy_client", tag = "tracy-client-v0.17.6" }
+tracy-client-sys = { git = "https://github.com/nagisa/rust_tracy_client", tag = "tracy-client-v0.17.6" }
+
 [workspace]
 members = ["codegen"]
 
@@ -46,7 +51,12 @@ auto_link_exclude_list = [
 ]
 
 [dependencies]
-bevy = { version = "0.15", features = ["wayland", "mp3", "wav"] }
+bevy = { version = "0.15", features = [
+	"wayland",
+	"mp3",
+	"wav",
+	"trace_tracy",
+] }
 bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
 bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
 bevy_xr_utils = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
