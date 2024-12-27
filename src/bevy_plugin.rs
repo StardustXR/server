@@ -71,9 +71,10 @@ fn yeet_entities(
 	query: Query<Entity, With<TemporaryEntity>>,
 	reader: Res<DestroyEntityReader>,
 ) {
-	query
-		.iter()
-		.for_each(|e| cmds.entity(e).despawn_recursive());
+	query.iter().for_each(|e| {
+		info!("yeeting component entities");
+		cmds.entity(e).despawn_recursive();
+	});
 	reader
 		.0
 		.try_iter()

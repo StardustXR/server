@@ -12,7 +12,10 @@ use crate::objects::{ObjectHandle, SpatialRef};
 use crate::DefaultMaterial;
 use bevy::app::{Plugin, PostUpdate};
 use bevy::asset::{AssetServer, Assets, Handle};
-use bevy::prelude::{Commands, Component, Entity, Query, Res, ResMut};
+use bevy::prelude::{
+	Commands, Component, Entity, Gizmos, IntoSystemConfigs as _, Query, Res, ResMut,
+};
+use bevy::utils::default;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
 use bevy_mod_openxr::resources::OxrFrameState;
 use bevy_mod_openxr::session::OxrSession;
@@ -41,6 +44,13 @@ impl Plugin for StardustHandPlugin {
 	fn build(&self, app: &mut bevy::prelude::App) {
 		app.add_systems(XrSessionCreated, create_hands);
 		app.add_systems(PostUpdate, update_hands);
+		app.add_systems(PostUpdate, draw_hand_gizmos.after(update_hands));
+	}
+}
+
+fn draw_hand_gizmos(mut gizmos: Gizmos, query: Query<&SkHand>) {
+	for hand in query.iter() {
+		gizmos.axes(hand.palm_spatial.global_transform(), 0.05);
 	}
 }
 
@@ -87,8 +97,6 @@ fn update_hands(
 					update_joint(&mut finger.intermediate, joints[finger_index + 2]);
 					update_joint(&mut finger.proximal, joints[finger_index + 1]);
 					update_joint(&mut finger.metacarpal, joints[finger_index]);
-					// Why?
-					finger.tip.radius = 0.0;
 				}
 				update_joint(&mut hand_input.palm, joints[HandBone::Palm as usize]);
 				hand.palm_spatial

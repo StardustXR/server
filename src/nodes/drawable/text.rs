@@ -29,6 +29,7 @@ use glam::{vec3, Mat4, Vec2, Vec3};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
+use tracing::{info, info_span};
 
 use super::{TextAspect, TextStyle};
 
@@ -68,15 +69,14 @@ fn update_text(mut surface_query: Query<(&mut Transform)>) {
 		else {
 			continue;
 		};
-		let data = text.data.lock();
+		// let data = text.data.lock();
 
 		*transform = Transform::from_matrix(
-			text.space.global_transform()
-				* Mat4::from_scale(vec3(
-					data.character_height,
-					data.character_height,
-					data.character_height,
-				)),
+			text.space.global_transform(), // * Mat4::from_scale(vec3(
+			                               // 	data.character_height,
+			                               // 	data.character_height,
+			                               // 	data.character_height,
+			                               // )),
 		);
 	}
 }
@@ -90,7 +90,10 @@ fn spawn_text(
 	asset_server: Res<AssetServer>,
 ) {
 	for text in reader.try_iter() {
+		let _span = info_span!("spawning text").entered();
+		let _span2 = info_span!("text data lock").entered();
 		let data = text.data.lock();
+		drop(_span2);
 		let size = Extent3d {
 			width: (512.0 * data.bounds.as_ref().map(|v| v.bounds.x).unwrap_or(1.0)).floor() as u32,
 			height: (512.0 * data.bounds.as_ref().map(|v| v.bounds.y).unwrap_or(1.0)).floor()
@@ -168,6 +171,8 @@ fn spawn_text(
 				MeshMaterial3d(mats.add(DefaultMaterial {
 					base_color_texture: Some(image_handle),
 					unlit: true,
+					// would Cutout be enough here?
+					alpha_mode: bevy::prelude::AlphaMode::Blend,
 					..default()
 				})),
 			))

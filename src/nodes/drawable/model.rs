@@ -336,18 +336,6 @@ fn create_model_parts_for_loaded_models(
 
 					*space.bounding_box_calc.lock() = Aabb3d::new(aabb.center, aabb.half_extents);
 
-<<<<<<< HEAD
-			let model_part = Arc::new(ModelPart {
-				entity: MainWorldEntity(entity),
-				path: part_path,
-				space,
-				model: Arc::downgrade(model),
-				pending_material_parameters: Mutex::new(FxHashMap::default()),
-				pending_material_replacement: Mutex::new(None),
-				aliases: AliasList::default(),
-			});
-			node.add_aspect_raw(model_part.clone());
-=======
 					let model_part = Arc::new(ModelPart {
 						entity: OnceCell::from(entity),
 						path: part_path,
@@ -361,7 +349,6 @@ fn create_model_parts_for_loaded_models(
 					info!("fresh {}", &model_part.path);
 					model_part
 				});
->>>>>>> 0ec4c0f (refactor: get models fully working)
 			parts.push(model_part.clone());
 		}
 		cmds.entity(entity).remove::<UnprocessedModel>();
@@ -440,13 +427,6 @@ impl ModelAspect for Model {
 		part_path: String,
 	) -> Result<()> {
 		let model = node.get_aspect::<Model>()?;
-<<<<<<< HEAD
-		let parts = model.parts.lock();
-		let Some(part) = parts.iter().find(|p| p.path == part_path) else {
-			let paths = parts.iter().map(|p| &p.path).collect::<Vec<_>>();
-			bail!("Couldn't find model part at path {part_path}, all available paths: {paths:?}",);
-		};
-=======
 		let mut parts = model.parts.lock();
 		let part =
 			parts
@@ -476,7 +456,6 @@ impl ModelAspect for Model {
 					parts.push(model_part.clone());
 					model_part
 				});
->>>>>>> 0ec4c0f (refactor: get models fully working)
 		Alias::create_with_id(
 			&part.space.node().unwrap(),
 			&calling_client,

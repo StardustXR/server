@@ -49,6 +49,93 @@ pub fn codegen_item_panel_protocol(_input: proc_macro::TokenStream) -> proc_macr
 	codegen_protocol(ITEM_PANEL_PROTOCOL)
 }
 
+#[proc_macro]
+pub fn codegen_id_to_name_functions(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+	let mut aspect_map: Vec<(u64, String)> = Vec::new();
+	let mut method_map: Vec<(u64, String)> = Vec::new();
+	let mut signal_map: Vec<(u64, String)> = Vec::new();
+	let protocols = [
+		ROOT_PROTOCOL,
+		NODE_PROTOCOL,
+		SPATIAL_PROTOCOL,
+		FIELD_PROTOCOL,
+		AUDIO_PROTOCOL,
+		DRAWABLE_PROTOCOL,
+		INPUT_PROTOCOL,
+		ITEM_PROTOCOL,
+		ITEM_CAMERA_PROTOCOL,
+		ITEM_PANEL_PROTOCOL,
+	];
+	for aspect in protocols
+		.into_iter()
+		.filter_map(|p| Protocol::parse(p).ok())
+		.flat_map(|v| v.aspects)
+	{
+		aspect_map.push((aspect.id, aspect.name));
+		for m in aspect.members.into_iter() {
+			match m._type {
+				MemberType::Signal => &mut signal_map,
+				MemberType::Method => &mut method_map,
+			}
+			.push((m.opcode, m.name));
+		}
+	}
+
+	let aspect_id_to_name = aspect_map
+		.iter()
+		.map(|(id, name)| {
+			quote! {
+				#id => #name,
+			}
+		})
+		.reduce(fold_tokens);
+	let aspect_id_to_name_fn = quote! {
+		pub const fn aspect_id_to_name(id: u64) -> &'static str {
+			match id {
+				#aspect_id_to_name
+				_ => "Unknown"
+			}
+		}
+	};
+	let method_id_to_name = method_map
+		.iter()
+		.map(|(id, name)| {
+			quote! {
+				#id => #name,
+			}
+		})
+		.reduce(fold_tokens);
+	let method_id_to_name_fn = quote! {
+		pub const fn method_id_to_name(id: u64) -> &'static str {
+			match id {
+				#method_id_to_name
+				_ => "Unknown"
+			}
+		}
+	};
+	let signal_id_to_name = signal_map
+		.iter()
+		.map(|(id, name)| {
+			quote! {
+				#id => #name,
+			}
+		})
+		.reduce(fold_tokens);
+	let signal_id_to_name_fn = quote! {
+		pub const fn signal_id_to_name(id: u64) -> &'static str {
+			match id {
+				#signal_id_to_name
+				_ => "Unknown"
+			}
+		}
+	};
+	quote! {
+		#aspect_id_to_name_fn
+		#method_id_to_name_fn
+		#signal_id_to_name_fn
+	}.into()
+}
+
 fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 	let protocol = Protocol::parse(protocol).unwrap();
 	let interface = protocol

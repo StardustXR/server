@@ -163,18 +163,8 @@ impl Drop for Sound {
 	}
 }
 
-<<<<<<< HEAD
-=======
-<<<<<<< HEAD
-create_interface!(AudioInterface);
->>>>>>> 0ec4c0f (refactor: get models fully working)
 struct AudioInterface;
 impl InterfaceAspect for AudioInterface {
-=======
-pub fn update() {}
-
-impl InterfaceAspect for Interface {
->>>>>>> 2f5c92d (refactor: get models fully working)
 	#[doc = "Create a sound node. WAV and MP3 are supported."]
 	fn create_sound(
 		_node: Arc<Node>,

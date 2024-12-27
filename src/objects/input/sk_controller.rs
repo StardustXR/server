@@ -38,7 +38,7 @@ use openxr::{ActionSet, Posef};
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::{ops::Deref, sync::Arc};
-use tracing::error;
+use tracing::{debug_span, error};
 use zbus::Connection;
 
 #[derive(Default, Debug, Deserialize, Serialize)]
@@ -236,11 +236,15 @@ fn spawn_controllers(
 			HandSide::Left => "left",
 			HandSide::Right => "right",
 		};
+		let _span = debug_span!("create SpatialRef").entered();
 		let (spatial, object_handle) = SpatialRef::create(
 			&connection,
 			&("/org/stardustxr/Controller/".to_string() + side),
 		);
+		drop(_span);
 		let tip = InputDataType::Tip(Tip::default());
+
+		let _span = debug_span!("create input method").entered();
 		let Ok(input) = (|| -> color_eyre::Result<Arc<InputMethod>> {
 			Ok(InputMethod::add_to(
 				&spatial.node().unwrap(),
@@ -250,6 +254,8 @@ fn spawn_controllers(
 		})() else {
 			continue;
 		};
+		drop(_span);
+		let _span = debug_span!("create actions").entered();
 		let actions = {
 			let set = session
 				.instance()
@@ -275,6 +281,8 @@ fn spawn_controllers(
 					.unwrap(),
 			}
 		};
+		drop(_span);
+		let _span = debug_span!("spawn").entered();
 		cmds.spawn((
 			SceneRoot(handle.clone()),
 			SkController {
