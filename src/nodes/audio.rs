@@ -121,7 +121,9 @@ impl Sound {
 		let sound_arc = SOUND_REGISTRY.add(sound);
 		node.add_aspect_raw(sound_arc.clone());
 		if let Some(sender) = SPAWN_SOUND_SENDER.get() {
-			sender.send(sound_arc.clone())?;
+			sender
+				.send(sound_arc.clone())
+				.map_err(|_| eyre!("Unable to Spawn Audio Node"))?;
 		}
 		Ok(sound_arc)
 	}
@@ -139,7 +141,9 @@ impl SoundAspect for Sound {
 			.get()
 			.and_then(|s| Some((s, *sound.entity.get()?)))
 		{
-			sender.send((entity, SoundAction::Play))?
+			sender
+				.send((entity, SoundAction::Play))
+				.map_err(|_| eyre!("Unable to Play Audio"))?
 		}
 		Ok(())
 	}
@@ -149,7 +153,9 @@ impl SoundAspect for Sound {
 			.get()
 			.and_then(|s| Some((s, *sound.entity.get()?)))
 		{
-			sender.send((entity, SoundAction::Stop))?
+			sender
+				.send((entity, SoundAction::Stop))
+				.map_err(|_| eyre!("Unable to Stop Audio"))?
 		}
 		Ok(())
 	}
@@ -163,8 +169,7 @@ impl Drop for Sound {
 	}
 }
 
-struct AudioInterface;
-impl InterfaceAspect for AudioInterface {
+impl InterfaceAspect for Interface {
 	#[doc = "Create a sound node. WAV and MP3 are supported."]
 	fn create_sound(
 		_node: Arc<Node>,
