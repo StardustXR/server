@@ -101,21 +101,22 @@ fn spawn_text(
 			..default()
 		};
 
+		let _span = info_span!("create and setup image").entered();
 		// This is the texture that will be rendered to.
-		let mut image = Image::new_fill(
-			size,
-			TextureDimension::D2,
-			&[0, 0, 0, 0],
-			TextureFormat::Bgra8UnormSrgb,
-			RenderAssetUsages::default(),
-		);
+		let mut image = Image::transparent();
+		image.texture_descriptor.format = TextureFormat::Bgra8UnormSrgb;
+		image.texture_descriptor.dimension = TextureDimension::D2;
+		image.asset_usage = RenderAssetUsages::default();
+		image.resize(size);
 		// You need to set these texture usage flags in order to use the image as a render target
 		image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING
 			| TextureUsages::COPY_DST
 			| TextureUsages::RENDER_ATTACHMENT;
 
 		let image_handle = images.add(image);
+		drop(_span);
 
+		let _span = info_span!("spawn text camera and load font").entered();
 		let cam = cmds
 			.spawn((
 				Camera2d,
@@ -129,7 +130,9 @@ fn spawn_text(
 			.font_path
 			.as_ref()
 			.map(|v| asset_server.load(v.as_path()));
+		drop(_span);
 
+		let _span = info_span!("spawn ui entities").entered();
 		let ui_root = cmds
 			.spawn((
 				bevy::ui::Node {
@@ -156,6 +159,8 @@ fn spawn_text(
 				));
 			})
 			.id();
+		drop(_span);
+		let _span = info_span!("spawn 3d plane").entered();
 		let surface = cmds
 			.spawn((
 				Mesh3d(
@@ -177,6 +182,8 @@ fn spawn_text(
 				})),
 			))
 			.id();
+		drop(_span);
+		let _span = info_span!("setting OneCells").entered();
 		text.cam_entity.set(cam);
 		text.ui_root.set(ui_root);
 		text.surface.set(surface);
