@@ -69,6 +69,9 @@ fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 				#node_id
 				#aspect
 				pub struct Interface;
+				impl crate::nodes::AspectIdentifier for Interface {
+					impl_aspect_for_interface_aspect_id!{}
+				}
 				impl crate::nodes::Aspect for Interface {
 					impl_aspect_for_interface_aspect!{}
 				}
@@ -255,6 +258,13 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 			#server_side_members
 		}
 	};
+	let aspect_id_macro_name = Ident::new(
+		&format!(
+			"impl_aspect_for_{}_aspect_id",
+			aspect.name.to_case(Case::Snake)
+		),
+		Span::call_site(),
+	);
 	let aspect_macro_name = Ident::new(
 		&format!(
 			"impl_aspect_for_{}_aspect",
@@ -264,11 +274,13 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 	);
 	let aspect_id = aspect.id;
 	let aspect_macro = quote! {
+		macro_rules! #aspect_id_macro_name {
+			() => {
+				const ID: u64 = #aspect_id;
+			}
+		}
 		macro_rules! #aspect_macro_name {
 			() => {
-				fn id(&self) -> u64 {
-					#aspect_id
-				}
 				fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync + 'static> {
 					self
 				}

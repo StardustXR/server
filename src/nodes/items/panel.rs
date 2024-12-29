@@ -2,7 +2,7 @@ use super::camera::CameraItemAcceptor;
 use super::{create_item_acceptor_flex, register_item_ui_flex};
 use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
 use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
-use crate::nodes::Aspect;
+use crate::nodes::{Aspect, AspectIdentifier};
 use crate::{
 	core::{
 		client::{get_env, state, Client, INTERNAL_CLIENT},
@@ -207,7 +207,9 @@ impl<B: Backend> PanelItem<B> {
 		panel_item_client::destroy_child(&node, id);
 	}
 }
-
+impl<B: Backend> AspectIdentifier for PanelItem<B> {
+	impl_aspect_for_panel_item_aspect_id! {}
+}
 impl<B: Backend> Aspect for PanelItem<B> {
 	impl_aspect_for_panel_item_aspect! {}
 }
@@ -418,12 +420,18 @@ impl<B: Backend> PanelItemAspect for PanelItem<B> {
 }
 
 pub struct PanelItemUi;
+impl AspectIdentifier for PanelItemUi {
+	impl_aspect_for_panel_item_ui_aspect_id! {}
+}
 impl Aspect for PanelItemUi {
 	impl_aspect_for_panel_item_ui_aspect! {}
 }
 impl PanelItemUiAspect for PanelItemUi {}
 
 pub struct PanelItemAcceptor;
+impl AspectIdentifier for PanelItemAcceptor {
+	impl_aspect_for_panel_item_acceptor_aspect_id! {}
+}
 impl Aspect for PanelItemAcceptor {
 	impl_aspect_for_panel_item_acceptor_aspect! {}
 }

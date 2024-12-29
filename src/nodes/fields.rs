@@ -3,7 +3,7 @@ use super::spatial::{
 	Spatial, SPATIAL_REF_GET_LOCAL_BOUNDING_BOX_SERVER_OPCODE,
 	SPATIAL_REF_GET_RELATIVE_BOUNDING_BOX_SERVER_OPCODE, SPATIAL_REF_GET_TRANSFORM_SERVER_OPCODE,
 };
-use super::{Aspect, Node};
+use super::{Aspect, AspectIdentifier, Node};
 use crate::core::client::Client;
 use crate::nodes::spatial::Transform;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
@@ -148,6 +148,9 @@ impl Field {
 		Ok(field)
 	}
 }
+impl AspectIdentifier for Field {
+	impl_aspect_for_field_aspect_id! {}
+}
 impl Aspect for Field {
 	impl_aspect_for_field_aspect! {}
 }
@@ -193,6 +196,9 @@ impl FieldTrait for Field {
 }
 
 pub struct FieldRef;
+impl AspectIdentifier for FieldRef {
+	impl_aspect_for_field_ref_aspect_id! {}
+}
 impl Aspect for FieldRef {
 	impl_aspect_for_field_ref_aspect! {}
 }

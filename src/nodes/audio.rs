@@ -1,4 +1,4 @@
-use super::{Aspect, Node};
+use super::{Aspect, AspectIdentifier, Node};
 use crate::core::client::Client;
 use crate::core::destroy_queue;
 use crate::core::registry::Registry;
@@ -67,6 +67,9 @@ impl Sound {
 			instance.position(self.space.global_transform().w_axis.xyz());
 		}
 	}
+}
+impl AspectIdentifier for Sound {
+	impl_aspect_for_sound_aspect_id! {}
 }
 impl Aspect for Sound {
 	impl_aspect_for_sound_aspect! {}
