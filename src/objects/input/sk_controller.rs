@@ -17,13 +17,14 @@ use bevy::{
 	color::LinearRgba,
 	gltf::GltfAssetLabel,
 	pbr::MeshMaterial3d,
-	prelude::{Children, Commands, Component, Mesh, Query, Res, ResMut, Transform},
+	prelude::{Children, Commands, Component, IntoSystemConfigs as _, Mesh, Query, Res, ResMut, Transform},
 	scene::SceneRoot,
 	utils::default,
 };
 use bevy_mod_openxr::{
 	helper_traits::{ToQuat, ToVec2, ToVec3},
-	resources::OxrFrameState,
+	openxr_session_running,
+	resources::{OxrFrameState, Pipelined},
 	session::OxrSession,
 	spaces::{OxrSpaceExt, OxrSpaceLocationFlags},
 };
@@ -56,7 +57,10 @@ impl Plugin for StardustControllerPlugin {
 	fn build(&self, app: &mut App) {
 		embedded_asset!(app, "src/objects/input", "cursor.glb");
 		app.add_systems(XrSessionCreated, spawn_controllers);
-		app.add_systems(InputUpdate, update_controllers);
+		app.add_systems(
+			InputUpdate,
+			update_controllers.run_if(openxr_session_running),
+		);
 	}
 }
 
@@ -66,14 +70,22 @@ fn update_controllers(
 	time: Res<OxrFrameState>,
 	base_space: Res<XrPrimaryReferenceSpace>,
 	session: ResMut<OxrSession>,
+	pipelined: Option<Res<Pipelined>>,
 ) {
 	for (mut controller, mut transform) in query.iter_mut() {
 		let input_node = controller.input.spatial.node().unwrap();
+		let time = if pipelined.is_some() {
+			openxr::Time::from_nanos(
+				time.predicted_display_time.as_nanos() + time.predicted_display_period.as_nanos(),
+			)
+		} else {
+			time.predicted_display_time
+		};
 		let location = (|| {
 			let location = match session.locate_space(
 				&XrSpace::from_raw_openxr_space(controller.space.as_raw()),
 				&base_space,
-				time.predicted_display_time,
+				time,
 			) {
 				Err(err) => {
 					error!("issues locating controller space: {err}");

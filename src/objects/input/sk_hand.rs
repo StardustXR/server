@@ -17,7 +17,8 @@ use bevy::prelude::{
 };
 use bevy::utils::default;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
-use bevy_mod_openxr::resources::OxrFrameState;
+use bevy_mod_openxr::openxr_session_running;
+use bevy_mod_openxr::resources::{OxrFrameState, Pipelined};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_openxr::spaces::OxrSpaceLocationFlags;
 use bevy_mod_xr::hands::{HandBone, HandSide};
@@ -45,7 +46,14 @@ pub struct StardustHandPlugin;
 impl Plugin for StardustHandPlugin {
 	fn build(&self, app: &mut bevy::prelude::App) {
 		app.add_systems(XrSessionCreated, create_hands);
-		app.add_systems(InputUpdate, (update_hands,draw_hand_gizmos).chain());
+		app.add_systems(
+			InputUpdate,
+			(
+				update_hands.run_if(openxr_session_running),
+				draw_hand_gizmos,
+			)
+				.chain(),
+		);
 	}
 }
 
@@ -61,10 +69,18 @@ fn update_hands(
 	time: Res<OxrFrameState>,
 	base_space: Res<XrPrimaryReferenceSpace>,
 	session: ResMut<OxrSession>,
+	pipelined: Option<Res<Pipelined>>,
 ) {
+	let time = if pipelined.is_some() {
+		openxr::Time::from_nanos(
+			time.predicted_display_time.as_nanos() + time.predicted_display_period.as_nanos(),
+		)
+	} else {
+		time.predicted_display_time
+	};
 	for mut hand in &mut query {
 		let joints = session
-			.locate_hand_joints(&hand.hand_tracker, &base_space, time.predicted_display_time)
+			.locate_hand_joints(&hand.hand_tracker, &base_space, time)
 			.unwrap();
 		if let InputDataType::Hand(hand_input) = &mut *hand.input.data.lock() {
 			let input_node = hand.input.spatial.node().unwrap();

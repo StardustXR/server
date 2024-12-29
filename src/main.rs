@@ -91,6 +91,10 @@ struct CliArgs {
 	#[clap(short, long, action)]
 	flatscreen: bool,
 
+	/// Force Pipelined Rending, improving fps at the cost of latency
+	#[clap(short, long, action)]
+	pipelined_rendering: bool,
+
 	/// If monado insists on emulating them, set this flag...we want the raw input
 	#[clap(long)]
 	disable_controllers: bool,
@@ -296,6 +300,10 @@ fn bevy_loop(
 		.add(GltfPlugin::default())
 		.add(AudioPlugin::default())
 		.add(GizmoPlugin);
+
+	if args.pipelined_rendering {
+		base = base.add(PipelinedRenderingPlugin);
+	}
 
 	if args.flatscreen {
 		bevy_app.add_plugins(base);
