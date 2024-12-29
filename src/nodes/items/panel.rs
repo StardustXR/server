@@ -1,4 +1,4 @@
-use super::camera::CameraItemAcceptor;
+// use super::camera::CameraItemAcceptor;
 use super::{create_item_acceptor_flex, register_item_ui_flex};
 use crate::bail;
 use crate::core::error::Result;
@@ -469,7 +469,7 @@ impl<B: Backend> Drop for PanelItem<B> {
 impl InterfaceAspect for Interface {
 	#[doc = "Register this client to manage the items of a certain type and create default 3D UI for them."]
 	fn register_panel_item_ui(node: Arc<Node>, calling_client: Arc<Client>) -> Result<()> {
-		node.add_aspect(CameraItemAcceptor);
+		// node.add_aspect(CameraItemAcceptor);
 		register_item_ui_flex(calling_client, &ITEM_TYPE_INFO_PANEL)
 	}
 

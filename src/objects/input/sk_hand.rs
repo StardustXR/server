@@ -12,9 +12,7 @@ use crate::objects::{ObjectHandle, SpatialRef};
 use crate::DefaultMaterial;
 use bevy::app::{Plugin, PostUpdate};
 use bevy::asset::{AssetServer, Assets, Handle};
-use bevy::prelude::{
-	Commands, Component, Entity, Gizmos, IntoSystemConfigs as _, Query, Res, ResMut,
-};
+use bevy::prelude::{Commands, Component, Entity, Gizmos, IntoSystemConfigs as _, Query, Res, ResMut};
 use bevy::utils::default;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
 use bevy_mod_openxr::resources::OxrFrameState;
@@ -31,6 +29,8 @@ use stardust_xr::values::Datamap;
 use std::sync::Arc;
 use tracing::error;
 use zbus::Connection;
+
+use super::{get_sorted_handlers, CaptureManager};
 
 fn update_joint(joint: &mut Joint, oxr_joint: openxr::HandJointLocation) {
 	let flags = OxrSpaceLocationFlags(oxr_joint.location_flags);
@@ -114,88 +114,35 @@ fn update_hands(
 			hand.datamap.grab_strength = grip_activation(joints);
 			*hand.input.datamap.lock() = Datamap::from_typed(&hand.datamap).unwrap();
 		}
-		// remove the capture when it's removed from captures list
-		if let Some(capture) = &hand.capture {
-			if !hand
-				.input
-				.capture_requests
-				.get_valid_contents()
-				.contains(capture)
-			{
-				hand.capture.take();
-			}
-		}
-		// add the capture that's the closest if we don't have one
-		if hand.capture.is_none() {
-			hand.capture = hand
-				.input
-				.capture_requests
-				.get_valid_contents()
-				.into_iter()
-				.map(|handler| (handler.clone(), hand.compare_distance(&handler.field).abs()))
-				.reduce(|(handlers_a, distance_a), (handlers_b, distance_b)| {
-					if distance_a < distance_b {
-						(handlers_a, distance_a)
-					} else {
-						(handlers_b, distance_b)
-					}
-				})
-				.map(|(rx, _)| rx);
-		}
+		let distance_calculator = |space: &Arc<Spatial>, data: &InputDataType, field: &Field| {
+			let InputDataType::Hand(hand) = data else {
+				return None;
+			};
+			let thumb_tip_distance = field.distance(space, hand.thumb.tip.position.into());
+			let index_tip_distance = field.distance(space, hand.index.tip.position.into());
+			let middle_tip_distance = field.distance(space, hand.middle.tip.position.into());
+			let ring_tip_distance = field.distance(space, hand.ring.tip.position.into());
 
-		// make sure that if something is captured only send input to it
-		hand.input.captures.clear();
-		if let Some(capture) = &hand.capture {
-			hand.input.set_handler_order([capture].into_iter());
-			hand.input.captures.add_raw(capture);
+			Some(
+				(thumb_tip_distance * 0.3)
+					+ (index_tip_distance * 0.4)
+					+ (middle_tip_distance * 0.15)
+					+ (ring_tip_distance * 0.15),
+			)
+		};
+
+		let input = hand.input.clone();
+		hand.capture_manager.update_capture(&input);
+		hand.capture_manager
+			.set_new_capture(&input, distance_calculator);
+		hand.capture_manager.apply_capture(&input);
+
+		if hand.capture_manager.capture.is_some() {
 			return;
 		}
 
-		// send input to all the input handlers that are the closest to the ray as possible
-		hand.input.set_handler_order(
-			INPUT_HANDLER_REGISTRY
-				.get_valid_contents()
-				.into_iter()
-				// filter out all the disabled handlers
-				.filter(|handler| {
-					let Some(node) = handler.spatial.node() else {
-						return false;
-					};
-					node.enabled()
-				})
-				// filter out all the fields with disabled handlers
-				.filter(|handler| {
-					let Some(node) = handler.field.spatial.node() else {
-						return false;
-					};
-					node.enabled()
-				})
-				// get the unsigned distance to the handler's field (unsigned so giant fields won't always eat input)
-				.map(|handler| {
-					(
-						vec![handler.clone()],
-						hand.compare_distance(&handler.field).abs(),
-					)
-				})
-				// .inspect(|(_, result)| {
-				// 	dbg!(result);
-				// })
-				// now collect all handlers that are same distance if they're the closest
-				.reduce(|(mut handlers_a, distance_a), (handlers_b, distance_b)| {
-					if (distance_a - distance_b).abs() < 0.001 {
-						// distance is basically the same (within 1mm)
-						handlers_a.extend(handlers_b);
-						(handlers_a, distance_a)
-					} else if distance_a < distance_b {
-						(handlers_a, distance_a)
-					} else {
-						(handlers_b, distance_b)
-					}
-				})
-				.map(|(rx, _)| rx)
-				.unwrap_or_default()
-				.iter(),
-		);
+		let sorted_handlers = get_sorted_handlers(&hand.input, distance_calculator);
+		hand.input.set_handler_order(sorted_handlers.iter());
 	}
 }
 
@@ -268,7 +215,7 @@ fn create_hands(connection: Res<DbusConnection>, session: Res<OxrSession>, mut c
 				palm_object,
 				handed,
 				input,
-				capture: None,
+				capture_manager: default(),
 				datamap: Default::default(),
 				material: OnceCell::new(),
 				vis_entity: OnceCell::new(),
@@ -308,16 +255,16 @@ pub struct SkHand {
 	palm_object: ObjectHandle<SpatialRef>,
 	handed: HandSide,
 	input: Arc<InputMethod>,
-	capture: Option<Arc<InputHandler>>,
 	datamap: HandDatamap,
 	material: OnceCell<Handle<DefaultMaterial>>,
 	vis_entity: OnceCell<Entity>,
 	hand_tracker: openxr::HandTracker,
+	capture_manager: CaptureManager,
 }
 impl SkHand {
 	fn compare_distance(&self, field: &Field) -> f32 {
 		let InputDataType::Hand(hand) = &*self.input.data.lock() else {
-			return INFINITY;
+			return f32::INFINITY;
 		};
 		let spatial = &self.input.spatial;
 		let thumb_tip_distance = field.distance(spatial, hand.thumb.tip.position.into());
@@ -331,3 +278,4 @@ impl SkHand {
 			+ (ring_tip_distance * 0.15)
 	}
 }
+

@@ -19,6 +19,7 @@ use bevy::{
 	pbr::MeshMaterial3d,
 	prelude::{Children, Commands, Component, Mesh, Query, Res, ResMut, Transform},
 	scene::SceneRoot,
+	utils::default,
 };
 use bevy_mod_openxr::{
 	helper_traits::{ToQuat, ToVec2, ToVec3},
@@ -96,7 +97,7 @@ fn update_controllers(
 		if input_node.enabled() {
 			let world_transform = location;
 			if let Some(mat) = controller.material.get().and_then(|v| mats.get_mut(v)) {
-				mat.base_color = if controller.capture.is_none() {
+				mat.base_color = if controller.capture_manager.capture.is_none() {
 					LinearRgba::rgb(1.0, 1.0, 1.0)
 				} else {
 					LinearRgba::rgb(0.0, 1.0, 0.75)
@@ -132,95 +133,23 @@ fn update_controllers(
 		*controller.input.datamap.lock() = Datamap::from_typed(&controller.datamap).unwrap();
 
 		// remove the capture when it's removed from captures list
-		if let Some(capture) = &controller.capture {
-			if !controller
-				.input
-				.capture_requests
-				.get_valid_contents()
-				.contains(capture)
-			{
-				controller.capture.take();
-			}
-		}
-		// add the capture that's the closest if we don't have one
-		if controller.capture.is_none() {
-			controller.capture = controller
-				.input
-				.capture_requests
-				.get_valid_contents()
-				.into_iter()
-				.map(|handler| {
-					(
-						handler.clone(),
-						handler
-							.field
-							.distance(&controller.input.spatial, [0.0; 3].into())
-							.abs(),
-					)
-				})
-				.reduce(|(handlers_a, distance_a), (handlers_b, distance_b)| {
-					if distance_a < distance_b {
-						(handlers_a, distance_a)
-					} else {
-						(handlers_b, distance_b)
-					}
-				})
-				.map(|(rx, _)| rx);
-		}
+		let distance_calculator = |space: &Arc<Spatial>, _data: &InputDataType, field: &Field| {
+			Some(field.distance(space, [0.0; 3].into()).abs())
+		};
 
-		// make sure that if something is captured only send input to it
-		controller.input.captures.clear();
-		if let Some(capture) = &controller.capture {
-			controller.input.set_handler_order([capture].into_iter());
-			controller.input.captures.add_raw(capture);
+		let input = controller.input.clone();
+		controller.capture_manager.update_capture(&input);
+		controller
+			.capture_manager
+			.set_new_capture(&input, distance_calculator);
+		controller.capture_manager.apply_capture(&input);
+
+		if controller.capture_manager.capture.is_some() {
 			return;
 		}
 
-		// send input to all the input handlers that are the closest to the ray as possible
-		controller.input.set_handler_order(
-			INPUT_HANDLER_REGISTRY
-				.get_valid_contents()
-				.into_iter()
-				// filter out all the disabled handlers
-				.filter(|handler| {
-					let Some(node) = handler.spatial.node() else {
-						return false;
-					};
-					node.enabled()
-				})
-				// filter out all the fields with disabled handlers
-				.filter(|handler| {
-					let Some(node) = handler.field.spatial.node() else {
-						return false;
-					};
-					node.enabled()
-				})
-				// get the unsigned distance to the handler's field (unsigned so giant fields won't always eat input)
-				.map(|handler| {
-					(
-						vec![handler.clone()],
-						handler
-							.field
-							.distance(&controller.input.spatial, [0.0; 3].into())
-							.abs(),
-					)
-				})
-				// now collect all handlers that are same distance if they're the closest
-				.reduce(|(mut handlers_a, distance_a), (handlers_b, distance_b)| {
-					if (distance_a - distance_b).abs() < 0.001 {
-						// distance is basically the same (within 1mm)
-						handlers_a.extend(handlers_b);
-						(handlers_a, distance_a)
-					} else if distance_a < distance_b {
-						(handlers_a, distance_a)
-					} else {
-						(handlers_b, distance_b)
-					}
-				})
-				.map(|(rx, _)| rx)
-				.unwrap_or_default()
-				.iter(),
-		);
+		let sorted_handlers = get_sorted_handlers(&input, distance_calculator);
+		controller.input.set_handler_order(sorted_handlers.iter());
 	}
 }
 
@@ -290,7 +219,6 @@ fn spawn_controllers(
 				input,
 				handed,
 				material: OnceCell::new(),
-				capture: None,
 				datamap: Default::default(),
 				space: actions
 					.pose
@@ -301,6 +229,7 @@ fn spawn_controllers(
 					)
 					.unwrap(),
 				actions,
+				capture_manager: default(),
 			},
 		));
 	}
@@ -313,10 +242,10 @@ pub struct SkController {
 	input: Arc<InputMethod>,
 	handed: HandSide,
 	material: OnceCell<Handle<DefaultMaterial>>,
-	capture: Option<Arc<InputHandler>>,
 	datamap: ControllerDatamap,
 	space: openxr::Space,
 	actions: Actions,
+	capture_manager: CaptureManager,
 }
 struct Actions {
 	set: openxr::ActionSet,

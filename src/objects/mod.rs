@@ -203,7 +203,7 @@ impl ServerObjects {
 					eye_pointer.update();
 				}
 			}
-			Some(Inputs::MousePointer(mouse_pointer)) => mouse_pointer.update(),
+			Some(Inputs::MousePointer(mouse_pointer)) => {}
 			// Inputs::Controllers((left, right)) => {
 			// 	left.update(token);
 			// 	right.update(token);
