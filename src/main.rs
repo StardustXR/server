@@ -14,7 +14,7 @@ use crate::nodes::{audio, drawable, input};
 
 use bevy::a11y::AccessibilityPlugin;
 use bevy::app::{
-	App, PluginGroup, PluginsState, PostUpdate, ScheduleRunnerPlugin, Startup,
+	App, AppExit, PluginGroup, PluginsState, PostUpdate, ScheduleRunnerPlugin, Startup,
 	TerminalCtrlCHandlerPlugin, Update,
 };
 use bevy::asset::{AssetPlugin, AssetServer, Handle};
@@ -53,6 +53,7 @@ use bevy_mod_xr::session::{XrFirst, XrPreDestroySession, XrSessionCreated, XrSes
 use bevy_mod_xr::spaces::XrPrimaryReferenceSpace;
 use bevy_plugin::{DbusConnection, InputUpdate, StardustBevyPlugin, StardustFirst};
 use clap::Parser;
+use color_eyre::eyre::eyre;
 use core::client::Client;
 use core::task;
 use directories::ProjectDirs;
@@ -126,16 +127,15 @@ impl Deref for RuntimeWrapper {
 	}
 }
 
-fn main() {
+fn main() -> color_eyre::Result<AppExit> {
 	let runtime = tokio::runtime::Builder::new_multi_thread()
 		.enable_all()
-		.build()
-		.unwrap();
+		.build()?;
 	TOKIO.0.set(runtime).unwrap();
 	TOKIO.block_on(setup())
 }
-async fn setup() {
-	color_eyre::install().unwrap();
+async fn setup() -> color_eyre::Result<AppExit> {
+	color_eyre::install()?;
 
 	let registry = tracing_subscriber::registry();
 
@@ -227,10 +227,7 @@ async fn setup() {
 		.map(|project_dirs| launch_start(&cli_args, project_dirs))
 		.unwrap_or_default();
 
-	tokio::select! {
-		_ = stereokit_loop => (),
-		_ = tokio::signal::ctrl_c() => {},
-	}
+	let exit = stereokit_loop.await?;
 	info!("Stopping...");
 	if let Some(project_dirs) = project_dirs {
 		save_session(&project_dirs).await;
@@ -240,6 +237,7 @@ async fn setup() {
 	}
 
 	info!("Cleanly shut down Stardust");
+	Ok(exit)
 }
 
 fn bevy_loop(
@@ -249,7 +247,7 @@ fn bevy_loop(
 	dbus_connection: Connection,
 	object_registry: ObjectRegistry,
 	headless: bool,
-) {
+) -> AppExit {
 	let mut bevy_app = App::new();
 	// let base = (DefaultPlugins)
 	// 	.build()
@@ -504,8 +502,9 @@ fn bevy_loop(
 		wayland.update();
 	};
 	bevy_app.add_systems(StardustFirst, bevy_step);
-	bevy_app.run();
+	let out = bevy_app.run();
 
 	#[cfg(feature = "wayland")]
 	drop(wayland);
+	out
 }
