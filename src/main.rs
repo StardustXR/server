@@ -42,7 +42,6 @@ use bevy_mod_xr::session::{XrFirst, XrPreDestroySession, XrSessionCreated, XrSes
 use bevy_mod_xr::spaces::XrPrimaryReferenceSpace;
 use bevy_plugin::{DbusConnection, InputUpdate, StardustBevyPlugin, StardustFirst};
 use clap::Parser;
-use tracing::level_filters::LevelFilter;
 use core::client::Client;
 use core::task;
 use directories::ProjectDirs;
@@ -62,8 +61,10 @@ use stardust_xr::server;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread;
 use tokio::net::UnixListener;
 use tokio::sync::Notify;
+use tracing::level_filters::LevelFilter;
 use tracing::{debug_span, error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use zbus::fdo::ObjectManager;
@@ -332,7 +333,7 @@ fn bevy_loop(
 			cams.iter().for_each(|e| {
 				cmds.entity(e).remove::<Skybox>();
 			});
-		let _span = debug_span!("spawn");
+			let _span = debug_span!("spawn");
 			cmds.insert_resource(ClearColor(Color::NONE));
 		}
 		*last_hidden = env_hidden;
@@ -416,26 +417,36 @@ fn bevy_loop(
 		{
 			world.run_system_cached(sync_sets);
 		}
-		world.run_schedule(InputUpdate);
-		let session = world.remove_resource::<OxrSession>();
-		let mut objects = world.remove_resource::<ServerObjects>().unwrap();
-		objects.update(session.as_deref(), time);
-		world.insert_resource(objects);
-		if let Some(session) = session {
-			world.insert_resource(session);
-		}
-		input::process_input();
-		nodes::root::Root::send_frame_events(world.resource::<Time>().delta_secs_f64());
-		if world
+		let thread = world
 			.run_system_cached(should_run_frame_loop)
 			.unwrap_or(true)
-		{
-			let _span = debug_span!("eeping").entered();
-			let mut waiter = world.remove_resource::<OxrFrameWaiter>().unwrap();
-			let state = waiter.wait().unwrap();
+			.then(|| world.remove_resource::<OxrFrameWaiter>())
+			.flatten()
+			.map(|mut waiter| {
+				TOKIO.spawn_blocking(move || {
+					let _span = debug_span!("eeping").entered();
+					let result = waiter.wait();
+					(waiter, result)
+				})
+			});
+		world.run_schedule(InputUpdate);
+		debug_span!("update_objects").in_scope(|| {
+			let session = world.remove_resource::<OxrSession>();
+			let mut objects = world.remove_resource::<ServerObjects>().unwrap();
+			objects.update(session.as_deref(), time);
+			world.insert_resource(objects);
+			if let Some(session) = session {
+				world.insert_resource(session);
+			}
+		});
+		input::process_input();
+		nodes::root::Root::send_frame_events(world.resource::<Time>().delta_secs_f64());
+		if let Some((waiter, Ok(state))) = thread.map(|t| TOKIO.block_on(t).unwrap()) {
 			world.insert_resource(OxrFrameState(state));
 			world.insert_resource(waiter);
-			world.run_system_cached(update_cameras);
+			if let Err(err) = world.run_system_cached(update_cameras) {
+				error!("error while running oxr update_cameras system: {err}");
+			}
 		}
 		#[cfg(feature = "wayland")]
 		wayland.update();
