@@ -12,22 +12,33 @@ use crate::core::destroy_queue;
 // use crate::nodes::items::camera;
 use crate::nodes::{audio, drawable, input};
 
-use bevy::app::{App, PluginGroup, PluginsState, PostUpdate, Startup, Update};
-use bevy::asset::{AssetServer, Handle};
+use bevy::a11y::AccessibilityPlugin;
+use bevy::app::{
+	App, PluginGroup, PluginsState, PostUpdate, ScheduleRunnerPlugin, Startup,
+	TerminalCtrlCHandlerPlugin, Update,
+};
+use bevy::asset::{AssetPlugin, AssetServer, Handle};
+use bevy::audio::AudioPlugin;
 use bevy::color::Color;
-use bevy::core_pipeline::Skybox;
+use bevy::core_pipeline::{CorePipelinePlugin, Skybox};
+use bevy::gizmos::GizmoPlugin;
+use bevy::gltf::GltfPlugin;
 use bevy::image::Image;
 use bevy::log::LogPlugin;
-use bevy::pbr::StandardMaterial;
+use bevy::pbr::{PbrPlugin, StandardMaterial};
 use bevy::prelude::{
-	on_event, resource_added, Camera3d, ClearColor, Commands, Entity, EventReader,
-	IntoSystemConfigs, Local, Query, Res, ResMut, Resource, Transform, With, World,
+	on_event, resource_added, Camera3d, ClearColor, Commands, Entity, EventReader, HierarchyPlugin,
+	ImagePlugin, IntoSystemConfigs, Local, Query, Res, ResMut, Resource, Transform,
+	TransformPlugin, With, World,
 };
 use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
+use bevy::render::RenderPlugin;
+use bevy::scene::ScenePlugin;
 use bevy::time::Time;
 use bevy::utils::default;
+use bevy::window::WindowPlugin;
 use bevy::winit::{EventLoopProxyWrapper, WakeUp, WinitPlugin};
-use bevy::DefaultPlugins;
+use bevy::{DefaultPlugins, MinimalPlugins};
 use bevy_mod_openxr::action_set_syncing::{OxrActionSyncingPlugin, OxrSyncActionSet};
 use bevy_mod_openxr::exts::OxrExtensions;
 use bevy_mod_openxr::features::overlay::{OxrOverlaySessionEvent, OxrOverlaySettings};
@@ -206,6 +217,7 @@ async fn setup() {
 				cli_args,
 				dbus_connection,
 				object_registry,
+				false,
 			)
 		}
 	});
@@ -236,17 +248,57 @@ fn bevy_loop(
 	args: CliArgs,
 	dbus_connection: Connection,
 	object_registry: ObjectRegistry,
+	headless: bool,
 ) {
 	let mut bevy_app = App::new();
-	let base = (DefaultPlugins)
+	// let base = (DefaultPlugins)
+	// 	.build()
+	// 	.disable::<PipelinedRenderingPlugin>()
+	// 	.disable::<LogPlugin>()
+	// 	.set({
+	// 		let mut plugin = WinitPlugin::<WakeUp>::default();
+	// 		plugin.run_on_any_thread = true;
+	// 		plugin
+	// 	});
+	let mut base = (MinimalPlugins)
 		.build()
-		.disable::<PipelinedRenderingPlugin>()
-		.disable::<LogPlugin>()
-		.set({
+		.disable::<ScheduleRunnerPlugin>()
+		.add(TransformPlugin)
+		.add(HierarchyPlugin)
+		.add(AccessibilityPlugin);
+	base = match headless {
+		true => {
+			base.add(ScheduleRunnerPlugin {
+				// In OpenXR framepacing we trust (else this will eat all of the cpu)
+				run_mode: bevy::app::RunMode::Loop { wait: None },
+			})
+		}
+		false => base.add(WindowPlugin::default()).add({
 			let mut plugin = WinitPlugin::<WakeUp>::default();
 			plugin.run_on_any_thread = true;
 			plugin
-		});
+		}),
+	};
+	base = base
+		.add(TerminalCtrlCHandlerPlugin)
+		// might want to modify this in the future?
+		.add(AssetPlugin::default())
+		// will be replaced by bevy_mod_openxr when using OpenXR
+		.add(RenderPlugin::default())
+		.add(ImagePlugin::default())
+		.add(CorePipelinePlugin)
+		// very unsure what is needed here
+		.add(PbrPlugin {
+			// hoping that there is very little overdraw in stardust
+			prepass_enabled: false,
+			add_default_deferred_lighting_plugin: true,
+			use_gpu_instance_buffer_builder: true,
+		})
+		.add(ScenePlugin)
+		.add(GltfPlugin::default())
+		.add(AudioPlugin::default())
+		.add(GizmoPlugin);
+
 	if args.flatscreen {
 		bevy_app.add_plugins(base);
 	} else {
@@ -290,7 +342,7 @@ fn bevy_loop(
 		BevyLinesPlugin,
 		StardustModelPlugin,
 		StardustHandPlugin,
-		StardustTextPlugin,
+		// StardustTextPlugin,
 		StardustSoundPlugin,
 		StardustControllerPlugin,
 	));
