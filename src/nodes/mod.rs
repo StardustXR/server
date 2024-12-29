@@ -48,6 +48,9 @@ impl AsRef<[u8]> for Message {
 stardust_xr_server_codegen::codegen_node_protocol!();
 
 pub struct Owned;
+impl AspectIdentifier for Owned {
+	impl_aspect_for_owned_aspect_id! {}
+}
 impl Aspect for Owned {
 	impl_aspect_for_owned_aspect! {}
 }
@@ -157,13 +160,13 @@ impl Node {
 	// 	Ok(serialize(pid)?.into())
 	// }
 
-	pub fn add_aspect<A: Aspect>(&self, aspect: A) -> Arc<A> {
+	pub fn add_aspect<A: AspectIdentifier>(&self, aspect: A) -> Arc<A> {
 		self.aspects.add(aspect)
 	}
-	pub fn add_aspect_raw<A: Aspect>(&self, aspect: Arc<A>) {
+	pub fn add_aspect_raw<A: AspectIdentifier>(&self, aspect: Arc<A>) {
 		self.aspects.add_raw(aspect)
 	}
-	pub fn get_aspect<A: Aspect>(&self) -> Result<Arc<A>> {
+	pub fn get_aspect<A: AspectIdentifier>(&self) -> Result<Arc<A>> {
 		self.aspects.get()
 	}
 
@@ -298,8 +301,10 @@ impl Drop for Node {
 	}
 }
 
+pub trait AspectIdentifier: Aspect {
+	const ID: u64;
+}
 pub trait Aspect: Any + Send + Sync + 'static {
-	fn id(&self) -> u64;
 	fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync + 'static>;
 	fn run_signal(
 		&self,
@@ -321,20 +326,21 @@ pub trait Aspect: Any + Send + Sync + 'static {
 #[derive(Default)]
 struct Aspects(Mutex<FxHashMap<u64, Arc<dyn Aspect>>>);
 impl Aspects {
-	fn add<A: Aspect>(&self, t: A) -> Arc<A> {
+	fn add<A: AspectIdentifier>(&self, t: A) -> Arc<A> {
 		let aspect = Arc::new(t);
 		self.add_raw(aspect.clone());
 		aspect
 	}
-	fn add_raw<A: Aspect>(&self, aspect: Arc<A>) {
-		let id = aspect.id();
-		self.0.lock().insert(id, aspect);
+	fn add_raw<A: AspectIdentifier>(&self, aspect: Arc<A>) {
+		self.0.lock().insert(A::ID, aspect);
 	}
-	fn get<A: Aspect>(&self) -> Result<Arc<A>> {
+	fn get<A: Aspect + AspectIdentifier>(&self) -> Result<Arc<A>> {
 		self.0
 			.lock()
-			.values()
-			.find_map(|a| Arc::downcast(a.clone().as_any()).ok())
+			.get(&A::ID)
+			.cloned()
+			.map(|a| a.as_any())
+			.and_then(|a| Arc::downcast(a).ok())
 			.ok_or(eyre!("Couldn't get aspect"))
 	}
 }

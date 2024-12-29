@@ -1,4 +1,4 @@
-use super::{Aspect, Node};
+use super::{Aspect, AspectIdentifier, Node};
 use crate::core::{client::Client, registry::Registry};
 use color_eyre::eyre::Result;
 use std::{
@@ -68,10 +68,10 @@ impl Alias {
 		Ok(())
 	}
 }
+impl AspectIdentifier for Alias {
+	const ID: u64 = 0;
+}
 impl Aspect for Alias {
-	fn id(&self) -> u64 {
-		0
-	}
 	fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync + 'static> {
 		self
 	}
@@ -129,7 +129,7 @@ impl AliasList {
 			.into_iter()
 			.find(move |node| links_to(node.clone(), original.clone()))
 	}
-	pub fn get_from_aspect<A: Aspect>(&self, aspect: &A) -> Option<Arc<Node>> {
+	pub fn get_from_aspect<A: AspectIdentifier>(&self, aspect: &A) -> Option<Arc<Node>> {
 		self.0.get_valid_contents().into_iter().find(|node| {
 			let Some(node) = get_original(node.clone(), false) else {
 				return false;
@@ -143,7 +143,7 @@ impl AliasList {
 	pub fn get_aliases(&self) -> Vec<Arc<Node>> {
 		self.0.get_valid_contents()
 	}
-	pub fn remove_aspect<A: Aspect>(&self, aspect: &A) {
+	pub fn remove_aspect<A: AspectIdentifier>(&self, aspect: &A) {
 		self.0.retain(|node| {
 			let Some(original) = get_original(node.clone(), false) else {
 				return false;

@@ -12,6 +12,7 @@ pub use method::*;
 use super::fields::Field;
 use super::spatial::Spatial;
 use super::Aspect;
+use super::AspectIdentifier;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::{core::client::Client, nodes::Node};
@@ -25,11 +26,20 @@ pub static INPUT_HANDLER_REGISTRY: Registry<InputHandler> = Registry::new();
 
 stardust_xr_server_codegen::codegen_input_protocol!();
 
+impl AspectIdentifier for InputHandler {
+	impl_aspect_for_input_handler_aspect_id! {}
+}
 impl Aspect for InputHandler {
 	impl_aspect_for_input_handler_aspect! {}
 }
+impl AspectIdentifier for InputMethod {
+	impl_aspect_for_input_method_aspect_id! {}
+}
 impl Aspect for InputMethod {
 	impl_aspect_for_input_method_aspect! {}
+}
+impl AspectIdentifier for InputMethodRef {
+	impl_aspect_for_input_method_ref_aspect_id! {}
 }
 impl Aspect for InputMethodRef {
 	impl_aspect_for_input_method_ref_aspect! {}

@@ -2,6 +2,7 @@ use super::{create_item_acceptor_flex, register_item_ui_flex, Item, ItemType};
 use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
 use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
 use crate::nodes::Aspect;
+use crate::nodes::AspectIdentifier;
 use crate::{
 	core::{client::Client, registry::Registry, scenegraph::MethodResponseSender},
 	nodes::{
@@ -168,18 +169,27 @@ impl CameraItem {
 		}
 	}
 }
+impl AspectIdentifier for CameraItem {
+	impl_aspect_for_camera_item_aspect_id! {}
+}
 impl Aspect for CameraItem {
 	impl_aspect_for_camera_item_aspect! {}
 }
 impl CameraItemAspect for CameraItem {}
 
 pub struct CameraItemUi;
+impl AspectIdentifier for CameraItemUi {
+	impl_aspect_for_camera_item_ui_aspect_id! {}
+}
 impl Aspect for CameraItemUi {
 	impl_aspect_for_camera_item_ui_aspect! {}
 }
 impl CameraItemUiAspect for CameraItemUi {}
 
 pub struct CameraItemAcceptor;
+impl AspectIdentifier for CameraItemAcceptor {
+	impl_aspect_for_camera_item_acceptor_aspect_id! {}
+}
 impl Aspect for CameraItemAcceptor {
 	impl_aspect_for_camera_item_acceptor_aspect! {}
 }

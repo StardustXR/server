@@ -8,7 +8,7 @@ pub mod text;
 use self::{lines::Lines, model::Model, text::Text};
 use super::{
 	spatial::{Spatial, Transform},
-	Aspect, Node,
+	Aspect, AspectIdentifier, Node,
 };
 use crate::core::{client::Client, resource::get_resource_file};
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
@@ -41,14 +41,27 @@ static QUEUED_SKYLIGHT: Mutex<Option<PathBuf>> = Mutex::new(None);
 static QUEUED_SKYTEX: Mutex<Option<PathBuf>> = Mutex::new(None);
 
 stardust_xr_server_codegen::codegen_drawable_protocol!();
+
+impl AspectIdentifier for Lines {
+	impl_aspect_for_lines_aspect_id! {}
+}
 impl Aspect for Lines {
 	impl_aspect_for_lines_aspect! {}
+}
+impl AspectIdentifier for Model {
+	impl_aspect_for_model_aspect_id! {}
 }
 impl Aspect for Model {
 	impl_aspect_for_model_aspect! {}
 }
+impl AspectIdentifier for ModelPart {
+	impl_aspect_for_model_part_aspect_id! {}
+}
 impl Aspect for ModelPart {
 	impl_aspect_for_model_part_aspect! {}
+}
+impl AspectIdentifier for Text {
+	impl_aspect_for_text_aspect_id! {}
 }
 impl Aspect for Text {
 	impl_aspect_for_text_aspect! {}

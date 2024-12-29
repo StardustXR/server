@@ -1,5 +1,5 @@
 use super::spatial::Spatial;
-use super::{Aspect, Node};
+use super::{Aspect, AspectIdentifier, Node};
 use crate::core::client::Client;
 use crate::core::client_state::ClientStateParsed;
 use crate::core::registry::Registry;
@@ -53,6 +53,9 @@ impl Root {
 	pub async fn save_state(&self) -> Result<ClientState> {
 		Ok(root_client::save_state(&self.node).await?.0)
 	}
+}
+impl AspectIdentifier for Root {
+	impl_aspect_for_root_aspect_id! {}
 }
 impl Aspect for Root {
 	impl_aspect_for_root_aspect! {}

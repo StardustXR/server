@@ -6,7 +6,7 @@ use self::panel::PanelItemTrait;
 use super::alias::AliasList;
 use super::fields::{Field, FIELD_ALIAS_INFO};
 use super::spatial::Spatial;
-use super::{Alias, Aspect, Node};
+use super::{Alias, Aspect, AspectIdentifier, Node};
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use crate::nodes::alias::AliasInfo;
@@ -108,6 +108,9 @@ impl Item {
 			Some(alias_list),
 		)
 	}
+}
+impl AspectIdentifier for Item {
+	impl_aspect_for_item_aspect_id! {}
 }
 impl Aspect for Item {
 	impl_aspect_for_item_aspect! {}
@@ -285,6 +288,9 @@ impl ItemUI {
 			.remove_aspect(acceptor.field.as_ref());
 	}
 }
+impl AspectIdentifier for ItemUI {
+	impl_aspect_for_item_ui_aspect_id! {}
+}
 impl Aspect for ItemUI {
 	impl_aspect_for_item_ui_aspect! {}
 }
@@ -342,6 +348,9 @@ impl ItemAcceptor {
 		let alias = self.accepted_aliases.get_from_aspect(item).unwrap();
 		let _ = item_acceptor_client::release_item(&node, alias.id);
 	}
+}
+impl AspectIdentifier for ItemAcceptor {
+	impl_aspect_for_item_acceptor_aspect_id! {}
 }
 impl Aspect for ItemAcceptor {
 	impl_aspect_for_item_acceptor_aspect! {}

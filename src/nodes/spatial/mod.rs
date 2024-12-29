@@ -3,7 +3,7 @@ pub mod zone;
 use self::zone::Zone;
 use super::alias::Alias;
 use super::fields::{Field, FieldTrait};
-use super::Aspect;
+use super::{Aspect, AspectIdentifier};
 use crate::core::client::Client;
 use crate::core::registry::Registry;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
@@ -36,6 +36,9 @@ impl Transform {
 
 		Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
 	}
+}
+impl AspectIdentifier for Zone {
+	impl_aspect_for_zone_aspect_id! {}
 }
 impl Aspect for Zone {
 	impl_aspect_for_zone_aspect! {}
@@ -241,6 +244,9 @@ impl Spatial {
 			.unwrap_or(f32::MAX)
 	}
 }
+impl AspectIdentifier for Spatial {
+	impl_aspect_for_spatial_aspect_id! {}
+}
 impl Aspect for Spatial {
 	impl_aspect_for_spatial_aspect! {}
 }
@@ -331,6 +337,9 @@ impl Drop for Spatial {
 }
 
 pub struct SpatialRef;
+impl AspectIdentifier for SpatialRef {
+	impl_aspect_for_spatial_ref_aspect_id! {}
+}
 impl Aspect for SpatialRef {
 	impl_aspect_for_spatial_ref_aspect! {}
 }
