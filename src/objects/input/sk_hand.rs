@@ -1,4 +1,4 @@
-use crate::bevy_plugin::DbusConnection;
+use crate::bevy_plugin::{DbusConnection, InputUpdate};
 use crate::core::client::INTERNAL_CLIENT;
 use crate::nodes::fields::{Field, FieldTrait};
 use crate::nodes::input::{InputDataType, InputHandler, INPUT_HANDLER_REGISTRY};
@@ -12,7 +12,9 @@ use crate::objects::{ObjectHandle, SpatialRef};
 use crate::DefaultMaterial;
 use bevy::app::{Plugin, PostUpdate};
 use bevy::asset::{AssetServer, Assets, Handle};
-use bevy::prelude::{Commands, Component, Entity, Gizmos, IntoSystemConfigs as _, Query, Res, ResMut};
+use bevy::prelude::{
+	Commands, Component, Entity, Gizmos, IntoSystemConfigs as _, Query, Res, ResMut,
+};
 use bevy::utils::default;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
 use bevy_mod_openxr::resources::OxrFrameState;
@@ -43,8 +45,7 @@ pub struct StardustHandPlugin;
 impl Plugin for StardustHandPlugin {
 	fn build(&self, app: &mut bevy::prelude::App) {
 		app.add_systems(XrSessionCreated, create_hands);
-		app.add_systems(PostUpdate, update_hands);
-		app.add_systems(PostUpdate, draw_hand_gizmos.after(update_hands));
+		app.add_systems(InputUpdate, (update_hands,draw_hand_gizmos).chain());
 	}
 }
 
@@ -278,4 +279,3 @@ impl SkHand {
 			+ (ring_tip_distance * 0.15)
 	}
 }
-
