@@ -3,7 +3,7 @@ name: Build
 on:
   push:
     branches:
-      - '*'
+      - "*"
 
 jobs:
   build_and_package:
@@ -11,7 +11,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Install runtime dependencies
         run: sudo apt install -y --no-install-recommends libxkbcommon-dev libstdc++6 libopenxr-dev libx11-dev libxfixes-dev libgl1-mesa-dev libegl1-mesa-dev libgbm-dev libfontconfig-dev libjsoncpp-dev  libxcb1-dev libglx-dev libxcb-glx0-dev libdrm-dev libwayland-dev libfreetype-dev libpng-dev
@@ -27,12 +27,11 @@ jobs:
       - name: Build server
         run: cargo build --release
 
-
       - name: Install appimagetool
         run: |
-            wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$(uname -m).AppImage -O /usr/local/bin/appimagetool; \
-            chmod +x /usr/local/bin/appimagetool; \
-            sed -i 's|AI\x02|\x00\x00\x00|' /usr/local/bin/appimagetool
+          wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$(uname -m).AppImage -O /usr/local/bin/appimagetool; \
+          chmod +x /usr/local/bin/appimagetool; \
+          sed -i 's|AI\x02|\x00\x00\x00|' /usr/local/bin/appimagetool
       - name: Install cargo-appimage
         run: cargo install cargo-appimage
 
@@ -40,7 +39,7 @@ jobs:
         run: cargo appimage
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: appimage
-          path: '*.AppImage'
+          path: "*.AppImage"
