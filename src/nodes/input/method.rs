@@ -4,7 +4,7 @@ use super::{
 	INPUT_METHOD_REGISTRY,
 };
 use crate::{
-	core::{client::Client, registry::Registry},
+	core::{client::Client, error::Result, registry::Registry},
 	nodes::{
 		alias::{Alias, AliasList},
 		fields::{Field, FIELD_ALIAS_INFO},
@@ -12,7 +12,6 @@ use crate::{
 		Node,
 	},
 };
-use color_eyre::eyre::Result;
 use parking_lot::Mutex;
 use stardust_xr::values::Datamap;
 use std::sync::{Arc, Weak};

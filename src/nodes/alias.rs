@@ -1,6 +1,5 @@
 use super::{Aspect, AspectIdentifier, Node};
-use crate::core::{client::Client, registry::Registry};
-use color_eyre::eyre::Result;
+use crate::core::{client::Client, error::Result, registry::Registry};
 use std::{
 	ops::Add,
 	sync::{Arc, Weak},

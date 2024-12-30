@@ -13,11 +13,11 @@ use super::fields::Field;
 use super::spatial::Spatial;
 use super::Aspect;
 use super::AspectIdentifier;
+use crate::core::error::Result;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::{core::client::Client, nodes::Node};
 use crate::{core::registry::Registry, nodes::spatial::Transform};
-use color_eyre::eyre::Result;
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
 

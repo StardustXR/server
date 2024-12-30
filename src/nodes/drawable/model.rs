@@ -1,11 +1,13 @@
 use super::{MaterialParameter, ModelAspect, ModelPartAspect, MODEL_PART_ASPECT_ALIAS_INFO};
+use crate::bail;
 use crate::core::client::Client;
+use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::Spatial;
 use crate::nodes::Node;
-use color_eyre::eyre::{bail, eyre, Result};
+use color_eyre::eyre::eyre;
 use glam::{Mat4, Vec2, Vec3};
 use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Mutex;
@@ -363,12 +365,12 @@ impl ModelAspect for Model {
 		calling_client: Arc<Client>,
 		id: u64,
 		part_path: String,
-	) -> color_eyre::eyre::Result<()> {
+	) -> Result<()> {
 		let model = node.get_aspect::<Model>()?;
 		let parts = model.parts.lock();
 		let Some(part) = parts.iter().find(|p| p.path == part_path) else {
 			let paths = parts.iter().map(|p| &p.path).collect::<Vec<_>>();
-			bail!("Couldn't find model part at path {part_path}, all available paths: {paths:?}",)
+			bail!("Couldn't find model part at path {part_path}, all available paths: {paths:?}",);
 		};
 		Alias::create_with_id(
 			&part.space.node().unwrap(),

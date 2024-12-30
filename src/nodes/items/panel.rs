@@ -1,5 +1,7 @@
 use super::camera::CameraItemAcceptor;
 use super::{create_item_acceptor_flex, register_item_ui_flex};
+use crate::bail;
+use crate::core::error::Result;
 use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
 use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
 use crate::nodes::{Aspect, AspectIdentifier};
@@ -15,7 +17,6 @@ use crate::{
 		Node,
 	},
 };
-use color_eyre::eyre::{bail, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::Vector2;
@@ -518,7 +519,7 @@ impl InterfaceAspect for Interface {
 	) -> Result<String> {
 		let keymaps = KEYMAPS.lock();
 		let Some(keymap) = keymaps.get(KeyData::from_ffi(keymap_id).into()) else {
-			bail!("Could not find keymap. Try registering it")
+			bail!("Could not find keymap. Try registering it");
 		};
 
 		Ok(keymap.clone())

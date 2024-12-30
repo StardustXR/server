@@ -3,14 +3,13 @@ use super::{
 	ZONEABLE_REGISTRY,
 };
 use crate::{
-	core::{client::Client, registry::Registry},
+	core::{client::Client, error::Result, registry::Registry},
 	nodes::{
 		alias::{get_original, Alias, AliasList},
 		fields::{Field, FieldTrait},
 		Node,
 	},
 };
-use color_eyre::eyre::Result;
 use glam::vec3a;
 use std::sync::{Arc, Weak};
 

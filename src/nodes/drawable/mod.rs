@@ -10,9 +10,9 @@ use super::{
 	spatial::{Spatial, Transform},
 	Aspect, AspectIdentifier, Node,
 };
-use crate::core::{client::Client, resource::get_resource_file};
+use crate::core::{client::Client, error::Result, resource::get_resource_file};
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
-use color_eyre::eyre::{self, Result};
+use color_eyre::eyre::eyre;
 use model::ModelPart;
 use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
@@ -70,7 +70,7 @@ impl Aspect for Text {
 impl InterfaceAspect for Interface {
 	fn set_sky_tex(_node: Arc<Node>, calling_client: Arc<Client>, tex: ResourceID) -> Result<()> {
 		let resource_path = get_resource_file(&tex, &calling_client, &[OsStr::new("hdr")])
-			.ok_or(eyre::eyre!("Could not find resource"))?;
+			.ok_or(eyre!("Could not find resource"))?;
 		QUEUED_SKYTEX.lock().replace(resource_path);
 		Ok(())
 	}
@@ -81,7 +81,7 @@ impl InterfaceAspect for Interface {
 		light: ResourceID,
 	) -> Result<()> {
 		let resource_path = get_resource_file(&light, &calling_client, &[OsStr::new("hdr")])
-			.ok_or(eyre::eyre!("Could not find resource"))?;
+			.ok_or(eyre!("Could not find resource"))?;
 		QUEUED_SKYLIGHT.lock().replace(resource_path);
 		Ok(())
 	}

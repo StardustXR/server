@@ -5,10 +5,11 @@ use super::spatial::{
 };
 use super::{Aspect, AspectIdentifier, Node};
 use crate::core::client::Client;
+use crate::core::error::Result;
 use crate::nodes::spatial::Transform;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
-use color_eyre::eyre::{OptionExt, Result};
+use color_eyre::eyre::OptionExt;
 use glam::{vec2, vec3, vec3a, Vec3, Vec3A, Vec3Swizzles};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
@@ -261,7 +262,7 @@ impl InterfaceAspect for Interface {
 		calling_client: Arc<Client>,
 		uid: u64,
 	) -> Result<Arc<Node>> {
-		EXPORTED_FIELDS
+		Ok(EXPORTED_FIELDS
 			.lock()
 			.get(&uid)
 			.map(|s| {
@@ -273,7 +274,7 @@ impl InterfaceAspect for Interface {
 				)
 				.unwrap()
 			})
-			.ok_or_eyre("Couldn't find spatial with that ID")
+			.ok_or_eyre("Couldn't find spatial with that ID")?)
 	}
 
 	fn create_field(
