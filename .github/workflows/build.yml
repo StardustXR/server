@@ -17,7 +17,7 @@ jobs:
         run: sudo apt install -y --no-install-recommends libxkbcommon-dev libstdc++6 libopenxr-dev libx11-dev libxfixes-dev libgl1-mesa-dev libegl1-mesa-dev libgbm-dev libfontconfig-dev libjsoncpp-dev  libxcb1-dev libglx-dev libxcb-glx0-dev libdrm-dev libwayland-dev libfreetype-dev libpng-dev
 
       - name: Install build dependencies
-        run: sudo apt install -y --no-install-recommends cmake ninja-build
+        run: sudo apt install -y --no-install-recommends cmake ninja-build libfuse2
 
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
