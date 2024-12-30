@@ -1,10 +1,11 @@
 use super::{Aspect, AspectIdentifier, Node};
 use crate::core::client::Client;
 use crate::core::destroy_queue;
+use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::spatial::{Spatial, Transform, SPATIAL_ASPECT_ALIAS_INFO};
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::eyre;
 use glam::{vec3, Vec4Swizzles};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;

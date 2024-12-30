@@ -1,7 +1,7 @@
+use crate::core::error::Result;
 use crate::nodes::alias::get_original;
 use crate::nodes::Node;
 use crate::{core::client::Client, nodes::Message};
-use color_eyre::eyre::Result;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
@@ -59,20 +59,20 @@ impl MethodResponseSender {
 	// ) {
 	// 	let _ = self.0.send(map_method_return(result));
 	// }
-	pub fn wrap_sync<F: FnOnce() -> color_eyre::eyre::Result<Message>>(self, f: F) {
+	pub fn wrap_sync<F: FnOnce() -> crate::core::error::Result<Message>>(self, f: F) {
 		self.send(f().map_err(|e| ScenegraphError::MemberError {
 			error: e.to_string(),
 		}))
 	}
 	pub fn wrap_async<T: Serialize>(
 		self,
-		f: impl Future<Output = color_eyre::eyre::Result<(T, Vec<OwnedFd>)>> + Send + 'static,
+		f: impl Future<Output = Result<(T, Vec<OwnedFd>)>> + Send + 'static,
 	) {
 		tokio::task::spawn(async move { self.0.send(map_method_return(f.await)) });
 	}
 }
 fn map_method_return<T: Serialize>(
-	result: color_eyre::eyre::Result<(T, Vec<OwnedFd>)>,
+	result: Result<(T, Vec<OwnedFd>)>,
 ) -> Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError> {
 	let (value, fds) = result.map_err(|e| ScenegraphError::MemberError {
 		error: e.to_string(),

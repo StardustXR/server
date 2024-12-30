@@ -75,7 +75,7 @@ fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 				impl crate::nodes::Aspect for Interface {
 					impl_aspect_for_interface_aspect!{}
 				}
-				pub fn create_interface(client: &std::sync::Arc<crate::core::client::Client>) -> color_eyre::eyre::Result<()>{
+				pub fn create_interface(client: &std::sync::Arc<crate::core::client::Client>) -> crate::core::error::Result<()>{
 					let node = crate::nodes::Node::from_id(client,INTERFACE_NODE_ID,false);
 					node.add_aspect(Interface);
 					node.add_to_scenegraph()?;
@@ -403,7 +403,7 @@ fn generate_member(aspect_id: u64, member: &Member) -> TokenStream {
 		(Side::Client, MemberType::Signal) => {
 			quote! {
 				#[doc = #description]
-				pub fn #name(#argument_decls) -> color_eyre::eyre::Result<()> {
+				pub fn #name(#argument_decls) -> crate::core::error::Result<()> {
 					let serialized = stardust_xr::schemas::flex::serialize((#argument_uses))?;
 					_node.send_remote_signal(#aspect_id, #opcode, serialized)
 				}
@@ -412,7 +412,7 @@ fn generate_member(aspect_id: u64, member: &Member) -> TokenStream {
 		(Side::Client, MemberType::Method) => {
 			quote! {
 				#[doc = #description]
-				pub async fn #name(#argument_decls) -> color_eyre::eyre::Result<(#return_type, Vec<std::os::fd::OwnedFd>)> {
+				pub async fn #name(#argument_decls) -> crate::core::error::Result<(#return_type, Vec<std::os::fd::OwnedFd>)> {
 					_node.execute_remote_method_typed(#aspect_id, #opcode, &(#argument_uses), vec![]).await
 				}
 			}
@@ -420,13 +420,13 @@ fn generate_member(aspect_id: u64, member: &Member) -> TokenStream {
 		(Side::Server, MemberType::Signal) => {
 			quote! {
 				#[doc = #description]
-				fn #name(#argument_decls) -> color_eyre::eyre::Result<()>;
+				fn #name(#argument_decls) -> crate::core::error::Result<()>;
 			}
 		}
 		(Side::Server, MemberType::Method) => {
 			quote! {
 				#[doc = #description]
-				fn #name(#argument_decls) -> impl std::future::Future<Output = color_eyre::eyre::Result<#return_type>> + Send + Sync + 'static;
+				fn #name(#argument_decls) -> impl std::future::Future<Output = crate::core::error::Result<#return_type>> + Send + Sync + 'static;
 			}
 		}
 	}
@@ -475,7 +475,7 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 			#opcode => (move || {
 				#deserialize
 				<Self as #aspect_name>::#member_name_ident(_node, _calling_client.clone(), #argument_uses)
-			})().map_err(|e: color_eyre::Report| stardust_xr::scenegraph::ScenegraphError::MemberError { error: e.to_string() }),
+			})().map_err(|e: crate::core::error::ServerError| stardust_xr::scenegraph::ScenegraphError::MemberError { error: e.to_string() }),
 		},
 		MemberType::Method => quote! {
 			#opcode => _method_response.wrap_async(async move {
@@ -516,18 +516,18 @@ fn generate_argument_deserialize(
 	}
 	if optional {
 		let mapping = generate_argument_deserialize("o", argument_type, false);
-		return quote!(#name.map(|o| Ok::<_, color_eyre::eyre::Report>(#mapping)).transpose()?);
+		return quote!(#name.map(|o| Ok::<_, crate::core::error::ServerError>(#mapping)).transpose()?);
 	}
 
 	match argument_type {
 		ArgumentType::Color => quote!(color::rgba_linear!(#name[0], #name[1], #name[2], #name[3])),
 		ArgumentType::Vec(v) => {
 			let mapping = generate_argument_deserialize("a", v, false);
-			quote!(#name.into_iter().map(|a| Ok(#mapping)).collect::<color_eyre::eyre::Result<Vec<_>>>()?)
+			quote!(#name.into_iter().map(|a| Ok(#mapping)).collect::<crate::core::error::Result<Vec<_>>>()?)
 		}
 		ArgumentType::Map(v) => {
 			let mapping = generate_argument_deserialize("a", v, false);
-			quote!(#name.into_iter().map(|(k, a)| Ok((k, #mapping))).collect::<color_eyre::eyre::Result<rustc_hash::FxHashMap<String, _>>>()?)
+			quote!(#name.into_iter().map(|(k, a)| Ok((k, #mapping))).collect::<crate::core::error::Result<rustc_hash::FxHashMap<String, _>>>()?)
 		}
 		_ => quote!(#name),
 	}
@@ -549,11 +549,11 @@ fn generate_argument_serialize(
 		ArgumentType::Color => quote!([#name.c.r, #name.c.g, #name.c.b, #name.a]),
 		ArgumentType::Vec(v) => {
 			let mapping = generate_argument_serialize("a", v, false);
-			quote!(#name.into_iter().map(|a| Ok(#mapping)).collect::<color_eyre::eyre::Result<Vec<_>>>()?)
+			quote!(#name.into_iter().map(|a| Ok(#mapping)).collect::<crate::core::error::Result<Vec<_>>>()?)
 		}
 		ArgumentType::Map(v) => {
 			let mapping = generate_argument_serialize("a", v, false);
-			quote!(#name.into_iter().map(|(k, a)| Ok((k, #mapping))).collect::<color_eyre::eyre::Result<rustc_hash::FxHashMap<String, _>>>()?)
+			quote!(#name.into_iter().map(|(k, a)| Ok((k, #mapping))).collect::<crate::core::error::Result<rustc_hash::FxHashMap<String, _>>>()?)
 		}
 		_ => quote!(#name),
 	}

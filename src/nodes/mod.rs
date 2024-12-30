@@ -9,9 +9,9 @@ pub mod spatial;
 
 use self::alias::Alias;
 use crate::core::client::Client;
+use crate::core::error::{Result, ServerError};
 use crate::core::registry::Registry;
 use crate::core::scenegraph::MethodResponseSender;
-use color_eyre::eyre::{eyre, Result};
 use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
@@ -20,7 +20,7 @@ use spatial::Spatial;
 use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::{deserialize, serialize};
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
@@ -112,14 +112,14 @@ impl Node {
 	pub fn add_to_scenegraph(self) -> Result<Arc<Node>> {
 		Ok(self
 			.get_client()
-			.ok_or_else(|| eyre!("Internal: Unable to get client"))?
+			.ok_or(ServerError::NoClient)?
 			.scenegraph
 			.add_node(self))
 	}
 	pub fn add_to_scenegraph_owned(self) -> Result<OwnedNode> {
 		Ok(OwnedNode(
 			self.get_client()
-				.ok_or_else(|| eyre!("Internal: Unable to get client"))?
+				.ok_or(ServerError::NoClient)?
 				.scenegraph
 				.add_node(self),
 		))
@@ -274,13 +274,13 @@ impl Node {
 		let message_sender_handle = self
 			.message_sender_handle
 			.as_ref()
-			.ok_or(eyre!("Messenger does not exist for this node"))?;
+			.ok_or(ServerError::NoMessenger)?;
 
 		let serialized = serialize(input)?;
 		let result = message_sender_handle
 			.method(self.id, aspect_id, method, &serialized, fds)?
 			.await
-			.map_err(|e| eyre!(e))?;
+			.map_err(ServerError::RemoteMethodError)?;
 
 		let (message, fds) = result.into_components();
 		let deserialized: D = deserialize(&message)?;
@@ -341,7 +341,7 @@ impl Aspects {
 			.cloned()
 			.map(|a| a.as_any())
 			.and_then(|a| Arc::downcast(a).ok())
-			.ok_or(eyre!("Couldn't get aspect"))
+			.ok_or(ServerError::NoAspect(TypeId::of::<A>()))
 	}
 }
 impl Drop for Aspects {

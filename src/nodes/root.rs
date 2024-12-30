@@ -1,11 +1,12 @@
 use super::spatial::Spatial;
 use super::{Aspect, AspectIdentifier, Node};
+use crate::bail;
 use crate::core::client::Client;
 use crate::core::client_state::ClientStateParsed;
+use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::session::connection_env;
-use color_eyre::eyre::{bail, Result};
 use glam::Mat4;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -98,7 +99,7 @@ impl RootAspect for Root {
 	}
 
 	#[doc = "Cleanly disconnect from the server"]
-	fn disconnect(_node: Arc<Node>, calling_client: Arc<Client>) -> color_eyre::eyre::Result<()> {
+	fn disconnect(_node: Arc<Node>, calling_client: Arc<Client>) -> Result<()> {
 		calling_client.disconnect(Ok(()));
 		Ok(())
 	}
