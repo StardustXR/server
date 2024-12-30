@@ -1,9 +1,8 @@
 use super::{Line, LinesAspect};
 use crate::{
-	core::{client::Client, registry::Registry},
+	core::{client::Client, error::Result, registry::Registry},
 	nodes::{spatial::Spatial, Node},
 };
-use color_eyre::eyre::Result;
 use glam::Vec3;
 use parking_lot::Mutex;
 use prisma::Lerp;

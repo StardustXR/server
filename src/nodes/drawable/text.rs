@@ -1,8 +1,11 @@
 use crate::{
-	core::{client::Client, destroy_queue, registry::Registry, resource::get_resource_file},
+	core::{
+		client::Client, destroy_queue, error::Result, registry::Registry,
+		resource::get_resource_file,
+	},
 	nodes::{spatial::Spatial, Node},
 };
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::eyre;
 use glam::{vec3, Mat4, Vec2};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -59,16 +62,14 @@ impl Text {
 	}
 
 	fn draw(&self, token: &MainThreadToken) {
-		let style =
-			self.style
-				.get_or_try_init(|| -> Result<SkTextStyle, color_eyre::eyre::Error> {
-					let font = self
-						.font_path
-						.as_deref()
-						.and_then(|path| Font::from_file(path).ok())
-						.unwrap_or_default();
-					Ok(SkTextStyle::from_font(font, 1.0, Color32::WHITE))
-				});
+		let style = self.style.get_or_try_init(|| -> Result<SkTextStyle> {
+			let font = self
+				.font_path
+				.as_deref()
+				.and_then(|path| Font::from_file(path).ok())
+				.unwrap_or_default();
+			Ok(SkTextStyle::from_font(font, 1.0, Color32::WHITE))
+		});
 
 		if let Ok(style) = style {
 			let text = self.text.lock();

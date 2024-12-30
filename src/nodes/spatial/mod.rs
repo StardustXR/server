@@ -4,10 +4,12 @@ use self::zone::Zone;
 use super::alias::Alias;
 use super::fields::{Field, FieldTrait};
 use super::{Aspect, AspectIdentifier};
+use crate::bail;
 use crate::core::client::Client;
+use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
-use color_eyre::eyre::{eyre, OptionExt, Result};
+use color_eyre::eyre::OptionExt;
 use glam::{vec3a, Mat4, Quat, Vec3};
 use mint::Vector3;
 use once_cell::sync::OnceCell;
@@ -208,7 +210,7 @@ impl Spatial {
 			.map(|parent| self.is_ancestor_of((*parent).clone()))
 			.unwrap_or(false);
 		if is_ancestor {
-			return Err(eyre!("Setting spatial parent would cause a loop"));
+			bail!("Setting spatial parent would cause a loop");
 		}
 		self.set_parent(parent);
 
@@ -223,7 +225,7 @@ impl Spatial {
 			.map(|parent| self.is_ancestor_of((*parent).clone()))
 			.unwrap_or(false);
 		if is_ancestor {
-			return Err(eyre!("Setting spatial parent would cause a loop"));
+			bail!("Setting spatial parent would cause a loop");
 		}
 
 		self.set_local_transform(Spatial::space_to_space_matrix(
@@ -458,7 +460,7 @@ impl InterfaceAspect for Interface {
 		calling_client: Arc<Client>,
 		uid: u64,
 	) -> Result<Arc<Node>> {
-		EXPORTED_SPATIALS
+		Ok(EXPORTED_SPATIALS
 			.lock()
 			.get(&uid)
 			.map(|s| {
@@ -470,6 +472,6 @@ impl InterfaceAspect for Interface {
 				)
 				.unwrap()
 			})
-			.ok_or_eyre("Couldn't find spatial with that ID")
+			.ok_or_eyre("Couldn't find spatial with that ID")?)
 	}
 }

@@ -4,13 +4,16 @@ use super::{
 	surface::CoreSurface,
 	utils::*,
 };
-use crate::nodes::{
-	drawable::model::ModelPart,
-	items::panel::{
-		Backend, ChildInfo, Geometry, PanelItem, PanelItemInitData, SurfaceId, ToplevelInfo,
+use crate::{
+	core::error::Result,
+	nodes::{
+		drawable::model::ModelPart,
+		items::panel::{
+			Backend, ChildInfo, Geometry, PanelItem, PanelItemInitData, SurfaceId, ToplevelInfo,
+		},
 	},
 };
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::eyre;
 use mint::Vector2;
 use parking_lot::Mutex;
 use rand::Rng;

@@ -96,6 +96,7 @@ xkbcommon-rs = "0.1.0"
 # wayland
 wayland-backend = { version = "0.3.7", optional = true, default-features = false }
 wayland-scanner = { version = "0.31.4", optional = true }
+thiserror = "2.0.9"
 
 [dependencies.smithay]
 # git = "https://github.com/technobaboo/smithay.git"

@@ -1,4 +1,6 @@
 use super::{create_item_acceptor_flex, register_item_ui_flex, Item, ItemType};
+use crate::bail;
+use crate::core::error::Result;
 use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
 use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
 use crate::nodes::Aspect;
@@ -15,7 +17,6 @@ use crate::{
 		Message, Node,
 	},
 };
-use color_eyre::eyre::{bail, eyre, Result};
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::{ColumnMatrix4, Vector2};
@@ -99,7 +100,7 @@ impl CameraItem {
 		response.wrap_sync(move || {
 			let ItemType::Camera(_camera) = &node.get_aspect::<Item>().unwrap().specialization
 			else {
-				return Err(eyre!("Wrong item type?"));
+				bail!("Wrong item type?");
 			};
 			Ok(serialize(())?.into())
 		});
@@ -111,7 +112,7 @@ impl CameraItem {
 		message: Message,
 	) -> Result<()> {
 		let ItemType::Camera(camera) = &node.get_aspect::<Item>().unwrap().specialization else {
-			bail!("Wrong item type?")
+			bail!("Wrong item type?");
 		};
 		let model_part_node =
 			calling_client.get_node("Model part", deserialize(&message.data).unwrap())?;
