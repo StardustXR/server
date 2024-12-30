@@ -42,4 +42,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: appimage
-          path: "*.AppImage"
+          path: "target/appimage/stardust-xr-server.AppImage"
