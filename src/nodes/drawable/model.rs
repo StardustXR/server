@@ -1,44 +1,36 @@
 use super::{MaterialParameter, ModelAspect, ModelPartAspect, MODEL_PART_ASPECT_ALIAS_INFO};
-use crate::bail;
-use crate::bevy_plugin::{MainWorldEntity, DESTROY_ENTITY};
+use crate::bevy_plugin::DESTROY_ENTITY;
 use crate::core::client::Client;
-use crate::core::error::Result;
+use crate::core::error::{Result, ServerError};
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::Spatial;
 use crate::nodes::Node;
-use crate::{DefaultMaterial, TOKIO};
+use crate::DefaultMaterial;
 use bevy::app::{Plugin, PostUpdate, PreUpdate, Update};
 use bevy::asset::{AssetServer, Assets};
-use bevy::color::{Alpha, Color, LinearRgba, Srgba};
+use bevy::color::{Color, LinearRgba};
 use bevy::core::Name;
 use bevy::gltf::GltfAssetLabel;
 use bevy::math::bounding::Aabb3d;
 use bevy::pbr::MeshMaterial3d;
-use bevy::prelude::AlphaMode;
 use bevy::prelude::{
 	BuildChildrenTransformExt, Children, Commands, Component, Deref, Entity, Has,
-	HierarchyQueryExt, Mesh3d, Parent, Query, Res, ResMut, Resource, Transform, Visibility, With,
-	Without,
+	HierarchyQueryExt, Parent, Query, Res, ResMut, Resource, Transform, Visibility, With, Without,
 };
-use bevy::reflect::{GetField, PartialReflect, Reflect};
+use bevy::reflect::GetField;
 use bevy::render::primitives::Aabb;
 use bevy::scene::SceneRoot;
-use color_eyre::eyre::eyre;
-use bevy::tasks::futures_lite::FutureExt;
 use glam::{Mat4, Vec2, Vec3};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use stardust_xr::values::ResourceID;
-use tokio::sync::Notify;
 use tracing::{error, info, warn};
 
 use std::ffi::OsStr;
-use std::future::IntoFuture;
-use std::ops::Deref;
-use std::path::{self, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Weak};
 
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
@@ -399,10 +391,10 @@ impl Model {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Model>> {
 		let pending_model_path = get_resource_file(
 			&resource_id,
-			&*node.get_client().ok_or_else(|| eyre!("Client not found"))?,
+			&*node.get_client().ok_or(ServerError::NoClient)?,
 			&[OsStr::new("glb"), OsStr::new("gltf")],
 		)
-		.ok_or_else(|| eyre!("Resource not found"))?;
+		.ok_or(ServerError::NoResource)?;
 
 		let model = Arc::new(Model {
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
