@@ -1,7 +1,7 @@
 use super::{Aspect, AspectIdentifier, Node};
 use crate::core::client::Client;
 use crate::core::destroy_queue;
-use crate::core::error::Result;
+use crate::core::error::{Result, ServerError};
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::spatial::{Spatial, Transform, SPATIAL_ASPECT_ALIAS_INFO};
@@ -23,10 +23,10 @@ pub struct StardustSoundPlugin;
 impl Plugin for StardustSoundPlugin {
 	fn build(&self, app: &mut App) {
 		let (tx, rx) = crossbeam_channel::unbounded();
-		SOUND_EVENT_SENDER.set(tx);
+		_ = SOUND_EVENT_SENDER.set(tx);
 		app.insert_resource(SoundEventReader(rx));
 		let (tx, rx) = crossbeam_channel::unbounded();
-		SPAWN_SOUND_SENDER.set(tx);
+		_ = SPAWN_SOUND_SENDER.set(tx);
 		app.insert_resource(SpawnSoundReader(rx));
 		app.add_systems(PostUpdate, update_sound_state);
 		app.add_systems(PreUpdate, spawn_sounds);
@@ -108,10 +108,10 @@ impl Sound {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Sound>> {
 		let pending_audio_path = get_resource_file(
 			&resource_id,
-			&*node.get_client().ok_or_else(|| eyre!("Client not found"))?,
+			&*node.get_client().ok_or(ServerError::NoClient)?,
 			&[OsStr::new("wav"), OsStr::new("mp3")],
 		)
-		.ok_or_else(|| eyre!("Resource not found"))?;
+		.ok_or(ServerError::NoResource)?;
 		let sound = Sound {
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			volume: 1.0,

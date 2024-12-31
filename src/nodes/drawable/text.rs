@@ -1,7 +1,10 @@
 use crate::{
 	bevy_plugin::convert_linear_rgba,
 	core::{
-		client::Client, destroy_queue, error::Result, registry::Registry,
+		client::Client,
+		destroy_queue,
+		error::{Result, ServerError},
+		registry::Registry,
 		resource::get_resource_file,
 	},
 	nodes::{spatial::Spatial, Aspect, Node},
@@ -24,7 +27,6 @@ use bevy::{
 	text::{cosmic_text::Align, JustifyText, TextColor, TextFont},
 	ui::{AlignItems, BackgroundColor, FlexDirection, JustifyContent, TargetCamera, Val},
 };
-use color_eyre::eyre::eyre;
 use glam::{vec3, Mat4, Vec2, Vec3};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
@@ -204,7 +206,7 @@ pub struct Text {
 }
 impl Text {
 	pub fn add_to(node: &Arc<Node>, text: String, style: TextStyle) -> Result<Arc<Text>> {
-		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
+		let client = node.get_client().ok_or(ServerError::NoClient)?;
 		let text = TEXT_REGISTRY.add(Text {
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			font_path: style.font.as_ref().and_then(|res| {

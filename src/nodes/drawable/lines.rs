@@ -1,4 +1,5 @@
 use super::{Line, LinesAspect};
+use crate::core::error::Result;
 use crate::{
 	bevy_plugin::{StardustExtract, TemporaryEntity, ViewLocation},
 	core::{client::Client, registry::Registry},
@@ -14,7 +15,6 @@ use bevy::{
 		AlphaMode, Commands, GlobalTransform, Mesh, Mesh3d, ResMut, Single, Transform, With,
 	},
 };
-use color_eyre::eyre::Result;
 use glam::{Vec3, Vec3A};
 use parking_lot::Mutex;
 use prisma::Lerp;
