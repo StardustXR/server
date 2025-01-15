@@ -9,14 +9,15 @@ use crate::nodes::spatial::Spatial;
 use crate::nodes::Node;
 use crate::DefaultMaterial;
 use bevy::app::{Plugin, PostUpdate, PreUpdate, Update};
-use bevy::asset::{AssetServer, Assets};
+use bevy::asset::{AssetServer, Assets, Handle};
 use bevy::color::{Color, LinearRgba};
 use bevy::core::Name;
 use bevy::gltf::GltfAssetLabel;
+use bevy::image::Image;
 use bevy::math::bounding::Aabb3d;
 use bevy::pbr::MeshMaterial3d;
 use bevy::prelude::{
-	BuildChildrenTransformExt, Children, Commands, Component, Deref, Entity, Has,
+	AlphaMode, BuildChildrenTransformExt, Children, Commands, Component, Deref, Entity, Has,
 	HierarchyQueryExt, Parent, Query, Res, ResMut, Resource, Transform, Visibility, With, Without,
 };
 use bevy::reflect::GetField;
@@ -42,6 +43,7 @@ impl MaterialParameter {
 		client: &Client,
 		material: &mut DefaultMaterial,
 		parameter_name: &str,
+		asset_server: &AssetServer,
 	) {
 		match self {
 			MaterialParameter::Bool(val) => match parameter_name {
@@ -58,7 +60,7 @@ impl MaterialParameter {
 					if let Some(field) = material.get_field_mut::<i32>(name) {
 						*field = *val;
 					} else {
-						warn!("unknown bool material parameter name: {name}");
+						warn!("unknown i32 material parameter name: {name}");
 					}
 				}
 			},
@@ -67,16 +69,23 @@ impl MaterialParameter {
 					if let Some(field) = material.get_field_mut::<u32>(name) {
 						*field = *val;
 					} else {
-						warn!("unknown bool material parameter name: {name}");
+						warn!("unknown u32 material parameter name: {name}");
 					}
 				}
 			},
 			MaterialParameter::Float(val) => match parameter_name {
+				"cutoff" => {
+					// should this only set the value if AlphaMode is already AlphaMode::Mask?
+					material.alpha_mode = AlphaMode::Mask(*val);
+				}
+				"metallic" => {
+					material.metallic = *val;
+				}
 				name => {
 					if let Some(field) = material.get_field_mut::<f32>(name) {
 						*field = *val;
 					} else {
-						warn!("unknown bool material parameter name: {name}");
+						warn!("unknown f32 material parameter name: {name}");
 					}
 				}
 			},
@@ -85,7 +94,7 @@ impl MaterialParameter {
 					if let Some(field) = material.get_field_mut::<Vec2>(name) {
 						*field = (*val).into();
 					} else {
-						warn!("unknown bool material parameter name: {name}");
+						warn!("unknown vec2 material parameter name: {name}");
 					}
 				}
 			},
@@ -94,7 +103,7 @@ impl MaterialParameter {
 					if let Some(field) = material.get_field_mut::<Vec3>(name) {
 						*field = (*val).into();
 					} else {
-						warn!("unknown bool material parameter name: {name}");
+						warn!("unknown vec3 material parameter name: {name}");
 					}
 				}
 			},
@@ -102,25 +111,46 @@ impl MaterialParameter {
 				"color" => {
 					material.base_color = LinearRgba::new(val.c.r, val.c.g, val.c.b, val.a).into()
 				}
+				"emission_factor" => {
+					material.emissive = LinearRgba::new(val.c.r, val.c.g, val.c.b, val.a)
+				}
 				name => {
 					if let Some(field) = material.get_field_mut::<Color>(name) {
 						*field = LinearRgba::new(val.c.r, val.c.g, val.c.b, val.a).into();
 					} else {
-						warn!("unknown bool material parameter name: {name}");
+						warn!("unknown color material parameter name: {name}");
 					}
 				}
 			},
 			MaterialParameter::Texture(resource) => {
-				match parameter_name {
-					name => {
-						warn!("unknown texture material parameter name: {name}");
-					}
-				}
 				let Some(texture_path) =
 					get_resource_file(resource, client, &[OsStr::new("png"), OsStr::new("jpg")])
 				else {
 					return;
 				};
+				let image = asset_server.load::<Image>(texture_path);
+				match parameter_name {
+					"diffuse" => {
+						material.base_color_texture.replace(image);
+					}
+					"emission" => {
+						material.emissive_texture.replace(image);
+					}
+					"normal" => {
+						material.normal_map_texture.replace(image);
+					}
+					"occlusion" => {
+						material.occlusion_texture.replace(image);
+					}
+					// TODO: impl metalic and roughness textures, they are combined in bevy
+					name => {
+						if let Some(field) = material.get_field_mut::<Option<Handle<Image>>>(name) {
+							field.replace(image);
+						} else {
+							warn!("unknown texture material parameter name: {name}");
+						}
+					}
+				}
 				error!("TODO: implement texture changing");
 			}
 		}
@@ -193,16 +223,18 @@ fn update_model_parts(
 	mut part_query: Query<(
 		&mut Transform,
 		&mut MeshMaterial3d<DefaultMaterial>,
+		&mut Visibility,
 		Has<Parent>,
 	)>,
 	mut cmds: Commands,
+	asset_server: Res<AssetServer>,
 ) {
 	for model in &models {
 		let Some(model) = model.0.upgrade() else {
 			continue;
 		};
 		for part in model.parts.lock().iter() {
-			let Some((entity, (mut transform, mut mat, has_parent))) = part
+			let Some((entity, (mut transform, mut mat, mut vis, has_parent))) = part
 				.entity
 				.get()
 				.and_then(|e| Some((*e, part_query.get_mut(*e).ok()?)))
@@ -213,6 +245,12 @@ fn update_model_parts(
 				cmds.entity(entity).remove_parent_in_place();
 			}
 			*transform = Transform::from_matrix(part.space.global_transform());
+			if let Some(node) = part.space.node() {
+				*vis = match node.enabled() {
+					true => Visibility::Inherited,
+					false => Visibility::Hidden,
+				}
+			}
 
 			// todo: find all materials with identical parameters and batch them into 1 material again
 			'mat_params: {
@@ -231,6 +269,7 @@ fn update_model_parts(
 							&client,
 							&mut new_material,
 							&parameter_name,
+							&asset_server,
 						);
 					}
 					mat.0 = mats.add(new_material);

@@ -17,13 +17,14 @@ use bevy::app::{
 	App, AppExit, PluginGroup, PluginsState, PostUpdate, ScheduleRunnerPlugin, Startup,
 	TerminalCtrlCHandlerPlugin, Update,
 };
-use bevy::asset::{AssetPlugin, AssetServer, Handle};
+use bevy::asset::{load_internal_binary_asset, AssetApp as _, AssetPlugin, AssetServer, Handle};
 use bevy::audio::AudioPlugin;
 use bevy::color::Color;
 use bevy::core_pipeline::{CorePipelinePlugin, Skybox};
 use bevy::gizmos::GizmoPlugin;
 use bevy::gltf::GltfPlugin;
 use bevy::image::Image;
+use bevy::input::InputPlugin;
 use bevy::log::LogPlugin;
 use bevy::pbr::{PbrPlugin, StandardMaterial};
 use bevy::prelude::{
@@ -34,11 +35,13 @@ use bevy::prelude::{
 use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
 use bevy::render::RenderPlugin;
 use bevy::scene::ScenePlugin;
+use bevy::text::{Font, FontLoader, TextPlugin};
 use bevy::time::Time;
 use bevy::utils::default;
 use bevy::window::WindowPlugin;
 use bevy::winit::{EventLoopProxyWrapper, WakeUp, WinitPlugin};
 use bevy::{DefaultPlugins, MinimalPlugins};
+use bevy_mod_meshtext::MeshTextPlugin;
 use bevy_mod_openxr::action_set_syncing::{OxrActionSyncingPlugin, OxrSyncActionSet};
 use bevy_mod_openxr::exts::OxrExtensions;
 use bevy_mod_openxr::features::overlay::{OxrOverlaySessionEvent, OxrOverlaySettings};
@@ -267,6 +270,7 @@ fn bevy_loop(
 		.disable::<ScheduleRunnerPlugin>()
 		.add(TransformPlugin)
 		.add(HierarchyPlugin)
+		.add(InputPlugin)
 		.add(AccessibilityPlugin);
 	base = match headless {
 		true => {
@@ -343,15 +347,25 @@ fn bevy_loop(
 		bevy_app.add_event::<OxrSyncActionSet>();
 		bevy_app.add_plugins(bevy_xr_utils::hand_gizmos::HandGizmosPlugin);
 	}
+	bevy_app
+		.init_asset::<Font>()
+		.init_asset_loader::<FontLoader>();
+	bevy_app.add_plugins(MeshTextPlugin);
 	bevy_app.add_plugins(StardustBevyPlugin);
 	bevy_app.add_plugins((
 		BevyLinesPlugin,
 		StardustModelPlugin,
 		StardustHandPlugin,
-		// StardustTextPlugin,
+		StardustTextPlugin,
 		StardustSoundPlugin,
 		StardustControllerPlugin,
 	));
+	load_internal_binary_asset!(
+		bevy_app,
+		Handle::default(),
+		"FiraMono-subset.ttf",
+		|bytes: &[u8], _path: String| { Font::try_from_bytes(bytes.to_vec()).unwrap() }
+	);
 	#[derive(Resource)]
 	struct SkyTexture(Handle<Image>);
 	// Skytex/light stuff
@@ -482,7 +496,7 @@ fn bevy_loop(
 			.flatten()
 			.map(|mut waiter| {
 				TOKIO.spawn_blocking(move || {
-					let _span = debug_span!("eeping").entered();
+					let _span = debug_span!("frame eeping").entered();
 					let result = waiter.wait();
 					(waiter, result)
 				})

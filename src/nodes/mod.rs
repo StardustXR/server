@@ -13,7 +13,6 @@ use crate::core::error::{Result, ServerError};
 use crate::core::queued_mutex::QueuedMutex;
 use crate::core::registry::Registry;
 use crate::core::scenegraph::MethodResponseSender;
-use parking_lot::Mutex;
 use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
 use serde::{de::DeserializeOwned, Serialize};
@@ -21,12 +20,12 @@ use spatial::Spatial;
 use stardust_xr::messenger::MessageSenderHandle;
 use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::{deserialize, serialize};
+use tracing::debug_span;
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::os::fd::OwnedFd;
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
-use tracing::{debug_span, info};
 
 #[derive(Default)]
 pub struct Message {
@@ -345,7 +344,7 @@ impl Aspects {
 	}
 	fn get<A: Aspect + AspectIdentifier>(&self) -> Result<Arc<A>> {
 		self.0
-			.lock()
+			.read_now()
 			.get(&A::ID)
 			.cloned()
 			.map(|a| a.as_any())
