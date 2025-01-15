@@ -165,7 +165,6 @@ fn update_hands(
 
 const PINCH_MAX: f32 = 0.11;
 const PINCH_ACTIVACTION_DISTANCE: f32 = 0.01;
-// TODO: handle invalid data
 // based on https://github.com/StereoKit/StereoKit/blob/ca2be7d45f4f4388e8df7542e9a0313bcc45946e/StereoKitC/hands/input_hand.cpp#L375-L394
 fn pinch_activation(joints: &[openxr::HandJointLocation; openxr::HAND_JOINT_COUNT]) -> f32 {
 	let combined_radius =
@@ -182,7 +181,6 @@ fn pinch_activation(joints: &[openxr::HandJointLocation; openxr::HAND_JOINT_COUN
 
 const GRIP_MAX: f32 = 0.11;
 const GRIP_ACTIVACTION_DISTANCE: f32 = 0.01;
-// TODO: handle invalid data
 // based on https://github.com/StereoKit/StereoKit/blob/ca2be7d45f4f4388e8df7542e9a0313bcc45946e/StereoKitC/hands/input_hand.cpp#L375-L394
 fn grip_activation(joints: &[openxr::HandJointLocation; openxr::HAND_JOINT_COUNT]) -> f32 {
 	let combined_radius = joints[HandBone::RingTip as usize].radius

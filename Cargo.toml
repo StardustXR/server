@@ -51,10 +51,16 @@ auto_link_exclude_list = [
 ]
 
 [dependencies]
-bevy = { version = "0.15", features = ["wayland", "mp3", "wav", "trace_tracy"] }
-bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
-bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
-bevy_xr_utils = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "0.15rc" }
+bevy = { version = "0.15.1", features = [
+	"wayland",
+	"mp3",
+	"wav",
+	"trace_tracy",
+] }
+bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "wgpu_feature_fix" }
+bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "wgpu_feature_fix" }
+bevy_xr_utils = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "wgpu_feature_fix" }
+bevy_mod_meshtext.git = "https://github.com/Schmarni-Dev/bevy_mod_meshtext"
 openxr = "0.19"
 winit = { version = "0.30", default-features = false, features = [] }
 # small utility thingys
@@ -97,6 +103,7 @@ directories = "5.0.1"
 xkbcommon-rs = "0.1.0"
 thiserror = "2.0.9"
 crossbeam-channel = "0.5.14"
+atomicow = "1.0.0"
 
 # wayland
 # wayland-scanner = "0.31.2"

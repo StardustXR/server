@@ -162,8 +162,9 @@ pub fn draw_all(
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut materials: ResMut<Assets<StandardMaterial>>,
 	mut cmds: Commands,
-	hmd: Single<&GlobalTransform, With<ViewLocation>>,
+	hmd: Option<Single<&GlobalTransform, With<ViewLocation>>>,
 ) {
+	let Some(hmd) = hmd else { return };
 	let material = StandardMaterial {
 		base_color: Color::WHITE,
 		alpha_mode: AlphaMode::Blend,

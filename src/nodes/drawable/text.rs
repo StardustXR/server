@@ -1,61 +1,50 @@
 use crate::{
-	bevy_plugin::convert_linear_rgba,
+	bevy_plugin::{convert_linear_rgba, DESTROY_ENTITY},
 	core::{
 		client::Client,
-		destroy_queue,
 		error::{Result, ServerError},
 		registry::Registry,
 		resource::get_resource_file,
 	},
-	nodes::{spatial::Spatial, Aspect, Node},
+	nodes::{spatial::Spatial, Node},
 	DefaultMaterial,
 };
 use bevy::{
 	app::{App, Plugin, PostUpdate, PreUpdate},
-	asset::{AssetServer, Assets, RenderAssetUsages},
-	color::Color,
-	image::Image,
+	asset::{AssetServer, Assets},
 	pbr::MeshMaterial3d,
-	prelude::{
-		default, BuildChildren as _, Camera, Camera2d, ChildBuild as _, Commands, Deref, Entity,
-		Mesh, Mesh3d, Plane3d, Query, Res, ResMut, Resource, Transform,
-	},
-	render::{
-		camera::RenderTarget,
-		render_resource::{Extent3d, TextureDimension, TextureFormat, TextureUsages},
-	},
-	text::{cosmic_text::Align, JustifyText, TextColor, TextFont},
-	ui::{AlignItems, BackgroundColor, FlexDirection, JustifyContent, TargetCamera, Val},
+	prelude::{Commands, Deref, Entity, Query, Res, ResMut, Resource, Transform},
 };
-use glam::{vec3, Mat4, Vec2, Vec3};
+use bevy_mod_meshtext::{HorizontalLayout, MeshText, MeshTextFont, VerticalLayout};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
-use tracing::{info, info_span};
+use tracing::info_span;
 
 use super::{TextAspect, TextStyle};
 
 static TEXT_REGISTRY: Registry<Text> = Registry::new();
 
-// fn convert_align(x_align: super::XAlign, y_align: super::YAlign) -> bevy::text::Text2d {
-// 	match (x_align, y_align) {
-// 		(super::XAlign::Left, super::YAlign::Top) => TextAlign::TopLeft,
-// 		(super::XAlign::Left, super::YAlign::Center) => TextAlign::CenterLeft,
-// 		(super::XAlign::Left, super::YAlign::Bottom) => TextAlign::BottomLeft,
-// 		(super::XAlign::Center, super::YAlign::Top) => TextAlign::Center,
-// 		(super::XAlign::Center, super::YAlign::Center) => TextAlign::Center,
-// 		(super::XAlign::Center, super::YAlign::Bottom) => TextAlign::BottomCenter,
-// 		(super::XAlign::Right, super::YAlign::Top) => TextAlign::TopRight,
-// 		(super::XAlign::Right, super::YAlign::Center) => TextAlign::CenterRight,
-// 		(super::XAlign::Right, super::YAlign::Bottom) => TextAlign::BottomRight,
-// 	}
-// }
+const fn convert_align_x(x_align: super::XAlign) -> HorizontalLayout {
+	match x_align {
+		super::XAlign::Left => HorizontalLayout::Left,
+		super::XAlign::Center => HorizontalLayout::Centered,
+		super::XAlign::Right => HorizontalLayout::Right,
+	}
+}
+const fn convert_align_y(y_align: super::YAlign) -> VerticalLayout {
+	match y_align {
+		super::YAlign::Top => VerticalLayout::Top,
+		super::YAlign::Center => VerticalLayout::Centered,
+		super::YAlign::Bottom => VerticalLayout::Bottom,
+	}
+}
 
 pub struct StardustTextPlugin;
 impl Plugin for StardustTextPlugin {
 	fn build(&self, app: &mut App) {
 		let (tx, rx) = crossbeam_channel::unbounded();
-		SPAWN_TEXT_SENDER.set(tx);
+		_ = SPAWN_TEXT_SENDER.set(tx);
 		app.insert_resource(SpawnTextReader(rx));
 		app.add_systems(PostUpdate, update_text);
 		app.add_systems(PreUpdate, spawn_text);
@@ -65,7 +54,7 @@ impl Plugin for StardustTextPlugin {
 fn update_text(mut surface_query: Query<(&mut Transform)>) {
 	for text in TEXT_REGISTRY.get_valid_contents() {
 		let Some((mut transform)) = text
-			.surface
+			.entity
 			.get()
 			.and_then(|v| surface_query.get_mut(*v).ok())
 		else {
@@ -73,21 +62,13 @@ fn update_text(mut surface_query: Query<(&mut Transform)>) {
 		};
 		// let data = text.data.lock();
 
-		*transform = Transform::from_matrix(
-			text.space.global_transform(), // * Mat4::from_scale(vec3(
-			                               // 	data.character_height,
-			                               // 	data.character_height,
-			                               // 	data.character_height,
-			                               // )),
-		);
+		*transform = Transform::from_matrix(text.space.global_transform());
 	}
 }
 
 fn spawn_text(
 	reader: Res<SpawnTextReader>,
 	mut cmds: Commands,
-	mut images: ResMut<Assets<Image>>,
-	mut meshes: ResMut<Assets<Mesh>>,
 	mut mats: ResMut<Assets<DefaultMaterial>>,
 	asset_server: Res<AssetServer>,
 ) {
@@ -96,99 +77,36 @@ fn spawn_text(
 		let _span2 = info_span!("text data lock").entered();
 		let data = text.data.lock();
 		drop(_span2);
-		let size = Extent3d {
-			width: (512.0 * data.bounds.as_ref().map(|v| v.bounds.x).unwrap_or(1.0)).floor() as u32,
-			height: (512.0 * data.bounds.as_ref().map(|v| v.bounds.y).unwrap_or(1.0)).floor()
-				as u32,
-			..default()
-		};
-
-		let _span = info_span!("create and setup image").entered();
-		// This is the texture that will be rendered to.
-		let mut image = Image::transparent();
-		image.texture_descriptor.format = TextureFormat::Bgra8UnormSrgb;
-		image.texture_descriptor.dimension = TextureDimension::D2;
-		image.asset_usage = RenderAssetUsages::default();
-		image.resize(size);
-		// You need to set these texture usage flags in order to use the image as a render target
-		image.texture_descriptor.usage = TextureUsages::TEXTURE_BINDING
-			| TextureUsages::COPY_DST
-			| TextureUsages::RENDER_ATTACHMENT;
-
-		let image_handle = images.add(image);
-		drop(_span);
-
-		let _span = info_span!("spawn text camera and load font").entered();
-		let cam = cmds
-			.spawn((
-				Camera2d,
-				Camera {
-					target: RenderTarget::Image(image_handle.clone()),
-					..default()
-				},
-			))
-			.id();
+		let _span2 = info_span!("text str lock").entered();
+		let str = text.text.lock().clone();
+		drop(_span2);
+		let mat = mats.add(DefaultMaterial {
+			base_color: convert_linear_rgba(data.color).into(),
+			unlit: true,
+			..Default::default()
+		});
 		let font = text
 			.font_path
 			.as_ref()
-			.map(|v| asset_server.load(v.as_path()));
-		drop(_span);
+			.map(|p| asset_server.load(p.as_path()));
+		let mut text_entity = cmds.spawn((
+			MeshText {
+				text: atomicow::CowArc::Owned(str),
+				height: data.character_height,
+				depth: 0.0,
+			},
+			MeshMaterial3d(mat),
+			convert_align_x(data.text_align_x),
+			convert_align_y(data.text_align_y),
+		));
+		if let Some(font) = font {
+			text_entity.insert(MeshTextFont(font));
+		}
 
-		let _span = info_span!("spawn ui entities").entered();
-		let ui_root = cmds
-			.spawn((
-				bevy::ui::Node {
-					// Cover the whole image
-					width: Val::Percent(100.),
-					height: Val::Percent(100.),
-					flex_direction: FlexDirection::Column,
-					justify_content: JustifyContent::Center,
-					align_items: AlignItems::Center,
-					..default()
-				},
-				BackgroundColor(Color::NONE),
-				TargetCamera(cam),
-			))
-			.with_children(|parent| {
-				parent.spawn((
-					bevy::prelude::Text::new(text.text.lock().as_str()),
-					TextFont {
-						font: font.unwrap_or_else(|| TextFont::default().font),
-						font_size: 40.0,
-						..default()
-					},
-					TextColor(convert_linear_rgba(data.color).into()),
-				));
-			})
-			.id();
-		drop(_span);
-		let _span = info_span!("spawn 3d plane").entered();
-		let surface = cmds
-			.spawn((
-				Mesh3d(
-					meshes.add(Plane3d::new(
-						Vec3::NEG_Z,
-						data.bounds
-							.as_ref()
-							.map(|v| v.bounds.into())
-							.unwrap_or(Vec2::ZERO)
-							* 0.5,
-					)),
-				),
-				MeshMaterial3d(mats.add(DefaultMaterial {
-					base_color_texture: Some(image_handle),
-					unlit: true,
-					// would Cutout be enough here?
-					alpha_mode: bevy::prelude::AlphaMode::Blend,
-					..default()
-				})),
-			))
-			.id();
-		drop(_span);
+		let entity = text_entity.id();
+
 		let _span = info_span!("setting OneCells").entered();
-		text.cam_entity.set(cam);
-		text.ui_root.set(ui_root);
-		text.surface.set(surface);
+		text.entity.set(entity);
 	}
 }
 static SPAWN_TEXT_SENDER: OnceCell<crossbeam_channel::Sender<Arc<Text>>> = OnceCell::new();
@@ -198,11 +116,9 @@ struct SpawnTextReader(crossbeam_channel::Receiver<Arc<Text>>);
 pub struct Text {
 	space: Arc<Spatial>,
 	font_path: Option<PathBuf>,
-	text: Mutex<String>,
+	text: Mutex<Arc<str>>,
 	data: Mutex<TextStyle>,
-	cam_entity: OnceCell<Entity>,
-	ui_root: OnceCell<Entity>,
-	surface: OnceCell<Entity>,
+	entity: OnceCell<Entity>,
 }
 impl Text {
 	pub fn add_to(node: &Arc<Node>, text: String, style: TextStyle) -> Result<Arc<Text>> {
@@ -212,11 +128,9 @@ impl Text {
 			font_path: style.font.as_ref().and_then(|res| {
 				get_resource_file(res, &client, &[OsStr::new("ttf"), OsStr::new("otf")])
 			}),
-			text: Mutex::new(text),
+			text: Mutex::new(text.into()),
 			data: Mutex::new(style),
-			ui_root: OnceCell::new(),
-			cam_entity: OnceCell::new(),
-			surface: OnceCell::new(),
+			entity: OnceCell::new(),
 		});
 		node.add_aspect_raw(text.clone());
 		if let Some(sender) = SPAWN_TEXT_SENDER.get() {
@@ -225,79 +139,6 @@ impl Text {
 
 		Ok(text)
 	}
-
-	// fn draw(&self, token: &MainThreadToken) {
-	// 	let style =
-	// 		self.style
-	// 			.get_or_try_init(|| -> Result<SkTextStyle, color_eyre::eyre::Error> {
-	// 				let font = self
-	// 					.font_path
-	// 					.as_deref()
-	// 					.and_then(|path| Font::from_file(path).ok())
-	// 					.unwrap_or_default();
-	// 				Ok(SkTextStyle::from_font(font, 1.0, Color32::WHITE))
-	// 			});
-	//
-	// 	if let Ok(style) = style {
-	// 		let text = self.text.lock();
-	// 		let data = self.data.lock();
-	// 		let transform = self.space.global_transform()
-	// 			* Mat4::from_scale(vec3(
-	// 				data.character_height,
-	// 				data.character_height,
-	// 				data.character_height,
-	// 			));
-	// 		if let Some(bounds) = &data.bounds {
-	// 			stereokit_rust::system::Text::add_in(
-	// 				token,
-	// 				&*text,
-	// 				transform,
-	// 				Vec2::from(bounds.bounds) / data.character_height,
-	// 				match bounds.fit {
-	// 					super::TextFit::Wrap => TextFit::Wrap,
-	// 					super::TextFit::Clip => TextFit::Clip,
-	// 					super::TextFit::Squeeze => TextFit::Squeeze,
-	// 					super::TextFit::Exact => TextFit::Exact,
-	// 					super::TextFit::Overflow => TextFit::Overflow,
-	// 				},
-	// 				Some(*style),
-	// 				Some(Color128::new(
-	// 					data.color.c.r,
-	// 					data.color.c.g,
-	// 					data.color.c.b,
-	// 					data.color.a,
-	// 				)),
-	// 				data.bounds
-	// 					.as_ref()
-	// 					.map(|b| convert_align(b.anchor_align_x, b.anchor_align_y)),
-	// 				Some(convert_align(data.text_align_x, data.text_align_y)),
-	// 				None,
-	// 				None,
-	// 				None,
-	// 			);
-	// 		} else {
-	// 			stereokit_rust::system::Text::add_at(
-	// 				token,
-	// 				&*text,
-	// 				transform,
-	// 				Some(*style),
-	// 				Some(Color128::new(
-	// 					data.color.c.r,
-	// 					data.color.c.g,
-	// 					data.color.c.b,
-	// 					data.color.a,
-	// 				)),
-	// 				data.bounds
-	// 					.as_ref()
-	// 					.map(|b| convert_align(b.anchor_align_x, b.anchor_align_y)),
-	// 				Some(convert_align(data.text_align_x, data.text_align_y)),
-	// 				None,
-	// 				None,
-	// 				None,
-	// 			);
-	// 		}
-	// 	}
-	// }
 }
 impl TextAspect for Text {
 	fn set_character_height(
@@ -312,12 +153,15 @@ impl TextAspect for Text {
 
 	fn set_text(node: Arc<Node>, _calling_client: Arc<Client>, text: String) -> Result<()> {
 		let this_text = node.get_aspect::<Text>()?;
-		*this_text.text.lock() = text;
+		*this_text.text.lock() = text.into();
 		Ok(())
 	}
 }
 impl Drop for Text {
 	fn drop(&mut self) {
+		if let Some(e) = self.entity.get() {
+			DESTROY_ENTITY.send(*e);
+		}
 		TEXT_REGISTRY.remove(self);
 	}
 }
