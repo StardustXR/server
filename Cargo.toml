@@ -26,8 +26,8 @@ name = "stardust-xr-server"
 path = "src/main.rs"
 
 [features]
-# default = ["wayland"]
-# wayland = ["dep:smithay"]
+default = []
+wayland = ["dep:smithay", "dep:wayland-scanner", "dep:wayland-backend"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy"]
 
@@ -111,23 +111,23 @@ crossbeam-channel = "0.5.14"
 atomicow = "1.0.0"
 
 # wayland
-# wayland-scanner = "0.31.2"
-# wayland-backend = "0.3.4"
-#
-# [dependencies.smithay]
-# # git = "https://github.com/technobaboo/smithay.git"
-# # git = "https://github.com/colinmarc/smithay.git"
-# git = "https://github.com/smithay/smithay.git"
-# # path = "../smithay"
-# default-features = false
-# features = [
-#     "desktop",
-#     "backend_drm",
-#     "backend_egl",
-#     "renderer_gl",
-#     "wayland_frontend",
-# ]
-# optional = true
+wayland-scanner = { version = "0.31.2", optional = true }
+wayland-backend = { version = "0.3.4", optional = true }
+
+[dependencies.smithay]
+# git = "https://github.com/technobaboo/smithay.git"
+# git = "https://github.com/colinmarc/smithay.git"
+git = "https://github.com/smithay/smithay.git"
+# path = "../smithay"
+default-features = false
+features = [
+	"desktop",
+	"backend_drm",
+	"backend_egl",
+	"renderer_gl",
+	"wayland_frontend",
+]
+optional = true
 
 [dependencies.stardust-xr]
 workspace = true
