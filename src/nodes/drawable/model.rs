@@ -46,33 +46,28 @@ impl MaterialParameter {
 		asset_server: &AssetServer,
 	) {
 		match self {
-			MaterialParameter::Bool(val) => match parameter_name {
-				name => {
-					if let Some(field) = material.get_field_mut::<bool>(name) {
-						*field = *val;
-					} else {
-						warn!("unknown bool material parameter name: {name}");
-					}
+			MaterialParameter::Bool(val) => {
+				let name = parameter_name;
+				if let Some(field) = material.get_field_mut::<bool>(name) {
+					*field = *val;
+				} else {
+					warn!("unknown bool material parameter name: {name}");
 				}
-			},
-			MaterialParameter::Int(val) => match parameter_name {
-				name => {
-					if let Some(field) = material.get_field_mut::<i32>(name) {
-						*field = *val;
-					} else {
-						warn!("unknown i32 material parameter name: {name}");
-					}
+			}
+			MaterialParameter::Int(val) => {
+				if let Some(field) = material.get_field_mut::<i32>(parameter_name) {
+					*field = *val;
+				} else {
+					warn!("unknown i32 material parameter name: {parameter_name}");
 				}
-			},
-			MaterialParameter::UInt(val) => match parameter_name {
-				name => {
-					if let Some(field) = material.get_field_mut::<u32>(name) {
-						*field = *val;
-					} else {
-						warn!("unknown u32 material parameter name: {name}");
-					}
+			}
+			MaterialParameter::UInt(val) => {
+				if let Some(field) = material.get_field_mut::<u32>(parameter_name) {
+					*field = *val;
+				} else {
+					warn!("unknown u32 material parameter name: {parameter_name}");
 				}
-			},
+			}
 			MaterialParameter::Float(val) => match parameter_name {
 				"cutoff" => {
 					// should this only set the value if AlphaMode is already AlphaMode::Mask?
@@ -89,24 +84,20 @@ impl MaterialParameter {
 					}
 				}
 			},
-			MaterialParameter::Vec2(val) => match parameter_name {
-				name => {
-					if let Some(field) = material.get_field_mut::<Vec2>(name) {
-						*field = (*val).into();
-					} else {
-						warn!("unknown vec2 material parameter name: {name}");
-					}
+			MaterialParameter::Vec2(val) => {
+				if let Some(field) = material.get_field_mut::<Vec2>(parameter_name) {
+					*field = (*val).into();
+				} else {
+					warn!("unknown vec2 material parameter name: {parameter_name}");
 				}
-			},
-			MaterialParameter::Vec3(val) => match parameter_name {
-				name => {
-					if let Some(field) = material.get_field_mut::<Vec3>(name) {
-						*field = (*val).into();
-					} else {
-						warn!("unknown vec3 material parameter name: {name}");
-					}
+			}
+			MaterialParameter::Vec3(val) => {
+				if let Some(field) = material.get_field_mut::<Vec3>(parameter_name) {
+					*field = (*val).into();
+				} else {
+					warn!("unknown vec3 material parameter name: {parameter_name}");
 				}
-			},
+			}
 			MaterialParameter::Color(val) => match parameter_name {
 				"color" => {
 					material.color = Srgba::new(val.c.r, val.c.g, val.c.b, val.a).into()
@@ -176,7 +167,7 @@ pub struct StardustModelPlugin;
 impl Plugin for StardustModelPlugin {
 	fn build(&self, app: &mut bevy::prelude::App) {
 		let (tx, rx) = crossbeam_channel::unbounded();
-		LOAD_MODEL_SENDER.set(tx);
+		let _ = LOAD_MODEL_SENDER.set(tx);
 		app.insert_resource(LoadModelReader(rx));
 		app.add_systems(Update, create_model_parts_for_loaded_models);
 		app.add_systems(PreUpdate, load_models);
@@ -214,7 +205,7 @@ fn load_models(rx: Res<LoadModelReader>, mut cmds: Commands, asset_server: Res<A
 				UnprocessedModel,
 			))
 			.id();
-		model.entity.set(entity);
+		let _ = model.entity.set(entity);
 	}
 }
 
@@ -444,7 +435,7 @@ impl Model {
 		});
 		MODEL_REGISTRY.add_raw(&model);
 		if let Some(sender) = LOAD_MODEL_SENDER.get() {
-			sender.send((pending_model_path, model.clone()));
+			let _ = sender.send((pending_model_path, model.clone()));
 		}
 		node.add_aspect_raw(model.clone());
 		Ok(model)

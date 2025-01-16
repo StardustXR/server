@@ -49,7 +49,7 @@ fn spawn_sounds(reader: Res<SpawnSoundReader>, mut cmds: Commands, asset_server:
 				},
 			))
 			.id();
-		sound.entity.set(e);
+		let _ = sound.entity.set(e);
 	}
 }
 

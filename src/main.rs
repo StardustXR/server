@@ -10,11 +10,11 @@ mod wayland;
 
 use crate::core::destroy_queue;
 // use crate::nodes::items::camera;
-use crate::nodes::{audio, drawable, input};
+use crate::nodes::input;
 
 use bevy::a11y::AccessibilityPlugin;
 use bevy::app::{
-	App, AppExit, PluginGroup, PluginsState, PostUpdate, ScheduleRunnerPlugin, Startup,
+	App, AppExit, PluginGroup, PostUpdate, ScheduleRunnerPlugin, Startup,
 	TerminalCtrlCHandlerPlugin, Update,
 };
 use bevy::asset::{load_internal_binary_asset, AssetApp as _, AssetPlugin, AssetServer, Handle};
@@ -27,9 +27,8 @@ use bevy::image::Image;
 use bevy::input::InputPlugin;
 use bevy::pbr::PbrPlugin;
 use bevy::prelude::{
-	on_event, resource_added, Camera3d, ClearColor, Commands, Entity, EventReader, HierarchyPlugin,
-	ImagePlugin, IntoSystemConfigs, Local, Query, Res, ResMut, Resource, Transform,
-	TransformPlugin, With, World,
+	on_event, Camera3d, ClearColor, Commands, Entity, EventReader, HierarchyPlugin, ImagePlugin,
+	IntoSystemConfigs, Local, Query, Res, ResMut, Resource, TransformPlugin, With, World,
 };
 use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
 use bevy::render::RenderPlugin;
@@ -37,8 +36,8 @@ use bevy::scene::ScenePlugin;
 use bevy::text::{Font, FontLoader};
 use bevy::time::Time;
 use bevy::window::WindowPlugin;
-use bevy::winit::{EventLoopProxyWrapper, WakeUp, WinitPlugin};
-use bevy::{DefaultPlugins, MinimalPlugins};
+use bevy::winit::{WakeUp, WinitPlugin};
+use bevy::MinimalPlugins;
 use bevy_mod_meshtext::MeshTextPlugin;
 use bevy_mod_openxr::action_set_syncing::{OxrActionSyncingPlugin, OxrSyncActionSet};
 use bevy_mod_openxr::exts::OxrExtensions;
@@ -55,7 +54,6 @@ use bevy_mod_xr::spaces::XrPrimaryReferenceSpace;
 use bevy_plugin::{DbusConnection, DummyPbrPlugin, InputUpdate, StardustBevyPlugin, StardustFirst};
 use bevy_sk::skytext::SphericalHarmonicsPlugin;
 use clap::Parser;
-use color_eyre::eyre::eyre;
 use core::client::Client;
 use core::task;
 use directories::ProjectDirs;
@@ -77,7 +75,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::net::UnixListener;
 use tokio::sync::Notify;
-use tracing::level_filters::LevelFilter;
 use tracing::{debug_span, error, info, warn};
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use zbus::fdo::ObjectManager;
@@ -293,6 +290,7 @@ fn bevy_loop(
 		.add(CorePipelinePlugin)
 		// very unsure what is needed here
 		.add(PbrPlugin {
+			// hoping that there is very little overdraw in stardust
 			prepass_enabled: false,
 			add_default_deferred_lighting_plugin: false,
 			use_gpu_instance_buffer_builder: false,
@@ -366,7 +364,7 @@ fn bevy_loop(
 	load_internal_binary_asset!(
 		bevy_app,
 		Handle::default(),
-		"FiraMono-subset.ttf",
+		"nodes/drawable/assets/FiraMono-subset.ttf",
 		|bytes: &[u8], _path: String| { Font::try_from_bytes(bytes.to_vec()).unwrap() }
 	);
 	#[derive(Resource)]
@@ -452,7 +450,7 @@ fn bevy_loop(
 	sk_ready_notifier.notify_waiters();
 	info!("Stardust ready!");
 
-	let mut objects = ServerObjects::new(dbus_connection.clone());
+	let objects = ServerObjects::new(dbus_connection.clone());
 	fn sync_sets(session: Res<OxrSession>, mut events: EventReader<OxrSyncActionSet>) {
 		let sets = events
 			.read()
@@ -490,7 +488,7 @@ fn bevy_loop(
 			.run_system_cached(openxr_session_running)
 			.unwrap_or(true)
 		{
-			world.run_system_cached(sync_sets);
+			let _ = world.run_system_cached(sync_sets);
 		}
 		let thread = world
 			.run_system_cached(should_run_frame_loop)
@@ -525,7 +523,7 @@ fn bevy_loop(
 		}
 		#[cfg(feature = "wayland")]
 		wayland.update();
-	};
+	}
 	bevy_app.add_systems(StardustFirst, bevy_step);
 	let out = bevy_app.run();
 

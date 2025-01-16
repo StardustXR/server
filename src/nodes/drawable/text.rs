@@ -51,9 +51,9 @@ impl Plugin for StardustTextPlugin {
 	}
 }
 
-fn update_text(mut surface_query: Query<(&mut Transform)>) {
+fn update_text(mut surface_query: Query<&mut Transform>) {
 	for text in TEXT_REGISTRY.get_valid_contents() {
-		let Some((mut transform)) = text
+		let Some(mut transform) = text
 			.entity
 			.get()
 			.and_then(|v| surface_query.get_mut(*v).ok())
@@ -105,7 +105,7 @@ fn spawn_text(
 		let entity = text_entity.id();
 
 		let _span = info_span!("setting OneCells").entered();
-		text.entity.set(entity);
+		let _ = text.entity.set(entity);
 	}
 }
 static SPAWN_TEXT_SENDER: OnceCell<crossbeam_channel::Sender<Arc<Text>>> = OnceCell::new();
@@ -133,7 +133,7 @@ impl Text {
 		});
 		node.add_aspect_raw(text.clone());
 		if let Some(sender) = SPAWN_TEXT_SENDER.get() {
-			sender.send(text.clone());
+			let _ = sender.send(text.clone());
 		}
 
 		Ok(text)
@@ -159,7 +159,7 @@ impl TextAspect for Text {
 impl Drop for Text {
 	fn drop(&mut self) {
 		if let Some(e) = self.entity.get() {
-			DESTROY_ENTITY.send(*e);
+			let _ = DESTROY_ENTITY.send(*e);
 		}
 		TEXT_REGISTRY.remove(self);
 	}
