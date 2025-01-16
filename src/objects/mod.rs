@@ -199,9 +199,9 @@ impl ServerObjects {
 				// controller_right.update(token);
 				// hand_left.update(sk, token);
 				// hand_right.update(sk, token);
-				if let Some(eye_pointer) = eye_pointer {
-					eye_pointer.update();
-				}
+				// if let Some(eye_pointer) = eye_pointer {
+				// 	eye_pointer.update();
+				// }
 			}
 			Some(Inputs::MousePointer(mouse_pointer)) => {}
 			// Inputs::Controllers((left, right)) => {

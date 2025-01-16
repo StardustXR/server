@@ -1,8 +1,5 @@
 pub mod lines;
 pub mod model;
-#[cfg(feature = "wayland")]
-pub mod shader_manipulation;
-pub mod shaders;
 pub mod text;
 
 use self::{lines::Lines, model::Model, text::Text};
@@ -16,7 +13,6 @@ use crate::core::{
 	resource::get_resource_file,
 };
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
-use color_eyre::eyre::eyre;
 use model::ModelPart;
 use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;

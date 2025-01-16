@@ -1,6 +1,5 @@
 use bevy::{
-	app::{App, MainScheduleOrder, Plugin, PostUpdate},
-	ecs::schedule::ScheduleLabel,
+	app::{App, Plugin, PostUpdate},
 	prelude::{resource_added, IntoSystemConfigs as _, TransformSystem},
 	render::{
 		extract_resource::ExtractResourcePlugin, pipelined_rendering::PipelinedRenderingPlugin,
@@ -19,7 +18,7 @@ use bevy_mod_openxr::{
 	},
 	session::OxrSession,
 };
-use bevy_mod_xr::session::{XrFirst, XrPreDestroySession, XrRenderSet, XrSessionCreated};
+use bevy_mod_xr::session::{XrPreDestroySession, XrRenderSet, XrSessionCreated};
 
 pub struct StardustOxrRenderPlugin;
 
