@@ -4,13 +4,17 @@ use bevy::{
 	app::MainScheduleOrder,
 	ecs::schedule::{ExecutorKind, ScheduleLabel},
 	math::bounding::Aabb3d,
+	pbr::{DefaultOpaqueRendererMethod, GpuMeshPreprocessPlugin, MeshRenderPlugin},
 	prelude::*,
+	render::extract_resource::ExtractResourcePlugin,
 };
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{session_available, XrFirst, XrSessionCreated};
 use once_cell::sync::OnceCell;
 use openxr::ReferenceSpaceType;
 use stardust_xr::values::color::{color_space::LinearRgb, AlphaColor, Rgb};
+
+use crate::DefaultMaterial;
 
 pub struct StardustBevyPlugin;
 
@@ -63,6 +67,20 @@ impl Plugin for StardustBevyPlugin {
 		}
 		labels.insert(0, (StardustFirst).intern());
 		app.add_systems(First, yeet_entities);
+		// app.add_observer(
+		// 	|trigger: Trigger<OnInsert, MeshMaterial3d<DefaultMaterial>>,
+		// 	 query: Query<&MeshMaterial3d<DefaultMaterial>>,
+		// 	 mut mats: ResMut<Assets<DefaultMaterial>>| {
+		// 		let Ok(handle) = query.get(trigger.entity()) else {
+		// 			return;
+		// 		};
+		// 		if let Some(mat) = mats.get_mut(handle) {
+		// 			if matches!(mat.alpha_mode, AlphaMode::Blend | AlphaMode::Mask(_)) {
+		// 				mat.alpha_mode = AlphaMode::AlphaToCoverage
+		// 			}
+		// 		}
+		// 	},
+		// );
 	}
 }
 
@@ -155,3 +173,23 @@ pub struct TemporaryEntity;
 pub struct ViewLocation;
 #[derive(Hash, Debug, Clone, Copy, PartialEq, Eq, Deref)]
 pub struct MainWorldEntity(pub Entity);
+
+pub struct DummyPbrPlugin;
+
+impl Plugin for DummyPbrPlugin {
+	fn build(&self, app: &mut App) {
+		let use_gpu_instance_buffer_builder = true;
+		app.init_asset::<StandardMaterial>();
+		app.add_plugins((
+			GpuMeshPreprocessPlugin {
+				use_gpu_instance_buffer_builder,
+			},
+			MeshRenderPlugin {
+				use_gpu_instance_buffer_builder,
+			},
+		));
+		app.register_type::<DefaultOpaqueRendererMethod>()
+			.init_resource::<DefaultOpaqueRendererMethod>()
+			.add_plugins(ExtractResourcePlugin::<DefaultOpaqueRendererMethod>::default());
+	}
+}
