@@ -17,7 +17,9 @@ use bevy::{
 	color::LinearRgba,
 	gltf::GltfAssetLabel,
 	pbr::MeshMaterial3d,
-	prelude::{Children, Commands, Component, IntoSystemConfigs as _, Mesh, Query, Res, ResMut, Transform},
+	prelude::{
+		Children, Commands, Component, IntoSystemConfigs as _, Mesh, Query, Res, ResMut, Transform,
+	},
 	scene::SceneRoot,
 	utils::default,
 };
@@ -109,7 +111,7 @@ fn update_controllers(
 		if input_node.enabled() {
 			let world_transform = location;
 			if let Some(mat) = controller.material.get().and_then(|v| mats.get_mut(v)) {
-				mat.base_color = if controller.capture_manager.capture.is_none() {
+				mat.color = if controller.capture_manager.capture.is_none() {
 					LinearRgba::rgb(1.0, 1.0, 1.0)
 				} else {
 					LinearRgba::rgb(0.0, 1.0, 0.75)

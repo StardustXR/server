@@ -57,10 +57,15 @@ bevy = { version = "0.15.1", features = [
 	"wav",
 	"trace_tracy",
 ] }
-bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "wgpu_feature_fix" }
-bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "wgpu_feature_fix" }
-bevy_xr_utils = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "wgpu_feature_fix" }
+bevy_mod_xr.git = "https://github.com/awtterpip/bevy_oxr"
+bevy_mod_openxr.git = "https://github.com/awtterpip/bevy_oxr"
+bevy_xr_utils.git = "https://github.com/awtterpip/bevy_oxr"
+# bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "pbr" }
+# bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "pbr" }
+# bevy_xr_utils = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "pbr" }
 bevy_mod_meshtext.git = "https://github.com/Schmarni-Dev/bevy_mod_meshtext"
+# bevy_sk.path = "../bevy_sk"
+bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
 openxr = "0.19"
 winit = { version = "0.30", default-features = false, features = [] }
 # small utility thingys

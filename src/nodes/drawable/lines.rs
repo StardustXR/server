@@ -1,5 +1,6 @@
 use super::{Line, LinesAspect};
 use crate::core::error::Result;
+use crate::DefaultMaterial;
 use crate::{
 	bevy_plugin::{StardustExtract, TemporaryEntity, ViewLocation},
 	core::{client::Client, registry::Registry},
@@ -10,7 +11,7 @@ use bevy::{
 	asset::{Assets, RenderAssetUsages},
 	color::{Color, ColorToComponents, Srgba},
 	math::{bounding::Aabb3d, Isometry3d},
-	pbr::{MeshMaterial3d, StandardMaterial},
+	pbr::MeshMaterial3d,
 	prelude::{
 		AlphaMode, Commands, GlobalTransform, Mesh, Mesh3d, ResMut, Single, Transform, With,
 	},
@@ -72,9 +73,9 @@ impl Lines {
 				.points
 				.iter()
 				.map(|p| BevyLinePoint {
-					pt: transform_mat.transform_point3(Vec3::from(p.point)).into(),
+					pt: transform_mat.transform_point3(Vec3::from(p.point)),
 					thickness: p.thickness,
-					color: Srgba::new(p.color.c.r, p.color.c.g, p.color.c.b, p.color.a).into(),
+					color: Srgba::new(p.color.c.r, p.color.c.g, p.color.c.b, p.color.a),
 				})
 				.collect();
 			if line.cyclic && !points.is_empty() {
@@ -88,11 +89,11 @@ impl Lines {
 					alpha: first.color.a.lerp(&last.color.a, 0.5),
 				};
 				let connect_point = BevyLinePoint {
-					pt: transform_mat
-						.transform_point3(Vec3::from(first.point).lerp(Vec3::from(last.point), 0.5))
-						.into(),
+					pt: transform_mat.transform_point3(
+						Vec3::from(first.point).lerp(Vec3::from(last.point), 0.5),
+					),
 					thickness: (first.thickness + last.thickness) * 0.5,
-					color: color.into(),
+					color,
 				};
 				points.push_front(connect_point);
 				points.push_back(connect_point);
@@ -160,13 +161,13 @@ impl Drop for Lines {
 
 pub fn draw_all(
 	mut meshes: ResMut<Assets<Mesh>>,
-	mut materials: ResMut<Assets<StandardMaterial>>,
+	mut materials: ResMut<Assets<DefaultMaterial>>,
 	mut cmds: Commands,
 	hmd: Option<Single<&GlobalTransform, With<ViewLocation>>>,
 ) {
 	let Some(hmd) = hmd else { return };
-	let material = StandardMaterial {
-		base_color: Color::WHITE,
+	let material = DefaultMaterial {
+		color: Color::WHITE,
 		alpha_mode: AlphaMode::Blend,
 		..Default::default()
 	};

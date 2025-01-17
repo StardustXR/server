@@ -10,7 +10,7 @@ use crate::nodes::Node;
 use crate::DefaultMaterial;
 use bevy::app::{Plugin, PostUpdate, PreUpdate, Update};
 use bevy::asset::{AssetServer, Assets, Handle};
-use bevy::color::{Color, LinearRgba};
+use bevy::color::{Color, LinearRgba, Srgba};
 use bevy::core::Name;
 use bevy::gltf::GltfAssetLabel;
 use bevy::image::Image;
@@ -109,10 +109,10 @@ impl MaterialParameter {
 			},
 			MaterialParameter::Color(val) => match parameter_name {
 				"color" => {
-					material.base_color = LinearRgba::new(val.c.r, val.c.g, val.c.b, val.a).into()
+					material.color = Srgba::new(val.c.r, val.c.g, val.c.b, val.a).into()
 				}
 				"emission_factor" => {
-					material.emissive = LinearRgba::new(val.c.r, val.c.g, val.c.b, val.a)
+					material.emission_factor = LinearRgba::new(val.c.r, val.c.g, val.c.b, val.a).into()
 				}
 				name => {
 					if let Some(field) = material.get_field_mut::<Color>(name) {
@@ -131,13 +131,14 @@ impl MaterialParameter {
 				let image = asset_server.load::<Image>(texture_path);
 				match parameter_name {
 					"diffuse" => {
-						material.base_color_texture.replace(image);
+						material.diffuse_texture.replace(image);
 					}
 					"emission" => {
-						material.emissive_texture.replace(image);
+						material.emission_texture.replace(image);
 					}
 					"normal" => {
-						material.normal_map_texture.replace(image);
+						error!("TODO: implement Normal Map texture in bevy_sk");
+						// material.n.replace(image);
 					}
 					"occlusion" => {
 						material.occlusion_texture.replace(image);

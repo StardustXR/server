@@ -81,8 +81,7 @@ fn spawn_text(
 		let str = text.text.lock().clone();
 		drop(_span2);
 		let mat = mats.add(DefaultMaterial {
-			base_color: convert_linear_rgba(data.color).into(),
-			unlit: true,
+			color: convert_linear_rgba(data.color).into(),
 			..Default::default()
 		});
 		let font = text

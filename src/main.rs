@@ -25,8 +25,7 @@ use bevy::gizmos::GizmoPlugin;
 use bevy::gltf::GltfPlugin;
 use bevy::image::Image;
 use bevy::input::InputPlugin;
-use bevy::log::LogPlugin;
-use bevy::pbr::{PbrPlugin, StandardMaterial};
+use bevy::pbr::PbrPlugin;
 use bevy::prelude::{
 	on_event, resource_added, Camera3d, ClearColor, Commands, Entity, EventReader, HierarchyPlugin,
 	ImagePlugin, IntoSystemConfigs, Local, Query, Res, ResMut, Resource, Transform,
@@ -35,9 +34,8 @@ use bevy::prelude::{
 use bevy::render::pipelined_rendering::PipelinedRenderingPlugin;
 use bevy::render::RenderPlugin;
 use bevy::scene::ScenePlugin;
-use bevy::text::{Font, FontLoader, TextPlugin};
+use bevy::text::{Font, FontLoader};
 use bevy::time::Time;
-use bevy::utils::default;
 use bevy::window::WindowPlugin;
 use bevy::winit::{EventLoopProxyWrapper, WakeUp, WinitPlugin};
 use bevy::{DefaultPlugins, MinimalPlugins};
@@ -52,9 +50,10 @@ use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_openxr::spaces::OxrSpaceExt;
 use bevy_mod_openxr::types::{AppInfo, Version};
 use bevy_mod_openxr::{add_xr_plugins, openxr_session_running};
-use bevy_mod_xr::session::{XrFirst, XrPreDestroySession, XrSessionCreated, XrSessionPlugin};
+use bevy_mod_xr::session::{XrFirst, XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::XrPrimaryReferenceSpace;
-use bevy_plugin::{DbusConnection, InputUpdate, StardustBevyPlugin, StardustFirst};
+use bevy_plugin::{DbusConnection, DummyPbrPlugin, InputUpdate, StardustBevyPlugin, StardustFirst};
+use bevy_sk::skytext::SphericalHarmonicsPlugin;
 use clap::Parser;
 use color_eyre::eyre::eyre;
 use core::client::Client;
@@ -76,7 +75,6 @@ use stardust_xr::server;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::thread;
 use tokio::net::UnixListener;
 use tokio::sync::Notify;
 use tracing::level_filters::LevelFilter;
@@ -85,7 +83,7 @@ use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 use zbus::fdo::ObjectManager;
 use zbus::Connection;
 
-pub type DefaultMaterial = StandardMaterial;
+pub type DefaultMaterial = bevy_sk::vr_materials::PbrMaterial;
 
 #[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -295,15 +293,20 @@ fn bevy_loop(
 		.add(CorePipelinePlugin)
 		// very unsure what is needed here
 		.add(PbrPlugin {
-			// hoping that there is very little overdraw in stardust
 			prepass_enabled: false,
-			add_default_deferred_lighting_plugin: true,
-			use_gpu_instance_buffer_builder: true,
+			add_default_deferred_lighting_plugin: false,
+			use_gpu_instance_buffer_builder: false,
 		})
+		// .add(DummyPbrPlugin)
 		.add(ScenePlugin)
 		.add(GltfPlugin::default())
 		.add(AudioPlugin::default())
-		.add(GizmoPlugin);
+		.add(GizmoPlugin)
+		.add(bevy_sk::vr_materials::SkMaterialPlugin {
+			replace_standard_material: true,
+		})
+		.add(bevy_sk::hand::HandPlugin)
+		.add(SphericalHarmonicsPlugin);
 
 	if args.pipelined_rendering {
 		base = base.add(PipelinedRenderingPlugin);
