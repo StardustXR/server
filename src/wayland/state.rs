@@ -9,6 +9,7 @@ use smithay::{
 		renderer::gles::GlesRenderer,
 	},
 	delegate_dmabuf, delegate_output, delegate_shm,
+	desktop::PopupManager,
 	input::{keyboard::XkbConfig, SeatState},
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
@@ -76,6 +77,7 @@ pub struct WaylandState {
 	pub seat_state: SeatState<Self>,
 	pub seat: Arc<SeatWrapper>,
 	pub xdg_shell: XdgShellState,
+	pub popup_manager: PopupManager,
 	pub output: Output,
 }
 
@@ -158,6 +160,7 @@ impl WaylandState {
 		output.set_preferred(mode);
 
 		let mut xdg_shell = XdgShellState::new::<Self>(&display_handle);
+		let popup_manager = PopupManager::default();
 		let mut capabilities = WmCapabilitySet::default();
 		capabilities.set(WmCapabilities::Maximize);
 		capabilities.set(WmCapabilities::Fullscreen);
@@ -182,6 +185,7 @@ impl WaylandState {
 				seat_state,
 				seat: Arc::new(SeatWrapper::new(weak.clone(), seat)),
 				xdg_shell,
+				popup_manager,
 				output,
 			})
 		})
