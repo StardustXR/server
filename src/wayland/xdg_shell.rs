@@ -20,6 +20,7 @@ use rand::Rng;
 use rustc_hash::FxHashMap;
 use smithay::{
 	delegate_xdg_shell,
+	desktop::PopupKind,
 	reexports::{
 		wayland_protocols::xdg::{
 			decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode,
@@ -90,7 +91,6 @@ impl XdgShellHandler for WaylandState {
 			s.states.set(State::Maximized);
 			s.states.unset(State::Fullscreen);
 		});
-		toplevel.send_configure();
 
 		let initial_size = toplevel
 			.wl_surface()
@@ -225,14 +225,17 @@ impl XdgShellHandler for WaylandState {
 		};
 		panel_item.toplevel_title_changed(&title)
 	}
-
 	fn new_popup(&mut self, popup: PopupSurface, positioner: PositionerState) {
+		self.popup_manager
+			.track_popup(PopupKind::Xdg(popup.clone()))
+			.unwrap();
+
 		let id = rand::thread_rng().gen_range(0..u64::MAX);
 		popup.wl_surface().insert_data(SurfaceId::Child(id));
 		let Some(parent) = popup.get_parent_surface() else {
+			warn!("No parent surface found for popup");
 			return;
 		};
-		let _ = popup.send_configure();
 		CoreSurface::add_to(popup.wl_surface());
 
 		popup.wl_surface().insert_data(Mutex::new(ChildInfo {
@@ -244,6 +247,7 @@ impl XdgShellHandler for WaylandState {
 		}));
 
 		let Some(panel_item) = surface_panel_item(&parent) else {
+			warn!("No panel item found for popup parent");
 			return;
 		};
 		let panel_item_weak = Arc::downgrade(&panel_item);
@@ -255,6 +259,7 @@ impl XdgShellHandler for WaylandState {
 				}
 				surf.insert_data(panel_item_weak.clone());
 				let Some(panel) = surface_panel_item(surf) else {
+					warn!("Failed to get panel item for popup surface");
 					return;
 				};
 				panel.backend.new_child(surf);

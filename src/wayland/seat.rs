@@ -225,7 +225,7 @@ impl SeatWrapper {
 		}
 		keyboard.input(
 			&mut state.lock(),
-			key,
+			key.into(),
 			if pressed {
 				KeyState::Pressed
 			} else {
