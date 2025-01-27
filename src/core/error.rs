@@ -31,6 +31,9 @@ pub enum ServerError {
 	ReaderError(#[from] ReaderError),
 	#[error("StereoKit error: {0}")]
 	StereoKitError(#[from] StereoKitError),
+	#[cfg(feature = "wayland")]
+	#[error("Wayland error: {0}")]
+	WaylandError(waynest::server::Error),
 	#[error("Aspect {} does not exist for node", 0.to_string())]
 	NoAspect(TypeId),
 	#[error("{0}")]

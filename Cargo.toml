@@ -22,7 +22,7 @@ path = "src/main.rs"
 
 [features]
 default = ["wayland"]
-wayland = ["dep:smithay", "dep:wayland-scanner", "dep:wayland-backend"]
+wayland = ["dep:cluFlock", "dep:waynest", "dep:tokio-stream", "dep:memmap2"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy"]
 local_deps = ["stereokit-rust/force-local-deps"]
@@ -30,12 +30,12 @@ local_deps = ["stereokit-rust/force-local-deps"]
 [package.metadata.appimage]
 auto_link = true
 auto_link_exclude_list = [
-	"libc*",
-	"libdl*",
-	"libpthread*",
-	"ld-linux*",
-	"libGL*",
-	"libEGL*",
+    "libc*",
+    "libdl*",
+    "libpthread*",
+    "ld-linux*",
+    "libGL*",
+    "libEGL*",
 ]
 
 [profile.dev.package."*"]
@@ -66,6 +66,7 @@ parking_lot = "0.12.3"
 
 # rust errors/logging
 color-eyre = { version = "0.6.3", default-features = false }
+thiserror = "2.0.11"
 clap = { version = "4.5.13", features = ["derive"] }
 console-subscriber = { version = "0.4.0", optional = true }
 thiserror = "2.0.9"
@@ -90,16 +91,14 @@ directories = "5.0.1"
 xkbcommon-rs = "0.1.0"
 
 # wayland
-wayland-backend = { version = "0.3.7", optional = true, default-features = false }
-wayland-scanner = { version = "0.31.4", optional = true }
+cluFlock = { version = "1.2.7", optional = true } # for the lockfile checking
+waynest = { git = "https://github.com/technobaboo/waynest.git", features = [
+    "server",
+    "stable",
+], optional = true }
+tokio-stream = { version = "0.1.17", optional = true }
+memmap2 = { version = "0.9.5", optional = true }
 dashmap = "6.1.0"
-
-[dependencies.smithay]
-git = "https://github.com/smithay/smithay.git"
-default-features = false
-features = ["desktop", "backend_drm", "renderer_gl", "wayland_frontend"]
-optional = true
-
 
 [dependencies.stereokit-rust]
 git = "https://github.com/mvvvv/StereoKit-rust.git"
