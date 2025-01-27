@@ -273,9 +273,7 @@ fn stereokit_loop(
 	}
 
 	#[cfg(feature = "wayland")]
-	let mut wayland = wayland::Wayland::new().expect("Could not initialize wayland");
-	#[cfg(feature = "wayland")]
-	wayland.make_context_current();
+	let mut wayland = wayland::Wayland::new(None).expect("Could not initialize wayland");
 	sk_ready_notifier.notify_waiters();
 	info!("Stardust ready!");
 

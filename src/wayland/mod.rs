@@ -1,209 +1,172 @@
-mod compositor;
-mod data_device;
-mod decoration;
-mod seat;
-mod state;
-mod surface;
-// mod xdg_activation;
-mod drm;
-mod utils;
-mod xdg_shell;
+pub mod core;
+pub mod util;
+pub mod xdg;
 
-use self::{state::WaylandState, surface::CORE_SURFACES};
-use crate::{core::task, wayland::state::ClientState};
-use color_eyre::eyre::{Result, ensure};
-use parking_lot::Mutex;
-use smithay::{
-	backend::{
-		allocator::dmabuf::Dmabuf,
-		egl::EGLContext,
-		renderer::{ImportDma, Renderer, gles::GlesRenderer},
-	},
-	output::Output,
-	reexports::wayland_server::{Display, DisplayHandle, ListeningSocket},
-	wayland::dmabuf,
+use crate::core::{
+	error::{Result, ServerError},
+	task,
 };
+use cluFlock::ToFlock;
+use core::display::Display;
 use std::{
-	ffi::{OsStr, c_void},
-	os::fd::AsFd,
-	sync::{Arc, OnceLock},
+	fs::{self, OpenOptions},
+	io::ErrorKind,
+	os::unix::fs::OpenOptionsExt,
+	path::PathBuf,
 };
-use stereokit_rust::system::{Backend, BackendGraphics};
-use tokio::{
-	io::unix::AsyncFd,
-	sync::{
-		Notify,
-		mpsc::{self, UnboundedReceiver},
-	},
-	task::AbortHandle,
+use tokio::{net::UnixStream, task::AbortHandle};
+use tokio_stream::StreamExt;
+use tracing::{debug_span, instrument};
+use waynest::{
+	server::{self, protocol::core::wayland::wl_display::WlDisplay},
+	wire::ObjectId,
 };
-use tracing::{debug_span, info, instrument};
 
 pub static WAYLAND_DISPLAY: OnceLock<String> = OnceLock::new();
 
-struct EGLRawHandles {
-	display: *const c_void,
-	config: *const c_void,
-	context: *const c_void,
-}
-fn get_sk_egl() -> Result<EGLRawHandles> {
-	ensure!(
-		Backend::graphics() == BackendGraphics::OpenGLESEGL,
-		"StereoKit is not running using EGL!"
-	);
-
-	Ok(unsafe {
-		EGLRawHandles {
-			display: stereokit_rust::system::backend_opengl_egl_get_display() as *const c_void,
-			config: stereokit_rust::system::backend_opengl_egl_get_config() as *const c_void,
-			context: stereokit_rust::system::backend_opengl_egl_get_context() as *const c_void,
-		}
-	})
-}
-
-pub struct Wayland {
-	flush_notify: Arc<Notify>,
-	client_listener: AbortHandle,
-	client_dispatcher: AbortHandle,
-	renderer: GlesRenderer,
-	output: Output,
-	dmabuf_rx: UnboundedReceiver<(Dmabuf, Option<dmabuf::ImportNotifier>)>,
-}
-impl Wayland {
-	pub fn new() -> Result<Self> {
-		let egl_raw_handles = get_sk_egl()?;
-		let renderer = unsafe {
-			GlesRenderer::new(EGLContext::from_raw(
-				egl_raw_handles.display,
-				egl_raw_handles.config,
-				egl_raw_handles.context,
-			)?)?
-		};
-
-		let display: Display<WaylandState> = Display::new()?;
-		let display_handle = display.handle();
-
-		let (dmabuf_tx, dmabuf_rx) = mpsc::unbounded_channel();
-
-		let wayland_state = WaylandState::new(display_handle.clone(), &renderer, dmabuf_tx);
-		let output = wayland_state.lock().output.clone();
-
-		let socket = ListeningSocket::bind_auto("wayland", 0..33)?;
-		let socket_name = socket
-			.socket_name()
-			.and_then(OsStr::to_str)
-			.map(ToString::to_string);
-		if let Some(socket_name) = &socket_name {
-			let _ = WAYLAND_DISPLAY.set(socket_name.clone());
-		}
-		info!(socket_name, "Wayland active");
-
-		let flush_notify = Arc::new(Notify::new());
-		let client_listener = task::new(
-			|| "Wayland client listener loop",
-			Wayland::client_listener_loop(display_handle, socket, wayland_state.clone()),
-		)?
-		.abort_handle();
-		let client_dispatcher = task::new(
-			|| "Wayland dispatch client loop",
-			Wayland::dispatch_client_loop(display, flush_notify.clone(), wayland_state),
-		)?
-		.abort_handle();
-
-		Ok(Wayland {
-			flush_notify,
-			client_listener,
-			client_dispatcher,
-			renderer,
-			output,
-			dmabuf_rx,
-		})
+impl From<waynest::server::Error> for ServerError {
+	fn from(err: waynest::server::Error) -> Self {
+		ServerError::WaylandError(err)
 	}
+}
 
-	async fn client_listener_loop(
-		mut display_handle: DisplayHandle,
-		socket: ListeningSocket,
-		state: Arc<Mutex<WaylandState>>,
-	) -> Result<()> {
-		let async_fd = AsyncFd::new(socket.as_fd())?;
-		loop {
-			let mut guard = async_fd.readable().await?;
-			let Ok(Some(stream)) = socket.accept() else {
-				guard.clear_ready();
-				continue;
-			};
+pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
+	// Use XDG runtime directory for secure, user-specific sockets
+	let base_dirs = directories::BaseDirs::new()?;
+	let runtime_dir = base_dirs.runtime_dir()?;
 
-			let stream = tokio::net::UnixStream::from_std(stream)?;
-			let pid = stream.peer_cred().ok().and_then(|c| c.pid());
+	// Iterate through conventional display numbers (matches X11 behavior)
+	for display in 0..=32 {
+		let socket_path = runtime_dir.join(format!("wayland-{display}"));
+		let socket_lock_path = runtime_dir.join(format!("wayland-{display}.lock"));
 
-			// New client connected
-			let client_state = Arc::new(ClientState {
-				pid,
-				id: OnceLock::new(),
-				compositor_state: Default::default(),
-				seat: state.lock().seat.clone(),
-			});
-			let _client = display_handle.insert_client(stream.into_std()?, client_state.clone())?;
+		// Open lock file without truncation to preserve existing locks
+		let mut _lock = OpenOptions::new()
+			.create(true)
+			.truncate(false) // Prevent destroying other processes' locks
+			.read(true)
+			.write(true)
+			.mode(0o660) // Match Wayland-compositor permissions
+			.open(&socket_lock_path)
+			.ok()?;
+
+		// Atomic mutual exclusion: fail if another process holds the lock
+		if _lock.try_exclusive_lock().is_err() {
+			continue; // Lock held by active compositor
 		}
-	}
 
-	async fn dispatch_client_loop(
-		mut display: Display<WaylandState>,
-		flush_notify: Arc<Notify>,
-		state: Arc<Mutex<WaylandState>>,
-	) -> std::io::Result<()> {
-		loop {
-			let poll_fd = display.backend().poll_fd();
-			let async_fd = AsyncFd::new(poll_fd)?;
-			tokio::select! {
-				biased;
-				_ = async_fd.readable() => {
-					drop(async_fd);
-					let _span = debug_span!("Dispatch wayland event");
-					let _span = _span.enter();
-					let _ = display.dispatch_clients(&mut *state.lock());
-					let _ = display.flush_clients();
+		// Check for zombie sockets (file exists but nothing listening)
+		if socket_path.exists() {
+			match std::os::unix::net::UnixStream::connect(&socket_path) {
+				Ok(_) => continue, // Active compositor found - skip
+				Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
+					// Stale socket - safe to remove since we hold the lock
+					let _ = fs::remove_file(&socket_path);
 				}
-				_ = flush_notify.notified() => {
-					drop(async_fd);
-					let _ = display.flush_clients();
-				},
+				Err(_) => continue, // Transient error - conservative skip
 			}
 		}
+
+		// Found viable candidate: lock held, socket cleared/available
+		return Some(socket_path);
+	}
+
+	None // Exhausted all conventional display numbers
+}
+
+#[derive(Debug)]
+struct WaylandClient {
+	abort_handle: AbortHandle,
+}
+impl WaylandClient {
+	pub fn from_stream(socket: UnixStream) -> Result<Self> {
+		let mut client = server::Client::new(socket)?;
+		client.insert(Display::default().into_object(ObjectId::DISPLAY));
+		let abort_handle =
+			task::new(|| "wayland client", Self::handle_client_messages(client))?.abort_handle();
+
+		Ok(WaylandClient { abort_handle })
+	}
+	async fn handle_client_messages(mut client: server::Client) -> Result<()> {
+		loop {
+			match client.next_message().await {
+				Ok(Some(mut msg)) => {
+					if let Err(e) = client.handle_message(&mut msg).await {
+						tracing::error!("Error handling message: {}", e);
+						break;
+					}
+				}
+				Err(e) => {
+					tracing::error!("Error reading message: {}", e);
+					break;
+				}
+				Ok(None) => {
+					// Message stream ended
+					break;
+				}
+			}
+		}
+		Ok(())
+	}
+}
+
+impl Drop for WaylandClient {
+	fn drop(&mut self) {
+		self.abort_handle.abort();
+	}
+}
+
+#[derive(Debug)]
+pub struct Wayland {
+	abort_handle: AbortHandle,
+}
+impl Wayland {
+	pub fn new(socket_path: Option<PathBuf>) -> Result<Self> {
+		let socket_path = if let Some(path) = socket_path {
+			path
+		} else {
+			get_free_wayland_socket_path().ok_or(ServerError::WaylandError(
+				waynest::server::Error::IoError(std::io::ErrorKind::AddrNotAvailable.into()),
+			))?
+		};
+
+		let _ = WAYLAND_DISPLAY.set(socket_path.clone());
+
+		let listener = server::Listener::new_with_path(&socket_path)
+			.map_err(|e| ServerError::WaylandError(e))?;
+
+		let abort_handle =
+			task::new(|| "wayland loop", Self::handle_wayland_loop(listener))?.abort_handle();
+
+		Ok(Self { abort_handle })
+	}
+	async fn handle_wayland_loop(mut listener: server::Listener) -> Result<()> {
+		let mut clients = Vec::new();
+		loop {
+			if let Ok(Some(stream)) = listener.try_next().await {
+				debug_span!("Accept wayland client").in_scope(|| {
+					if let Ok(client) = WaylandClient::from_stream(stream) {
+						clients.push(client);
+					}
+				});
+			}
+			clients.retain(|client| !client.abort_handle.is_finished());
+		}
+
+		#[allow(unreachable_code)]
+		Ok(())
 	}
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self))]
 	pub fn update(&mut self) {
-		while let Ok((dmabuf, notifier)) = self.dmabuf_rx.try_recv() {
-			if self.renderer.import_dmabuf(&dmabuf, None).is_err() {
-				if let Some(notifier) = notifier {
-					notifier.failed();
-				}
-			}
-		}
-		for core_surface in CORE_SURFACES.get_valid_contents() {
-			core_surface.process(&mut self.renderer);
-		}
-		let _ = self.renderer.cleanup_texture_cache();
-
-		self.flush_notify.notify_waiters();
+		// TODO: Implement frame updates
 	}
 
-	pub fn frame_event(&self) {
-		for core_surface in CORE_SURFACES.get_valid_contents() {
-			core_surface.frame(self.output.clone());
-		}
-	}
-
-	pub fn make_context_current(&self) {
-		unsafe {
-			let _ = self.renderer.egl_context().make_current();
-		}
-	}
+	pub fn frame_event(&self) {}
 }
+
 impl Drop for Wayland {
 	fn drop(&mut self) {
-		self.client_listener.abort();
-		self.client_dispatcher.abort();
+		self.abort_handle.abort();
 	}
 }
