@@ -1,6 +1,9 @@
-use crate::wayland::core::{
-	callback::{Callback, WlCallback},
-	registry::{Registry, WlRegistry},
+use crate::wayland::{
+	core::{
+		callback::{Callback, WlCallback},
+		registry::{Registry, WlRegistry},
+	},
+	MessageSink,
 };
 pub use waynest::server::protocol::core::wayland::wl_display::*;
 use waynest::{
@@ -8,9 +11,11 @@ use waynest::{
 	wire::ObjectId,
 };
 
-#[derive(Debug, Dispatcher, Default)]
-pub struct Display;
-
+#[derive(Debug, Dispatcher)]
+pub struct Display {
+	pub message_sink: MessageSink,
+	pub pid: Option<i32>,
+}
 impl WlDisplay for Display {
 	async fn sync(
 		&self,
@@ -24,10 +29,14 @@ impl WlDisplay for Display {
 
 		callback
 			.as_dispatcher::<Callback>()?
-			.done(&callback, client, serial)
+			.done(&callback, serial)
+			.send(client)
 			.await?;
 
-		self.delete_id(object, client, callback_id.as_raw()).await
+		self.delete_id(object, callback_id.as_raw())
+			.send(client)
+			.await?;
+		Ok(())
 	}
 
 	async fn get_registry(

@@ -1,25 +1,33 @@
-use crate::wayland::xdg::surface::{Surface, XdgSurface};
+use crate::wayland::{
+	util::ObjectIdExt,
+	xdg::surface::{Surface, XdgSurface},
+};
 pub use waynest::server::protocol::stable::xdg_shell::xdg_wm_base::*;
 use waynest::{
-	server::{Client, Dispatcher, Object, Result},
+	server::{
+		protocol::stable::xdg_shell::xdg_positioner::XdgPositioner, Client, Dispatcher, Object,
+		Result,
+	},
 	wire::ObjectId,
 };
 
+use super::popup::Positioner;
+
 #[derive(Debug, Dispatcher, Default)]
 pub struct WmBase;
-
 impl XdgWmBase for WmBase {
 	async fn destroy(&self, _object: &Object, _client: &mut Client) -> Result<()> {
-		todo!()
+		Ok(())
 	}
 
 	async fn create_positioner(
 		&self,
 		_object: &Object,
-		_client: &mut Client,
-		_id: ObjectId,
+		client: &mut Client,
+		id: ObjectId,
 	) -> Result<()> {
-		todo!()
+		client.insert(Positioner::default().into_object(id));
+		Ok(())
 	}
 
 	async fn get_xdg_surface(
@@ -29,12 +37,15 @@ impl XdgWmBase for WmBase {
 		id: ObjectId,
 		surface: ObjectId,
 	) -> Result<()> {
-		client.insert(Surface::new(surface).into_object(id));
+		let wl_surface = surface
+			.upgrade(client)
+			.ok_or(waynest::server::Error::Internal)?;
+		client.insert(Surface::new(wl_surface.as_dispatcher()?).into_object(id));
 
 		Ok(())
 	}
 
 	async fn pong(&self, _object: &Object, _client: &mut Client, _serial: u32) -> Result<()> {
-		todo!()
+		Ok(())
 	}
 }

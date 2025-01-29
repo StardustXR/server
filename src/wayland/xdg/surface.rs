@@ -1,23 +1,27 @@
-use crate::wayland::xdg::toplevel::{Toplevel, XdgToplevel};
+use crate::wayland::{
+	core::display::Display,
+	xdg::toplevel::{Toplevel, XdgToplevel},
+};
+use std::sync::Arc;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
 use waynest::{
-	server::{Client, Dispatcher, Object, Result},
+	server::{self, Client, Dispatcher, Object, Result},
 	wire::ObjectId,
 };
 
 #[derive(Debug, Dispatcher)]
 pub struct Surface {
-	wl_surface: ObjectId,
+	wl_surface: Arc<crate::wayland::core::surface::Surface>,
 }
 impl Surface {
-	pub fn new(wl_surface: ObjectId) -> Self {
+	pub fn new(wl_surface: Arc<crate::wayland::core::surface::Surface>) -> Self {
 		Self { wl_surface }
 	}
 }
 
 impl XdgSurface for Surface {
 	async fn destroy(&self, _object: &Object, _client: &mut Client) -> Result<()> {
-		todo!()
+		Ok(())
 	}
 
 	async fn get_toplevel(
@@ -26,7 +30,16 @@ impl XdgSurface for Surface {
 		client: &mut Client,
 		id: ObjectId,
 	) -> Result<()> {
-		client.insert(Toplevel::default().into_object(id));
+		let pid = client
+			.get_object(&ObjectId::DISPLAY)
+			.unwrap()
+			.as_dispatcher::<Display>()
+			.unwrap()
+			.pid
+			.clone();
+
+		let size = self.wl_surface.size().ok_or(server::Error::Internal)?;
+		client.insert(Toplevel::new(pid, size).into_object(id));
 
 		Ok(())
 	}
@@ -51,7 +64,9 @@ impl XdgSurface for Surface {
 		_width: i32,
 		_height: i32,
 	) -> Result<()> {
-		todo!()
+		// we're gonna delegate literally all the window management
+		// to 3D stuff sooo we don't care, maximized is the floating state
+		Ok(())
 	}
 
 	async fn ack_configure(
@@ -60,6 +75,7 @@ impl XdgSurface for Surface {
 		_client: &mut Client,
 		_serial: u32,
 	) -> Result<()> {
-		todo!()
+		// just gonna apply state immediately, it's fiiiine
+		Ok(())
 	}
 }

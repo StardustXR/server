@@ -9,16 +9,14 @@ use waynest::{
 
 #[derive(Debug, Dispatcher, Default)]
 pub struct Shm;
-
 impl Shm {
 	pub async fn advertise_formats(&self, object: &Object, client: &mut Client) -> Result<()> {
-		self.format(object, client, Format::Argb8888).await?;
-		self.format(object, client, Format::Xrgb8888).await?;
+		self.format(object, Format::Argb8888).send(client).await?;
+		self.format(object, Format::Xrgb8888).send(client).await?;
 
 		Ok(())
 	}
 }
-
 impl WlShm for Shm {
 	async fn create_pool(
 		&self,
