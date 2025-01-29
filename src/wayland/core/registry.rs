@@ -30,47 +30,47 @@ impl Registry {
 	pub async fn advertise_globals(&self, object: &Object, client: &mut Client) -> Result<()> {
 		self.global(
 			object,
-			client,
 			RegistryGlobals::COMPOSITOR,
 			Compositor::INTERFACE.to_string(),
 			Compositor::VERSION,
 		)
+		.send(client)
 		.await?;
 
 		self.global(
 			object,
-			client,
 			RegistryGlobals::SHM,
 			Shm::INTERFACE.to_string(),
 			Shm::VERSION,
 		)
+		.send(client)
 		.await?;
 
 		self.global(
 			object,
-			client,
 			RegistryGlobals::WM_BASE,
 			WmBase::INTERFACE.to_string(),
 			WmBase::VERSION,
 		)
+		.send(client)
 		.await?;
 
 		self.global(
 			object,
-			client,
 			RegistryGlobals::SEAT,
 			Seat::INTERFACE.to_string(),
 			Seat::VERSION,
 		)
+		.send(client)
 		.await?;
 
 		self.global(
 			object,
-			client,
 			RegistryGlobals::OUTPUT,
 			Output::INTERFACE.to_string(),
 			Output::VERSION,
 		)
+		.send(client)
 		.await?;
 
 		Ok(())
@@ -105,7 +105,10 @@ impl WlRegistry for Registry {
 			RegistryGlobals::OUTPUT => {
 				client.insert(Output::default().into_object(new_id.object_id))
 			}
-			_ => return Err(Error::Internal),
+			id => {
+				tracing::error!(id, "Wayland: failed to bind to registry global");
+				return Err(Error::Internal);
+			}
 		}
 
 		Ok(())

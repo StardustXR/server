@@ -7,19 +7,19 @@ use crate::core::{
 	task,
 };
 use cluFlock::ToFlock;
-use core::display::Display;
+use core::{display::Display, surface::WL_SURFACE_REGISTRY};
 use std::{
 	fs::{self, OpenOptions},
 	io::ErrorKind,
 	os::unix::fs::OpenOptionsExt,
 	path::PathBuf,
 };
-use tokio::{net::UnixStream, task::AbortHandle};
+use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
 use tokio_stream::StreamExt;
 use tracing::{debug_span, instrument};
 use waynest::{
 	server::{self, protocol::core::wayland::wl_display::WlDisplay},
-	wire::ObjectId,
+	wire::{Message, ObjectId},
 };
 
 pub static WAYLAND_DISPLAY: OnceLock<String> = OnceLock::new();
@@ -74,35 +74,65 @@ pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
 	None // Exhausted all conventional display numbers
 }
 
+pub type MessageSink = mpsc::UnboundedSender<Message>;
+
 #[derive(Debug)]
 struct WaylandClient {
 	abort_handle: AbortHandle,
 }
 impl WaylandClient {
 	pub fn from_stream(socket: UnixStream) -> Result<Self> {
+		let pid = socket.peer_cred().ok().and_then(|c| c.pid());
 		let mut client = server::Client::new(socket)?;
-		client.insert(Display::default().into_object(ObjectId::DISPLAY));
-		let abort_handle =
-			task::new(|| "wayland client", Self::handle_client_messages(client))?.abort_handle();
+		let (message_tx, message_rx) = mpsc::unbounded_channel();
+
+		client.insert(
+			Display {
+				message_sink: message_tx,
+				pid,
+			}
+			.into_object(ObjectId::DISPLAY),
+		);
+		let abort_handle = task::new(
+			|| "wayland client",
+			Self::handle_client_messages(client, message_rx),
+		)?
+		.abort_handle();
 
 		Ok(WaylandClient { abort_handle })
 	}
-	async fn handle_client_messages(mut client: server::Client) -> Result<()> {
+	async fn handle_client_messages(
+		mut client: server::Client,
+		mut message_rx: mpsc::UnboundedReceiver<Message>,
+	) -> Result<()> {
 		loop {
-			match client.next_message().await {
-				Ok(Some(mut msg)) => {
-					if let Err(e) = client.handle_message(&mut msg).await {
-						tracing::error!("Error handling message: {}", e);
-						break;
+			tokio::select! {
+				// send all queued up messages
+				msg = message_rx.recv() => {
+					if let Some(msg) = msg {
+						if let Err(e) = client.send_message(msg).await {
+						   tracing::error!("Wayland: Error sending message: {}", e);
+						}
 					}
 				}
-				Err(e) => {
-					tracing::error!("Error reading message: {}", e);
-					break;
-				}
-				Ok(None) => {
-					// Message stream ended
-					break;
+				// handle the next message
+				msg = client.next_message() => {
+					match msg {
+						Ok(Some(mut msg)) => {
+							if let Err(e) = client.handle_message(&mut msg).await {
+								tracing::error!("Wayland: Error handling message: {}", e);
+								break;
+							}
+						}
+						Err(e) => {
+							tracing::error!("Wayland: Error reading message: {}", e);
+							break;
+						}
+						Ok(None) => {
+							// Message stream ended
+							break;
+						}
+					}
 				}
 			}
 		}
@@ -159,10 +189,16 @@ impl Wayland {
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self))]
 	pub fn update(&mut self) {
-		// TODO: Implement frame updates
+		for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
+			surface.update();
+		}
 	}
 
-	pub fn frame_event(&self) {}
+	pub fn frame_event(&self) {
+		for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
+			surface.frame_event();
+		}
+	}
 }
 
 impl Drop for Wayland {
