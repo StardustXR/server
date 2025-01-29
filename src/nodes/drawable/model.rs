@@ -22,6 +22,12 @@ use stereokit_rust::sk::MainThreadToken;
 use stereokit_rust::{material::Material, model::Model as SKModel, tex::Tex, util::Color128};
 
 pub struct MaterialWrapper(pub Material);
+impl Drop for MaterialWrapper {
+	fn drop(&mut self) {
+		MATERIAL_REGISTRY.remove(self);
+	}
+}
+
 impl Hash for MaterialWrapper {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.0.get_shader().0.as_ptr().hash(state);
@@ -60,10 +66,9 @@ unsafe impl Send for MaterialWrapper {}
 unsafe impl Sync for MaterialWrapper {}
 
 #[derive(Default)]
-struct MaterialRegistry(Mutex<FxHashMap<u64, Arc<MaterialWrapper>>>);
+struct MaterialRegistry(Mutex<FxHashMap<u64, Weak<MaterialWrapper>>>);
 impl MaterialRegistry {
 	fn add_or_get(&self, material: Arc<MaterialWrapper>) -> Arc<MaterialWrapper> {
-		let mut lock = self.0.lock();
 		let hash = {
 			use std::hash::{Hash, Hasher};
 			let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -71,12 +76,25 @@ impl MaterialRegistry {
 			hasher.finish()
 		};
 
+		let mut lock = self.0.lock();
 		if let Some(mat) = lock.get(&hash) {
-			return mat.clone();
+			if let Some(mat) = mat.upgrade() {
+				return mat;
+			}
 		}
 
-		lock.insert(hash, material.clone());
+		lock.insert(hash, Arc::downgrade(&material));
 		material
+	}
+	fn remove(&self, material: &MaterialWrapper) {
+		let hash = {
+			use std::hash::{Hash, Hasher};
+			let mut hasher = std::collections::hash_map::DefaultHasher::new();
+			material.hash(&mut hasher);
+			hasher.finish()
+		};
+		let mut lock = self.0.lock();
+		lock.remove(&hash);
 	}
 }
 
@@ -131,6 +149,7 @@ pub struct ModelPart {
 	path: String,
 	space: Arc<Spatial>,
 	model: Weak<Model>,
+	material: Mutex<Option<Arc<MaterialWrapper>>>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Arc<MaterialWrapper>>>,
 	aliases: AliasList,
@@ -204,6 +223,7 @@ impl ModelPart {
 			pending_material_parameters: Mutex::new(FxHashMap::default()),
 			pending_material_replacement: Mutex::new(None),
 			aliases: AliasList::default(),
+			material: Mutex::new(part.get_material().map(MaterialWrapper).map(Arc::new)),
 		});
 		node.add_aspect_raw(model_part.clone());
 		parts.push(model_part.clone());
@@ -230,7 +250,10 @@ impl ModelPart {
 		};
 		let shared_material =
 			MATERIAL_REGISTRY.add_or_get(Arc::new(MaterialWrapper(replacement.copy())));
+
+		let mut lock = self.material.lock();
 		part.material(&shared_material.0);
+		lock.replace(shared_material);
 	}
 
 	fn update(&self) {
@@ -257,7 +280,9 @@ impl ModelPart {
 		};
 
 		if let Some(material_replacement) = self.pending_material_replacement.lock().take() {
+			let mut lock = self.material.lock();
 			part.material(&material_replacement.0);
+			lock.replace(material_replacement);
 		}
 
 		'mat_params: {
@@ -273,7 +298,9 @@ impl ModelPart {
 
 				let shared_material =
 					MATERIAL_REGISTRY.add_or_get(Arc::new(MaterialWrapper(new_material)));
+				let mut lock = self.material.lock();
 				part.material(&shared_material.0);
+				lock.replace(shared_material);
 			}
 		}
 	}
