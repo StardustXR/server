@@ -26,7 +26,8 @@ impl Hash for MaterialWrapper {
 	fn hash<H: Hasher>(&self, state: &mut H) {
 		self.0.get_shader().0.as_ptr().hash(state);
 		for param in self.0.get_all_param_info() {
-			param.to_string().hash(state)
+			param.name.hash(state);
+			param.to_string().hash(state);
 		}
 		self.0.get_chain().map(MaterialWrapper).hash(state)
 	}
@@ -59,7 +60,7 @@ unsafe impl Send for MaterialWrapper {}
 unsafe impl Sync for MaterialWrapper {}
 
 #[derive(Default)]
-struct MaterialRegistry(Mutex<FxHashMap<u64, String>>);
+struct MaterialRegistry(Mutex<FxHashMap<u64, Arc<MaterialWrapper>>>);
 impl MaterialRegistry {
 	fn add_or_get(&self, material: Arc<MaterialWrapper>) -> Arc<MaterialWrapper> {
 		let mut lock = self.0.lock();
@@ -70,13 +71,11 @@ impl MaterialRegistry {
 			hasher.finish()
 		};
 
-		if let Some(id) = lock.get(&hash) {
-			if let Ok(existing) = Material::find(id) {
-				return Arc::new(MaterialWrapper(existing));
-			}
+		if let Some(mat) = lock.get(&hash) {
+			return mat.clone();
 		}
 
-		lock.insert(hash, material.0.get_id().to_string());
+		lock.insert(hash, material.clone());
 		material
 	}
 }
