@@ -3164,10 +3164,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
-name = "wayland-backend"
-version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b7208998eaa3870dad37ec8836979581506e0c5c64c20c9e79e9d2a10d6f47bf"
+name = "waynest"
+version = "0.0.19"
+source = "git+https://github.com/technobaboo/waynest.git#7fcc26e64dc05918fe27be921a376007dc237552"
 dependencies = [
  "async-trait",
  "bitflags 2.8.0",
@@ -3181,10 +3180,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "wayland-protocols"
-version = "0.32.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0781cf46869b37e36928f7b432273c0995aa8aed9552c556fb18754420541efc"
+name = "waynest-macros"
+version = "0.0.2"
+source = "git+https://github.com/technobaboo/waynest.git#7fcc26e64dc05918fe27be921a376007dc237552"
 dependencies = [
  "bitflags 2.9.0",
  "wayland-backend",
