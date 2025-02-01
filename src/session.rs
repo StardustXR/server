@@ -105,11 +105,6 @@ pub fn connection_env() -> FxHashMap<String, String> {
 	{
 		var_env_insert!(env, WAYLAND_DISPLAY);
 		env.insert("XDG_SESSION_TYPE".to_string(), "wayland".to_string());
-		env.insert("GDK_BACKEND".to_string(), "wayland".to_string());
-		env.insert("QT_QPA_PLATFORM".to_string(), "wayland".to_string());
-		env.insert("MOZ_ENABLE_WAYLAND".to_string(), "1".to_string());
-		env.insert("CLUTTER_BACKEND".to_string(), "wayland".to_string());
-		env.insert("SDL_VIDEODRIVER".to_string(), "wayland".to_string());
 	}
 	env
 }
