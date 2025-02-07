@@ -43,6 +43,7 @@ pub struct SkController {
 }
 impl SkController {
 	pub fn new(connection: &Connection, handed: Handed) -> Result<Self> {
+		Input::set_controller_model(handed, Some(Model::new()));
 		let (spatial, object_handle) = SpatialRef::create(
 			connection,
 			&("/org/stardustxr/Controller/".to_string()
