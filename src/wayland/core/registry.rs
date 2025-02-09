@@ -86,11 +86,9 @@ impl WlRegistry for Registry {
 		new_id: NewId,
 	) -> Result<()> {
 		match name {
-			RegistryGlobals::COMPOSITOR => {
-				client.insert(Compositor::default().into_object(new_id.object_id))
-			}
+			RegistryGlobals::COMPOSITOR => client.insert(Compositor.into_object(new_id.object_id)),
 			RegistryGlobals::SHM => {
-				let shm = Shm::default().into_object(new_id.object_id);
+				let shm = Shm.into_object(new_id.object_id);
 
 				shm.as_dispatcher::<Shm>()?
 					.advertise_formats(&shm, client)
@@ -98,13 +96,9 @@ impl WlRegistry for Registry {
 
 				client.insert(shm);
 			}
-			RegistryGlobals::WM_BASE => {
-				client.insert(WmBase::default().into_object(new_id.object_id))
-			}
-			RegistryGlobals::SEAT => client.insert(Seat::default().into_object(new_id.object_id)),
-			RegistryGlobals::OUTPUT => {
-				client.insert(Output::default().into_object(new_id.object_id))
-			}
+			RegistryGlobals::WM_BASE => client.insert(WmBase.into_object(new_id.object_id)),
+			RegistryGlobals::SEAT => client.insert(Seat.into_object(new_id.object_id)),
+			RegistryGlobals::OUTPUT => client.insert(Output.into_object(new_id.object_id)),
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");
 				return Err(Error::Internal);

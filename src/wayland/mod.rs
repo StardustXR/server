@@ -84,18 +84,12 @@ impl WaylandClient {
 	pub fn from_stream(socket: UnixStream) -> Result<Self> {
 		let pid = socket.peer_cred().ok().and_then(|c| c.pid());
 		let mut client = server::Client::new(socket)?;
-		let (message_tx, message_rx) = mpsc::unbounded_channel();
+		let (message_sink, message_source) = mpsc::unbounded_channel();
 
-		client.insert(
-			Display {
-				message_sink: message_tx,
-				pid,
-			}
-			.into_object(ObjectId::DISPLAY),
-		);
+		client.insert(Display { message_sink, pid }.into_object(ObjectId::DISPLAY));
 		let abort_handle = task::new(
 			|| "wayland client",
-			Self::handle_client_messages(client, message_rx),
+			Self::handle_client_messages(client, message_source),
 		)?
 		.abort_handle();
 
@@ -139,7 +133,6 @@ impl WaylandClient {
 		Ok(())
 	}
 }
-
 impl Drop for WaylandClient {
 	fn drop(&mut self) {
 		self.abort_handle.abort();
@@ -162,8 +155,8 @@ impl Wayland {
 
 		let _ = WAYLAND_DISPLAY.set(socket_path.clone());
 
-		let listener = server::Listener::new_with_path(&socket_path)
-			.map_err(|e| ServerError::WaylandError(e))?;
+		let listener =
+			server::Listener::new_with_path(&socket_path).map_err(ServerError::WaylandError)?;
 
 		let abort_handle =
 			task::new(|| "wayland loop", Self::handle_wayland_loop(listener))?.abort_handle();

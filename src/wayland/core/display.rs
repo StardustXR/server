@@ -25,7 +25,9 @@ impl WlDisplay for Display {
 	) -> Result<()> {
 		let serial = client.next_event_serial();
 
-		let callback = Callback::default().into_object(callback_id);
+		tracing::info!(serial, "WlDisplay::sync");
+
+		let callback = Callback.into_object(callback_id);
 
 		callback
 			.as_dispatcher::<Callback>()?
@@ -45,7 +47,8 @@ impl WlDisplay for Display {
 		client: &mut Client,
 		registry_id: ObjectId,
 	) -> Result<()> {
-		let registry = Registry::default().into_object(registry_id);
+		tracing::info!("WlDisplay::get_registry");
+		let registry = Registry.into_object(registry_id);
 
 		registry
 			.as_dispatcher::<Registry>()?
