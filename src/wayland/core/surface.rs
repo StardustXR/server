@@ -19,7 +19,7 @@ use waynest::{
 	wire::{Message, ObjectId},
 };
 
-pub const WL_SURFACE_REGISTRY: Registry<Surface> = Registry::new();
+pub static WL_SURFACE_REGISTRY: Registry<Surface> = Registry::new();
 
 #[derive(Debug, Clone)]
 struct SurfaceState {
@@ -139,10 +139,10 @@ impl WlSurface for Surface {
 		client: &mut Client,
 		callback_id: ObjectId,
 	) -> Result<()> {
-		let callback = Callback::default().into_object(callback_id);
+		let callback = Callback.into_object(callback_id);
 		self.frame_callback
 			.lock()
-			.replace(Callback::default().done(&callback, 0));
+			.replace(Callback.done(&callback, 0));
 		client.insert(callback);
 		Ok(())
 	}

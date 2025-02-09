@@ -30,12 +30,12 @@ local_deps = ["stereokit-rust/force-local-deps"]
 [package.metadata.appimage]
 auto_link = true
 auto_link_exclude_list = [
-    "libc*",
-    "libdl*",
-    "libpthread*",
-    "ld-linux*",
-    "libGL*",
-    "libEGL*",
+	"libc*",
+	"libdl*",
+	"libpthread*",
+	"ld-linux*",
+	"libGL*",
+	"libEGL*",
 ]
 
 [profile.dev.package."*"]
@@ -93,9 +93,9 @@ xkbcommon-rs = "0.1.0"
 # wayland
 cluFlock = { version = "1.2.7", optional = true } # for the lockfile checking
 waynest = { git = "https://github.com/technobaboo/waynest.git", features = [
-    "server",
-    "stable",
-], optional = true }
+	"server",
+	"stable",
+], default-features = false, optional = true }
 tokio-stream = { version = "0.1.17", optional = true }
 memmap2 = { version = "0.9.5", optional = true }
 
@@ -107,6 +107,5 @@ default-features = false
 
 [dependencies.stardust-xr]
 workspace = true
-
 [dependencies.stardust-xr-server-codegen]
 path = "codegen"

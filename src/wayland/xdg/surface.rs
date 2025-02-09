@@ -35,8 +35,7 @@ impl XdgSurface for Surface {
 			.unwrap()
 			.as_dispatcher::<Display>()
 			.unwrap()
-			.pid
-			.clone();
+			.pid;
 
 		let size = self.wl_surface.size().ok_or(server::Error::Internal)?;
 		client.insert(Toplevel::new(pid, size).into_object(id));
