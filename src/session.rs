@@ -86,14 +86,11 @@ pub fn run_client(mut command: Command, debug_launched_clients: bool) -> Option<
 }
 
 pub fn connection_env() -> FxHashMap<String, String> {
-	macro_rules! var_env_insert {
-		($env:ident, $name:ident) => {
-			$env.insert(stringify!($name).to_string(), $name.get().unwrap().clone());
-		};
-	}
-
 	let mut env: FxHashMap<String, String> = FxHashMap::default();
-	var_env_insert!(env, STARDUST_INSTANCE);
+	env.insert(
+		stringify!(STARDUST_INSTANCE).to_string(),
+		STARDUST_INSTANCE.get().unwrap().clone(),
+	);
 
 	if let Some(flat_wayland_display) = std::env::var_os("WAYLAND_DISPLAY") {
 		env.insert(
@@ -103,7 +100,10 @@ pub fn connection_env() -> FxHashMap<String, String> {
 	}
 	#[cfg(feature = "wayland")]
 	{
-		var_env_insert!(env, WAYLAND_DISPLAY);
+		env.insert(
+			stringify!(WAYLAND_DISPLAY).to_string(),
+			WAYLAND_DISPLAY.get().unwrap().to_string_lossy().to_string(),
+		);
 		env.insert("XDG_SESSION_TYPE".to_string(), "wayland".to_string());
 	}
 	env
