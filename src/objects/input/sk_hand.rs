@@ -1,11 +1,11 @@
 use crate::core::client::INTERNAL_CLIENT;
-use crate::nodes::fields::{Field, FieldTrait};
-use crate::nodes::input::{InputDataType, InputHandler, INPUT_HANDLER_REGISTRY};
 use crate::nodes::OwnedNode;
+use crate::nodes::fields::{Field, FieldTrait};
+use crate::nodes::input::{INPUT_HANDLER_REGISTRY, InputDataType, InputHandler};
 use crate::nodes::{
+	Node,
 	input::{Hand, InputMethod, Joint},
 	spatial::Spatial,
-	Node,
 };
 use crate::objects::{ObjectHandle, SpatialRef};
 use color_eyre::eyre::Result;
@@ -19,7 +19,7 @@ use stereokit_rust::system::{HandJoint, HandSource, Handed, Input, LinePoint, Li
 use stereokit_rust::util::Color128;
 use zbus::Connection;
 
-use super::{get_sorted_handlers, CaptureManager};
+use super::{CaptureManager, get_sorted_handlers};
 
 fn convert_joint(joint: HandJoint) -> Joint {
 	Joint {
