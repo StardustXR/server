@@ -3,12 +3,12 @@
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		fields::{Field, Shape, EXPORTED_FIELDS},
-		spatial::{Spatial, EXPORTED_SPATIALS},
 		Node, OwnedNode,
+		fields::{EXPORTED_FIELDS, Field, Shape},
+		spatial::{EXPORTED_SPATIALS, Spatial},
 	},
 };
-use glam::{vec3, Mat4};
+use glam::{Mat4, vec3};
 use input::{
 	eye_pointer::EyePointer, mouse_pointer::MousePointer, sk_controller::SkController,
 	sk_hand::SkHand,
@@ -22,7 +22,7 @@ use stereokit_rust::{
 	system::{Handed, Input, Key, World},
 	util::Device,
 };
-use zbus::{interface, object_server::Interface, zvariant::OwnedObjectPath, Connection};
+use zbus::{Connection, interface, object_server::Interface, zvariant::OwnedObjectPath};
 
 pub mod input;
 pub mod play_space;

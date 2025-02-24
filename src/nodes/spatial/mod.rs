@@ -10,7 +10,7 @@ use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
 use color_eyre::eyre::OptionExt;
-use glam::{vec3a, Mat4, Quat, Vec3};
+use glam::{Mat4, Quat, Vec3, vec3a};
 use mint::Vector3;
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;

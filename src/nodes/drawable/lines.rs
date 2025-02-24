@@ -1,7 +1,7 @@
 use super::{Line, LinesAspect};
 use crate::{
 	core::{client::Client, error::Result, registry::Registry},
-	nodes::{spatial::Spatial, Node},
+	nodes::{Node, spatial::Spatial},
 };
 use glam::Vec3;
 use parking_lot::Mutex;

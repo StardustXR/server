@@ -1,7 +1,7 @@
 use super::{Finger, Hand, InputDataTrait, InputHandler, InputMethod, Joint, Thumb};
 use crate::nodes::fields::{Field, FieldTrait};
 use crate::nodes::spatial::Spatial;
-use glam::{vec3a, Mat4, Quat};
+use glam::{Mat4, Quat, vec3a};
 use std::sync::Arc;
 
 impl Default for Joint {

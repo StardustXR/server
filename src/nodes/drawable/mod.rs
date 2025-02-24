@@ -1,14 +1,12 @@
 pub mod lines;
 pub mod model;
-#[cfg(feature = "wayland")]
-pub mod shader_manipulation;
 pub mod shaders;
 pub mod text;
 
 use self::{lines::Lines, model::Model, text::Text};
 use super::{
-	spatial::{Spatial, Transform},
 	Aspect, AspectIdentifier, Node,
+	spatial::{Spatial, Transform},
 };
 use crate::core::{client::Client, error::Result, resource::get_resource_file};
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;

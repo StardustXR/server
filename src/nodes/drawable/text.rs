@@ -3,10 +3,10 @@ use crate::{
 		client::Client, destroy_queue, error::Result, registry::Registry,
 		resource::get_resource_file,
 	},
-	nodes::{spatial::Spatial, Node},
+	nodes::{Node, spatial::Spatial},
 };
 use color_eyre::eyre::eyre;
-use glam::{vec3, Mat4, Vec2};
+use glam::{Mat4, Vec2, vec3};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
@@ -14,7 +14,7 @@ use stereokit_rust::{
 	font::Font,
 	sk::MainThreadToken,
 	system::{TextAlign, TextFit, TextStyle as SkTextStyle},
-	util::{Color128, Color32},
+	util::{Color32, Color128},
 };
 
 use super::{TextAspect, TextStyle};

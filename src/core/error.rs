@@ -4,8 +4,8 @@ use color_eyre::eyre::Report;
 use stardust_xr::{
 	messenger::MessengerError,
 	schemas::flex::{
-		flexbuffers::{DeserializationError, ReaderError},
 		FlexSerializeError,
+		flexbuffers::{DeserializationError, ReaderError},
 	},
 };
 use stereokit_rust::StereoKitError;

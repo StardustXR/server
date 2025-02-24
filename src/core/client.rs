@@ -1,17 +1,17 @@
 use super::{
-	client_state::{ClientStateParsed, CLIENT_STATES},
+	client_state::{CLIENT_STATES, ClientStateParsed},
 	destroy_queue,
 	scenegraph::Scenegraph,
 };
 use crate::{
 	core::{registry::OwnedRegistry, task},
 	nodes::{
-		audio, drawable, fields, input, items,
+		Node, audio, drawable, fields, input, items,
 		root::{ClientState, Root},
-		spatial, Node,
+		spatial,
 	},
 };
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{Result, eyre};
 use global_counter::primitive::exact::CounterU32;
 use lazy_static::lazy_static;
 use once_cell::sync::OnceCell;

@@ -1,4 +1,5 @@
 use smithay::reexports::wayland_server::{
+	Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 	protocol::{
 		wl_data_device::{
 			Request::{Release, SetSelection, StartDrag},
@@ -13,7 +14,6 @@ use smithay::reexports::wayland_server::{
 			WlDataSource,
 		},
 	},
-	Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
 };
 
 use super::state::WaylandState;

@@ -1,11 +1,11 @@
-use super::{get_sorted_handlers, CaptureManager};
+use super::{CaptureManager, get_sorted_handlers};
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		fields::{Field, FieldTrait},
-		input::{InputDataType, InputHandler, InputMethod, Tip, INPUT_HANDLER_REGISTRY},
-		spatial::Spatial,
 		Node, OwnedNode,
+		fields::{Field, FieldTrait},
+		input::{INPUT_HANDLER_REGISTRY, InputDataType, InputHandler, InputMethod, Tip},
+		spatial::Spatial,
 	},
 	objects::{ObjectHandle, SpatialRef},
 };

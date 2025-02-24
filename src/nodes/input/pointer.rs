@@ -3,7 +3,7 @@ use crate::nodes::{
 	fields::{Field, FieldTrait, Ray, RayMarchResult},
 	spatial::Spatial,
 };
-use glam::{vec3, Mat4, Quat};
+use glam::{Mat4, Quat, vec3};
 use std::sync::{Arc, Weak};
 
 impl Default for Pointer {

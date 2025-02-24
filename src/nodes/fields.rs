@@ -1,16 +1,17 @@
 use super::alias::{Alias, AliasInfo};
 use super::spatial::{
-	Spatial, SPATIAL_REF_GET_LOCAL_BOUNDING_BOX_SERVER_OPCODE,
+	SPATIAL_REF_GET_LOCAL_BOUNDING_BOX_SERVER_OPCODE,
 	SPATIAL_REF_GET_RELATIVE_BOUNDING_BOX_SERVER_OPCODE, SPATIAL_REF_GET_TRANSFORM_SERVER_OPCODE,
+	Spatial,
 };
 use super::{Aspect, AspectIdentifier, Node};
 use crate::core::client::Client;
 use crate::core::error::Result;
-use crate::nodes::spatial::Transform;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
+use crate::nodes::spatial::Transform;
 use color_eyre::eyre::OptionExt;
-use glam::{vec2, vec3, vec3a, Vec3, Vec3A, Vec3Swizzles};
+use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
 use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;

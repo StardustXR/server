@@ -1,16 +1,16 @@
-use super::{get_sorted_handlers, CaptureManager, DistanceCalculator};
+use super::{CaptureManager, DistanceCalculator, get_sorted_handlers};
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		fields::{Field, FieldTrait, Ray, EXPORTED_FIELDS},
+		Node, OwnedNode,
+		fields::{EXPORTED_FIELDS, Field, FieldTrait, Ray},
 		input::{InputDataType, InputMethod, Pointer},
 		items::panel::KEYMAPS,
 		spatial::Spatial,
-		Node, OwnedNode,
 	},
 };
 use color_eyre::eyre::Result;
-use glam::{vec3, Mat4, Vec3};
+use glam::{Mat4, Vec3, vec3};
 use mint::Vector2;
 use serde::{Deserialize, Serialize};
 use slotmap::{DefaultKey, Key as SlotKey};
@@ -21,9 +21,9 @@ use stardust_xr::{
 use std::sync::Arc;
 use stereokit_rust::system::{Input, Key};
 use tokio::task::JoinSet;
-use tokio::time::{timeout, Duration};
-use xkbcommon_rs::{xkb_keymap::CompileFlags, Context, Keymap, KeymapFormat};
-use zbus::{names::OwnedInterfaceName, Connection};
+use tokio::time::{Duration, timeout};
+use xkbcommon_rs::{Context, Keymap, KeymapFormat, xkb_keymap::CompileFlags};
+use zbus::{Connection, names::OwnedInterfaceName};
 
 #[derive(Debug, Deserialize, Serialize)]
 struct MouseEvent {

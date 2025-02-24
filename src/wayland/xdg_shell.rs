@@ -1,5 +1,5 @@
 use super::{
-	seat::{handle_cursor, SeatWrapper},
+	seat::{SeatWrapper, handle_cursor},
 	state::{ClientState, WaylandState},
 	surface::CoreSurface,
 	utils::*,
@@ -27,8 +27,8 @@ use smithay::{
 			shell::server::xdg_toplevel::{ResizeEdge, State},
 		},
 		wayland_server::{
-			protocol::{wl_output::WlOutput, wl_seat::WlSeat, wl_surface::WlSurface},
 			Resource,
+			protocol::{wl_output::WlOutput, wl_seat::WlSeat, wl_surface::WlSurface},
 		},
 	},
 	utils::{Logical, Rectangle, Serial},

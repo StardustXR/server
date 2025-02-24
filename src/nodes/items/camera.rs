@@ -1,20 +1,20 @@
-use super::{create_item_acceptor_flex, register_item_ui_flex, Item, ItemType};
+use super::{Item, ItemType, create_item_acceptor_flex, register_item_ui_flex};
 use crate::bail;
 use crate::core::error::Result;
-use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
-use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
 use crate::nodes::Aspect;
 use crate::nodes::AspectIdentifier;
+use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
+use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
 use crate::{
 	core::{client::Client, registry::Registry, scenegraph::MethodResponseSender},
 	nodes::{
+		Message, Node,
 		drawable::{
 			model::{MaterialWrapper, ModelPart},
 			shaders::UNLIT_SHADER_BYTES,
 		},
 		items::TypeInfo,
 		spatial::{Spatial, Transform},
-		Message, Node,
 	},
 };
 use glam::Mat4;

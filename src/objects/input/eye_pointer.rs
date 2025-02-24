@@ -1,14 +1,14 @@
 use crate::{
 	core::client::INTERNAL_CLIENT,
 	nodes::{
-		fields::{FieldTrait, Ray},
-		input::{InputDataType, InputMethod, Pointer, INPUT_HANDLER_REGISTRY},
-		spatial::Spatial,
 		Node, OwnedNode,
+		fields::{FieldTrait, Ray},
+		input::{INPUT_HANDLER_REGISTRY, InputDataType, InputMethod, Pointer},
+		spatial::Spatial,
 	},
 };
 use color_eyre::eyre::Result;
-use glam::{vec3, Mat4};
+use glam::{Mat4, vec3};
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::sync::Arc;

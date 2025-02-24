@@ -1,12 +1,12 @@
-use super::{MaterialParameter, ModelAspect, ModelPartAspect, MODEL_PART_ASPECT_ALIAS_INFO};
+use super::{MODEL_PART_ASPECT_ALIAS_INFO, MaterialParameter, ModelAspect, ModelPartAspect};
 use crate::bail;
 use crate::core::client::Client;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
+use crate::nodes::Node;
 use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::Spatial;
-use crate::nodes::Node;
 use color_eyre::eyre::eyre;
 use glam::{Mat4, Vec2, Vec3};
 use once_cell::sync::{Lazy, OnceCell};

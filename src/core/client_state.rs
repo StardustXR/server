@@ -1,5 +1,5 @@
-use super::client::{get_env, Client};
-use crate::nodes::{root::ClientState, spatial::Spatial, Node};
+use super::client::{Client, get_env};
+use crate::nodes::{Node, root::ClientState, spatial::Spatial};
 use glam::Mat4;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;

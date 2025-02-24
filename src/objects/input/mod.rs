@@ -5,7 +5,7 @@ pub mod sk_hand;
 
 use crate::nodes::{
 	fields::{Field, FieldTrait, Ray},
-	input::{InputDataTrait, InputDataType, InputHandler, InputMethod, INPUT_HANDLER_REGISTRY},
+	input::{INPUT_HANDLER_REGISTRY, InputDataTrait, InputDataType, InputHandler, InputMethod},
 	spatial::Spatial,
 };
 use glam::vec3;
@@ -70,13 +70,13 @@ pub fn get_sorted_handlers(
 	INPUT_HANDLER_REGISTRY
 		.get_valid_contents()
 		.into_iter()
-		.filter(|handler| handler.spatial.node().map_or(false, |node| node.enabled()))
+		.filter(|handler| handler.spatial.node().is_some_and(|node| node.enabled()))
 		.filter(|handler| {
 			handler
 				.field
 				.spatial
 				.node()
-				.map_or(false, |node| node.enabled())
+				.is_some_and(|node| node.enabled())
 		})
 		.filter_map(|handler| {
 			distance_calculator(&method.spatial, &method.data.lock(), &handler.field)

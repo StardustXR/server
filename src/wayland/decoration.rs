@@ -13,8 +13,8 @@ use smithay::{
 			Mode as KdeMode, OrgKdeKwinServerDecoration,
 		},
 		wayland_server::{
-			protocol::wl_surface::WlSurface, Client, DataInit, Dispatch, DisplayHandle,
-			GlobalDispatch, New, Resource, WEnum, Weak,
+			Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource, WEnum, Weak,
+			protocol::wl_surface::WlSurface,
 		},
 	},
 	wayland::shell::{self, kde::decoration::KdeDecorationHandler},

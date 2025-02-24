@@ -11,7 +11,7 @@ mod xdg_shell;
 
 use self::{state::WaylandState, surface::CORE_SURFACES};
 use crate::{core::task, wayland::state::ClientState};
-use color_eyre::eyre::{ensure, Result};
+use color_eyre::eyre::{Result, ensure};
 use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::backend::allocator::dmabuf::Dmabuf;
@@ -19,8 +19,8 @@ use smithay::backend::egl::EGLContext;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::{ImportDma, Renderer};
 use smithay::output::Output;
-use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::DisplayHandle;
+use smithay::reexports::wayland_server::backend::ClientId;
 use smithay::reexports::wayland_server::{Display, ListeningSocket};
 use smithay::wayland::dmabuf;
 use std::ffi::OsStr;

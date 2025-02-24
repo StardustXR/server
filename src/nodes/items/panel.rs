@@ -7,14 +7,14 @@ use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
 use crate::nodes::{Aspect, AspectIdentifier};
 use crate::{
 	core::{
-		client::{get_env, state, Client, INTERNAL_CLIENT},
+		client::{Client, INTERNAL_CLIENT, get_env, state},
 		registry::Registry,
 	},
 	nodes::{
+		Node,
 		drawable::model::ModelPart,
 		items::{Item, ItemType, TypeInfo},
 		spatial::{Spatial, Transform},
-		Node,
 	},
 };
 use glam::Mat4;

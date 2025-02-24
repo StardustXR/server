@@ -10,12 +10,12 @@ use crate::{
 use parking_lot::Mutex;
 use rand::Rng;
 use smithay::{
-	backend::renderer::utils::{on_commit_buffer_handler, RendererSurfaceStateUserData},
+	backend::renderer::utils::{RendererSurfaceStateUserData, on_commit_buffer_handler},
 	delegate_compositor,
 	desktop::PopupKind,
-	reexports::wayland_server::{protocol::wl_surface::WlSurface, Client},
+	reexports::wayland_server::{Client, protocol::wl_surface::WlSurface},
 	wayland::compositor::{
-		add_post_commit_hook, CompositorClientState, CompositorHandler, CompositorState,
+		CompositorClientState, CompositorHandler, CompositorState, add_post_commit_hook,
 	},
 };
 use std::sync::Arc;

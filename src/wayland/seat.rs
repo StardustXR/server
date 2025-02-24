@@ -1,7 +1,7 @@
 use super::{state::WaylandState, surface::CoreSurface, utils::WlSurfaceExt};
 use crate::{
 	core::task,
-	nodes::items::panel::{Backend, Geometry, PanelItem, KEYMAPS},
+	nodes::items::panel::{Backend, Geometry, KEYMAPS, PanelItem},
 };
 use mint::Vector2;
 use parking_lot::Mutex;
@@ -11,12 +11,12 @@ use smithay::{
 	backend::input::{AxisRelativeDirection, ButtonState, KeyState},
 	delegate_seat,
 	input::{
+		Seat, SeatHandler,
 		keyboard::{FilterResult, LedState},
 		pointer::{AxisFrame, ButtonEvent, CursorImageStatus, MotionEvent},
 		touch::{self, DownEvent, UpEvent},
-		Seat, SeatHandler,
 	},
-	reexports::wayland_server::{protocol::wl_surface::WlSurface, Resource, Weak as WlWeak},
+	reexports::wayland_server::{Resource, Weak as WlWeak, protocol::wl_surface::WlSurface},
 	utils::SERIAL_COUNTER,
 	wayland::compositor,
 };
