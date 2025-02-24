@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use parking_lot::{const_mutex, MappedMutexGuard, Mutex, MutexGuard};
+use parking_lot::{MappedMutexGuard, Mutex, MutexGuard, const_mutex};
 use rustc_hash::FxHashMap;
 use std::ptr;
 use std::sync::{Arc, Weak};

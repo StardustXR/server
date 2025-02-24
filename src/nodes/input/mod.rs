@@ -9,10 +9,10 @@ mod tip;
 pub use handler::*;
 pub use method::*;
 
-use super::fields::Field;
-use super::spatial::Spatial;
 use super::Aspect;
 use super::AspectIdentifier;
+use super::fields::Field;
+use super::spatial::Spatial;
 use crate::core::error::Result;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;

@@ -4,13 +4,13 @@ use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::{
 	backend::{
-		allocator::{dmabuf::Dmabuf, Fourcc},
+		allocator::{Fourcc, dmabuf::Dmabuf},
 		egl::EGLDevice,
 		renderer::gles::GlesRenderer,
 	},
 	delegate_dmabuf, delegate_output, delegate_shm,
 	desktop::PopupManager,
-	input::{keyboard::XkbConfig, SeatState},
+	input::{SeatState, keyboard::XkbConfig},
 	output::{Mode, Output, Scale, Subpixel},
 	reexports::{
 		wayland_protocols::xdg::{
@@ -19,12 +19,12 @@ use smithay::{
 		},
 		wayland_protocols_misc::server_decoration::server::org_kde_kwin_server_decoration_manager::Mode as DecorationMode,
 		wayland_server::{
+			DisplayHandle,
 			backend::{ClientData, ClientId, DisconnectReason},
 			protocol::{
 				wl_buffer::WlBuffer, wl_data_device_manager::WlDataDeviceManager,
 				wl_output::WlOutput,
 			},
-			DisplayHandle,
 		},
 	},
 	utils::{Size, Transform},

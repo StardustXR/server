@@ -1,5 +1,5 @@
-use super::{InputHandlerAspect, INPUT_HANDLER_REGISTRY, INPUT_METHOD_REGISTRY};
-use crate::nodes::{alias::AliasList, fields::Field, spatial::Spatial, Node};
+use super::{INPUT_HANDLER_REGISTRY, INPUT_METHOD_REGISTRY, InputHandlerAspect};
+use crate::nodes::{Node, alias::AliasList, fields::Field, spatial::Spatial};
 use color_eyre::eyre::Result;
 use std::sync::Arc;
 
