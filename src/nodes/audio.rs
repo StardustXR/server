@@ -7,12 +7,11 @@ use crate::core::resource::get_resource_file;
 use crate::nodes::spatial::{SPATIAL_ASPECT_ALIAS_INFO, Spatial, Transform};
 use color_eyre::eyre::eyre;
 use glam::{Vec4Swizzles, vec3};
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
 
 use std::ops::DerefMut;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::{ffi::OsStr, path::PathBuf};
 use stereokit_rust::sound::{Sound as SkSound, SoundInst};
 
@@ -24,7 +23,7 @@ pub struct Sound {
 
 	volume: f32,
 	pending_audio_path: PathBuf,
-	sk_sound: OnceCell<SkSound>,
+	sk_sound: OnceLock<SkSound>,
 	instance: Mutex<Option<SoundInst>>,
 	stop: Mutex<Option<()>>,
 	play: Mutex<Option<()>>,
@@ -41,7 +40,7 @@ impl Sound {
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			volume: 1.0,
 			pending_audio_path,
-			sk_sound: OnceCell::new(),
+			sk_sound: OnceLock::new(),
 			instance: Mutex::new(None),
 			stop: Mutex::new(None),
 			play: Mutex::new(None),

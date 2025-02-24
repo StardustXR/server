@@ -14,11 +14,16 @@ use crate::{
 use color_eyre::eyre::{Result, eyre};
 use global_counter::primitive::exact::CounterU32;
 use lazy_static::lazy_static;
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use stardust_xr::messenger::{self, MessageSenderHandle};
-use std::{fmt::Debug, fs, iter::FromIterator, path::PathBuf, sync::Arc};
+use std::{
+	fmt::Debug,
+	fs,
+	iter::FromIterator,
+	path::PathBuf,
+	sync::{Arc, OnceLock},
+};
 use tokio::{net::UnixStream, task::JoinHandle};
 use tracing::info;
 
@@ -29,16 +34,16 @@ lazy_static! {
 		// env: None,
 		exe: None,
 
-		dispatch_join_handle: OnceCell::new(),
-		flush_join_handle: OnceCell::new(),
-		disconnect_status: OnceCell::new(),
+		dispatch_join_handle: OnceLock::new(),
+		flush_join_handle: OnceLock::new(),
+		disconnect_status: OnceLock::new(),
 
 		message_sender_handle: None,
 		id_counter: CounterU32::new(0),
 		scenegraph: Default::default(),
-		root: OnceCell::new(),
+		root: OnceLock::new(),
 		base_resource_prefixes: Default::default(),
-		state: OnceCell::default(),
+		state: OnceLock::default(),
 	});
 }
 
@@ -59,16 +64,16 @@ pub struct Client {
 	pub pid: Option<i32>,
 	// env: Option<FxHashMap<String, String>>,
 	exe: Option<PathBuf>,
-	dispatch_join_handle: OnceCell<JoinHandle<Result<()>>>,
-	flush_join_handle: OnceCell<JoinHandle<Result<()>>>,
-	disconnect_status: OnceCell<Result<()>>,
+	dispatch_join_handle: OnceLock<JoinHandle<Result<()>>>,
+	flush_join_handle: OnceLock<JoinHandle<Result<()>>>,
+	disconnect_status: OnceLock<Result<()>>,
 
 	id_counter: CounterU32,
 	pub message_sender_handle: Option<MessageSenderHandle>,
 	pub scenegraph: Arc<Scenegraph>,
-	pub root: OnceCell<Arc<Root>>,
+	pub root: OnceLock<Arc<Root>>,
 	pub base_resource_prefixes: Mutex<Vec<PathBuf>>,
-	pub state: OnceCell<ClientState>,
+	pub state: OnceLock<ClientState>,
 }
 impl Client {
 	pub fn from_connection(connection: UnixStream) -> Result<Arc<Self>> {
@@ -95,16 +100,16 @@ impl Client {
 			// env,
 			exe: exe.clone(),
 
-			dispatch_join_handle: OnceCell::new(),
-			flush_join_handle: OnceCell::new(),
-			disconnect_status: OnceCell::new(),
+			dispatch_join_handle: OnceLock::new(),
+			flush_join_handle: OnceLock::new(),
+			disconnect_status: OnceLock::new(),
 
 			id_counter: CounterU32::new(256),
 			message_sender_handle: Some(messenger_tx.handle()),
 			scenegraph: scenegraph.clone(),
-			root: OnceCell::new(),
+			root: OnceLock::new(),
 			base_resource_prefixes: Default::default(),
-			state: OnceCell::default(),
+			state: OnceLock::default(),
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
 		let _ = client.root.set(Root::create(&client, state.root)?);
@@ -128,7 +133,7 @@ impl Client {
 					.map(|exe| exe.to_string())
 			})
 			.unwrap_or_else(|| "??".to_string());
-		let _ = client.dispatch_join_handle.get_or_try_init(|| {
+		let _ = client.dispatch_join_handle.get_or_init(|| {
 			task::new(
 				|| {
 					format!(
@@ -147,8 +152,9 @@ impl Client {
 					}
 				},
 			)
+			.unwrap()
 		});
-		let _ = client.flush_join_handle.get_or_try_init(|| {
+		let _ = client.flush_join_handle.get_or_init(|| {
 			task::new(
 				|| format!("client flush pid={} exe={}", &pid_printable, &exe_printable,),
 				{
@@ -162,6 +168,7 @@ impl Client {
 					}
 				},
 			)
+			.unwrap()
 		});
 
 		Ok(client)

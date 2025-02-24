@@ -12,12 +12,11 @@ use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
 use color_eyre::eyre::OptionExt;
 use glam::{Mat4, Quat, Vec3, vec3a};
 use mint::Vector3;
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::fmt::Debug;
 use std::ptr;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use stereokit_rust::maths::Bounds;
 
 stardust_xr_server_codegen::codegen_spatial_protocol!();
@@ -59,7 +58,7 @@ pub struct Spatial {
 	transform: Mutex<Mat4>,
 	zone: Mutex<Weak<Zone>>,
 	children: Registry<Spatial>,
-	pub bounding_box_calc: OnceCell<fn(&Node) -> Bounds>,
+	pub bounding_box_calc: OnceLock<fn(&Node) -> Bounds>,
 }
 
 impl Spatial {
@@ -71,7 +70,7 @@ impl Spatial {
 			transform: Mutex::new(transform),
 			zone: Mutex::new(Weak::new()),
 			children: Registry::new(),
-			bounding_box_calc: OnceCell::default(),
+			bounding_box_calc: OnceLock::default(),
 		})
 	}
 	pub fn add_to(

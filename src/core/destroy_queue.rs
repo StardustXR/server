@@ -1,14 +1,13 @@
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
-use std::any::Any;
+use std::{any::Any, sync::LazyLock};
 use tokio::sync::mpsc::{self, unbounded_channel};
 
 type Anything = Box<dyn Any + Send + Sync>;
 
-static MAIN_DESTROY_QUEUE: Lazy<(
+static MAIN_DESTROY_QUEUE: LazyLock<(
 	mpsc::UnboundedSender<Anything>,
 	Mutex<mpsc::UnboundedReceiver<Anything>>,
-)> = Lazy::new(|| {
+)> = LazyLock::new(|| {
 	let (tx, rx) = unbounded_channel();
 	(tx, Mutex::new(rx))
 });

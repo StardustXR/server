@@ -12,15 +12,14 @@ use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::Transform;
 use color_eyre::eyre::OptionExt;
 use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
-use once_cell::sync::Lazy;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use stardust_xr::values::Vector3;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 // TODO: get SDFs working properly with non-uniform scale and so on, output distance relative to the spatial it's compared against
 
-pub static FIELD_ALIAS_INFO: Lazy<AliasInfo> = Lazy::new(|| AliasInfo {
+pub static FIELD_ALIAS_INFO: LazyLock<AliasInfo> = LazyLock::new(|| AliasInfo {
 	server_methods: vec![
 		SPATIAL_REF_GET_TRANSFORM_SERVER_OPCODE,
 		SPATIAL_REF_GET_LOCAL_BOUNDING_BOX_SERVER_OPCODE,

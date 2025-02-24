@@ -1,6 +1,5 @@
 use super::seat::SeatWrapper;
 use crate::wayland::drm::wl_drm::WlDrm;
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::{
 	backend::{
@@ -42,13 +41,13 @@ use smithay::{
 		shm::{ShmHandler, ShmState},
 	},
 };
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{info, warn};
 
 pub struct ClientState {
 	pub pid: Option<i32>,
-	pub id: OnceCell<ClientId>,
+	pub id: OnceLock<ClientId>,
 	pub compositor_state: CompositorClientState,
 	pub seat: Arc<SeatWrapper>,
 }
