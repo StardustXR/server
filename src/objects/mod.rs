@@ -14,7 +14,6 @@ use input::{
 	sk_hand::SkHand,
 };
 use play_space::PlaySpaceBounds;
-use portable_atomic::AtomicBool;
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use std::{
 	marker::PhantomData,
@@ -207,7 +206,7 @@ pub struct ObjectHandle<I: Interface>(Connection, OwnedObjectPath, PhantomData<I
 
 impl<I: Interface> Clone for ObjectHandle<I> {
 	fn clone(&self) -> Self {
-		Self(self.0.clone(), self.1.clone(), PhantomData::default())
+		Self(self.0.clone(), self.1.clone(), PhantomData)
 	}
 }
 impl<I: Interface> Drop for ObjectHandle<I> {
@@ -260,11 +259,9 @@ impl SpatialRef {
 pub struct Tracked(bool);
 impl Tracked {
 	pub fn new(connection: &Connection, path: &str) -> ObjectHandle<Tracked> {
-		let bool = Arc::new(AtomicBool::new(false));
 		tokio::task::spawn({
 			let connection = connection.clone();
 			let path = path.to_string();
-			let bool = bool.clone();
 			async move {
 				connection
 					.object_server()
