@@ -9,13 +9,12 @@ use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::Spatial;
 use color_eyre::eyre::eyre;
 use glam::{Mat4, Vec2, Vec3};
-use once_cell::sync::{Lazy, OnceCell};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use stardust_xr::values::ResourceID;
 use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, OnceLock, Weak};
 use stereokit_rust::material::Transparency;
 use stereokit_rust::maths::Bounds;
 use stereokit_rust::sk::MainThreadToken;
@@ -98,9 +97,9 @@ impl MaterialRegistry {
 	}
 }
 
-static MATERIAL_REGISTRY: Lazy<MaterialRegistry> = Lazy::new(MaterialRegistry::default);
+static MATERIAL_REGISTRY: LazyLock<MaterialRegistry> = LazyLock::new(MaterialRegistry::default);
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
-static HOLDOUT_MATERIAL: OnceCell<Arc<MaterialWrapper>> = OnceCell::new();
+static HOLDOUT_MATERIAL: OnceLock<Arc<MaterialWrapper>> = OnceLock::new();
 
 impl MaterialParameter {
 	fn apply_to_material(&self, client: &Client, material: &Material, parameter_name: &str) {
@@ -333,7 +332,7 @@ impl ModelPartAspect for ModelPart {
 pub struct Model {
 	space: Arc<Spatial>,
 	_resource_id: ResourceID,
-	sk_model: OnceCell<SKModel>,
+	sk_model: OnceLock<SKModel>,
 	parts: Mutex<Vec<Arc<ModelPart>>>,
 }
 impl Model {
@@ -348,7 +347,7 @@ impl Model {
 		let model = Arc::new(Model {
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			_resource_id: resource_id,
-			sk_model: OnceCell::new(),
+			sk_model: OnceLock::new(),
 			parts: Mutex::new(Vec::default()),
 		});
 		MODEL_REGISTRY.add_raw(&model);

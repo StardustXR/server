@@ -20,11 +20,11 @@ use crate::{
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::{ColumnMatrix4, Vector2};
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 
 use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use stereokit_rust::{
 	material::{Material, Transparency},
 	shader::Shader,
@@ -33,7 +33,6 @@ use stereokit_rust::{
 	tex::{Tex, TexFormat, TexType},
 	util::Color128,
 };
-use tracing::error;
 
 pub struct TexWrapper(pub Tex);
 unsafe impl Send for TexWrapper {}
@@ -68,8 +67,8 @@ struct FrameInfo {
 pub struct CameraItem {
 	space: Arc<Spatial>,
 	frame_info: Mutex<FrameInfo>,
-	sk_tex: OnceCell<TexWrapper>,
-	sk_mat: OnceCell<Arc<MaterialWrapper>>,
+	sk_tex: OnceLock<TexWrapper>,
+	sk_mat: OnceLock<Arc<MaterialWrapper>>,
 	applied_to: Registry<ModelPart>,
 	apply_to: Registry<ModelPart>,
 }
@@ -82,8 +81,8 @@ impl CameraItem {
 				proj_matrix,
 				px_size,
 			}),
-			sk_tex: OnceCell::new(),
-			sk_mat: OnceCell::new(),
+			sk_tex: OnceLock::new(),
+			sk_mat: OnceLock::new(),
 			applied_to: Registry::new(),
 			apply_to: Registry::new(),
 		});
@@ -140,19 +139,13 @@ impl CameraItem {
 				TexFormat::RGBA32Linear,
 			))
 		});
-		let sk_mat = self
-			.sk_mat
-			.get_or_try_init(|| -> Result<Arc<MaterialWrapper>> {
-				let shader = Shader::from_memory(UNLIT_SHADER_BYTES)?;
-				let mut mat = Material::new(&shader, None);
-				mat.get_all_param_info().set_texture("diffuse", &sk_tex.0);
-				mat.transparency(Transparency::Blend);
-				Ok(Arc::new(MaterialWrapper(mat)))
-			});
-		let Ok(sk_mat) = sk_mat else {
-			error!("unable to make camera item stereokit texture");
-			return;
-		};
+		let sk_mat = self.sk_mat.get_or_init(|| {
+			let shader = Shader::from_memory(UNLIT_SHADER_BYTES).unwrap();
+			let mut mat = Material::new(&shader, None);
+			mat.get_all_param_info().set_texture("diffuse", &sk_tex.0);
+			mat.transparency(Transparency::Blend);
+			Arc::new(MaterialWrapper(mat))
+		});
 		for model_part in self.apply_to.take_valid_contents() {
 			model_part.replace_material(sk_mat.clone())
 		}

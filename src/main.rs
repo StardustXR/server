@@ -15,12 +15,11 @@ use core::client::Client;
 use core::task;
 use directories::ProjectDirs;
 use objects::ServerObjects;
-use once_cell::sync::OnceCell;
 use session::{launch_start, save_session};
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use stardust_xr::server;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use stereokit_rust::material::Material;
 use stereokit_rust::shader::Shader;
@@ -70,7 +69,7 @@ struct CliArgs {
 	restore: Option<String>,
 }
 
-static STARDUST_INSTANCE: OnceCell<String> = OnceCell::new();
+static STARDUST_INSTANCE: OnceLock<String> = OnceLock::new();
 
 // #[tokio::main]
 #[tokio::main(flavor = "current_thread")]

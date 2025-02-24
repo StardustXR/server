@@ -278,8 +278,8 @@ impl Node {
 
 		let serialized = serialize(input)?;
 		let result = message_sender_handle
-			.method(self.id, aspect_id, method, &serialized, fds)?
-			.await
+			.method(self.id, aspect_id, method, &serialized, fds)
+			.await?
 			.map_err(ServerError::RemoteMethodError)?;
 
 		let (message, fds) = result.into_components();

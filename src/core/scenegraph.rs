@@ -2,7 +2,6 @@ use crate::core::error::Result;
 use crate::nodes::Node;
 use crate::nodes::alias::get_original;
 use crate::{core::client::Client, nodes::Message};
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
@@ -11,13 +10,13 @@ use stardust_xr::scenegraph::ScenegraphError;
 use stardust_xr::schemas::flex::serialize;
 use std::future::Future;
 use std::os::fd::OwnedFd;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, OnceLock, Weak};
 use tokio::sync::oneshot;
 use tracing::{debug, debug_span};
 
 #[derive(Default)]
 pub struct Scenegraph {
-	pub(super) client: OnceCell<Weak<Client>>,
+	pub(super) client: OnceLock<Weak<Client>>,
 	nodes: Mutex<FxHashMap<u64, Arc<Node>>>,
 }
 
