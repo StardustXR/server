@@ -9,7 +9,6 @@ use crate::{
 		items::camera::TexWrapper,
 	},
 };
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
 use smithay::{
@@ -22,7 +21,11 @@ use smithay::{
 	output::Output,
 	reexports::wayland_server::{self, Resource, protocol::wl_surface::WlSurface},
 };
-use std::{ffi::c_void, sync::Arc, time::Duration};
+use std::{
+	ffi::c_void,
+	sync::{Arc, OnceLock},
+	time::Duration,
+};
 use stereokit_rust::{
 	material::{Material, Transparency},
 	shader::Shader,
@@ -44,8 +47,8 @@ impl Drop for CoreSurfaceData {
 pub struct CoreSurface {
 	pub weak_surface: wayland_server::Weak<WlSurface>,
 	mapped_data: Mutex<Option<CoreSurfaceData>>,
-	sk_tex: OnceCell<Mutex<TexWrapper>>,
-	sk_mat: OnceCell<Mutex<MaterialWrapper>>,
+	sk_tex: OnceLock<Mutex<TexWrapper>>,
+	sk_mat: OnceLock<Mutex<MaterialWrapper>>,
 	material_offset: Mutex<Delta<u32>>,
 	pub pending_material_applications: Registry<ModelPart>,
 }
@@ -55,8 +58,8 @@ impl CoreSurface {
 		let core_surface = CORE_SURFACES.add(CoreSurface {
 			weak_surface: surface.downgrade(),
 			mapped_data: Mutex::new(None),
-			sk_tex: OnceCell::new(),
-			sk_mat: OnceCell::new(),
+			sk_tex: OnceLock::new(),
+			sk_mat: OnceLock::new(),
 			material_offset: Mutex::new(Delta::new(0)),
 			pending_material_applications: Registry::new(),
 		});
