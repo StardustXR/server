@@ -14,13 +14,13 @@ use parking_lot::Mutex;
 use send_wrapper::SendWrapper;
 use smithay::{
 	backend::renderer::{
-		gles::{GlesRenderer, GlesTexture},
-		utils::{import_surface_tree, RendererSurfaceStateUserData},
 		Renderer, Texture,
+		gles::{GlesRenderer, GlesTexture},
+		utils::{RendererSurfaceStateUserData, import_surface_tree},
 	},
 	desktop::utils::send_frames_surface_tree,
 	output::Output,
-	reexports::wayland_server::{self, protocol::wl_surface::WlSurface, Resource},
+	reexports::wayland_server::{self, Resource, protocol::wl_surface::WlSurface},
 };
 use std::{ffi::c_void, sync::Arc, time::Duration};
 use stereokit_rust::{

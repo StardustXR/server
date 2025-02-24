@@ -23,8 +23,8 @@ mod generated {
 use super::state::WaylandState;
 use smithay::{
 	backend::allocator::{
-		dmabuf::{Dmabuf, DmabufFlags},
 		Fourcc, Modifier,
+		dmabuf::{Dmabuf, DmabufFlags},
 	},
 	reexports::wayland_server::{
 		Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,

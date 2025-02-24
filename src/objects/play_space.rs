@@ -1,5 +1,5 @@
 use stereokit_rust::system::World;
-use zbus::{interface, Connection, ObjectServer};
+use zbus::{Connection, ObjectServer, interface};
 
 pub struct PlaySpaceBounds;
 impl PlaySpaceBounds {

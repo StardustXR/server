@@ -25,7 +25,7 @@ use std::time::Duration;
 use stereokit_rust::material::Material;
 use stereokit_rust::shader::Shader;
 use stereokit_rust::sk::{
-	sk_quit, AppMode, DepthMode, DisplayBlend, OriginMode, QuitReason, SkSettings,
+	AppMode, DepthMode, DisplayBlend, OriginMode, QuitReason, SkSettings, sk_quit,
 };
 use stereokit_rust::system::{Handed, Input, LogLevel, Renderer};
 use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
@@ -35,9 +35,9 @@ use tokio::net::UnixListener;
 use tokio::sync::Notify;
 use tracing::metadata::LevelFilter;
 use tracing::{debug_span, error, info};
-use tracing_subscriber::{fmt, prelude::*, EnvFilter};
-use zbus::fdo::ObjectManager;
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use zbus::Connection;
+use zbus::fdo::ObjectManager;
 
 #[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -123,7 +123,9 @@ async fn main() {
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");
 	if project_dirs.is_none() {
-		error!("Unable to get Stardust project directories, default skybox and startup script will not work.");
+		error!(
+			"Unable to get Stardust project directories, default skybox and startup script will not work."
+		);
 	}
 
 	let dbus_connection = Connection::session()
@@ -132,7 +134,9 @@ async fn main() {
 	dbus_connection
 		.request_name("org.stardustxr.HMD")
 		.await
-		.expect("Another instance of the server is running. This is not supported currently (but is planned).");
+		.expect(
+			"Another instance of the server is running. This is not supported currently (but is planned).",
+		);
 
 	dbus_connection
 		.object_server()
