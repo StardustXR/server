@@ -2143,12 +2143,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "portable-atomic"
-version = "1.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da544ee218f0d287a911e9c99a39a8c9bc8fcad3cb8db5959940044ecfc67265"
-
-[[package]]
 name = "ppv-lite86"
 version = "0.2.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2699,7 +2693,6 @@ dependencies = [
  "nanoid",
  "nix 0.29.0",
  "parking_lot 0.12.3",
- "portable-atomic",
  "prisma",
  "rand",
  "rustc-hash",

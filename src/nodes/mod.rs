@@ -13,7 +13,6 @@ use crate::core::error::{Result, ServerError};
 use crate::core::registry::Registry;
 use crate::core::scenegraph::MethodResponseSender;
 use parking_lot::Mutex;
-use portable_atomic::{AtomicBool, Ordering};
 use rustc_hash::FxHashMap;
 use serde::{Serialize, de::DeserializeOwned};
 use spatial::Spatial;
@@ -23,6 +22,7 @@ use stardust_xr::schemas::flex::{deserialize, serialize};
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::os::fd::OwnedFd;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
 
