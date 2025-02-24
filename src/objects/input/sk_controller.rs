@@ -7,7 +7,7 @@ use crate::{
 		input::{INPUT_HANDLER_REGISTRY, InputDataType, InputHandler, InputMethod, Tip},
 		spatial::Spatial,
 	},
-	objects::{ObjectHandle, SpatialRef},
+	objects::{ObjectHandle, SpatialRef, Tracked},
 };
 use color_eyre::eyre::Result;
 use glam::{Mat4, Vec2, Vec3};
@@ -40,19 +40,19 @@ pub struct SkController {
 	material: Material,
 	capture_manager: CaptureManager,
 	datamap: ControllerDatamap,
+	tracked: ObjectHandle<Tracked>,
 }
 impl SkController {
 	pub fn new(connection: &Connection, handed: Handed) -> Result<Self> {
 		Input::set_controller_model(handed, Some(Model::new()));
-		let (spatial, object_handle) = SpatialRef::create(
-			connection,
-			&("/org/stardustxr/Controller/".to_string()
-				+ match handed {
-					Handed::Left => "left",
-					_ => "right",
-				}),
-		);
-		let model = Model::copy(Model::from_memory(
+		let path = "/org/stardustxr/Controller/".to_string()
+			+ match handed {
+				Handed::Left => "left",
+				_ => "right",
+			};
+		let (spatial, object_handle) = SpatialRef::create(connection, &path);
+		let tracked = Tracked::new(connection, &path);
+		let model = Model::copy(&Model::from_memory(
 			"cursor.glb",
 			include_bytes!("cursor.glb"),
 			None,
@@ -75,13 +75,22 @@ impl SkController {
 			material,
 			capture_manager: CaptureManager::default(),
 			datamap: Default::default(),
+			tracked,
 		})
 	}
 	pub fn update(&mut self, token: &MainThreadToken) {
 		let controller = Input::controller(self.handed);
 		let input_node = self.input.spatial.node().unwrap();
 		input_node.set_enabled(controller.tracked.is_active());
-		if input_node.enabled() {
+		let enabled = input_node.enabled();
+		tokio::spawn({
+			// this is suboptimal since it probably allocates a fresh string every frame
+			let handle = self.tracked.clone();
+			async move {
+				handle.set_tracked(enabled).await;
+			}
+		});
+		if enabled {
 			let world_transform = Mat4::from_rotation_translation(
 				controller.aim.orientation.into(),
 				controller.aim.position.into(),
