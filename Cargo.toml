@@ -68,6 +68,7 @@ parking_lot = "0.12.3"
 color-eyre = { version = "0.6.3", default-features = false }
 clap = { version = "4.5.13", features = ["derive"] }
 console-subscriber = { version = "0.4.0", optional = true }
+thiserror = "2.0.9"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-tracy = { version = "0.11.1", optional = true }
@@ -81,11 +82,8 @@ toml = "0.8.19"
 glam = { version = "0.30.0", features = ["mint", "serde"] }
 mint = "0.5.9"
 tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
-prisma = "0.1.1"
 
 # linux stuffs
-libc = "0.2.155"
-nix = "0.29.0"
 input-event-codes = "6.2.0"
 zbus = { version = "5.0.0", default-features = false, features = ["tokio"] }
 directories = "5.0.1"
@@ -94,22 +92,16 @@ xkbcommon-rs = "0.1.0"
 # wayland
 wayland-backend = { version = "0.3.7", optional = true, default-features = false }
 wayland-scanner = { version = "0.31.4", optional = true }
-thiserror = "2.0.9"
 
 [dependencies.smithay]
-# git = "https://github.com/technobaboo/smithay.git"
-# git = "https://github.com/colinmarc/smithay.git"
 git = "https://github.com/smithay/smithay.git"
-# path = "../smithay"
 default-features = false
 features = ["desktop", "backend_drm", "renderer_gl", "wayland_frontend"]
 optional = true
 
 
 [dependencies.stereokit-rust]
-# path = "../StereoKit-rust"
 git = "https://github.com/mvvvv/StereoKit-rust.git"
-# git = "https://github.com/technobaboo/StereoKit-rust.git"
 features = ["no-event-loop"]
 default-features = false
 

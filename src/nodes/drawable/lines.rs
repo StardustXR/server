@@ -3,9 +3,8 @@ use crate::{
 	core::{client::Client, error::Result, registry::Registry},
 	nodes::{Node, spatial::Spatial},
 };
-use glam::Vec3;
+use glam::{FloatExt, Vec3};
 use parking_lot::Mutex;
-use prisma::Lerp;
 use std::{collections::VecDeque, sync::Arc};
 use stereokit_rust::{
 	maths::Bounds, sk::MainThreadToken, system::LinePoint as SkLinePoint, util::Color128,
@@ -62,10 +61,10 @@ impl Lines {
 				let last = line.points.last().unwrap();
 
 				let color = Color128 {
-					r: first.color.c.r.lerp(&last.color.c.r, 0.5),
-					g: first.color.c.g.lerp(&last.color.c.g, 0.5),
-					b: first.color.c.b.lerp(&last.color.c.b, 0.5),
-					a: first.color.a.lerp(&last.color.a, 0.5),
+					r: first.color.c.r.lerp(last.color.c.r, 0.5),
+					g: first.color.c.g.lerp(last.color.c.g, 0.5),
+					b: first.color.c.b.lerp(last.color.c.b, 0.5),
+					a: first.color.a.lerp(last.color.a, 0.5),
 				};
 				let connect_point = SkLinePoint {
 					pt: transform_mat
