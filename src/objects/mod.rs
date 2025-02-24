@@ -14,8 +14,12 @@ use input::{
 	sk_hand::SkHand,
 };
 use play_space::PlaySpaceBounds;
+use portable_atomic::AtomicBool;
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
-use std::{marker::PhantomData, sync::Arc};
+use std::{
+	marker::PhantomData,
+	sync::{atomic::Ordering, Arc},
+};
 use stereokit_rust::{
 	material::Material,
 	sk::{DisplayMode, MainThreadToken, Sk},
@@ -200,6 +204,12 @@ impl ServerObjects {
 }
 
 pub struct ObjectHandle<I: Interface>(Connection, OwnedObjectPath, PhantomData<I>);
+
+impl<I: Interface> Clone for ObjectHandle<I> {
+	fn clone(&self) -> Self {
+		Self(self.0.clone(), self.1.clone(), PhantomData::default())
+	}
+}
 impl<I: Interface> Drop for ObjectHandle<I> {
 	fn drop(&mut self) {
 		let connection = self.0.clone();
@@ -243,6 +253,54 @@ impl SpatialRef {
 impl SpatialRef {
 	#[zbus(property)]
 	fn uid(&self) -> u64 {
+		self.0
+	}
+}
+
+pub struct Tracked(bool);
+impl Tracked {
+	pub fn new(connection: &Connection, path: &str) -> ObjectHandle<Tracked> {
+		let bool = Arc::new(AtomicBool::new(false));
+		tokio::task::spawn({
+			let connection = connection.clone();
+			let path = path.to_string();
+			let bool = bool.clone();
+			async move {
+				connection
+					.object_server()
+					.at(path, Self(false))
+					.await
+					.unwrap();
+			}
+		});
+		ObjectHandle(
+			connection.clone(),
+			OwnedObjectPath::try_from(path.to_string()).unwrap(),
+			PhantomData,
+		)
+	}
+}
+impl ObjectHandle<Tracked> {
+	pub async fn set_tracked(&self, is_tracked: bool) -> zbus::Result<()> {
+		let tracked_ref = self
+			.0
+			.object_server()
+			.interface::<_, Tracked>(self.1.as_ref())
+			.await?;
+		let mut tracked = tracked_ref.get_mut().await;
+		if tracked.0 != is_tracked {
+			tracked.0 = is_tracked;
+			tracked
+				.is_tracked_changed(tracked_ref.signal_emitter())
+				.await;
+		}
+		Ok(())
+	}
+}
+#[interface(name = "org.stardustxr.Tracked")]
+impl Tracked {
+	#[zbus(property)]
+	fn is_tracked(&self) -> bool {
 		self.0
 	}
 }

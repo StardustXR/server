@@ -7,7 +7,7 @@ use crate::nodes::{
 	input::{Hand, InputMethod, Joint},
 	spatial::Spatial,
 };
-use crate::objects::{ObjectHandle, SpatialRef};
+use crate::objects::{ObjectHandle, SpatialRef, Tracked};
 use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
 use serde::{Deserialize, Serialize};
@@ -44,6 +44,7 @@ pub struct SkHand {
 	input: Arc<InputMethod>,
 	capture_manager: CaptureManager,
 	datamap: HandDatamap,
+	tracked: ObjectHandle<Tracked>,
 }
 impl SkHand {
 	pub fn new(connection: &Connection, handed: Handed) -> Result<Self> {
@@ -54,6 +55,14 @@ impl SkHand {
 					Handed::Left => "left",
 					_ => "right",
 				} + "/palm"),
+		);
+		let tracked = Tracked::new(
+			connection,
+			&("/org/stardustxr/Hand/".to_string()
+				+ match handed {
+					Handed::Left => "left",
+					_ => "right",
+				}),
 		);
 		let _node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
 		Spatial::add_to(&_node.0, None, Mat4::IDENTITY, false);
@@ -71,6 +80,7 @@ impl SkHand {
 			palm_object,
 			handed,
 			input,
+			tracked,
 			capture_manager: CaptureManager::default(),
 			datamap: Default::default(),
 		})
@@ -84,7 +94,15 @@ impl SkHand {
 				(real_hand || sk.get_active_display_mode() == DisplayMode::Flatscreen)
 					&& sk_hand.tracked.is_active(),
 			);
-			if input_node.enabled() {
+			let enabled = input_node.enabled();
+			tokio::spawn({
+				// this is suboptimal since it probably allocates a fresh string every frame
+				let handle = self.tracked.clone();
+				async move {
+					handle.set_tracked(enabled).await;
+				}
+			});
+			if enabled {
 				hand.thumb.tip = convert_joint(sk_hand.fingers[0][4]);
 				hand.thumb.distal = convert_joint(sk_hand.fingers[0][3]);
 				hand.thumb.proximal = convert_joint(sk_hand.fingers[0][2]);
