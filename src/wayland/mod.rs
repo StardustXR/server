@@ -12,7 +12,6 @@ mod xdg_shell;
 use self::{state::WaylandState, surface::CORE_SURFACES};
 use crate::{core::task, wayland::state::ClientState};
 use color_eyre::eyre::{Result, ensure};
-use once_cell::sync::OnceCell;
 use parking_lot::Mutex;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::egl::EGLContext;
@@ -26,6 +25,7 @@ use smithay::wayland::dmabuf;
 use std::ffi::OsStr;
 use std::os::fd::{IntoRawFd, OwnedFd};
 use std::os::unix::prelude::AsRawFd;
+use std::sync::OnceLock;
 use std::{
 	ffi::c_void,
 	os::unix::{net::UnixListener, prelude::FromRawFd},
@@ -39,7 +39,7 @@ use tokio::{
 };
 use tracing::{debug_span, info, instrument};
 
-pub static WAYLAND_DISPLAY: OnceCell<String> = OnceCell::new();
+pub static WAYLAND_DISPLAY: OnceLock<String> = OnceLock::new();
 
 struct EGLRawHandles {
 	display: *const c_void,
@@ -161,7 +161,7 @@ impl Wayland {
 						let (stream, _) = acc?;
 						let client_state = Arc::new(ClientState {
 							pid: stream.peer_cred().ok().and_then(|c| c.pid()),
-							id: OnceCell::new(),
+							id: OnceLock::new(),
 							compositor_state: Default::default(),
 							seat: state.lock().seat.clone(),
 						});
