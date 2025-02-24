@@ -32,7 +32,11 @@ impl Hash for MaterialWrapper {
 		self.0.get_shader().0.as_ptr().hash(state);
 		for param in self.0.get_all_param_info() {
 			param.name.hash(state);
-			param.to_string().hash(state);
+			(param.type_info as u32).hash(state);
+			self.0
+				.get_all_param_info()
+				.get_data(&param.name, param.type_info)
+				.hash(state);
 		}
 		self.0.get_chain().map(MaterialWrapper).hash(state)
 	}
@@ -45,15 +49,17 @@ impl PartialEq for MaterialWrapper {
 		if self.0.get_all_param_info().count() != other.0.get_all_param_info().count() {
 			return false;
 		}
-		for self_param in self.0.get_all_param_info() {
-			let Some(other_param) = other
+		for param in self.0.get_all_param_info() {
+			let other_param = other
 				.0
 				.get_all_param_info()
-				.get_data(self_param.get_name(), self_param.get_type())
-			else {
-				return false;
-			};
-			if self_param.to_string() != other_param.to_string() {
+				.get_data(&param.name, param.type_info);
+			if other_param
+				!= self
+					.0
+					.get_all_param_info()
+					.get_data(&param.name, param.type_info)
+			{
 				return false;
 			}
 		}
@@ -353,7 +359,7 @@ impl Model {
 		MODEL_REGISTRY.add_raw(&model);
 
 		// technically doing this in anything but the main thread isn't a good idea but dangit we need those model nodes ASAP
-		let sk_model = SKModel::copy(SKModel::from_file(
+		let sk_model = SKModel::copy(&SKModel::from_file(
 			pending_model_path.to_str().unwrap(),
 			None,
 		)?);

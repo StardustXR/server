@@ -171,7 +171,7 @@ async fn main() {
 
 	tokio::select! {
 		_ = stereokit_loop => (),
-		_ = tokio::signal::ctrl_c() => unsafe {sk_quit(QuitReason::SystemClose)},
+		_ = tokio::signal::ctrl_c() => unsafe {sk_quit(QuitReason::User)},
 	}
 	info!("Stopping...");
 	if let Some(project_dirs) = project_dirs {

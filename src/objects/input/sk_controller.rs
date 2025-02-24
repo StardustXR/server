@@ -52,7 +52,7 @@ impl SkController {
 					_ => "right",
 				}),
 		);
-		let model = Model::copy(Model::from_memory(
+		let model = Model::copy(&Model::from_memory(
 			"cursor.glb",
 			include_bytes!("cursor.glb"),
 			None,
@@ -88,9 +88,9 @@ impl SkController {
 			);
 			self.material
 				.color_tint(if self.capture_manager.capture.is_none() {
-					Color128::new_rgb(1.0, 1.0, 1.0)
+					Color128::new(1.0, 1.0, 1.0, 1.0)
 				} else {
-					Color128::new_rgb(0.0, 1.0, 0.75)
+					Color128::new(0.0, 1.0, 0.75, 1.0)
 				});
 			self.model.draw(
 				token,

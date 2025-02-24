@@ -123,9 +123,9 @@ impl SkHand {
 				hand.elbow = None;
 
 				let hand_color = if self.capture_manager.capture.is_none() {
-					Color128::new_rgb(1.0, 1.0, 1.0)
+					Color128::new(1.0, 1.0, 1.0, 1.0)
 				} else {
-					Color128::new_rgb(0.0, 1.0, 0.75)
+					Color128::new(0.0, 1.0, 0.75, 1.0)
 				};
 				material.color_tint(hand_color);
 			}

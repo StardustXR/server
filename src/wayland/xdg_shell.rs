@@ -5,7 +5,7 @@ use super::{
 	utils::*,
 };
 use crate::{
-	core::error::Result,
+	core::error::{Result, ServerError},
 	nodes::{
 		drawable::model::ModelPart,
 		items::panel::{
@@ -406,7 +406,7 @@ impl XdgBackend {
 	}
 }
 impl Backend for XdgBackend {
-	fn start_data(&self) -> Result<PanelItemInitData> {
+	fn start_data(&self) -> Result<PanelItemInitData, ServerError> {
 		let cursor = self
 			.seat
 			.cursor_info_rx
@@ -426,7 +426,7 @@ impl Backend for XdgBackend {
 			.lock()
 			.as_ref()
 			.and_then(|toplevel| toplevel.wl_surface().get_toplevel_info())
-			.ok_or(eyre!("Internal: no toplevel or ToplevelInfo"))?;
+			.ok_or_else(|| ServerError::Report(eyre!("Internal: no toplevel or ToplevelInfo")))?;
 
 		let children = self
 			.children

@@ -17,7 +17,7 @@ pub type Result<T, E = ServerError> = std::result::Result<T, E>;
 pub enum ServerError {
 	#[error("Internal: Unable to get client")]
 	NoClient,
-	#[error("Messenger does not exist for this node")]
+	#[error("Internal: Messenger does not exist for this node")]
 	NoMessenger,
 	#[error("Messenger error: {0}")]
 	MessengerError(#[from] MessengerError),
