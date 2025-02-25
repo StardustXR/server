@@ -69,7 +69,6 @@ color-eyre = { version = "0.6.3", default-features = false }
 thiserror = "2.0.11"
 clap = { version = "4.5.13", features = ["derive"] }
 console-subscriber = { version = "0.4.0", optional = true }
-thiserror = "2.0.9"
 tracing = "0.1.40"
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-tracy = { version = "0.11.1", optional = true }
