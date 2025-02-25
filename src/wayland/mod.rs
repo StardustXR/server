@@ -13,6 +13,7 @@ use std::{
 	io::ErrorKind,
 	os::unix::fs::OpenOptionsExt,
 	path::PathBuf,
+	sync::OnceLock,
 };
 use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
 use tokio_stream::StreamExt;
@@ -22,7 +23,7 @@ use waynest::{
 	wire::{Message, ObjectId},
 };
 
-pub static WAYLAND_DISPLAY: OnceLock<String> = OnceLock::new();
+pub static WAYLAND_DISPLAY: OnceLock<PathBuf> = OnceLock::new();
 
 impl From<waynest::server::Error> for ServerError {
 	fn from(err: waynest::server::Error) -> Self {
