@@ -5,10 +5,7 @@ use crate::wayland::{
 use std::sync::Arc;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
 use waynest::{
-	server::{
-		Client, Dispatcher, Result,
-		protocol::stable::xdg_shell::xdg_toplevel::{State, XdgToplevel as _},
-	},
+	server::{Client, Dispatcher, Result},
 	wire::ObjectId,
 };
 
@@ -56,25 +53,7 @@ impl XdgSurface for Surface {
 			}
 		}
 
-		toplevel
-			.configure(
-				client,
-				toplevel_id,
-				0,
-				0,
-				[
-					State::Activated,
-					State::Maximized,
-					State::TiledTop,
-					State::TiledLeft,
-					State::TiledRight,
-					State::TiledBottom,
-				]
-				.into_iter()
-				.flat_map(|x| (x as u32).to_ne_bytes())
-				.collect(),
-			)
-			.await?;
+		toplevel.reconfigure(client).await?;
 		let serial = client.next_event_serial();
 		self.configure(client, sender_id, serial).await?;
 
