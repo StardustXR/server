@@ -1,13 +1,18 @@
 use crate::wayland::{
-	core::display::Display,
-	xdg::toplevel::{Toplevel, XdgToplevel},
+	core::{display::Display, surface::SurfaceRole},
+	xdg::toplevel::Toplevel,
 };
 use std::sync::Arc;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
 use waynest::{
-	server::{self, Client, Dispatcher, Object, Result},
+	server::{
+		Client, Dispatcher, Result,
+		protocol::stable::xdg_shell::xdg_toplevel::{State, XdgToplevel as _},
+	},
 	wire::ObjectId,
 };
+
+use super::toplevel::Mapped;
 
 #[derive(Debug, Dispatcher)]
 pub struct Surface {
@@ -20,33 +25,79 @@ impl Surface {
 }
 
 impl XdgSurface for Surface {
-	async fn destroy(&self, _object: &Object, _client: &mut Client) -> Result<()> {
+	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}
 
 	async fn get_toplevel(
 		&self,
-		_object: &Object,
 		client: &mut Client,
-		id: ObjectId,
+		sender_id: ObjectId,
+		toplevel_id: ObjectId,
 	) -> Result<()> {
-		let pid = client
-			.get_object(&ObjectId::DISPLAY)
-			.unwrap()
-			.as_dispatcher::<Display>()
-			.unwrap()
-			.pid;
+		let toplevel = client.insert(
+			toplevel_id,
+			Toplevel::new(toplevel_id, self.wl_surface.clone()),
+		);
 
-		let size = self.wl_surface.size().ok_or(server::Error::Internal)?;
-		client.insert(Toplevel::new(pid, size).into_object(id));
+		{
+			let mut surface_role = self.wl_surface.role.lock();
+
+			// A surface must not have any existing role when assigning a new one
+			// "A surface must not have more than one role, and a role must not be assigned to more than one
+			// surface at a time. However, wl_surface role-specific interfaces may reassign the role, allow
+			// a role to be destroyed, or allow multiple role-specific interfaces to share the same role."
+			// - xdg_surface protocol doc
+			if surface_role.is_some() {
+				// We should send "role" error here as per xdg_wm_base.error enum
+				// But we'll ignore for now
+			} else {
+				surface_role.replace(SurfaceRole::XdgToplevel(toplevel.clone()));
+			}
+		}
+
+		toplevel
+			.configure(
+				client,
+				toplevel_id,
+				0,
+				0,
+				[
+					State::Activated,
+					State::Maximized,
+					State::TiledTop,
+					State::TiledLeft,
+					State::TiledRight,
+					State::TiledBottom,
+				]
+				.into_iter()
+				.flat_map(|x| (x as u32).to_ne_bytes())
+				.collect(),
+			)
+			.await?;
+		let serial = client.next_event_serial();
+		self.configure(client, sender_id, serial).await?;
+
+		let pid = client.get::<Display>(ObjectId::DISPLAY).unwrap().pid;
+		self.wl_surface.add_commit_handler(move |surface, _state| {
+			let Some(SurfaceRole::XdgToplevel(toplevel)) = &mut *surface.role.lock() else {
+				return true;
+			};
+			let mut mapped_lock = toplevel.mapped.lock();
+			if mapped_lock.is_none() {
+				mapped_lock.replace(Mapped::create(toplevel.clone(), pid));
+				return false;
+			}
+			true
+		});
 
 		Ok(())
 	}
 
 	async fn get_popup(
 		&self,
-		_object: &Object,
 		_client: &mut Client,
+		_sender_id: ObjectId,
 		_id: ObjectId,
 		_parent: Option<ObjectId>,
 		_positioner: ObjectId,
@@ -56,8 +107,8 @@ impl XdgSurface for Surface {
 
 	async fn set_window_geometry(
 		&self,
-		_object: &Object,
 		_client: &mut Client,
+		_sender_id: ObjectId,
 		_x: i32,
 		_y: i32,
 		_width: i32,
@@ -70,8 +121,8 @@ impl XdgSurface for Surface {
 
 	async fn ack_configure(
 		&self,
-		_object: &Object,
 		_client: &mut Client,
+		_sender_id: ObjectId,
 		_serial: u32,
 	) -> Result<()> {
 		// just gonna apply state immediately, it's fiiiine

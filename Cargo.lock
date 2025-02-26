@@ -308,9 +308,9 @@ checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
 
 [[package]]
 name = "async-trait"
-version = "0.1.85"
+version = "0.1.86"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f934833b4b7233644e5848f235df3f57ed8c80f1528a26c3dfa13d2147fa056"
+checksum = "644dd749086bf3771a2fbc5f256fdb982d53f011c7d5d560304eafeecebce79d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -457,9 +457,9 @@ checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "325918d6fe32f23b19878fe4b34794ae41fc19ddbe53b10571a4874d44ffd39b"
+checksum = "f61dac84819c6588b558454b194026eb1f09c293b9036ae9b159e74e73ab6cf9"
 
 [[package]]
 name = "cc"
@@ -3055,8 +3055,8 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 
 [[package]]
 name = "waynest"
-version = "0.0.19"
-source = "git+https://github.com/technobaboo/waynest.git#94211c1137d52a69c5c127f87265721f24e51bb6"
+version = "0.0.22"
+source = "git+https://github.com/technobaboo/waynest.git#8ac9b2f33936b2e4c0153ab418c390925a5e3483"
 dependencies = [
  "async-trait",
  "bitflags 2.9.0",
@@ -3073,8 +3073,8 @@ dependencies = [
 
 [[package]]
 name = "waynest-macros"
-version = "0.0.2"
-source = "git+https://github.com/technobaboo/waynest.git#94211c1137d52a69c5c127f87265721f24e51bb6"
+version = "0.0.3"
+source = "git+https://github.com/technobaboo/waynest.git#8ac9b2f33936b2e4c0153ab418c390925a5e3483"
 dependencies = [
  "quote",
  "syn 2.0.96",
