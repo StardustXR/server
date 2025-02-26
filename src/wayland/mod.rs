@@ -2,15 +2,13 @@ pub mod core;
 pub mod util;
 pub mod xdg;
 
-use crate::{
-	core::{
-		error::{Result, ServerError},
-		task,
-	},
-	nodes::items::panel::PanelItem,
+use crate::core::{
+	error::{Result, ServerError},
+	task,
 };
 use cluFlock::ToFlock;
 use core::{callback::Callback, display::Display, surface::WL_SURFACE_REGISTRY};
+use mint::Vector2;
 use std::{
 	fs::{self, OpenOptions},
 	io::ErrorKind,
@@ -30,7 +28,7 @@ use waynest::{
 	},
 	wire::ObjectId,
 };
-use xdg::{backend::XdgBackend, toplevel::Toplevel};
+use xdg::toplevel::Toplevel;
 
 pub static WAYLAND_DISPLAY: OnceLock<PathBuf> = OnceLock::new();
 
@@ -87,6 +85,14 @@ pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
 pub enum Message {
 	FrameNotification(Arc<Callback>),
 	CloseToplevel(Arc<Toplevel>),
+	ResizeToplevel {
+		toplevel: Arc<Toplevel>,
+		size: Option<Vector2<u32>>,
+	},
+	SetToplevelVisualActive {
+		toplevel: Arc<Toplevel>,
+		active: bool,
+	},
 }
 
 pub type MessageSink = mpsc::UnboundedSender<Message>;
@@ -156,6 +162,14 @@ impl WaylandClient {
 				callback.done(client, callback.0, serial).await
 			}
 			Message::CloseToplevel(toplevel) => toplevel.close(client, toplevel.object_id).await,
+			Message::ResizeToplevel { toplevel, size } => {
+				toplevel.set_size(size);
+				toplevel.reconfigure(client).await
+			}
+			Message::SetToplevelVisualActive { toplevel, active } => {
+				toplevel.set_activated(active);
+				toplevel.reconfigure(client).await
+			}
 		}
 	}
 }
