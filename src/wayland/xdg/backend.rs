@@ -74,9 +74,34 @@ impl Backend for XdgBackend {
 			));
 	}
 
-	fn auto_size_toplevel(&self) {}
-	fn set_toplevel_size(&self, _size: Vector2<u32>) {}
-	fn set_toplevel_focused_visuals(&self, _focused: bool) {}
+	fn auto_size_toplevel(&self) {
+		let _ =
+			self.toplevel
+				.wl_surface
+				.message_sink
+				.send(crate::wayland::Message::ResizeToplevel {
+					toplevel: self.toplevel.clone(),
+					size: None,
+				});
+	}
+	fn set_toplevel_size(&self, size: Vector2<u32>) {
+		let _ =
+			self.toplevel
+				.wl_surface
+				.message_sink
+				.send(crate::wayland::Message::ResizeToplevel {
+					toplevel: self.toplevel.clone(),
+					size: Some(size),
+				});
+	}
+	fn set_toplevel_focused_visuals(&self, focused: bool) {
+		let _ = self.toplevel.wl_surface.message_sink.send(
+			crate::wayland::Message::SetToplevelVisualActive {
+				toplevel: self.toplevel.clone(),
+				active: focused,
+			},
+		);
+	}
 
 	fn pointer_motion(&self, _surface: &SurfaceId, _position: Vector2<f32>) {}
 	fn pointer_button(&self, _surface: &SurfaceId, _button: u32, _pressed: bool) {}

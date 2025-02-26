@@ -3,6 +3,7 @@ use crate::{
 	nodes::{Node, items::panel::PanelItem},
 	wayland::core::surface::Surface,
 };
+use mint::Vector2;
 use parking_lot::Mutex;
 use std::sync::Arc;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_toplevel::*;
@@ -27,11 +28,26 @@ impl Mapped {
 		}
 	}
 }
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
 struct ToplevelData {
 	parent: Option<u64>,
 	app_id: Option<String>,
 	title: Option<String>,
+	activated: bool,
+	fullscreen: bool,
+	pub size: Option<Vector2<u32>>,
+}
+impl Default for ToplevelData {
+	fn default() -> Self {
+		Self {
+			parent: None,
+			app_id: None,
+			title: None,
+			activated: true,
+			fullscreen: false,
+			size: None,
+		}
+	}
 }
 
 #[derive(Debug, Dispatcher)]
@@ -59,6 +75,43 @@ impl Toplevel {
 	}
 	pub fn title(&self) -> Option<String> {
 		self.data.lock().title.clone()
+	}
+	pub fn set_size(&self, size: Option<Vector2<u32>>) {
+		self.data.lock().size = size;
+	}
+	pub fn set_activated(&self, activated: bool) {
+		self.data.lock().activated = activated;
+	}
+
+	pub async fn reconfigure(&self, client: &mut Client) -> Result<()> {
+		let data = self.data.lock().clone();
+		let mut states = vec![
+			State::TiledTop,
+			State::TiledLeft,
+			State::TiledRight,
+			State::TiledBottom,
+			if data.fullscreen {
+				State::Fullscreen
+			} else {
+				State::Maximized
+			},
+		];
+		if data.activated {
+			states.push(State::Activated);
+		}
+
+		XdgToplevel::configure(
+			self,
+			client,
+			self.object_id,
+			data.size.map(|v| v.x as i32).unwrap_or(0),
+			data.size.map(|v| v.y as i32).unwrap_or(0),
+			states
+				.into_iter()
+				.flat_map(|x| (x as u32).to_ne_bytes())
+				.collect(),
+		)
+		.await
 	}
 }
 impl XdgToplevel for Toplevel {
