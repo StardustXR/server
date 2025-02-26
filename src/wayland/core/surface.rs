@@ -1,30 +1,46 @@
 use super::{buffer::Buffer, callback::Callback};
 use crate::{
 	core::registry::Registry,
+	nodes::{
+		drawable::{
+			model::{MaterialWrapper, ModelPart},
+			shaders::PANEL_SHADER_BYTES,
+		},
+		items::panel::Geometry,
+	},
 	wayland::{
+		Message, MessageSink,
 		util::{ClientExt, DoubleBuffer},
-		MessageSink,
+		xdg::toplevel::Toplevel,
 	},
 };
 use mint::Vector2;
 use parking_lot::Mutex;
 use std::sync::{Arc, OnceLock};
+use stereokit_rust::{material::Material, shader::Shader};
 use waynest::{
 	server::{
-		protocol::core::wayland::{
-			wl_buffer::WlBuffer, wl_callback::WlCallback, wl_output::Transform, wl_surface::*,
-		},
-		Client, Dispatcher, Object, Result,
+		Client, Dispatcher, Result,
+		protocol::core::wayland::{wl_buffer::WlBuffer, wl_output::Transform, wl_surface::*},
 	},
-	wire::{Message, ObjectId},
+	wire::ObjectId,
 };
 
 pub static WL_SURFACE_REGISTRY: Registry<Surface> = Registry::new();
 
 #[derive(Debug, Clone)]
-struct SurfaceState {
-	buffer: Option<Arc<Buffer>>,
-	density: f32,
+pub enum SurfaceRole {
+	XdgToplevel(Arc<Toplevel>),
+	// XDGPopup(Arc<Popup>),
+}
+
+#[derive(Debug, Clone)]
+pub struct SurfaceState {
+	pub buffer: Option<Arc<Buffer>>,
+	pub density: f32,
+	pub geometry: Option<Geometry>,
+	pub min_size: Option<Vector2<u32>>,
+	pub max_size: Option<Vector2<u32>>,
 	clean_lock: OnceLock<()>,
 }
 impl Default for SurfaceState {
@@ -32,26 +48,62 @@ impl Default for SurfaceState {
 		Self {
 			buffer: Default::default(),
 			density: 1.0,
+			geometry: None,
+			min_size: None,
+			max_size: None,
 			clean_lock: Default::default(),
 		}
 	}
 }
 
-#[derive(Debug, Dispatcher)]
+// if returning false, don't run this callback again... just remove it
+pub type OnCommitCallback = Box<dyn Fn(&Surface, &SurfaceState) -> bool + Send + Sync>;
+
+#[derive(Dispatcher)]
 pub struct Surface {
 	state: Mutex<DoubleBuffer<SurfaceState>>,
-	message_sink: MessageSink,
-	frame_callback: Mutex<Option<Message>>,
+	pub message_sink: MessageSink,
+	pub role: Mutex<Option<SurfaceRole>>,
+	frame_callback_object: Mutex<Option<Arc<Callback>>>,
+	on_commit_handlers: Mutex<Vec<OnCommitCallback>>,
+	material: OnceLock<Mutex<MaterialWrapper>>,
+	pending_material_applications: Registry<ModelPart>,
+}
+impl std::fmt::Debug for Surface {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Surface")
+			.field("state", &self.state)
+			.field("message_sink", &self.message_sink)
+			.field("role", &self.role)
+			.field("frame_callback_object", &self.frame_callback_object)
+			.field(
+				"on_commit_handlers",
+				&format!("<{} handlers>", self.on_commit_handlers.lock().len()),
+			)
+			.finish()
+	}
 }
 impl Surface {
 	pub fn new(client: &Client) -> Self {
 		Surface {
 			state: Default::default(),
 			message_sink: client.message_sink(),
-			frame_callback: Default::default(),
+			role: Mutex::new(None),
+			frame_callback_object: Default::default(),
+			on_commit_handlers: Mutex::new(Vec::new()),
+			material: OnceLock::new(),
+			pending_material_applications: Registry::new(),
 		}
 	}
-	pub fn update(&self) {
+
+	pub fn add_commit_handler<F: Fn(&Surface, &SurfaceState) -> bool + Send + Sync + 'static>(
+		&self,
+		handler: F,
+	) {
+		self.on_commit_handlers.lock().push(Box::new(handler));
+	}
+
+	pub fn update_graphics(&self) {
 		let state_lock = self.state.lock();
 		if state_lock.current().clean_lock.get().is_some() {
 			// then we don't need to reupload the texture
@@ -60,26 +112,60 @@ impl Surface {
 		let Some(buffer) = state_lock.current().buffer.clone() else {
 			return;
 		};
+
+		let material = self.material.get_or_init(|| {
+			let shader = Shader::from_memory(PANEL_SHADER_BYTES).unwrap();
+			let material = Material::new(shader, None);
+			Mutex::new(MaterialWrapper(material))
+		});
 		// then we should reupload to the gpu
-		buffer.update_tex();
+		if let Some(new_tex) = buffer.update_tex() {
+			material
+				.lock()
+				.0
+				.get_all_param_info()
+				.set_texture("diffuse", new_tex);
+		}
+		self.apply_surface_materials();
+
 		let _ = state_lock.current().clean_lock.set(());
+	}
+
+	pub fn apply_material(&self, model_part: &Arc<ModelPart>) {
+		tracing::info!("uwu applying material");
+		self.pending_material_applications.add_raw(model_part)
+	}
+
+	fn apply_surface_materials(&self) {
+		if let Some(sk_mat) = self.material.get() {
+			let sk_mat = sk_mat.lock();
+			for model_node in self.pending_material_applications.get_valid_contents() {
+				model_node.replace_material_now(&sk_mat.0);
+			}
+			self.pending_material_applications.clear();
+		}
 	}
 	fn mark_dirty(&self) {
 		self.state.lock().pending.clean_lock = Default::default();
 	}
+	pub fn current_state(&self) -> SurfaceState {
+		self.state.lock().current().clone()
+	}
 	pub fn frame_event(&self) {
-		if let Some(callback_msg) = self.frame_callback.lock().take() {
-			let _ = self.message_sink.send(callback_msg);
+		if let Some(callback_obj) = self.frame_callback_object.lock().take() {
+			let _ = self
+				.message_sink
+				.send(Message::FrameNotification(callback_obj));
 		}
 	}
-	pub fn size(&self) -> Option<Vector2<u32>> {
-		self.state
-			.lock()
-			.current()
-			.buffer
-			.as_ref()
-			.map(|b| [b.size.x as u32, b.size.y as u32].into())
-	}
+	// pub fn size(&self) -> Option<Vector2<u32>> {
+	// 	self.state
+	// 		.lock()
+	// 		.current()
+	// 		.buffer
+	// 		.as_ref()
+	// 		.map(|b| [b.size.x as u32, b.size.y as u32].into())
+	// }
 
 	async fn release_old_buffer(&self, client: &mut Client) -> Result<()> {
 		let (old_buffer, object) = {
@@ -94,12 +180,9 @@ impl Surface {
 			}
 			drop(lock);
 
-			(
-				old_buffer.clone(),
-				client.get_object(&old_buffer.id).unwrap(),
-			)
+			(old_buffer.clone(), old_buffer.id)
 		};
-		old_buffer.release(&object).send(client).await?;
+		old_buffer.release(client, object).await?;
 
 		Ok(())
 	}
@@ -107,22 +190,20 @@ impl Surface {
 impl WlSurface for Surface {
 	async fn attach(
 		&self,
-		_object: &Object,
 		client: &mut Client,
+		_sender_id: ObjectId,
 		buffer: Option<ObjectId>,
 		_x: i32,
 		_y: i32,
 	) -> Result<()> {
-		self.state.lock().pending.buffer = buffer
-			.and_then(|b| client.get_object(&b))
-			.and_then(|b| b.as_dispatcher::<Buffer>().ok());
+		self.state.lock().pending.buffer = buffer.and_then(|b| client.get::<Buffer>(b));
 		Ok(())
 	}
 
 	async fn damage(
 		&self,
-		_object: &Object,
 		_client: &mut Client,
+		_sender_id: ObjectId,
 		_x: i32,
 		_y: i32,
 		_width: i32,
@@ -135,22 +216,19 @@ impl WlSurface for Surface {
 
 	async fn frame(
 		&self,
-		_object: &Object,
 		client: &mut Client,
+		_sender_id: ObjectId,
 		callback_id: ObjectId,
 	) -> Result<()> {
-		let callback = Callback.into_object(callback_id);
-		self.frame_callback
-			.lock()
-			.replace(Callback.done(&callback, 0));
-		client.insert(callback);
+		let callback = client.insert(callback_id, Callback(callback_id));
+		self.frame_callback_object.lock().replace(callback);
 		Ok(())
 	}
 
 	async fn set_opaque_region(
 		&self,
-		_object: &Object,
 		_client: &mut Client,
+		_sender_id: ObjectId,
 		_region: Option<ObjectId>,
 	) -> Result<()> {
 		// nothing we can really do to repaint behind this so ignore it
@@ -159,32 +237,40 @@ impl WlSurface for Surface {
 
 	async fn set_input_region(
 		&self,
-		_object: &Object,
 		_client: &mut Client,
+		_sender_id: ObjectId,
 		_region: Option<ObjectId>,
 	) -> Result<()> {
 		// too complicated to implement this for now so who the hell cares
 		Ok(())
 	}
 
-	async fn commit(&self, _object: &Object, client: &mut Client) -> Result<()> {
+	async fn commit(&self, client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		self.release_old_buffer(client).await?;
-		let mut lock = self.state.lock();
 
-		let dirty =
-			lock.current().clean_lock.get().is_none() || lock.pending.clean_lock.take().is_none();
-		lock.apply();
+		{
+			let mut lock = self.state.lock();
 
-		if !dirty {
-			let _ = lock.current().clean_lock.set(());
+			let dirty = lock.current().clean_lock.get().is_none()
+				|| lock.pending.clean_lock.take().is_none();
+			lock.apply();
+
+			if !dirty {
+				let _ = lock.current().clean_lock.set(());
+			}
 		}
+
+		let current_state = self.current_state();
+		self.on_commit_handlers
+			.lock()
+			.retain(|f| (f)(self, &current_state));
 		Ok(())
 	}
 
 	async fn set_buffer_transform(
 		&self,
-		_object: &Object,
 		_client: &mut Client,
+		_sender_id: ObjectId,
 		_transform: Transform,
 	) -> Result<()> {
 		// we just don't have the output transform or fullscreen at all so this optimization is never needed
@@ -193,8 +279,8 @@ impl WlSurface for Surface {
 
 	async fn set_buffer_scale(
 		&self,
-		_object: &Object,
 		_client: &mut Client,
+		_sender_id: ObjectId,
 		scale: i32,
 	) -> Result<()> {
 		self.state.lock().pending.density = scale as f32;
@@ -203,8 +289,8 @@ impl WlSurface for Surface {
 
 	async fn damage_buffer(
 		&self,
-		_object: &Object,
 		_client: &mut Client,
+		_sender_id: ObjectId,
 		_x: i32,
 		_y: i32,
 		_width: i32,
@@ -215,11 +301,17 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
-	async fn offset(&self, _object: &Object, _client: &mut Client, _x: i32, _y: i32) -> Result<()> {
+	async fn offset(
+		&self,
+		_client: &mut Client,
+		_sender_id: ObjectId,
+		_x: i32,
+		_y: i32,
+	) -> Result<()> {
 		Ok(())
 	}
 
-	async fn destroy(&self, _object: &Object, _client: &mut Client) -> Result<()> {
+	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}
 }

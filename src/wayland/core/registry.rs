@@ -9,12 +9,11 @@ use crate::wayland::{
 };
 pub use waynest::server::protocol::core::wayland::wl_registry::*;
 use waynest::{
-	server::{Client, Dispatcher, Error, Object, Result},
-	wire::NewId,
+	server::{Client, Dispatcher, Error, Result},
+	wire::{NewId, ObjectId},
 };
 
 struct RegistryGlobals;
-
 impl RegistryGlobals {
 	pub const COMPOSITOR: u32 = 0;
 	pub const SHM: u32 = 1;
@@ -27,50 +26,50 @@ impl RegistryGlobals {
 pub struct Registry;
 
 impl Registry {
-	pub async fn advertise_globals(&self, object: &Object, client: &mut Client) -> Result<()> {
+	pub async fn advertise_globals(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
 		self.global(
-			object,
+			client,
+			sender_id,
 			RegistryGlobals::COMPOSITOR,
 			Compositor::INTERFACE.to_string(),
 			Compositor::VERSION,
 		)
-		.send(client)
 		.await?;
 
 		self.global(
-			object,
+			client,
+			sender_id,
 			RegistryGlobals::SHM,
 			Shm::INTERFACE.to_string(),
 			Shm::VERSION,
 		)
-		.send(client)
 		.await?;
 
 		self.global(
-			object,
+			client,
+			sender_id,
 			RegistryGlobals::WM_BASE,
 			WmBase::INTERFACE.to_string(),
 			WmBase::VERSION,
 		)
-		.send(client)
 		.await?;
 
 		self.global(
-			object,
+			client,
+			sender_id,
 			RegistryGlobals::SEAT,
 			Seat::INTERFACE.to_string(),
 			Seat::VERSION,
 		)
-		.send(client)
 		.await?;
 
 		self.global(
-			object,
+			client,
+			sender_id,
 			RegistryGlobals::OUTPUT,
 			Output::INTERFACE.to_string(),
 			Output::VERSION,
 		)
-		.send(client)
 		.await?;
 
 		Ok(())
@@ -80,28 +79,31 @@ impl Registry {
 impl WlRegistry for Registry {
 	async fn bind(
 		&self,
-		_object: &Object,
 		client: &mut Client,
+		_sender_id: ObjectId,
 		name: u32,
 		new_id: NewId,
 	) -> Result<()> {
 		match name {
-			RegistryGlobals::COMPOSITOR => client.insert(Compositor.into_object(new_id.object_id)),
-			RegistryGlobals::SHM => {
-				let shm = Shm.into_object(new_id.object_id);
-
-				shm.as_dispatcher::<Shm>()?
-					.advertise_formats(&shm, client)
-					.await?;
-
-				client.insert(shm);
+			RegistryGlobals::COMPOSITOR => {
+				client.insert(new_id.object_id, Compositor);
 			}
-			RegistryGlobals::WM_BASE => client.insert(WmBase.into_object(new_id.object_id)),
-			RegistryGlobals::SEAT => client.insert(Seat.into_object(new_id.object_id)),
-			RegistryGlobals::OUTPUT => client.insert(Output.into_object(new_id.object_id)),
+			RegistryGlobals::SHM => {
+				let shm = client.insert(new_id.object_id, Shm);
+				shm.advertise_formats(client, new_id.object_id).await?;
+			}
+			RegistryGlobals::WM_BASE => {
+				client.insert(new_id.object_id, WmBase);
+			}
+			RegistryGlobals::SEAT => {
+				client.insert(new_id.object_id, Seat);
+			}
+			RegistryGlobals::OUTPUT => {
+				client.insert(new_id.object_id, Output);
+			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");
-				return Err(Error::Internal);
+				return Err(Error::ObjectNotFound(new_id.object_id));
 			}
 		}
 

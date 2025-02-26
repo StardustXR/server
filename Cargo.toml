@@ -85,7 +85,7 @@ tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
 
 # linux stuffs
 input-event-codes = "6.2.0"
-zbus = { version = "5.0.0", default-features = false, features = ["tokio"] }
+zbus = { version = "5.5.0", default-features = false, features = ["tokio"] }
 directories = "5.0.1"
 xkbcommon-rs = "0.1.0"
 

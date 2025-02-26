@@ -1,4 +1,7 @@
-use waynest::server::{Client, Dispatcher, Object, Result};
+use waynest::{
+	server::{Client, Dispatcher, Result},
+	wire::ObjectId,
+};
 
 pub use waynest::server::protocol::core::wayland::wl_output::*;
 
@@ -6,7 +9,7 @@ pub use waynest::server::protocol::core::wayland::wl_output::*;
 pub struct Output;
 
 impl WlOutput for Output {
-    async fn release(&self, _object: &Object, _client: &mut Client) -> Result<()> {
-        todo!()
-    }
+	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+		todo!()
+	}
 }

@@ -1,11 +1,12 @@
 use super::buffer::{Buffer, BufferBacking};
 use crate::wayland::core::shm::Format;
 use memmap2::{MmapMut, MmapOptions, RemapOptions};
-use parking_lot::{lock_api::MappedMutexGuard, Mutex, MutexGuard, RawMutex};
+use parking_lot::{Mutex, MutexGuard, RawMutex, lock_api::MappedMutexGuard};
 use std::os::fd::OwnedFd;
+
 pub use waynest::server::protocol::core::wayland::wl_shm_pool::*;
 use waynest::{
-	server::{protocol::core::wayland::wl_buffer::WlBuffer, Client, Dispatcher, Object, Result},
+	server::{Client, Dispatcher, Result},
 	wire::ObjectId,
 };
 
@@ -37,8 +38,8 @@ impl ShmPool {
 impl WlShmPool for ShmPool {
 	async fn create_buffer(
 		&self,
-		object: &Object,
 		client: &mut Client,
+		sender_id: ObjectId,
 		id: ObjectId,
 		offset: i32,
 		width: i32,
@@ -47,20 +48,20 @@ impl WlShmPool for ShmPool {
 		format: Format,
 	) -> Result<()> {
 		client.insert(
+			id,
 			Buffer::new(
 				id,
 				offset as usize,
 				stride as usize,
 				[width as usize, height as usize].into(),
 				format,
-				BufferBacking::Shm(object.as_dispatcher()?),
-			)
-			.into_object(id),
+				BufferBacking::Shm(client.get::<ShmPool>(sender_id).unwrap()),
+			),
 		);
 		Ok(())
 	}
 
-	async fn resize(&self, _object: &Object, _client: &mut Client, size: i32) -> Result<()> {
+	async fn resize(&self, _client: &mut Client, _sender_id: ObjectId, size: i32) -> Result<()> {
 		let mut inner = self.inner.lock();
 		unsafe {
 			inner
@@ -70,7 +71,7 @@ impl WlShmPool for ShmPool {
 		Ok(())
 	}
 
-	async fn destroy(&self, _object: &Object, _client: &mut Client) -> Result<()> {
+	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}
 }

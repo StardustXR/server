@@ -2,26 +2,35 @@ pub mod core;
 pub mod util;
 pub mod xdg;
 
-use crate::core::{
-	error::{Result, ServerError},
-	task,
+use crate::{
+	core::{
+		error::{Result, ServerError},
+		task,
+	},
+	nodes::items::panel::PanelItem,
 };
 use cluFlock::ToFlock;
-use core::{display::Display, surface::WL_SURFACE_REGISTRY};
+use core::{callback::Callback, display::Display, surface::WL_SURFACE_REGISTRY};
 use std::{
 	fs::{self, OpenOptions},
 	io::ErrorKind,
 	os::unix::fs::OpenOptionsExt,
 	path::PathBuf,
-	sync::OnceLock,
+	sync::{Arc, OnceLock},
 };
 use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
 use tokio_stream::StreamExt;
 use tracing::{debug_span, instrument};
 use waynest::{
-	server::{self, protocol::core::wayland::wl_display::WlDisplay},
-	wire::{Message, ObjectId},
+	server::{
+		self,
+		protocol::{
+			core::wayland::wl_callback::WlCallback, stable::xdg_shell::xdg_toplevel::XdgToplevel,
+		},
+	},
+	wire::ObjectId,
 };
+use xdg::{backend::XdgBackend, toplevel::Toplevel};
 
 pub static WAYLAND_DISPLAY: OnceLock<PathBuf> = OnceLock::new();
 
@@ -75,6 +84,11 @@ pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
 	None // Exhausted all conventional display numbers
 }
 
+pub enum Message {
+	FrameNotification(Arc<Callback>),
+	CloseToplevel(Arc<Toplevel>),
+}
+
 pub type MessageSink = mpsc::UnboundedSender<Message>;
 
 #[derive(Debug)]
@@ -87,7 +101,7 @@ impl WaylandClient {
 		let mut client = server::Client::new(socket)?;
 		let (message_sink, message_source) = mpsc::unbounded_channel();
 
-		client.insert(Display { message_sink, pid }.into_object(ObjectId::DISPLAY));
+		client.insert(ObjectId::DISPLAY, Display { message_sink, pid });
 		let abort_handle = task::new(
 			|| "wayland client",
 			Self::handle_client_messages(client, message_source),
@@ -98,16 +112,14 @@ impl WaylandClient {
 	}
 	async fn handle_client_messages(
 		mut client: server::Client,
-		mut message_rx: mpsc::UnboundedReceiver<Message>,
+		mut render_message_rx: mpsc::UnboundedReceiver<Message>,
 	) -> Result<()> {
 		loop {
 			tokio::select! {
 				// send all queued up messages
-				msg = message_rx.recv() => {
+				msg = render_message_rx.recv() => {
 					if let Some(msg) = msg {
-						if let Err(e) = client.send_message(msg).await {
-						   tracing::error!("Wayland: Error sending message: {}", e);
-						}
+						Self::handle_render_message(&mut client, msg).await?;
 					}
 				}
 				// handle the next message
@@ -115,12 +127,12 @@ impl WaylandClient {
 					match msg {
 						Ok(Some(mut msg)) => {
 							if let Err(e) = client.handle_message(&mut msg).await {
-								tracing::error!("Wayland: Error handling message: {}", e);
+								tracing::error!("Wayland: Error handling message: {:?}", e);
 								break;
 							}
 						}
 						Err(e) => {
-							tracing::error!("Wayland: Error reading message: {}", e);
+							tracing::error!("Wayland: Error reading message: {:?}", e);
 							break;
 						}
 						Ok(None) => {
@@ -132,6 +144,19 @@ impl WaylandClient {
 			}
 		}
 		Ok(())
+	}
+
+	async fn handle_render_message(
+		client: &mut server::Client,
+		message: Message,
+	) -> Result<(), waynest::server::Error> {
+		match message {
+			Message::FrameNotification(callback) => {
+				let serial = client.next_event_serial();
+				callback.done(client, callback.0, serial).await
+			}
+			Message::CloseToplevel(toplevel) => toplevel.close(client, toplevel.object_id).await,
+		}
 	}
 }
 impl Drop for WaylandClient {
@@ -182,9 +207,9 @@ impl Wayland {
 	}
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self))]
-	pub fn update(&mut self) {
+	pub fn update_graphics(&mut self) {
 		for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
-			surface.update();
+			surface.update_graphics();
 		}
 	}
 
@@ -194,7 +219,6 @@ impl Wayland {
 		}
 	}
 }
-
 impl Drop for Wayland {
 	fn drop(&mut self) {
 		self.abort_handle.abort();

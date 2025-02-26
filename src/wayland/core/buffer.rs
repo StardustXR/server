@@ -9,11 +9,12 @@ use stereokit_rust::{
 };
 pub use waynest::server::protocol::core::wayland::wl_buffer::*;
 use waynest::{
-	server::{protocol::core::wayland::wl_shm::Format, Client, Dispatcher, Object, Result},
+	server::{Dispatcher, Result, protocol::core::wayland::wl_shm::Format},
 	wire::ObjectId,
 };
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum BufferBacking {
 	Shm(Arc<ShmPool>),
 	Dmabuf(()),
@@ -53,14 +54,23 @@ impl Buffer {
 			tex: Mutex::new(tex),
 		}
 	}
-	pub fn update_tex(&self) {
+	pub fn update_tex(&self) -> Option<Tex> {
 		match &self.backing {
 			BufferBacking::Shm(shm_pool) => {
 				let pixel_count = self.size.x * self.size.y;
 				let mut data = Vec::with_capacity(pixel_count);
 				let map_lock = shm_pool.data_lock();
 				let mut cursor = self.offset;
-				for _ in 0..self.size.x {
+
+				// Calculate maximum cursor position needed
+				let max_cursor = self.offset + (self.size.y * self.stride) + (self.size.x * 4);
+
+				// Check if we have enough data
+				if max_cursor > map_lock.len() {
+					return None;
+				}
+
+				for _ in 0..self.size.y {
 					for _ in 0..self.size.x {
 						data.push(Color32 {
 							a: match self.format {
@@ -75,18 +85,14 @@ impl Buffer {
 
 						cursor += 4;
 					}
-					cursor += self.stride;
+					cursor += self.stride - (self.size.x * 4);
 				}
-				self.tex
-					.lock()
-					.set_colors32(self.size.x, self.size.y, data.as_slice());
+				let mut tex = self.tex.lock().clone_ref();
+				tex.set_colors32(self.size.x, self.size.y, data.as_slice());
+				Some(tex)
 			}
-			BufferBacking::Dmabuf(_) => {}
+			BufferBacking::Dmabuf(_) => None,
 		}
 	}
 }
-impl WlBuffer for Buffer {
-	async fn destroy(&self, _object: &Object, _client: &mut Client) -> Result<()> {
-		Ok(())
-	}
-}
+impl WlBuffer for Buffer {}

@@ -307,7 +307,7 @@ fn stereokit_loop(
 
 		tick_internal_client();
 		#[cfg(feature = "wayland")]
-		wayland.update();
+		wayland.update_graphics();
 		drawable::draw(token);
 		audio::update();
 	}

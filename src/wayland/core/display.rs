@@ -1,13 +1,13 @@
 use crate::wayland::{
+	MessageSink,
 	core::{
 		callback::{Callback, WlCallback},
-		registry::{Registry, WlRegistry},
+		registry::Registry,
 	},
-	MessageSink,
 };
 pub use waynest::server::protocol::core::wayland::wl_display::*;
 use waynest::{
-	server::{Client, Dispatcher, Object, Result},
+	server::{Client, Dispatcher, Result},
 	wire::ObjectId,
 };
 
@@ -19,43 +19,29 @@ pub struct Display {
 impl WlDisplay for Display {
 	async fn sync(
 		&self,
-		object: &Object,
 		client: &mut Client,
+		sender_id: ObjectId,
 		callback_id: ObjectId,
 	) -> Result<()> {
 		let serial = client.next_event_serial();
-
-		tracing::info!(serial, "WlDisplay::sync");
-
-		let callback = Callback.into_object(callback_id);
-
-		callback
-			.as_dispatcher::<Callback>()?
-			.done(&callback, serial)
-			.send(client)
+		Callback(callback_id)
+			.done(client, callback_id, serial)
 			.await?;
 
-		self.delete_id(object, callback_id.as_raw())
-			.send(client)
+		self.delete_id(client, sender_id, callback_id.as_raw())
 			.await?;
 		Ok(())
 	}
 
 	async fn get_registry(
 		&self,
-		_object: &Object,
 		client: &mut Client,
+		_sender_id: ObjectId,
 		registry_id: ObjectId,
 	) -> Result<()> {
-		tracing::info!("WlDisplay::get_registry");
-		let registry = Registry.into_object(registry_id);
+		let registry = client.insert(registry_id, Registry);
 
-		registry
-			.as_dispatcher::<Registry>()?
-			.advertise_globals(&registry, client)
-			.await?;
-
-		client.insert(registry);
+		registry.advertise_globals(client, registry_id).await?;
 
 		Ok(())
 	}
