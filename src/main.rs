@@ -283,7 +283,7 @@ fn stereokit_loop(
 		);
 
 		#[cfg(feature = "wayland")]
-		wayland.update();
+		wayland.update_graphics();
 		drawable::draw(token);
 		audio::update();
 	}

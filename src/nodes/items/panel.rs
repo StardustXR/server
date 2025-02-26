@@ -97,6 +97,7 @@ pub trait PanelItemTrait: Send + Sync + 'static {
 	fn send_acceptor_item_created(&self, node: &Node, item: &Arc<Node>);
 }
 
+#[derive(Debug)]
 pub struct PanelItem<B: Backend> {
 	pub node: Weak<Node>,
 	pub backend: Box<B>,
