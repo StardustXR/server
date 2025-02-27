@@ -248,7 +248,11 @@ impl XdgToplevel for Toplevel {
 	}
 
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
-		self.mapped.lock().take();
 		Ok(())
+	}
+}
+impl Drop for Toplevel {
+	fn drop(&mut self) {
+		self.mapped.lock().take();
 	}
 }
