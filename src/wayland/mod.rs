@@ -23,7 +23,8 @@ use waynest::{
 	server::{
 		self,
 		protocol::{
-			core::wayland::wl_callback::WlCallback, stable::xdg_shell::xdg_toplevel::XdgToplevel,
+			core::wayland::{wl_callback::WlCallback, wl_display::WlDisplay},
+			stable::xdg_shell::xdg_toplevel::XdgToplevel,
 		},
 	},
 	wire::ObjectId,
@@ -159,6 +160,12 @@ impl WaylandClient {
 		match message {
 			Message::FrameNotification(callback) => {
 				let serial = client.next_event_serial();
+				client
+					.get::<Display>(ObjectId::DISPLAY)
+					.unwrap()
+					.delete_id(client, ObjectId::DISPLAY, callback.0.as_raw())
+					.await?;
+				client.remove(callback.0);
 				callback.done(client, callback.0, serial).await
 			}
 			Message::CloseToplevel(toplevel) => toplevel.close(client, toplevel.object_id).await,
