@@ -1,4 +1,4 @@
-name: Build
+name: CI
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - "*"
 
 jobs:
-  build_and_package:
+  check:
     runs-on: ubuntu-latest
 
     steps:
@@ -17,13 +17,14 @@ jobs:
         run: sudo apt install -y --no-install-recommends libxkbcommon-dev libstdc++6 libopenxr-dev libx11-dev libxfixes-dev libgl1-mesa-dev libegl1-mesa-dev libgbm-dev libfontconfig-dev libjsoncpp-dev  libxcb1-dev libglx-dev libxcb-glx0-dev libdrm-dev libwayland-dev libfreetype-dev libpng-dev
 
       - name: Install build dependencies
-        run: sudo apt install -y --no-install-recommends cmake ninja-build libfuse2
+        run: sudo apt install -y --no-install-recommends cmake ninja-build
 
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
           toolchain: 1.85.0
           override: true
+          components: rustfmt, clippy
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -32,30 +33,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-            ~/.cargo/bin/cargo-appimage
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      - name: Build server
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-features
+
+      - name: Build
         run: cargo build --release
-
-      - name: Install appimagetool
-        run: |
-          wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-$(uname -m).AppImage -O /usr/local/bin/appimagetool; \
-          chmod +x /usr/local/bin/appimagetool; \
-          sed -i 's|AI\x02|\x00\x00\x00|' /usr/local/bin/appimagetool
-      - name: Install cargo-appimage
-        run: |
-          if [ ! -f ~/.cargo/bin/cargo-appimage ]; then
-            cargo install cargo-appimage
-          fi
-
-      - name: Generate AppImage
-        run: cargo appimage
-
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v4
-        with:
-          name: appimage
-          path: "target/appimage/stardust-xr-server.AppImage"
