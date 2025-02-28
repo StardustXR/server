@@ -1,7 +1,10 @@
 use super::backend::XdgBackend;
 use crate::{
 	nodes::{Node, items::panel::PanelItem},
-	wayland::core::surface::Surface,
+	wayland::{
+		Message,
+		core::surface::{Surface, SurfaceRole},
+	},
 };
 use mint::Vector2;
 use parking_lot::Mutex;
@@ -83,8 +86,28 @@ impl Toplevel {
 		self.data.lock().activated = activated;
 	}
 
+	// Helper to clamp size against constraints
+	fn clamp_size(&self, size: Vector2<u32>) -> Vector2<u32> {
+		let state = self.wl_surface.current_state();
+		let mut clamped = size;
+
+		if let Some(min_size) = state.min_size {
+			clamped.x = clamped.x.max(min_size.x);
+			clamped.y = clamped.y.max(min_size.y);
+		}
+		if let Some(max_size) = state.max_size {
+			clamped.x = clamped.x.min(max_size.x);
+			clamped.y = clamped.y.min(max_size.y);
+		}
+		clamped
+	}
+
 	pub async fn reconfigure(&self, client: &mut Client) -> Result<()> {
 		let data = self.data.lock().clone();
+
+		// Use the explicitly set size, applying constraints
+		let size = data.size.map(|s| self.clamp_size(s));
+
 		let mut states = vec![
 			State::TiledTop,
 			State::TiledLeft,
@@ -104,8 +127,8 @@ impl Toplevel {
 			self,
 			client,
 			self.object_id,
-			data.size.map(|v| v.x as i32).unwrap_or(0),
-			data.size.map(|v| v.y as i32).unwrap_or(0),
+			size.map(|v| v.x as i32).unwrap_or(0),
+			size.map(|v| v.y as i32).unwrap_or(0),
 			states
 				.into_iter()
 				.flat_map(|x| (x as u32).to_ne_bytes())
@@ -206,9 +229,14 @@ impl XdgToplevel for Toplevel {
 		&self,
 		_client: &mut Client,
 		_sender_id: ObjectId,
-		_width: i32,
-		_height: i32,
+		width: i32,
+		height: i32,
 	) -> Result<()> {
+		self.wl_surface.pending_state().pending.max_size = if width == 0 && height == 0 {
+			None
+		} else {
+			Some([width as u32, height as u32].into())
+		};
 		Ok(())
 	}
 
@@ -216,9 +244,14 @@ impl XdgToplevel for Toplevel {
 		&self,
 		_client: &mut Client,
 		_sender_id: ObjectId,
-		_width: i32,
-		_height: i32,
+		width: i32,
+		height: i32,
 	) -> Result<()> {
+		self.wl_surface.pending_state().pending.min_size = if width == 0 && height == 0 {
+			None
+		} else {
+			Some([width as u32, height as u32].into())
+		};
 		Ok(())
 	}
 
