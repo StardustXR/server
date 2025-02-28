@@ -121,9 +121,20 @@ impl Surface {
 		let material = self.material.get_or_init(|| {
 			let shader = Shader::from_memory(PANEL_SHADER_BYTES).unwrap();
 			let material = Material::new(shader, None);
-			Mutex::new(MaterialWrapper(material))
+			let mat_wrapper = MaterialWrapper(material);
+
+			// Set default shader parameters
+			let mut params = mat_wrapper.0.get_all_param_info();
+			params.set_vec2("uv_scale", stereokit_rust::maths::Vec2::new(1.0, 1.0));
+			params.set_vec2("uv_offset", stereokit_rust::maths::Vec2::new(0.0, 0.0));
+			params.set_float("fcFactor", 1.0);
+			params.set_float("ripple", 4.0);
+			params.set_float("alpha_min", 0.0);
+			params.set_float("alpha_max", 1.0);
+
+			Mutex::new(mat_wrapper)
 		});
-		// then we should reupload to the gpu
+
 		if let Some(new_tex) = buffer.update_tex() {
 			material
 				.lock()
