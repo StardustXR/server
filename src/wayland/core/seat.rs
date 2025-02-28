@@ -49,7 +49,7 @@ pub fn fixed_from_f32(f: f32) -> Fixed {
 	unsafe { Fixed::from_raw((f * 256.0).round() as u32) }
 }
 
-#[derive(Debug, Default, Dispatcher)]
+#[derive(Default, Dispatcher)]
 pub struct Seat {
 	pointer: OnceLock<Arc<Pointer>>,
 	keyboard: OnceLock<Arc<Keyboard>>,
@@ -136,7 +136,7 @@ impl WlSeat for Seat {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> Result<()> {
-		let pointer = Arc::new(Pointer(id));
+		let pointer = Arc::new(Pointer::new(id));
 		let _ = self.pointer.set(pointer);
 		Ok(())
 	}
@@ -147,7 +147,7 @@ impl WlSeat for Seat {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> Result<()> {
-		let keyboard = Arc::new(Keyboard(id));
+		let keyboard = Arc::new(Keyboard::new(id));
 		let _ = self.keyboard.set(keyboard);
 		Ok(())
 	}

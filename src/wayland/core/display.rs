@@ -13,7 +13,7 @@ use waynest::{
 	wire::ObjectId,
 };
 
-#[derive(Debug, Dispatcher)]
+#[derive(Dispatcher)]
 pub struct Display {
 	pub message_sink: MessageSink,
 	pub pid: Option<i32>,

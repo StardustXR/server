@@ -1,29 +1,69 @@
-use crate::wayland::core::surface::Surface;
+use crate::wayland::core::{seat::fixed_from_f32, surface::Surface};
 use mint::Vector2;
 use std::sync::Arc;
+use std::sync::Weak;
+use tokio::sync::Mutex;
 pub use waynest::server::protocol::core::wayland::wl_pointer::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
 	wire::ObjectId,
 };
 
-#[derive(Debug, Dispatcher)]
-pub struct Pointer(pub ObjectId);
+#[derive(Dispatcher)]
+pub struct Pointer {
+	pub id: ObjectId,
+	focused_surface: Mutex<Weak<Surface>>,
+}
 impl Pointer {
+	pub fn new(id: ObjectId) -> Self {
+		Self {
+			id,
+			focused_surface: Mutex::new(Weak::new()),
+		}
+	}
+
 	pub async fn handle_pointer_motion(
 		&self,
-		_client: &mut Client,
-		_surface: Arc<Surface>,
-		_position: Vector2<f32>,
+		client: &mut Client,
+		surface: Arc<Surface>,
+		position: Vector2<f32>,
 	) -> Result<()> {
-		// self.motion(
-		// 	client,
-		// 	self.0,
-		// 	0,
-		// 	fixed_from_f32(position.x),
-		// 	fixed_from_f32(position.y),
-		// )
-		// .await
+		let mut focused = self.focused_surface.lock().await;
+
+		// If we're entering a new surface
+		if focused.as_ptr() != Arc::as_ptr(&surface) {
+			// Send leave to old surface if it exists and is still alive
+			if let Some(old_surface) = focused.upgrade() {
+				let serial = client.next_event_serial();
+				self.leave(client, self.id, serial, old_surface.id).await?;
+			}
+
+			// Send enter to new surface
+			let serial = client.next_event_serial();
+			self.enter(
+				client,
+				self.id,
+				serial,
+				surface.id,
+				fixed_from_f32(position.x),
+				fixed_from_f32(position.y),
+			)
+			.await?;
+
+			// Update focused surface
+			*focused = Arc::downgrade(&surface);
+		}
+
+		// Send motion event to current surface
+		self.motion(
+			client,
+			self.id,
+			0, // time
+			fixed_from_f32(position.x),
+			fixed_from_f32(position.y),
+		)
+		.await?;
+
 		Ok(())
 	}
 

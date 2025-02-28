@@ -7,53 +7,52 @@ use waynest::{
 	wire::ObjectId,
 };
 
+use super::seat::fixed_from_f32;
+
 #[derive(Debug, Dispatcher)]
 pub struct Touch(pub ObjectId);
 impl Touch {
 	pub async fn handle_touch_down(
 		&self,
-		_client: &mut Client,
-		_surface: Arc<Surface>,
-		_id: u32,
-		_position: Vector2<f32>,
+		client: &mut Client,
+		surface: Arc<Surface>,
+		id: u32,
+		position: Vector2<f32>,
 	) -> Result<()> {
-		// let serial = client.next_event_serial();
-		// self.down(
-		// 	client,
-		// 	self.0,
-		// 	serial,
-		// 	0,
-		// 	surface.id,
-		// 	id as i32,
-		// 	fixed_from_f32(position.x),
-		// 	fixed_from_f32(position.y),
-		// )
-		// .await
-		Ok(())
+		let serial = client.next_event_serial();
+		self.down(
+			client,
+			self.0,
+			serial,
+			0,
+			surface.id,
+			id as i32,
+			fixed_from_f32(position.x),
+			fixed_from_f32(position.y),
+		)
+		.await
 	}
 
 	pub async fn handle_touch_move(
 		&self,
-		_client: &mut Client,
-		_id: u32,
-		_position: Vector2<f32>,
+		client: &mut Client,
+		id: u32,
+		position: Vector2<f32>,
 	) -> Result<()> {
-		// self.motion(
-		// 	client,
-		// 	self.0,
-		// 	0,
-		// 	id as i32,
-		// 	fixed_from_f32(position.x),
-		// 	fixed_from_f32(position.y),
-		// )
-		// .await
-		Ok(())
+		self.motion(
+			client,
+			self.0,
+			0,
+			id as i32,
+			fixed_from_f32(position.x),
+			fixed_from_f32(position.y),
+		)
+		.await
 	}
 
-	pub async fn handle_touch_up(&self, _client: &mut Client, _id: u32) -> Result<()> {
-		// let serial = client.next_event_serial();
-		// self.up(client, self.0, serial, 0, id as i32).await
-		Ok(())
+	pub async fn handle_touch_up(&self, client: &mut Client, id: u32) -> Result<()> {
+		let serial = client.next_event_serial();
+		self.up(client, self.0, serial, 0, id as i32).await
 	}
 }
 
