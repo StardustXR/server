@@ -23,7 +23,7 @@ use mint::Vector2;
 use parking_lot::Mutex;
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 use std::sync::{Arc, Weak};
-use tracing::{debug, info};
+use tracing::debug;
 
 stardust_xr_server_codegen::codegen_item_panel_protocol!();
 impl Default for Geometry {
@@ -458,12 +458,6 @@ impl<B: Backend> PanelItemTrait for PanelItem<B> {
 			return;
 		};
 		let _ = panel_item_acceptor_client::capture_item(node, item, init_data);
-	}
-}
-impl<B: Backend> Drop for PanelItem<B> {
-	fn drop(&mut self) {
-		// Dropped panel item, basically just a debug breakpoint place
-		info!("Dropped panel item");
 	}
 }
 

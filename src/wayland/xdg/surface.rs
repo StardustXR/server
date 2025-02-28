@@ -3,6 +3,7 @@ use crate::wayland::{
 	xdg::toplevel::Toplevel,
 };
 use std::sync::Arc;
+use std::sync::Weak;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -13,15 +14,22 @@ use super::toplevel::Mapped;
 
 #[derive(Debug, Dispatcher)]
 pub struct Surface {
-	wl_surface: Arc<crate::wayland::core::surface::Surface>,
+	wl_surface: Weak<crate::wayland::core::surface::Surface>,
 	configured: Arc<std::sync::atomic::AtomicBool>,
 }
 impl Surface {
 	pub fn new(wl_surface: Arc<crate::wayland::core::surface::Surface>) -> Self {
 		Self {
-			wl_surface,
+			wl_surface: Arc::downgrade(&wl_surface),
 			configured: Arc::new(std::sync::atomic::AtomicBool::new(false)),
 		}
+	}
+
+	pub fn surface(&self) -> Arc<crate::wayland::core::surface::Surface> {
+		// We can safely unwrap as the surface must exist for the lifetime of the xdg_surface
+		self.wl_surface
+			.upgrade()
+			.expect("Surface was dropped before xdg_surface")
 	}
 }
 
@@ -36,13 +44,11 @@ impl XdgSurface for Surface {
 		sender_id: ObjectId,
 		toplevel_id: ObjectId,
 	) -> Result<()> {
-		let toplevel = client.insert(
-			toplevel_id,
-			Toplevel::new(toplevel_id, self.wl_surface.clone()),
-		);
+		let surface = self.surface();
+		let toplevel = client.insert(toplevel_id, Toplevel::new(toplevel_id, surface.clone()));
 
 		{
-			let mut surface_role = self.wl_surface.role.lock();
+			let mut surface_role = surface.role.lock();
 
 			// A surface must not have any existing role when assigning a new one
 			// "A surface must not have more than one role, and a role must not be assigned to more than one
@@ -63,7 +69,7 @@ impl XdgSurface for Surface {
 
 		let pid = client.get::<Display>(ObjectId::DISPLAY).unwrap().pid;
 		let configured = self.configured.clone();
-		self.wl_surface.add_commit_handler(move |surface, state| {
+		surface.add_commit_handler(move |surface, state| {
 			let Some(SurfaceRole::XdgToplevel(toplevel)) = &mut *surface.role.lock() else {
 				return true;
 			};
@@ -115,9 +121,9 @@ impl XdgSurface for Surface {
 
 	async fn ack_configure(
 		&self,
-		client: &mut Client,
-		sender_id: ObjectId,
-		serial: u32,
+		_client: &mut Client,
+		_sender_id: ObjectId,
+		_serial: u32,
 	) -> Result<()> {
 		self.configured
 			.store(true, std::sync::atomic::Ordering::SeqCst);

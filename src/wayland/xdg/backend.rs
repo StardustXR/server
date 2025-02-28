@@ -33,7 +33,7 @@ impl XdgBackend {
 
 	fn surface_from_id(&self, id: SurfaceId) -> Option<Arc<Surface>> {
 		match id {
-			SurfaceId::Toplevel(_) => Some(self.toplevel().wl_surface.clone()),
+			SurfaceId::Toplevel(_) => Some(self.toplevel().surface()),
 			SurfaceId::Child(_) => None,
 		}
 	}
@@ -41,7 +41,7 @@ impl XdgBackend {
 
 impl Backend for XdgBackend {
 	fn start_data(&self) -> Result<PanelItemInitData> {
-		let surface_state = self.toplevel().wl_surface.current_state();
+		let surface_state = self.toplevel().surface().current_state();
 
 		let size = surface_state
 			.buffer
@@ -75,16 +75,15 @@ impl Backend for XdgBackend {
 
 	fn apply_cursor_material(&self, _model_part: &Arc<ModelPart>) {}
 	fn apply_surface_material(&self, surface: SurfaceId, model_part: &Arc<ModelPart>) {
-		let Some(surface) = self.surface_from_id(surface) else {
-			return;
-		};
-		surface.apply_material(model_part);
+		if let Some(surface) = self.surface_from_id(surface) {
+			surface.apply_material(model_part);
+		}
 	}
+
 	fn close_toplevel(&self) {
-		tracing::info!("closing toplevel");
 		let _ =
 			self.toplevel()
-				.wl_surface
+				.surface()
 				.message_sink
 				.send(crate::wayland::Message::CloseToplevel(
 					self.toplevel().clone(),
@@ -94,25 +93,27 @@ impl Backend for XdgBackend {
 	fn auto_size_toplevel(&self) {
 		let _ =
 			self.toplevel()
-				.wl_surface
+				.surface()
 				.message_sink
 				.send(crate::wayland::Message::ResizeToplevel {
 					toplevel: self.toplevel().clone(),
 					size: None,
 				});
 	}
+
 	fn set_toplevel_size(&self, size: Vector2<u32>) {
 		let _ =
 			self.toplevel()
-				.wl_surface
+				.surface()
 				.message_sink
 				.send(crate::wayland::Message::ResizeToplevel {
 					toplevel: self.toplevel().clone(),
 					size: Some(size),
 				});
 	}
+
 	fn set_toplevel_focused_visuals(&self, focused: bool) {
-		let _ = self.toplevel().wl_surface.message_sink.send(
+		let _ = self.toplevel().surface().message_sink.send(
 			crate::wayland::Message::SetToplevelVisualActive {
 				toplevel: self.toplevel().clone(),
 				active: focused,

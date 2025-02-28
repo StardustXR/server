@@ -104,7 +104,8 @@ impl Surface {
 		&self,
 		handler: F,
 	) {
-		self.on_commit_handlers.lock().push(Box::new(handler));
+		let mut handlers = self.on_commit_handlers.lock();
+		handlers.push(Box::new(handler));
 	}
 
 	pub fn update_graphics(&self) {
@@ -265,9 +266,8 @@ impl WlSurface for Surface {
 		}
 
 		let current_state = self.current_state();
-		self.on_commit_handlers
-			.lock()
-			.retain(|f| (f)(self, &current_state));
+		let mut handlers = self.on_commit_handlers.lock();
+		handlers.retain(|f| (f)(self, &current_state));
 		Ok(())
 	}
 
@@ -316,6 +316,17 @@ impl WlSurface for Surface {
 	}
 
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+		if let Some(role) = self.role.lock().take() {
+			match role {
+				SurfaceRole::XdgToplevel(_) => {}
+			}
+		}
 		Ok(())
+	}
+}
+
+impl Drop for Surface {
+	fn drop(&mut self) {
+		self.role.lock().take();
 	}
 }
