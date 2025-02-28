@@ -70,8 +70,8 @@ impl Buffer {
 					return None;
 				}
 
-				for y in 0..self.size.y {
-					for x in 0..self.size.x {
+				for _y in 0..self.size.y {
+					for _x in 0..self.size.x {
 						let color = Color32 {
 							r: map_lock[cursor + 2], // Red is byte 2
 							g: map_lock[cursor + 1], // Green is byte 1
