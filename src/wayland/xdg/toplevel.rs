@@ -23,7 +23,7 @@ pub struct Mapped {
 impl Mapped {
 	pub fn create(toplevel: Arc<Toplevel>, pid: Option<i32>) -> Self {
 		let (panel_item_node, panel_item) =
-			PanelItem::create(Box::new(XdgBackend { toplevel }), pid);
+			PanelItem::create(Box::new(XdgBackend::new(toplevel)), pid);
 
 		Self {
 			panel_item_node,
