@@ -17,7 +17,7 @@ use play_space::PlaySpaceBounds;
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use std::{
 	marker::PhantomData,
-	sync::{atomic::Ordering, Arc},
+	sync::{Arc, atomic::Ordering},
 };
 use stereokit_rust::{
 	material::Material,
