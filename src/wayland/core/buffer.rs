@@ -62,27 +62,28 @@ impl Buffer {
 				let map_lock = shm_pool.data_lock();
 				let mut cursor = self.offset;
 
-				// Calculate maximum cursor position needed
-				let max_cursor = self.offset + (self.size.y * self.stride) + (self.size.x * 4);
+				// Calculate maximum cursor position needed - stride is already in bytes
+				let max_cursor = self.offset + (self.size.y * self.stride);
 
 				// Check if we have enough data
 				if max_cursor > map_lock.len() {
 					return None;
 				}
 
-				for _ in 0..self.size.y {
-					for _ in 0..self.size.x {
-						data.push(Color32 {
+				for y in 0..self.size.y {
+					for x in 0..self.size.x {
+						let color = Color32 {
+							r: map_lock[cursor + 2], // Red is byte 2
+							g: map_lock[cursor + 1], // Green is byte 1
+							b: map_lock[cursor + 0], // Blue is byte 0
 							a: match self.format {
-								Format::Argb8888 => map_lock[cursor],
-								Format::Xrgb8888 => 255,
-								_ => panic!("what the hell bruh"),
+								Format::Xrgb8888 => 255, // X means ignore alpha, treat as fully opaque
+								Format::Argb8888 => map_lock[cursor + 3], // Use alpha from byte 3 for ARGB
+								_ => panic!("Unsupported format {:?}", self.format),
 							},
-							r: map_lock[cursor + 1],
-							g: map_lock[cursor + 2],
-							b: map_lock[cursor + 3],
-						});
+						};
 
+						data.push(color);
 						cursor += 4;
 					}
 					cursor += self.stride - (self.size.x * 4);
