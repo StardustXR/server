@@ -15,7 +15,7 @@ impl WlCompositor for Compositor {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> Result<()> {
-		let surface = client.insert(id, Surface::new(client));
+		let surface = client.insert(id, Surface::new(client, id));
 		WL_SURFACE_REGISTRY.add_raw(&surface);
 
 		Ok(())

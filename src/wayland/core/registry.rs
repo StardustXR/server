@@ -1,6 +1,7 @@
 use crate::wayland::{
 	core::{
 		compositor::{Compositor, WlCompositor},
+		display::Display,
 		output::{Output, WlOutput},
 		seat::{Seat, WlSeat},
 		shm::{Shm, WlShm},
@@ -96,7 +97,10 @@ impl WlRegistry for Registry {
 				client.insert(new_id.object_id, WmBase);
 			}
 			RegistryGlobals::SEAT => {
-				client.insert(new_id.object_id, Seat);
+				let seat = client.insert(new_id.object_id, Seat::new());
+				if let Some(display) = client.get::<Display>(ObjectId::DISPLAY) {
+					let _ = display.seat.set(seat);
+				}
 			}
 			RegistryGlobals::OUTPUT => {
 				client.insert(new_id.object_id, Output);

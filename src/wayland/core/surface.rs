@@ -61,6 +61,7 @@ pub type OnCommitCallback = Box<dyn Fn(&Surface, &SurfaceState) -> bool + Send +
 
 #[derive(Dispatcher)]
 pub struct Surface {
+	pub id: ObjectId,
 	state: Mutex<DoubleBuffer<SurfaceState>>,
 	pub message_sink: MessageSink,
 	pub role: Mutex<Option<SurfaceRole>>,
@@ -84,8 +85,9 @@ impl std::fmt::Debug for Surface {
 	}
 }
 impl Surface {
-	pub fn new(client: &Client) -> Self {
+	pub fn new(client: &Client, id: ObjectId) -> Self {
 		Surface {
+			id,
 			state: Default::default(),
 			message_sink: client.message_sink(),
 			role: Mutex::new(None),
