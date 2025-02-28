@@ -9,31 +9,48 @@ use crate::{
 };
 use mint::Vector2;
 use std::sync::Arc;
+use std::sync::Weak;
 
 #[derive(Debug)]
 pub struct XdgBackend {
-	pub toplevel: Arc<Toplevel>,
+	toplevel: Weak<Toplevel>,
 }
+
 impl XdgBackend {
+	pub fn new(toplevel: Arc<Toplevel>) -> Self {
+		Self {
+			toplevel: Arc::downgrade(&toplevel),
+		}
+	}
+
+	// Since XdgBackend is created and owned by Mapped which is owned by Toplevel,
+	// we can safely assume the Toplevel reference will always be valid
+	fn toplevel(&self) -> Arc<Toplevel> {
+		self.toplevel
+			.upgrade()
+			.expect("Toplevel should always be valid while XdgBackend exists")
+	}
+
 	fn surface_from_id(&self, id: SurfaceId) -> Option<Arc<Surface>> {
 		match id {
-			SurfaceId::Toplevel(_) => Some(self.toplevel.wl_surface.clone()),
+			SurfaceId::Toplevel(_) => Some(self.toplevel().wl_surface.clone()),
 			SurfaceId::Child(_) => None,
 		}
 	}
 }
+
 impl Backend for XdgBackend {
 	fn start_data(&self) -> Result<PanelItemInitData> {
-		let surface_state = self.toplevel.wl_surface.current_state();
+		let surface_state = self.toplevel().wl_surface.current_state();
 
 		let size = surface_state
 			.buffer
 			.map(|b| [b.size.x as u32, b.size.y as u32].into())
 			.unwrap_or([0; 2].into());
 		let toplevel = ToplevelInfo {
-			parent: self.toplevel.parent(),
-			title: self.toplevel.title(),
-			app_id: self.toplevel.app_id(),
+			parent: self.toplevel().parent(),
+			title: self.toplevel().title(),
+			app_id: self.toplevel().app_id(),
 			size,
 			min_size: surface_state
 				.min_size
@@ -65,39 +82,39 @@ impl Backend for XdgBackend {
 	}
 	fn close_toplevel(&self) {
 		tracing::info!("closing toplevel");
-		let _ = self
-			.toplevel
-			.wl_surface
-			.message_sink
-			.send(crate::wayland::Message::CloseToplevel(
-				self.toplevel.clone(),
-			));
+		let _ =
+			self.toplevel()
+				.wl_surface
+				.message_sink
+				.send(crate::wayland::Message::CloseToplevel(
+					self.toplevel().clone(),
+				));
 	}
 
 	fn auto_size_toplevel(&self) {
 		let _ =
-			self.toplevel
+			self.toplevel()
 				.wl_surface
 				.message_sink
 				.send(crate::wayland::Message::ResizeToplevel {
-					toplevel: self.toplevel.clone(),
+					toplevel: self.toplevel().clone(),
 					size: None,
 				});
 	}
 	fn set_toplevel_size(&self, size: Vector2<u32>) {
 		let _ =
-			self.toplevel
+			self.toplevel()
 				.wl_surface
 				.message_sink
 				.send(crate::wayland::Message::ResizeToplevel {
-					toplevel: self.toplevel.clone(),
+					toplevel: self.toplevel().clone(),
 					size: Some(size),
 				});
 	}
 	fn set_toplevel_focused_visuals(&self, focused: bool) {
-		let _ = self.toplevel.wl_surface.message_sink.send(
+		let _ = self.toplevel().wl_surface.message_sink.send(
 			crate::wayland::Message::SetToplevelVisualActive {
-				toplevel: self.toplevel.clone(),
+				toplevel: self.toplevel().clone(),
 				active: focused,
 			},
 		);
