@@ -25,6 +25,18 @@ jobs:
           toolchain: 1.85.0
           override: true
 
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+            ~/.cargo/bin/cargo-appimage
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
       - name: Build server
         run: cargo build --release
 
@@ -34,7 +46,10 @@ jobs:
           chmod +x /usr/local/bin/appimagetool; \
           sed -i 's|AI\x02|\x00\x00\x00|' /usr/local/bin/appimagetool
       - name: Install cargo-appimage
-        run: cargo install cargo-appimage
+        run: |
+          if [ ! -f ~/.cargo/bin/cargo-appimage ]; then
+            cargo install cargo-appimage
+          fi
 
       - name: Generate AppImage
         run: cargo appimage
