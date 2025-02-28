@@ -96,6 +96,10 @@ impl Surface {
 		}
 	}
 
+	pub fn pending_state(&self) -> parking_lot::MutexGuard<'_, DoubleBuffer<SurfaceState>> {
+		self.state.lock()
+	}
+
 	pub fn add_commit_handler<F: Fn(&Surface, &SurfaceState) -> bool + Send + Sync + 'static>(
 		&self,
 		handler: F,
