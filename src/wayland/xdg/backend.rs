@@ -121,21 +121,101 @@ impl Backend for XdgBackend {
 		);
 	}
 
-	fn pointer_motion(&self, _surface: &SurfaceId, _position: Vector2<f32>) {}
-	fn pointer_button(&self, _surface: &SurfaceId, _button: u32, _pressed: bool) {}
-	fn pointer_scroll(
-		&self,
-		_surface: &SurfaceId,
-		_scroll_distance: Option<Vector2<f32>>,
-		_scroll_steps: Option<Vector2<f32>>,
-	) {
+	fn pointer_motion(&self, surface: &SurfaceId, position: Vector2<f32>) {
+		if let Some(surface) = self.surface_from_id(surface.clone()) {
+			let _ = self
+				.toplevel()
+				.surface()
+				.message_sink
+				.send(crate::wayland::Message::Seat(
+					crate::wayland::core::seat::SeatMessage::PointerMotion { surface, position },
+				));
+		}
 	}
 
-	fn keyboard_key(&self, _surface: &SurfaceId, _keymap_id: u64, _key: u32, _pressed: bool) {}
+	fn pointer_button(&self, surface: &SurfaceId, button: u32, pressed: bool) {
+		if let Some(surface) = self.surface_from_id(surface.clone()) {
+			let _ = self
+				.toplevel()
+				.surface()
+				.message_sink
+				.send(crate::wayland::Message::Seat(
+					crate::wayland::core::seat::SeatMessage::PointerButton {
+						surface,
+						button,
+						pressed,
+					},
+				));
+		}
+	}
 
-	fn touch_down(&self, _surface: &SurfaceId, _id: u32, _position: Vector2<f32>) {}
-	fn touch_move(&self, _id: u32, _position: Vector2<f32>) {}
-	fn touch_up(&self, _id: u32) {}
+	fn pointer_scroll(
+		&self,
+		surface: &SurfaceId,
+		scroll_distance: Option<Vector2<f32>>,
+		scroll_steps: Option<Vector2<f32>>,
+	) {
+		if let Some(surface) = self.surface_from_id(surface.clone()) {
+			let _ = self
+				.toplevel()
+				.surface()
+				.message_sink
+				.send(crate::wayland::Message::Seat(
+					crate::wayland::core::seat::SeatMessage::PointerScroll {
+						surface,
+						scroll_distance,
+						scroll_steps,
+					},
+				));
+		}
+	}
+
+	fn keyboard_key(&self, surface: &SurfaceId, keymap_id: u64, key: u32, pressed: bool) {
+		if let Some(surface) = self.surface_from_id(surface.clone()) {
+			let _ = self
+				.toplevel()
+				.surface()
+				.message_sink
+				.send(crate::wayland::Message::Seat(
+					crate::wayland::core::seat::SeatMessage::KeyboardKey {
+						surface,
+						keymap_id,
+						key,
+						pressed,
+					},
+				));
+		}
+	}
+
+	fn touch_down(&self, surface: &SurfaceId, id: u32, position: Vector2<f32>) {
+		if let Some(surface) = self.surface_from_id(surface.clone()) {
+			let _ = self
+				.toplevel()
+				.surface()
+				.message_sink
+				.send(crate::wayland::Message::Seat(
+					crate::wayland::core::seat::SeatMessage::TouchDown {
+						surface,
+						id,
+						position,
+					},
+				));
+		}
+	}
+
+	fn touch_move(&self, id: u32, position: Vector2<f32>) {
+		let surface = self.toplevel().surface();
+		let _ = surface.message_sink.send(crate::wayland::Message::Seat(
+			crate::wayland::core::seat::SeatMessage::TouchMove { id, position },
+		));
+	}
+
+	fn touch_up(&self, id: u32) {
+		let surface = self.toplevel().surface();
+		let _ = surface.message_sink.send(crate::wayland::Message::Seat(
+			crate::wayland::core::seat::SeatMessage::TouchUp { id },
+		));
+	}
 
 	fn reset_input(&self) {}
 }

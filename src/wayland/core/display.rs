@@ -3,8 +3,10 @@ use crate::wayland::{
 	core::{
 		callback::{Callback, WlCallback},
 		registry::Registry,
+		seat::Seat,
 	},
 };
+use std::sync::{Arc, OnceLock};
 pub use waynest::server::protocol::core::wayland::wl_display::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -15,6 +17,7 @@ use waynest::{
 pub struct Display {
 	pub message_sink: MessageSink,
 	pub pid: Option<i32>,
+	pub seat: OnceLock<Arc<Seat>>,
 }
 impl WlDisplay for Display {
 	async fn sync(

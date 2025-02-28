@@ -6,6 +6,7 @@ use crate::core::{
 	error::{Result, ServerError},
 	task,
 };
+use crate::wayland::core::seat::SeatMessage;
 use cluFlock::ToFlock;
 use core::{callback::Callback, display::Display, surface::WL_SURFACE_REGISTRY};
 use mint::Vector2;
@@ -94,6 +95,7 @@ pub enum Message {
 		toplevel: Arc<Toplevel>,
 		active: bool,
 	},
+	Seat(SeatMessage),
 }
 
 pub type MessageSink = mpsc::UnboundedSender<Message>;
@@ -108,7 +110,14 @@ impl WaylandClient {
 		let mut client = server::Client::new(socket)?;
 		let (message_sink, message_source) = mpsc::unbounded_channel();
 
-		client.insert(ObjectId::DISPLAY, Display { message_sink, pid });
+		client.insert(
+			ObjectId::DISPLAY,
+			Display {
+				message_sink,
+				pid,
+				seat: OnceLock::new(),
+			},
+		);
 		let abort_handle = task::new(
 			|| "wayland client",
 			Self::handle_client_messages(client, message_source),
@@ -176,6 +185,12 @@ impl WaylandClient {
 			Message::SetToplevelVisualActive { toplevel, active } => {
 				toplevel.set_activated(active);
 				toplevel.reconfigure(client).await
+			}
+			Message::Seat(seat_message) => {
+				if let Some(seat) = client.get::<Display>(ObjectId::DISPLAY).unwrap().seat.get() {
+					seat.handle_message(client, seat_message).await?;
+				}
+				Ok(())
 			}
 		}
 	}
