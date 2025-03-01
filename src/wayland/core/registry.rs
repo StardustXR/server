@@ -87,22 +87,34 @@ impl WlRegistry for Registry {
 	) -> Result<()> {
 		match name {
 			RegistryGlobals::COMPOSITOR => {
+				tracing::info!("Binding compositor");
 				client.insert(new_id.object_id, Compositor);
 			}
 			RegistryGlobals::SHM => {
+				tracing::info!("Binding SHM");
 				let shm = client.insert(new_id.object_id, Shm);
 				shm.advertise_formats(client, new_id.object_id).await?;
 			}
 			RegistryGlobals::WM_BASE => {
+				tracing::info!("Binding WM_BASE");
 				client.insert(new_id.object_id, WmBase);
 			}
 			RegistryGlobals::SEAT => {
+				tracing::info!("Binding seat with id {}", new_id.object_id);
 				let seat = client.insert(new_id.object_id, Seat::new());
 				if let Some(display) = client.get::<Display>(ObjectId::DISPLAY) {
-					let _ = display.seat.set(seat);
+					tracing::info!("Setting seat in display");
+					let _ = display.seat.set(seat.clone());
+					tracing::info!("Seat set successfully");
+				} else {
+					tracing::warn!("No display found to set seat");
 				}
+				seat.advertise_capabilities(client, new_id.object_id)
+					.await?;
+				tracing::info!("Seat capabilities advertised");
 			}
 			RegistryGlobals::OUTPUT => {
+				tracing::info!("Binding output");
 				client.insert(new_id.object_id, Output);
 			}
 			id => {

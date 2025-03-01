@@ -150,7 +150,7 @@ impl Surface {
 	}
 
 	pub fn apply_material(&self, model_part: &Arc<ModelPart>) {
-		tracing::info!("uwu applying material");
+		// tracing::info!("uwu applying material");
 		self.pending_material_applications.add_raw(model_part)
 	}
 

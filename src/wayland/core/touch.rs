@@ -54,6 +54,10 @@ impl Touch {
 		let serial = client.next_event_serial();
 		self.up(client, self.0, serial, 0, id as i32).await
 	}
+
+	pub async fn reset(&self, client: &mut Client) -> Result<()> {
+		self.frame(client, self.0).await
+	}
 }
 
 impl WlTouch for Touch {}
