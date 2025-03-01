@@ -10,6 +10,7 @@ use crate::{
 use mint::Vector2;
 use std::sync::Arc;
 use std::sync::Weak;
+use tracing;
 
 #[derive(Debug)]
 pub struct XdgBackend {
@@ -171,6 +172,11 @@ impl Backend for XdgBackend {
 	}
 
 	fn keyboard_key(&self, surface: &SurfaceId, keymap_id: u64, key: u32, pressed: bool) {
+		tracing::info!(
+			"Backend: Keyboard key {} {}",
+			key,
+			if pressed { "pressed" } else { "released" }
+		);
 		if let Some(surface) = self.surface_from_id(surface.clone()) {
 			let _ = self
 				.toplevel()
@@ -188,6 +194,12 @@ impl Backend for XdgBackend {
 	}
 
 	fn touch_down(&self, surface: &SurfaceId, id: u32, position: Vector2<f32>) {
+		tracing::info!(
+			"Backend: Touch down {} at ({}, {})",
+			id,
+			position.x,
+			position.y
+		);
 		if let Some(surface) = self.surface_from_id(surface.clone()) {
 			let _ = self
 				.toplevel()
@@ -204,6 +216,12 @@ impl Backend for XdgBackend {
 	}
 
 	fn touch_move(&self, id: u32, position: Vector2<f32>) {
+		tracing::info!(
+			"Backend: Touch move {} to ({}, {})",
+			id,
+			position.x,
+			position.y
+		);
 		let surface = self.toplevel().surface();
 		let _ = surface.message_sink.send(crate::wayland::Message::Seat(
 			crate::wayland::core::seat::SeatMessage::TouchMove { id, position },
@@ -211,11 +229,18 @@ impl Backend for XdgBackend {
 	}
 
 	fn touch_up(&self, id: u32) {
+		tracing::info!("Backend: Touch up {}", id);
 		let surface = self.toplevel().surface();
 		let _ = surface.message_sink.send(crate::wayland::Message::Seat(
 			crate::wayland::core::seat::SeatMessage::TouchUp { id },
 		));
 	}
 
-	fn reset_input(&self) {}
+	fn reset_input(&self) {
+		tracing::info!("Backend: Reset input");
+		let surface = self.toplevel().surface();
+		let _ = surface.message_sink.send(crate::wayland::Message::Seat(
+			crate::wayland::core::seat::SeatMessage::Reset,
+		));
+	}
 }

@@ -43,6 +43,7 @@ pub enum SeatMessage {
 	TouchUp {
 		id: u32,
 	},
+	Reset,
 }
 
 pub fn fixed_from_f32(f: f32) -> Fixed {
@@ -60,6 +61,15 @@ impl Seat {
 	pub fn new() -> Self {
 		Self::default()
 	}
+
+	pub async fn advertise_capabilities(&self, client: &mut Client, id: ObjectId) -> Result<()> {
+		tracing::debug!("Advertising seat capabilities with id {}", id);
+		let capabilities = Capability::Pointer | Capability::Keyboard | Capability::Touch;
+		WlSeat::capabilities(self, client, id, capabilities).await?;
+		tracing::debug!("Capabilities advertised: {:?}", capabilities);
+		Ok(())
+	}
+
 	pub async fn handle_message(&self, client: &mut Client, message: SeatMessage) -> Result<()> {
 		match message {
 			SeatMessage::PointerMotion { surface, position } => {
@@ -97,10 +107,13 @@ impl Seat {
 				key,
 				pressed,
 			} => {
+				tracing::info!("Handling keyboard key message");
 				if let Some(keyboard) = self.keyboard.get() {
+					tracing::info!("Found keyboard, handling key");
 					keyboard
 						.handle_keyboard_key(client, surface, keymap_id, key, pressed)
 						.await?;
+					tracing::info!("Keyboard key handled successfully");
 				}
 			}
 			SeatMessage::TouchDown {
@@ -108,62 +121,79 @@ impl Seat {
 				id,
 				position,
 			} => {
+				tracing::info!("Handling touch down message");
 				if let Some(touch) = self.touch.get() {
+					tracing::info!("Found touch, handling down");
 					touch
 						.handle_touch_down(client, surface, id, position)
 						.await?;
+					tracing::info!("Touch down handled successfully");
 				}
 			}
 			SeatMessage::TouchMove { id, position } => {
+				tracing::info!("Handling touch move message");
 				if let Some(touch) = self.touch.get() {
+					tracing::info!("Found touch, handling move");
 					touch.handle_touch_move(client, id, position).await?;
+					tracing::info!("Touch move handled successfully");
 				}
 			}
 			SeatMessage::TouchUp { id } => {
+				tracing::info!("Handling touch up message");
 				if let Some(touch) = self.touch.get() {
+					tracing::info!("Found touch, handling up");
 					touch.handle_touch_up(client, id).await?;
+					tracing::info!("Touch up handled successfully");
+				}
+			}
+			SeatMessage::Reset => {
+				tracing::info!("Handling reset message");
+				if let Some(pointer) = self.pointer.get() {
+					pointer.reset(client).await?;
+				}
+				if let Some(keyboard) = self.keyboard.get() {
+					keyboard.reset(client).await?;
+				}
+				if let Some(touch) = self.touch.get() {
+					touch.reset(client).await?;
 				}
 			}
 		}
 		Ok(())
 	}
 }
-
 impl WlSeat for Seat {
 	async fn get_pointer(
 		&self,
-		_client: &mut Client,
+		client: &mut Client,
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> Result<()> {
-		let pointer = Arc::new(Pointer::new(id));
+		let pointer = client.insert(id, Pointer::new(id));
 		let _ = self.pointer.set(pointer);
 		Ok(())
 	}
 
 	async fn get_keyboard(
 		&self,
-		_client: &mut Client,
+		client: &mut Client,
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> Result<()> {
-		let keyboard = Arc::new(Keyboard::new(id));
+		tracing::info!("Getting keyboard");
+		let keyboard = client.insert(id, Keyboard::new(id));
 		let _ = self.keyboard.set(keyboard);
 		Ok(())
 	}
 
 	async fn get_touch(
 		&self,
-		_client: &mut Client,
+		client: &mut Client,
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> Result<()> {
-		let touch = Arc::new(Touch(id));
+		let touch = client.insert(id, Touch(id));
 		let _ = self.touch.set(touch);
-		Ok(())
-	}
-
-	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}
 }
