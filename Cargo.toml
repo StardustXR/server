@@ -88,6 +88,8 @@ input-event-codes = "6.2.0"
 zbus = { version = "5.5.0", default-features = false, features = ["tokio"] }
 directories = "5.0.1"
 xkbcommon-rs = "0.1.0"
+libc = "0.2"
+tempfile = "3.10"
 
 # wayland
 cluFlock = { version = "1.2.7", optional = true } # for the lockfile checking

@@ -3,6 +3,7 @@ use mint::Vector2;
 use std::sync::Arc;
 use std::sync::Weak;
 use tokio::sync::Mutex;
+use tracing;
 pub use waynest::server::protocol::core::wayland::wl_pointer::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -28,18 +29,30 @@ impl Pointer {
 		surface: Arc<Surface>,
 		position: Vector2<f32>,
 	) -> Result<()> {
+		tracing::info!(
+			"Handling pointer motion at ({}, {})",
+			position.x,
+			position.y
+		);
 		let mut focused = self.focused_surface.lock().await;
 
 		// If we're entering a new surface
 		if focused.as_ptr() != Arc::as_ptr(&surface) {
+			tracing::info!("Surface transition detected");
 			// Send leave to old surface if it exists and is still alive
 			if let Some(old_surface) = focused.upgrade() {
 				let serial = client.next_event_serial();
+				tracing::info!("Sending leave event with serial {}", serial);
 				self.leave(client, self.id, serial, old_surface.id).await?;
 			}
 
 			// Send enter to new surface
 			let serial = client.next_event_serial();
+			tracing::info!(
+				"Sending enter event with serial {} to surface {:?}",
+				serial,
+				surface.id
+			);
 			self.enter(
 				client,
 				self.id,
@@ -55,6 +68,7 @@ impl Pointer {
 		}
 
 		// Send motion event to current surface
+		tracing::info!("Sending motion event to surface");
 		self.motion(
 			client,
 			self.id,
@@ -69,59 +83,78 @@ impl Pointer {
 
 	pub async fn handle_pointer_button(
 		&self,
-		_client: &mut Client,
-		_surface: Arc<Surface>,
-		_button: u32,
-		_pressed: bool,
+		client: &mut Client,
+		surface: Arc<Surface>,
+		button: u32,
+		pressed: bool,
 	) -> Result<()> {
-		// let serial = client.next_event_serial();
-		// self.button(
-		// 	client,
-		// 	self.0,
-		// 	serial,
-		// 	0,
-		// 	button,
-		// 	if pressed {
-		// 		ButtonState::Pressed
-		// 	} else {
-		// 		ButtonState::Released
-		// 	},
-		// )
-		// .await
+		tracing::info!(
+			"Handling pointer button {} {} on surface {:?}",
+			button,
+			if pressed { "pressed" } else { "released" },
+			surface.id
+		);
+		let serial = client.next_event_serial();
+		self.button(
+			client,
+			self.id,
+			serial,
+			0, // time
+			button,
+			if pressed {
+				ButtonState::Pressed
+			} else {
+				ButtonState::Released
+			},
+		)
+		.await
+	}
+	pub async fn handle_pointer_scroll(
+		&self,
+		client: &mut Client,
+		_surface: Arc<Surface>,
+		scroll_distance: Option<Vector2<f32>>,
+		scroll_steps: Option<Vector2<f32>>,
+	) -> Result<()> {
+		tracing::info!(
+			"Handling pointer scroll: distance={:?}, steps={:?}",
+			scroll_distance,
+			scroll_steps
+		);
+		if let Some(distance) = scroll_distance {
+			self.axis(
+				client,
+				self.id,
+				0, // time
+				Axis::HorizontalScroll,
+				fixed_from_f32(distance.x),
+			)
+			.await?;
+			self.axis(
+				client,
+				self.id,
+				0, // time
+				Axis::VerticalScroll,
+				fixed_from_f32(distance.y),
+			)
+			.await?;
+		}
+		if let Some(steps) = scroll_steps {
+			self.axis_discrete(client, self.id, Axis::HorizontalScroll, steps.x as i32)
+				.await?;
+			self.axis_discrete(client, self.id, Axis::VerticalScroll, steps.y as i32)
+				.await?;
+		}
 		Ok(())
 	}
 
-	pub async fn handle_pointer_scroll(
-		&self,
-		_client: &mut Client,
-		_surface: Arc<Surface>,
-		_scroll_distance: Option<Vector2<f32>>,
-		_scroll_steps: Option<Vector2<f32>>,
-	) -> Result<()> {
-		// if let Some(distance) = scroll_distance {
-		// 	self.axis(
-		// 		client,
-		// 		self.0,
-		// 		0,
-		// 		Axis::HorizontalScroll,
-		// 		fixed_from_f32(distance.x),
-		// 	)
-		// 	.await?;
-		// 	self.axis(
-		// 		client,
-		// 		self.0,
-		// 		0,
-		// 		Axis::VerticalScroll,
-		// 		fixed_from_f32(distance.y),
-		// 	)
-		// 	.await?;
-		// }
-		// if let Some(steps) = scroll_steps {
-		// 	self.axis_discrete(client, self.0, Axis::HorizontalScroll, steps.x as i32)
-		// 		.await?;
-		// 	self.axis_discrete(client, self.0, Axis::VerticalScroll, steps.y as i32)
-		// 		.await?;
-		// }
+	pub async fn reset(&self, client: &mut Client) -> Result<()> {
+		let mut focused = self.focused_surface.lock().await;
+		if let Some(old_surface) = focused.upgrade() {
+			let serial = client.next_event_serial();
+			self.leave(client, self.id, serial, old_surface.id).await?;
+		}
+		*focused = Weak::new();
 		Ok(())
 	}
 }
