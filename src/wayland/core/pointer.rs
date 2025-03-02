@@ -171,4 +171,7 @@ impl WlPointer for Pointer {
 	) -> Result<()> {
 		Ok(())
 	}
+	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+		Ok(())
+	}
 }

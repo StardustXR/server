@@ -3,11 +3,8 @@ use mint::Vector2;
 use std::sync::Arc;
 use std::sync::OnceLock;
 pub use waynest::server::protocol::core::wayland::wl_seat::*;
-use waynest::wire::Fixed;
-use waynest::{
-	server::{Client, Dispatcher, Result},
-	wire::ObjectId,
-};
+use waynest::server::{Client, Dispatcher, Result};
+use waynest::wire::{Fixed, ObjectId};
 
 #[derive(Debug)]
 pub enum SeatMessage {
@@ -194,6 +191,10 @@ impl WlSeat for Seat {
 	) -> Result<()> {
 		let touch = client.insert(id, Touch(id));
 		let _ = self.touch.set(touch);
+		Ok(())
+	}
+
+	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}
 }
