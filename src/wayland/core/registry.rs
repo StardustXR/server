@@ -119,7 +119,7 @@ impl WlRegistry for Registry {
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");
-				return Err(Error::ObjectNotFound(new_id.object_id));
+				return Err(Error::Internal);
 			}
 		}
 

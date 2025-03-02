@@ -9,7 +9,7 @@ use stereokit_rust::{
 };
 pub use waynest::server::protocol::core::wayland::wl_buffer::*;
 use waynest::{
-	server::{Dispatcher, Result, protocol::core::wayland::wl_shm::Format},
+	server::{Client, Dispatcher, Result, protocol::core::wayland::wl_shm::Format},
 	wire::ObjectId,
 };
 
@@ -75,7 +75,7 @@ impl Buffer {
 						let color = Color32 {
 							r: map_lock[cursor + 2], // Red is byte 2
 							g: map_lock[cursor + 1], // Green is byte 1
-							b: map_lock[cursor + 0], // Blue is byte 0
+							b: map_lock[cursor],     // Blue is byte 0
 							a: match self.format {
 								Format::Xrgb8888 => 255, // X means ignore alpha, treat as fully opaque
 								Format::Argb8888 => map_lock[cursor + 3], // Use alpha from byte 3 for ARGB
@@ -96,4 +96,8 @@ impl Buffer {
 		}
 	}
 }
-impl WlBuffer for Buffer {}
+impl WlBuffer for Buffer {
+	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+		Ok(())
+	}
+}

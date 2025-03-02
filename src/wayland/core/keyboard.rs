@@ -211,4 +211,8 @@ impl Keyboard {
 	}
 }
 
-impl WlKeyboard for Keyboard {}
+impl WlKeyboard for Keyboard {
+	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+		Ok(())
+	}
+}
