@@ -60,4 +60,12 @@ impl Touch {
 	}
 }
 
-impl WlTouch for Touch {}
+impl WlTouch for Touch {
+	async fn release(
+		&self,
+		_client: &mut waynest::server::Client,
+		_sender_id: waynest::wire::ObjectId,
+	) -> Result<()> {
+		Ok(())
+	}
+}

@@ -93,7 +93,7 @@ tempfile = "3.10"
 
 # wayland
 cluFlock = { version = "1.2.7", optional = true } # for the lockfile checking
-waynest = { git = "https://github.com/technobaboo/waynest.git", features = [
+waynest = { git = "https://github.com/verdiwm/waynest.git", features = [
 	"server",
 	"stable",
 ], default-features = false, optional = true }

@@ -58,4 +58,8 @@ impl WlRegion for Region {
 	) -> Result<()> {
 		Ok(())
 	}
+
+	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+		Ok(())
+	}
 }
