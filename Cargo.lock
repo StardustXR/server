@@ -609,9 +609,9 @@ dependencies = [
 
 [[package]]
 name = "console-api"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "86ed14aa9c9f927213c6e4f3ef75faaad3406134efe84ba2cb7983431d5f0931"
+checksum = "8030735ecb0d128428b64cd379809817e620a40e5001c54465b99ec5feec2857"
 dependencies = [
  "futures-core",
  "prost",
@@ -622,9 +622,9 @@ dependencies = [
 
 [[package]]
 name = "console-subscriber"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2e3a111a37f3333946ebf9da370ba5c5577b18eb342ec683eb488dd21980302"
+checksum = "6539aa9c6a4cd31f4b1c040f860a1eac9aa80e7df6b05d506a6e7179936d6a01"
 dependencies = [
  "console-api",
  "crossbeam-channel",
@@ -1257,15 +1257,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
-dependencies = [
- "either",
-]
-
-[[package]]
 name = "itoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1322,7 +1313,7 @@ dependencies = [
  "ascii-canvas",
  "bit-set",
  "ena",
- "itertools 0.11.0",
+ "itertools",
  "lalrpop-util",
  "petgraph",
  "pico-args",
@@ -2023,7 +2014,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acf0c195eebb4af52c752bec4f52f645da98b6e92077a04110c7f349477ae5ac"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools",
  "proc-macro2",
  "quote",
  "syn 2.0.96",
@@ -2706,9 +2697,9 @@ dependencies = [
 
 [[package]]
 name = "tokio-util"
-version = "0.7.12"
+version = "0.7.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "61e7c3654c13bcd040d4a03abee2c75b1d14a37b423cf5a813ceae1cc903ec6a"
+checksum = "d7fcaa8d55a2bdd6b83ace262b016eca0d79ee02818c5c1bcdf0305114081078"
 dependencies = [
  "bytes",
  "futures-core",
@@ -3022,7 +3013,7 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 [[package]]
 name = "waynest"
 version = "0.0.23"
-source = "git+https://github.com/verdiwm/waynest.git#a57d01e42c76b92b11c2bff9c14e074aa82dfdc4"
+source = "git+https://github.com/verdiwm/waynest.git#2e9fc2cc5490ad973572525914282b170fe09df8"
 dependencies = [
  "async-trait",
  "bitflags 2.8.0",
@@ -3040,7 +3031,7 @@ dependencies = [
 [[package]]
 name = "waynest-macros"
 version = "0.0.3"
-source = "git+https://github.com/verdiwm/waynest.git#a57d01e42c76b92b11c2bff9c14e074aa82dfdc4"
+source = "git+https://github.com/verdiwm/waynest.git#2e9fc2cc5490ad973572525914282b170fe09df8"
 dependencies = [
  "quote",
  "syn 2.0.96",
