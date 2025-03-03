@@ -221,6 +221,13 @@ impl Drop for WaylandClient {
 }
 
 #[derive(Debug)]
+pub struct GraphicsInfo {
+	pub egl_instance: khronos_egl::Instance<khronos_egl::Static>,
+	pub display: khronos_egl::Display,
+	pub context: khronos_egl::Context,
+}
+
+#[derive(Debug)]
 pub struct Wayland {
 	abort_handle: AbortHandle,
 }
@@ -262,9 +269,9 @@ impl Wayland {
 	}
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self))]
-	pub fn update_graphics(&mut self) {
+	pub fn update_graphics(&mut self, graphics_info: &GraphicsInfo) {
 		for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
-			surface.update_graphics();
+			surface.update_graphics(graphics_info);
 		}
 	}
 

@@ -19,7 +19,7 @@ pub struct DmabufPlane {
 	pub fd: OwnedFd,
 	pub offset: u32,
 	pub stride: u32,
-	pub modifier: u64,
+	pub _modifier: u64,
 }
 
 /// Parameters for creating a DMA-BUF-based wl_buffer
@@ -39,6 +39,10 @@ impl BufferParams {
 			id,
 			planes: Mutex::new(FxHashMap::default()),
 		}
+	}
+
+	pub fn lock_planes(&self) -> parking_lot::MutexGuard<'_, FxHashMap<u32, DmabufPlane>> {
+		self.planes.lock()
 	}
 }
 
@@ -72,7 +76,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 			fd,
 			offset,
 			stride,
-			modifier: ((modifier_hi as u64) << 32) | (modifier_lo as u64),
+			_modifier: ((modifier_hi as u64) << 32) | (modifier_lo as u64),
 		};
 
 		// Store the plane

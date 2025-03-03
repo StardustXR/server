@@ -1,5 +1,5 @@
 use crate::wayland::{
-	core::shm_buffer_backing::ShmBufferBacking, dmabuf::buffer_backing::DmabufBacking,
+	GraphicsInfo, core::shm_buffer_backing::ShmBufferBacking, dmabuf::buffer_backing::DmabufBacking,
 };
 use mint::Vector2;
 use stereokit_rust::tex::Tex;
@@ -23,10 +23,10 @@ pub struct Buffer {
 
 impl Buffer {
 	/// Returns the tex if it was updated
-	pub fn update_tex(&self) -> Option<Tex> {
+	pub fn update_tex(&self, graphics_info: &GraphicsInfo) -> Option<Tex> {
 		match &self.backing {
 			BufferBacking::Shm(backing) => backing.update_tex(),
-			BufferBacking::Dmabuf(backing) => backing.update_tex(),
+			BufferBacking::Dmabuf(backing) => backing.update_tex(graphics_info),
 		}
 	}
 
