@@ -102,6 +102,7 @@ optional = true
 
 [dependencies.stereokit-rust]
 git = "https://github.com/mvvvv/StereoKit-rust.git"
+rev = "73ffaae6f42aa369e599a6ea0391f77840d682d8"
 features = ["no-event-loop"]
 default-features = false
 

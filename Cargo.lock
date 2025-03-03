@@ -2704,12 +2704,12 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 [[package]]
 name = "stereokit-macros"
 version = "0.1.0"
-source = "git+https://github.com/mvvvv/StereoKit-rust.git#73ffaae6f42aa369e599a6ea0391f77840d682d8"
+source = "git+https://github.com/mvvvv/StereoKit-rust.git?rev=73ffaae6f42aa369e599a6ea0391f77840d682d8#73ffaae6f42aa369e599a6ea0391f77840d682d8"
 
 [[package]]
 name = "stereokit-rust"
 version = "0.1.0"
-source = "git+https://github.com/mvvvv/StereoKit-rust.git#73ffaae6f42aa369e599a6ea0391f77840d682d8"
+source = "git+https://github.com/mvvvv/StereoKit-rust.git?rev=73ffaae6f42aa369e599a6ea0391f77840d682d8#73ffaae6f42aa369e599a6ea0391f77840d682d8"
 dependencies = [
  "android-activity",
  "android_logger",
