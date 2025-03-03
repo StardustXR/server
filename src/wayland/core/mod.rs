@@ -8,6 +8,7 @@ pub mod pointer;
 pub mod registry;
 pub mod seat;
 pub mod shm;
+pub mod shm_buffer_backing;
 pub mod shm_pool;
 pub mod surface;
 pub mod touch;

@@ -6,11 +6,15 @@ use crate::wayland::{
 		seat::{Seat, WlSeat},
 		shm::{Shm, WlShm},
 	},
+	dmabuf::Dmabuf,
 	xdg::wm_base::{WmBase, XdgWmBase},
 };
 pub use waynest::server::protocol::core::wayland::wl_registry::*;
 use waynest::{
-	server::{Client, Dispatcher, Error, Result},
+	server::{
+		Client, Dispatcher, Error, Result,
+		protocol::stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
+	},
 	wire::{NewId, ObjectId},
 };
 
@@ -21,6 +25,7 @@ impl RegistryGlobals {
 	pub const WM_BASE: u32 = 2;
 	pub const SEAT: u32 = 3;
 	pub const OUTPUT: u32 = 4;
+	pub const DMABUF: u32 = 5;
 }
 
 #[derive(Debug, Dispatcher, Default)]
@@ -73,6 +78,15 @@ impl Registry {
 		)
 		.await?;
 
+		self.global(
+			client,
+			sender_id,
+			RegistryGlobals::DMABUF,
+			Dmabuf::INTERFACE.to_string(),
+			Dmabuf::VERSION,
+		)
+		.await?;
+
 		Ok(())
 	}
 }
@@ -116,6 +130,10 @@ impl WlRegistry for Registry {
 			RegistryGlobals::OUTPUT => {
 				tracing::info!("Binding output");
 				client.insert(new_id.object_id, Output);
+			}
+			RegistryGlobals::DMABUF => {
+				tracing::info!("Binding dmabuf");
+				client.insert(new_id.object_id, Dmabuf::new());
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");

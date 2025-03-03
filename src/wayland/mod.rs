@@ -1,4 +1,5 @@
 pub mod core;
+pub mod dmabuf;
 pub mod util;
 pub mod xdg;
 
