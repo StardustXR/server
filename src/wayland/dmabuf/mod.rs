@@ -4,8 +4,6 @@ pub mod feedback;
 
 use buffer_params::BufferParams;
 use feedback::DmabufFeedback;
-use parking_lot::Mutex;
-use rustc_hash::FxHashSet;
 use waynest::{
 	server::{
 		Client, Dispatcher, Result,
@@ -31,7 +29,7 @@ use crate::core::registry::Registry;
 #[derive(Dispatcher)]
 pub struct Dmabuf {
 	// Track supported formats and modifiers
-	formats: Mutex<FxHashSet<u32>>,
+	// formats: Mutex<FxHashSet<DrmFormat>>,
 	// Track active buffer parameters objects by their ID
 	active_params: Registry<BufferParams>,
 }
@@ -39,15 +37,12 @@ pub struct Dmabuf {
 impl Dmabuf {
 	/// Create a new DMA-BUF interface instance
 	pub fn new() -> Self {
+		// let mut formats = FxHashSet::default();
+
 		Self {
-			formats: Mutex::new(FxHashSet::default()),
+			// formats: Mutex::new(formats),
 			active_params: Registry::new(),
 		}
-	}
-
-	/// Add a supported format and its modifiers
-	pub fn add_format(&self, format: u32) {
-		self.formats.lock().insert(format);
 	}
 
 	/// Remove a buffer parameters object from tracking
@@ -57,9 +52,8 @@ impl Dmabuf {
 }
 
 impl ZwpLinuxDmabufV1 for Dmabuf {
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
-		// Clean up any resources associated with this instance
-		self.active_params.clear();
+	async fn destroy(&self, _client: &mut Client, sender_id: ObjectId) -> Result<()> {
+		self.remove_params(sender_id);
 		Ok(())
 	}
 
@@ -82,8 +76,8 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 		id: ObjectId,
 	) -> Result<()> {
 		// Create feedback object for default (non-surface-specific) settings
-		client.insert(id, DmabufFeedback);
-		Ok(())
+		let feedback = client.insert(id, DmabufFeedback);
+		feedback.send_params(client, id).await
 	}
 
 	async fn get_surface_feedback(
@@ -96,7 +90,7 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 		// Create feedback object for surface-specific settings
 		// Note: Surface-specific feedback could be optimized based on the surface's
 		// requirements, but for now we use the same feedback as default
-		client.insert(id, DmabufFeedback);
-		Ok(())
+		let feedback = client.insert(id, DmabufFeedback);
+		feedback.send_params(client, id).await
 	}
 }

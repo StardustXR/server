@@ -22,7 +22,15 @@ path = "src/main.rs"
 
 [features]
 default = ["wayland"]
-wayland = ["dep:cluFlock", "dep:waynest", "dep:tokio-stream", "dep:memmap2"]
+wayland = [
+	"dep:cluFlock",
+	"dep:waynest",
+	"dep:tokio-stream",
+	"dep:memmap2",
+	"dep:drm-fourcc",
+	"dep:khronos-egl",
+	"dep:gl",
+]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy"]
 local_deps = ["stereokit-rust/force-local-deps"]
@@ -99,6 +107,9 @@ waynest = { git = "https://github.com/verdiwm/waynest.git", features = [
 ], default-features = false, optional = true }
 tokio-stream = { version = "0.1.17", optional = true }
 memmap2 = { version = "0.9.5", optional = true }
+drm-fourcc = { version = "2.2.0", optional = true }
+khronos-egl = { version = "6.0.0", features = ["static"], optional = true }
+gl = { version = "0.14.0", optional = true }
 
 [dependencies.stereokit-rust]
 git = "https://github.com/mvvvv/StereoKit-rust.git"

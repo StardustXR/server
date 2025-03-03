@@ -26,7 +26,7 @@ use stereokit_rust::shader::Shader;
 use stereokit_rust::sk::{
 	AppMode, DepthMode, DisplayBlend, OriginMode, QuitReason, SkSettings, sk_quit,
 };
-use stereokit_rust::system::{Handed, Input, LogLevel, Renderer};
+use stereokit_rust::system::{BackendOpenGLESEGL, Handed, Input, LogLevel, Renderer};
 use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
 use stereokit_rust::ui::Ui;
 use stereokit_rust::util::{Color128, Time};
@@ -35,6 +35,7 @@ use tokio::sync::Notify;
 use tracing::metadata::LevelFilter;
 use tracing::{debug_span, error, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use wayland::GraphicsInfo;
 use zbus::Connection;
 use zbus::fdo::ObjectManager;
 
@@ -249,6 +250,14 @@ fn stereokit_loop(
 		}
 	}
 
+	let graphics_info = unsafe {
+		GraphicsInfo {
+			egl_instance: khronos_egl::Instance::new(khronos_egl::Static),
+			display: khronos_egl::Display::from_ptr(BackendOpenGLESEGL::display()),
+			context: khronos_egl::Context::from_ptr(BackendOpenGLESEGL::context()),
+		}
+	};
+
 	#[cfg(feature = "wayland")]
 	let mut wayland = wayland::Wayland::new(None).expect("Could not initialize wayland");
 	sk_ready_notifier.notify_waiters();
@@ -283,7 +292,7 @@ fn stereokit_loop(
 		);
 
 		#[cfg(feature = "wayland")]
-		wayland.update_graphics();
+		wayland.update_graphics(&graphics_info);
 		drawable::draw(token);
 		audio::update();
 	}
