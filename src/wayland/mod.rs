@@ -8,7 +8,7 @@ use crate::core::{
 };
 use crate::wayland::core::seat::SeatMessage;
 use cluFlock::ToFlock;
-use core::{callback::Callback, display::Display, surface::WL_SURFACE_REGISTRY};
+use core::{buffer::Buffer, callback::Callback, display::Display, surface::WL_SURFACE_REGISTRY};
 use mint::Vector2;
 use std::{
 	fs::{self, OpenOptions},
@@ -24,7 +24,7 @@ use waynest::{
 	server::{
 		self,
 		protocol::{
-			core::wayland::{wl_callback::WlCallback, wl_display::WlDisplay},
+			core::wayland::{wl_buffer::WlBuffer, wl_callback::WlCallback, wl_display::WlDisplay},
 			stable::xdg_shell::xdg_toplevel::XdgToplevel,
 		},
 	},
@@ -85,7 +85,8 @@ pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
 }
 
 pub enum Message {
-	FrameNotification(Arc<Callback>),
+	Frame(Arc<Callback>),
+	ReleaseBuffer(Arc<Buffer>),
 	CloseToplevel(Arc<Toplevel>),
 	ResizeToplevel {
 		toplevel: Arc<Toplevel>,
@@ -167,7 +168,7 @@ impl WaylandClient {
 		message: Message,
 	) -> Result<(), waynest::server::Error> {
 		match message {
-			Message::FrameNotification(callback) => {
+			Message::Frame(callback) => {
 				let serial = client.next_event_serial();
 				client
 					.get::<Display>(ObjectId::DISPLAY)
@@ -177,6 +178,7 @@ impl WaylandClient {
 				client.remove(callback.0);
 				callback.done(client, callback.0, serial).await
 			}
+			Message::ReleaseBuffer(buffer) => buffer.release(client, buffer.id).await,
 			Message::CloseToplevel(toplevel) => toplevel.close(client, toplevel.object_id).await,
 			Message::ResizeToplevel { toplevel, size } => {
 				toplevel.set_size(size);
