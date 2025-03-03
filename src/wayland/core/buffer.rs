@@ -88,7 +88,8 @@ impl Buffer {
 					}
 					cursor += self.stride - (self.size.x * 4);
 				}
-				let mut tex = self.tex.lock().clone_ref();
+				let tex_id = self.tex.lock().get_id().to_string();
+				let mut tex = Tex::find(tex_id).unwrap();
 				tex.set_colors32(self.size.x, self.size.y, data.as_slice());
 				Some(tex)
 			}
