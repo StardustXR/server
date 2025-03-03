@@ -15,6 +15,13 @@ pub enum BufferBacking {
 	Dmabuf(DmabufBacking),
 }
 
+impl BufferBacking {
+	// Returns true if the buffer can be released immediately after texture update
+	pub fn can_release_after_update(&self) -> bool {
+		matches!(self, BufferBacking::Shm(_))
+	}
+}
+
 #[derive(Debug, Dispatcher)]
 pub struct Buffer {
 	pub id: ObjectId,
@@ -28,6 +35,10 @@ impl Buffer {
 			BufferBacking::Shm(backing) => backing.update_tex(),
 			BufferBacking::Dmabuf(backing) => backing.update_tex(graphics_info),
 		}
+	}
+
+	pub fn can_release_after_update(&self) -> bool {
+		self.backing.can_release_after_update()
 	}
 
 	pub fn size(&self) -> Vector2<usize> {
