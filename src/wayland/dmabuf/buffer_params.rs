@@ -49,10 +49,16 @@ impl BufferParams {
 	}
 }
 
+impl Drop for BufferParams {
+	fn drop(&mut self) {
+		// Clean up any remaining planes - this will close the file descriptors
+		self.planes.get_mut().clear();
+	}
+}
+
 impl ZwpLinuxBufferParamsV1 for BufferParams {
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
-		// Clean up any resources - file descriptors will be closed when DmabufPlane is dropped
-		self.planes.lock().clear();
+		// Don't clear planes here - they will be cleaned up when the last Arc reference is dropped
 		Ok(())
 	}
 
