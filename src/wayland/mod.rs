@@ -12,7 +12,7 @@ use core::{buffer::Buffer, callback::Callback, display::Display, surface::WL_SUR
 use mint::Vector2;
 use std::{
 	fs::{self, OpenOptions},
-	io::ErrorKind,
+	io::{self, ErrorKind},
 	os::unix::fs::OpenOptionsExt,
 	path::PathBuf,
 	sync::{Arc, OnceLock},
@@ -28,7 +28,7 @@ use waynest::{
 			stable::xdg_shell::xdg_toplevel::XdgToplevel,
 		},
 	},
-	wire::ObjectId,
+	wire::{DecodeError, ObjectId},
 };
 use xdg::toplevel::Toplevel;
 
@@ -149,6 +149,13 @@ impl WaylandClient {
 							}
 						}
 						Err(e) => {
+							// wayland clients really aren't nice when disconnecting properly, are they? :p
+							if let server::Error::Decode(DecodeError::IoError(e)) = &e {
+								if e.kind() == io::ErrorKind::ConnectionReset {
+									tracing::info!("Wayland: Client disconnected from server");
+									break;
+								}
+							}
 							tracing::error!("Wayland: Error reading message: {:?}", e);
 							break;
 						}
