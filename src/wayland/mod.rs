@@ -152,7 +152,11 @@ impl WaylandClient {
 							// wayland clients really aren't nice when disconnecting properly, are they? :p
 							if let server::Error::Decode(DecodeError::IoError(e)) = &e {
 								if e.kind() == io::ErrorKind::ConnectionReset {
-									tracing::info!("Wayland: Client disconnected from server");
+									if let Some(pid) = client.get::<Display>(ObjectId::DISPLAY).and_then(|d| d.pid) {
+										tracing::info!("Wayland: Client with pid: {pid} disconnected from server");
+									} else {
+										tracing::info!("Wayland: Unknown client disconnected from server");
+									}
 									break;
 								}
 							}
@@ -160,6 +164,11 @@ impl WaylandClient {
 							break;
 						}
 						Ok(None) => {
+							if let Some(pid) = client.get::<Display>(ObjectId::DISPLAY).and_then(|d| d.pid) {
+								tracing::info!("Wayland: Client with pid: {pid} disconnected from server");
+							} else {
+								tracing::info!("Wayland: Unknown client disconnected from server");
+							}
 							// Message stream ended
 							break;
 						}
