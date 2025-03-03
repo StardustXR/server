@@ -1,5 +1,8 @@
 use super::buffer_backing::DmabufBacking;
-use crate::wayland::core::buffer::{Buffer, BufferBacking};
+use crate::wayland::{
+	core::buffer::{Buffer, BufferBacking},
+	util::ClientExt,
+};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::os::fd::OwnedFd;
@@ -87,7 +90,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 	async fn create(
 		&self,
 		client: &mut Client,
-		_sender_id: ObjectId,
+		sender_id: ObjectId,
 		width: i32,
 		height: i32,
 		format: u32,
@@ -96,7 +99,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		// Create the buffer with DMA-BUF backing using self as the backing
 		let size = [width as usize, height as usize].into();
 		let backing = DmabufBacking::new(client.get::<Self>(self.id).unwrap(), size, format, flags);
-		let id = ObjectId::new(rand::random::<u32>()).unwrap();
+		let id = client.display().next_server_id();
 		let buffer = Buffer {
 			id,
 			backing: BufferBacking::Dmabuf(backing),
@@ -105,7 +108,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		client.insert(id, buffer);
 
 		// Send the created event with the new buffer
-		self.created(client, _sender_id, id).await
+		self.created(client, sender_id, id).await
 	}
 
 	async fn create_immed(
@@ -127,7 +130,6 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		};
 
 		client.insert(buffer_id, buffer);
-
 		Ok(())
 	}
 }

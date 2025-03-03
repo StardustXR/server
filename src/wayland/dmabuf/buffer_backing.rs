@@ -13,7 +13,7 @@ use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_
 const EGL_WIDTH: i32 = 0x3057;
 const EGL_HEIGHT: i32 = 0x3056;
 const EGL_LINUX_DRM_FOURCC_EXT: i32 = 0x3272;
-const EGL_DMA_BUF_PLANE0_FD_EXT: i32 = 0x3272;
+const EGL_DMA_BUF_PLANE0_FD_EXT: i32 = 0x3373;
 const EGL_DMA_BUF_PLANE0_OFFSET_EXT: i32 = 0x3273;
 const EGL_DMA_BUF_PLANE0_PITCH_EXT: i32 = 0x3274;
 const EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT: i32 = 0x3443;
