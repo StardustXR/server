@@ -67,8 +67,8 @@ impl DmabufFeedback {
 		// - format: u32
 		// - padding: 4 bytes
 		// - modifier: u64
-		let format = DrmFourcc::Abgr8888 as u32;
-		let modifier: u64 = 0;
+		let format = DrmFourcc::Xrgb8888 as u32; // This is what clients typically want
+		let modifier: u64 = 0; // Linear modifier
 
 		// Write the format+modifier pair
 		let bytes = mmap.as_mut();

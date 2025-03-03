@@ -112,14 +112,7 @@ impl WaylandClient {
 		let mut client = server::Client::new(socket)?;
 		let (message_sink, message_source) = mpsc::unbounded_channel();
 
-		client.insert(
-			ObjectId::DISPLAY,
-			Display {
-				message_sink,
-				pid,
-				seat: OnceLock::new(),
-			},
-		);
+		client.insert(ObjectId::DISPLAY, Display::new(message_sink, pid));
 		let abort_handle = task::new(
 			|| "wayland client",
 			Self::handle_client_messages(client, message_source),

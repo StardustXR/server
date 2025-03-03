@@ -3,6 +3,7 @@ pub mod buffer_params;
 pub mod feedback;
 
 use buffer_params::BufferParams;
+use drm_fourcc::DrmFourcc;
 use feedback::DmabufFeedback;
 use waynest::{
 	server::{
@@ -45,6 +46,15 @@ impl Dmabuf {
 		}
 	}
 
+	pub async fn send_modifiers(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
+		let format = DrmFourcc::Xrgb8888 as u32;
+		let modifier_hi = 0u32; // Linear modifier high 32 bits
+		let modifier_lo = 0u32; // Linear modifier low 32 bits
+		self.modifier(client, sender_id, format, modifier_hi, modifier_lo)
+			.await?;
+		Ok(())
+	}
+
 	/// Remove a buffer parameters object from tracking
 	pub(crate) fn remove_params(&self, params_id: ObjectId) {
 		self.active_params.retain(|params| params.id != params_id);
@@ -76,8 +86,9 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 		id: ObjectId,
 	) -> Result<()> {
 		// Create feedback object for default (non-surface-specific) settings
-		let feedback = client.insert(id, DmabufFeedback);
-		feedback.send_params(client, id).await
+		client.insert(id, DmabufFeedback);
+		// feedback.send_params(client, id).await?;
+		Ok(())
 	}
 
 	async fn get_surface_feedback(
@@ -90,7 +101,8 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 		// Create feedback object for surface-specific settings
 		// Note: Surface-specific feedback could be optimized based on the surface's
 		// requirements, but for now we use the same feedback as default
-		let feedback = client.insert(id, DmabufFeedback);
-		feedback.send_params(client, id).await
+		client.insert(id, DmabufFeedback);
+		// feedback.send_params(client, id).await?;
+		Ok(())
 	}
 }

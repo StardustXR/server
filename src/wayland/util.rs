@@ -1,11 +1,12 @@
 #![allow(unused)]
 
 use super::{MessageSink, core::display::Display};
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 use waynest::{server::Client, wire::ObjectId};
 
 pub trait ClientExt {
 	fn message_sink(&self) -> MessageSink;
+	fn display(&self) -> Arc<Display>;
 }
 impl ClientExt for Client {
 	fn message_sink(&self) -> MessageSink {
@@ -14,16 +15,11 @@ impl ClientExt for Client {
 			.message_sink
 			.clone()
 	}
-}
 
-// pub trait ObjectIdExt {
-// 	fn upgrade(&self, client: &Client) -> Option<Object>;
-// }
-// impl ObjectIdExt for ObjectId {
-// 	fn upgrade(&self, client: &Client) -> Option<Object> {
-// 		client.get_object(self)
-// 	}
-// }
+	fn display(&self) -> Arc<Display> {
+		self.get::<Display>(ObjectId::DISPLAY).unwrap()
+	}
+}
 
 #[derive(Debug, Default)]
 pub struct DoubleBuffer<State: Debug + Clone> {

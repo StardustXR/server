@@ -6,6 +6,7 @@ use crate::wayland::{
 		seat::Seat,
 	},
 };
+use global_counter::primitive::exact::CounterU32;
 use std::sync::{Arc, OnceLock};
 pub use waynest::server::protocol::core::wayland::wl_display::*;
 use waynest::{
@@ -18,6 +19,20 @@ pub struct Display {
 	pub message_sink: MessageSink,
 	pub pid: Option<i32>,
 	pub seat: OnceLock<Arc<Seat>>,
+	id_counter: CounterU32,
+}
+impl Display {
+	pub fn new(message_sink: MessageSink, pid: Option<i32>) -> Self {
+		Self {
+			message_sink,
+			pid,
+			seat: OnceLock::new(),
+			id_counter: CounterU32::new(0xff000000), // Start at 0xff000000 to avoid conflicts with client-generated IDs
+		}
+	}
+	pub fn next_server_id(&self) -> ObjectId {
+		unsafe { ObjectId::from_raw(self.id_counter.inc()) }
+	}
 }
 impl WlDisplay for Display {
 	async fn sync(
