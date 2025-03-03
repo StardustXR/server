@@ -21,7 +21,7 @@ use stereokit_rust::{material::Material, shader::Shader};
 use waynest::{
 	server::{
 		Client, Dispatcher, Result,
-		protocol::core::wayland::{wl_buffer::WlBuffer, wl_output::Transform, wl_surface::*},
+		protocol::core::wayland::{wl_output::Transform, wl_surface::*},
 	},
 	wire::ObjectId,
 };
@@ -144,6 +144,9 @@ impl Surface {
 				.get_all_param_info()
 				.set_texture("diffuse", new_tex);
 		}
+		let _ = self
+			.message_sink
+			.send(Message::ReleaseBuffer(buffer.clone()));
 		self.apply_surface_materials();
 
 		let _ = state_lock.current().clean_lock.set(());
@@ -171,9 +174,7 @@ impl Surface {
 	}
 	pub fn frame_event(&self) {
 		if let Some(callback_obj) = self.frame_callback_object.lock().take() {
-			let _ = self
-				.message_sink
-				.send(Message::FrameNotification(callback_obj));
+			let _ = self.message_sink.send(Message::Frame(callback_obj));
 		}
 	}
 	// pub fn size(&self) -> Option<Vector2<u32>> {
@@ -185,25 +186,25 @@ impl Surface {
 	// 		.map(|b| [b.size.x as u32, b.size.y as u32].into())
 	// }
 
-	async fn release_old_buffer(&self, client: &mut Client) -> Result<()> {
-		let (old_buffer, object) = {
-			let lock = self.state.lock();
+	// pub async fn release_old_buffer(&self, client: &mut Client) -> Result<()> {
+	// 	let (old_buffer, object) = {
+	// 		let lock = self.state.lock();
 
-			let Some(old_buffer) = lock.current().buffer.clone() else {
-				return Ok(());
-			};
-			let new_buffer = lock.pending.buffer.as_ref();
-			if new_buffer.map(Arc::as_ptr) == Some(Arc::as_ptr(&old_buffer)) {
-				return Ok(());
-			}
-			drop(lock);
+	// 		let Some(old_buffer) = lock.current().buffer.clone() else {
+	// 			return Ok(());
+	// 		};
+	// 		let new_buffer = lock.pending.buffer.as_ref();
+	// 		if new_buffer.map(Arc::as_ptr) == Some(Arc::as_ptr(&old_buffer)) {
+	// 			return Ok(());
+	// 		}
+	// 		drop(lock);
 
-			(old_buffer.clone(), old_buffer.id)
-		};
-		old_buffer.release(client, object).await?;
+	// 		(old_buffer.clone(), old_buffer.id)
+	// 	};
+	// 	old_buffer.release(client, object).await?;
 
-		Ok(())
-	}
+	// 	Ok(())
+	// }
 }
 impl WlSurface for Surface {
 	async fn attach(
@@ -263,9 +264,7 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
-	async fn commit(&self, client: &mut Client, _sender_id: ObjectId) -> Result<()> {
-		self.release_old_buffer(client).await?;
-
+	async fn commit(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		{
 			let mut lock = self.state.lock();
 
