@@ -1,37 +1,37 @@
-use super::buffer::{Buffer, BufferBacking};
-use crate::wayland::core::shm::Format;
-use memmap2::{MmapMut, MmapOptions, RemapOptions};
+use memmap2::{MmapOptions, RemapOptions};
 use parking_lot::{Mutex, MutexGuard, RawMutex, lock_api::MappedMutexGuard};
-use std::os::fd::OwnedFd;
-
-pub use waynest::server::protocol::core::wayland::wl_shm_pool::*;
+use std::os::fd::{IntoRawFd, OwnedFd};
 use waynest::{
-	server::{Client, Dispatcher, Result},
+	server::{Client, Dispatcher, Result, protocol::core::wayland::wl_shm::Format},
 	wire::ObjectId,
 };
 
-#[derive(Debug)]
-struct ShmPoolInner {
-	_fd: OwnedFd,
-	map: MmapMut,
-}
+use crate::wayland::core::buffer::{Buffer, BufferBacking};
+
+pub use waynest::server::protocol::core::wayland::wl_shm_pool::*;
+
+use super::shm_buffer_backing::ShmBufferBacking;
 
 #[derive(Debug, Dispatcher)]
 pub struct ShmPool {
-	inner: Mutex<ShmPoolInner>,
+	inner: Mutex<memmap2::MmapMut>,
 }
 
 impl ShmPool {
 	pub fn new(fd: OwnedFd, size: i32) -> Result<Self> {
-		let size = size as usize;
-		let file = unsafe { MmapOptions::new().len(size).map_mut(&fd)? };
+		let map = unsafe {
+			MmapOptions::new()
+				.len(size as usize)
+				.map_mut(&fd.into_raw_fd())?
+		};
 
 		Ok(Self {
-			inner: Mutex::new(ShmPoolInner { _fd: fd, map: file }),
+			inner: Mutex::new(map),
 		})
 	}
+
 	pub fn data_lock(&self) -> MappedMutexGuard<RawMutex, [u8]> {
-		MutexGuard::map(self.inner.lock(), |i| i.map.as_mut())
+		MutexGuard::map(self.inner.lock(), |i| i.as_mut())
 	}
 }
 
@@ -47,27 +47,27 @@ impl WlShmPool for ShmPool {
 		stride: i32,
 		format: Format,
 	) -> Result<()> {
+		let params = ShmBufferBacking::new(
+			client.get::<ShmPool>(sender_id).unwrap(),
+			offset as usize,
+			stride as usize,
+			[width as usize, height as usize].into(),
+			format,
+		);
+
 		client.insert(
 			id,
-			Buffer::new(
+			Buffer {
 				id,
-				offset as usize,
-				stride as usize,
-				[width as usize, height as usize].into(),
-				format,
-				BufferBacking::Shm(client.get::<ShmPool>(sender_id).unwrap()),
-			),
+				backing: BufferBacking::Shm(params),
+			},
 		);
 		Ok(())
 	}
 
 	async fn resize(&self, _client: &mut Client, _sender_id: ObjectId, size: i32) -> Result<()> {
 		let mut inner = self.inner.lock();
-		unsafe {
-			inner
-				.map
-				.remap(size as usize, RemapOptions::new().may_move(true))?
-		};
+		unsafe { inner.remap(size as usize, RemapOptions::new().may_move(true))? };
 		Ok(())
 	}
 
