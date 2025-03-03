@@ -143,12 +143,16 @@ impl Surface {
 				.0
 				.get_all_param_info()
 				.set_texture("diffuse", new_tex);
-		}
-		let _ = self
-			.message_sink
-			.send(Message::ReleaseBuffer(buffer.clone()));
-		self.apply_surface_materials();
 
+			// For SHM buffers, we can release immediately after copying to GPU
+			if buffer.can_release_after_update() {
+				let _ = self
+					.message_sink
+					.send(Message::ReleaseBuffer(buffer.clone()));
+			}
+		}
+
+		self.apply_surface_materials();
 		let _ = state_lock.current().clean_lock.set(());
 	}
 
@@ -267,6 +271,20 @@ impl WlSurface for Surface {
 	async fn commit(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		{
 			let mut lock = self.state.lock();
+
+			// If we're getting a new buffer and the current one is DMA-BUF, release it
+			if let Some(new_buffer) = &lock.pending.buffer {
+				if let Some(current_buffer) = &lock.current().buffer {
+					// Don't release if it's the same buffer being reused
+					if !Arc::ptr_eq(new_buffer, current_buffer)
+						&& !current_buffer.can_release_after_update()
+					{
+						let _ = self
+							.message_sink
+							.send(Message::ReleaseBuffer(current_buffer.clone()));
+					}
+				}
+			}
 
 			let dirty = lock.current().clean_lock.get().is_none()
 				|| lock.pending.clean_lock.take().is_none();
