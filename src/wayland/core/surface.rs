@@ -9,7 +9,7 @@ use crate::{
 		items::panel::Geometry,
 	},
 	wayland::{
-		GraphicsInfo, Message, MessageSink,
+		Message, MessageSink,
 		util::{ClientExt, DoubleBuffer},
 		xdg::toplevel::Toplevel,
 	},
@@ -110,7 +110,7 @@ impl Surface {
 		handlers.push(Box::new(handler));
 	}
 
-	pub fn update_graphics(&self, graphics_info: &GraphicsInfo) {
+	pub fn update_graphics(&self) {
 		let state_lock = self.state.lock();
 		if state_lock.current().clean_lock.get().is_some() {
 			// then we don't need to reupload the texture
@@ -137,7 +137,7 @@ impl Surface {
 			Mutex::new(mat_wrapper)
 		});
 
-		if let Some(new_tex) = buffer.update_tex(graphics_info) {
+		if let Some(new_tex) = buffer.update_tex() {
 			material
 				.lock()
 				.0

@@ -55,13 +55,7 @@ impl WlShmPool for ShmPool {
 			format,
 		);
 
-		client.insert(
-			id,
-			Buffer {
-				id,
-				backing: BufferBacking::Shm(params),
-			},
-		);
+		Buffer::new(client, id, BufferBacking::Shm(params));
 		Ok(())
 	}
 
