@@ -9,7 +9,13 @@ use crate::core::{
 };
 use crate::wayland::core::seat::SeatMessage;
 use cluFlock::ToFlock;
-use core::{buffer::Buffer, callback::Callback, display::Display, surface::WL_SURFACE_REGISTRY};
+use core::{
+	buffer::{BUFFER_REGISTRY, Buffer},
+	callback::Callback,
+	display::Display,
+	surface::WL_SURFACE_REGISTRY,
+};
+use dmabuf::buffer_params::BufferParams;
 use mint::Vector2;
 use std::{
 	fs::{self, OpenOptions},
@@ -26,7 +32,10 @@ use waynest::{
 		self,
 		protocol::{
 			core::wayland::{wl_buffer::WlBuffer, wl_callback::WlCallback, wl_display::WlDisplay},
-			stable::xdg_shell::xdg_toplevel::XdgToplevel,
+			stable::{
+				linux_dmabuf_v1::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
+				xdg_shell::xdg_toplevel::XdgToplevel,
+			},
 		},
 	},
 	wire::{DecodeError, ObjectId},
@@ -88,6 +97,8 @@ pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
 pub enum Message {
 	Frame(Arc<Callback>),
 	ReleaseBuffer(Arc<Buffer>),
+	DmabufImportSuccess(Arc<BufferParams>, Arc<Buffer>),
+	DmabufImportFailure(Arc<BufferParams>),
 	CloseToplevel(Arc<Toplevel>),
 	ResizeToplevel {
 		toplevel: Arc<Toplevel>,
@@ -188,6 +199,13 @@ impl WaylandClient {
 				client.remove(callback.0);
 				callback.done(client, callback.0, serial).await
 			}
+			Message::DmabufImportSuccess(params, buffer) => {
+				params.created(client, params.id, buffer.id).await
+			}
+			Message::DmabufImportFailure(params) => {
+				client.remove(params.id);
+				params.failed(client, params.id).await
+			}
 			Message::ReleaseBuffer(buffer) => buffer.release(client, buffer.id).await,
 			Message::CloseToplevel(toplevel) => toplevel.close(client, toplevel.object_id).await,
 			Message::ResizeToplevel { toplevel, size } => {
@@ -262,13 +280,16 @@ impl Wayland {
 	}
 
 	#[instrument(level = "debug", name = "Wayland frame", skip(self))]
-	pub fn update_graphics(&mut self, graphics_info: &GraphicsInfo) {
+	pub fn update_graphics(&mut self) {
 		for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
-			surface.update_graphics(graphics_info);
+			surface.update_graphics();
 		}
 	}
 
-	pub fn frame_event(&self) {
+	pub fn early_frame(&self, graphics_info: &GraphicsInfo) {
+		for buffer in BUFFER_REGISTRY.get_valid_contents() {
+			buffer.init_tex(graphics_info);
+		}
 		for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
 			surface.frame_event();
 		}

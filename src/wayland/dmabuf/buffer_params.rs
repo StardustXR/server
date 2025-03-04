@@ -3,9 +3,10 @@ use crate::wayland::{
 	core::buffer::{Buffer, BufferBacking},
 	util::ClientExt,
 };
+use drm_fourcc::DrmFourcc;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use std::os::fd::OwnedFd;
+use std::os::fd::{AsRawFd, OwnedFd};
 use waynest::{
 	server::{
 		Client, Dispatcher, Result,
@@ -38,6 +39,7 @@ pub struct BufferParams {
 
 impl BufferParams {
 	pub fn new(id: ObjectId) -> Self {
+		tracing::info!("Creating new BufferParams with id {:?}", id);
 		Self {
 			id,
 			planes: Mutex::new(FxHashMap::default()),
@@ -49,16 +51,9 @@ impl BufferParams {
 	}
 }
 
-impl Drop for BufferParams {
-	fn drop(&mut self) {
-		// Clean up any remaining planes - this will close the file descriptors
-		self.planes.get_mut().clear();
-	}
-}
-
 impl ZwpLinuxBufferParamsV1 for BufferParams {
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
-		// Don't clear planes here - they will be cleaned up when the last Arc reference is dropped
+		tracing::info!("Destroying BufferParams {:?}", self.id);
 		Ok(())
 	}
 
@@ -73,11 +68,24 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		modifier_hi: u32,
 		modifier_lo: u32,
 	) -> Result<()> {
+		let fd_num = fd.as_raw_fd();
+		tracing::info!(
+			"Adding plane {} with fd {} to BufferParams {:?}",
+			plane_idx,
+			fd_num,
+			self.id
+		);
+
 		let mut planes = self.planes.lock();
 
 		// Check if plane index is already set
 		if planes.contains_key(&plane_idx) {
-			return Err(waynest::server::Error::MissingObject(self.id)); // TODO: Use proper error type when available
+			tracing::error!(
+				"Plane {} already exists in BufferParams {:?}",
+				plane_idx,
+				self.id
+			);
+			return Err(waynest::server::Error::MissingObject(self.id));
 		}
 
 		// Create plane with the provided parameters
@@ -96,25 +104,26 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 	async fn create(
 		&self,
 		client: &mut Client,
-		sender_id: ObjectId,
+		_sender_id: ObjectId,
 		width: i32,
 		height: i32,
 		format: u32,
 		flags: Flags,
 	) -> Result<()> {
+		tracing::info!("Creating buffer from BufferParams {:?}", self.id);
 		// Create the buffer with DMA-BUF backing using self as the backing
 		let size = [width as usize, height as usize].into();
-		let backing = DmabufBacking::new(client.get::<Self>(self.id).unwrap(), size, format, flags);
+		let backing = DmabufBacking::new(
+			client.get::<Self>(self.id).unwrap(),
+			Some(client.display().message_sink.clone()),
+			size,
+			DrmFourcc::try_from(format).unwrap(),
+			flags,
+		);
 		let id = client.display().next_server_id();
-		let buffer = Buffer {
-			id,
-			backing: BufferBacking::Dmabuf(backing),
-		};
+		Buffer::new(client, id, BufferBacking::Dmabuf(backing));
 
-		client.insert(id, buffer);
-
-		// Send the created event with the new buffer
-		self.created(client, sender_id, id).await
+		Ok(())
 	}
 
 	async fn create_immed(
@@ -129,13 +138,26 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 	) -> Result<()> {
 		// Create the buffer with DMA-BUF backing using self as the backing
 		let size = [width as usize, height as usize].into();
-		let backing = DmabufBacking::new(client.get::<Self>(self.id).unwrap(), size, format, flags);
-		let buffer = Buffer {
-			id: buffer_id,
-			backing: BufferBacking::Dmabuf(backing),
-		};
+		let backing = DmabufBacking::new(
+			client.get::<Self>(self.id).unwrap(),
+			None,
+			size,
+			DrmFourcc::try_from(format).unwrap(),
+			flags,
+		);
+		Buffer::new(client, buffer_id, BufferBacking::Dmabuf(backing));
 
-		client.insert(buffer_id, buffer);
 		Ok(())
+	}
+}
+
+impl Drop for BufferParams {
+	fn drop(&mut self) {
+		let planes = self.planes.get_mut();
+		tracing::info!("BufferParams being dropped with {} planes", planes.len());
+		for (idx, plane) in planes.iter() {
+			tracing::info!("Dropping plane {} with fd {}", idx, plane.fd.as_raw_fd());
+		}
+		planes.clear();
 	}
 }

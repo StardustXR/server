@@ -302,7 +302,7 @@ fn stereokit_loop(
 
 		camera::update(token);
 		#[cfg(feature = "wayland")]
-		wayland.frame_event();
+		wayland.early_frame(&graphics_info);
 		destroy_queue::clear();
 
 		objects.update(&sk, token, &dbus_connection, &object_registry);
@@ -316,7 +316,7 @@ fn stereokit_loop(
 
 		tick_internal_client();
 		#[cfg(feature = "wayland")]
-		wayland.update_graphics(&graphics_info);
+		wayland.update_graphics();
 		drawable::draw(token);
 		audio::update();
 	}
