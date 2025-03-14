@@ -95,7 +95,8 @@ impl CoreSurface {
 		});
 
 		// Import all surface buffers into textures
-		if import_surface_tree(renderer, &wl_surface).is_err() {
+		if let Err(err) = import_surface_tree(renderer, &wl_surface) {
+			tracing::error!("Failed to import surface tree for surface {}: {}", wl_surface.id(), err);
 			return;
 		}
 
@@ -107,25 +108,11 @@ impl CoreSurface {
 		let Some(wl_surface) = self.wl_surface() else {
 			return;
 		};
-		let mapped = wl_surface
-			.get_data_raw::<RendererSurfaceStateUserData, _, _>(|surface_states| {
-				surface_states.lock().unwrap().buffer().is_some()
-			})
-			.unwrap_or(false);
-
-		if !mapped {
-			return;
-		}
-
-		let mut mapped_data = self.mapped_data.lock();
 
 		let Some(smithay_tex) = wl_surface
 			.get_data_raw::<RendererSurfaceStateUserData, _, _>(|surface_states| {
-				surface_states
-					.lock()
-					.unwrap()
-					.texture::<GlesRenderer>(renderer.id())
-					.cloned()
+				let locked = surface_states.lock().unwrap();
+				locked.texture::<GlesRenderer>(renderer.id()).cloned()
 			})
 			.flatten()
 		else {
@@ -133,9 +120,11 @@ impl CoreSurface {
 		};
 
 		let Some(sk_tex) = self.sk_tex.get() else {
+			tracing::error!("No sk_tex found for surface");
 			return;
 		};
 		let Some(sk_mat) = self.sk_mat.get() else {
+			tracing::error!("No sk_mat found for surface");
 			return;
 		};
 		sk_tex
@@ -160,7 +149,7 @@ impl CoreSurface {
 		let new_mapped_data = CoreSurfaceData {
 			wl_tex: Some(SendWrapper::new(smithay_tex)),
 		};
-		*mapped_data = Some(new_mapped_data);
+		*self.mapped_data.lock() = Some(new_mapped_data);
 	}
 
 	pub fn frame(&self, output: Output) {
