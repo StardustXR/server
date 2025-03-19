@@ -67,12 +67,16 @@ struct CliArgs {
 	/// Restore the session with the given ID (or `latest`), ignoring the startup script. Sessions are stored in directories at `~/.local/state/stardust/`.
 	#[clap(id = "SESSION_ID", long = "restore", action)]
 	restore: Option<String>,
+	/// this should fix nvidia issues, it'll only help on driver 565+
+	/// and only if running under wayland, probably
+	#[clap(long)]
+	nvidia: bool,
 }
 
 static STARDUST_INSTANCE: OnceLock<String> = OnceLock::new();
 
-// #[tokio::main]
-#[tokio::main(flavor = "current_thread")]
+// #[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() {
 	color_eyre::install().unwrap();
 
@@ -97,6 +101,20 @@ async fn main() {
 	registry.with(log_layer).init();
 
 	let cli_args = CliArgs::parse();
+
+	if cli_args.nvidia && !cli_args.flatscreen {
+		// Only call this while singlethreaded since it can/will cause raceconditions with other
+		// functions reading or writing from the env
+		unsafe {
+			std::env::set_var("__GLX_VENDOR_LIBRARY_NAME", "mesa");
+			std::env::set_var(
+				"__EGL_VENDOR_LIBRARY_FILENAMES",
+				"/usr/share/glvnd/egl_vendor.d/50_mesa.json",
+			);
+			std::env::set_var("MESA_LOADER_DRIVER_OVERRIDE", "zink");
+			std::env::set_var("GALLIUM_DRIVER", "zink");
+		}
+	}
 
 	let socket_path =
 		server::get_free_socket_path().expect("Unable to find a free stardust socket path");
