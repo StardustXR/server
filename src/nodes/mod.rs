@@ -12,8 +12,7 @@ use crate::core::client::Client;
 use crate::core::error::{Result, ServerError};
 use crate::core::registry::Registry;
 use crate::core::scenegraph::MethodResponseSender;
-use parking_lot::Mutex;
-use rustc_hash::FxHashMap;
+use dashmap::DashMap;
 use serde::{Serialize, de::DeserializeOwned};
 use spatial::Spatial;
 use stardust_xr::messenger::MessageSenderHandle;
@@ -190,7 +189,6 @@ impl Node {
 			let aspect = self
 				.aspects
 				.0
-				.lock()
 				.get(&aspect_id)
 				.ok_or(ScenegraphError::AspectNotFound)?
 				.clone();
@@ -229,7 +227,7 @@ impl Node {
 				response,
 			)
 		} else {
-			let Some(aspect) = self.aspects.0.lock().get(&aspect_id).cloned() else {
+			let Some(aspect) = self.aspects.0.get(&aspect_id).map(|v| v.clone()) else {
 				response.send(Err(ScenegraphError::AspectNotFound));
 				return;
 			};
@@ -324,7 +322,7 @@ pub trait Aspect: Any + Send + Sync + 'static {
 }
 
 #[derive(Default)]
-struct Aspects(Mutex<FxHashMap<u64, Arc<dyn Aspect>>>);
+struct Aspects(DashMap<u64, Arc<dyn Aspect>>);
 impl Aspects {
 	fn add<A: AspectIdentifier>(&self, t: A) -> Arc<A> {
 		let aspect = Arc::new(t);
@@ -332,13 +330,13 @@ impl Aspects {
 		aspect
 	}
 	fn add_raw<A: AspectIdentifier>(&self, aspect: Arc<A>) {
-		self.0.lock().insert(A::ID, aspect);
+		self.0.insert(A::ID, aspect);
 	}
 	fn get<A: Aspect + AspectIdentifier>(&self) -> Result<Arc<A>> {
 		self.0
-			.lock()
 			.get(&A::ID)
-			.cloned()
+			// .cloned doesn't work for some reason
+			.map(|v| v.clone())
 			.map(|a| a.as_any())
 			.and_then(|a| Arc::downcast(a).ok())
 			.ok_or(ServerError::NoAspect(TypeId::of::<A>()))
@@ -346,6 +344,7 @@ impl Aspects {
 }
 impl Drop for Aspects {
 	fn drop(&mut self) {
-		self.0.lock().clear()
+		// why would this be needed? do drop impls not run otherwise?
+		self.0.clear()
 	}
 }
