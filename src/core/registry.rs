@@ -1,19 +1,18 @@
 #![allow(dead_code)]
 
+use dashmap::DashMap;
 use parking_lot::{MappedMutexGuard, Mutex, MutexGuard, const_mutex};
 use rustc_hash::FxHashMap;
+use std::ops::Deref;
 use std::ptr;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 
 #[derive(Debug)]
-pub struct Registry<T: Send + Sync + ?Sized>(Mutex<Option<FxHashMap<usize, Weak<T>>>>);
+pub struct Registry<T: Send + Sync + ?Sized>(MaybeLazy<DashMap<usize, Weak<T>>>);
 
 impl<T: Send + Sync + ?Sized> Registry<T> {
 	pub const fn new() -> Self {
-		Registry(const_mutex(None))
-	}
-	fn lock(&self) -> MappedMutexGuard<FxHashMap<usize, Weak<T>>> {
-		MutexGuard::map(self.0.lock(), |r| r.get_or_insert_with(FxHashMap::default))
+		Registry(MaybeLazy::Lazy(LazyLock::new(DashMap::default)))
 	}
 	pub fn add(&self, t: T) -> Arc<T>
 	where
@@ -24,30 +23,29 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 		t_arc
 	}
 	pub fn add_raw(&self, t: &Arc<T>) {
-		self.lock()
+		self.0
 			.insert(Arc::as_ptr(t) as *const () as usize, Arc::downgrade(t));
 	}
 	pub fn contains(&self, t: &T) -> bool {
-		self.lock()
+		self.0
 			.contains_key(&(ptr::addr_of!(*t) as *const () as usize))
 	}
 	pub fn get_changes(old: &Registry<T>, new: &Registry<T>) -> (Vec<Arc<T>>, Vec<Arc<T>>) {
-		let old = old.lock();
-		let new = new.lock();
-
 		let mut added = Vec::new();
 		let mut removed = Vec::new();
 
-		for (id, entry) in new.iter() {
+		for pair in new.0.iter() {
+			let (id, entry) = pair.pair();
 			if let Some(entry) = entry.upgrade() {
-				if !old.contains_key(id) {
+				if !old.0.contains_key(id) {
 					added.push(entry);
 				}
 			}
 		}
-		for (id, entry) in old.iter() {
+		for pair in old.0.iter() {
+			let (id, entry) = pair.pair();
 			if let Some(entry) = entry.upgrade() {
-				if !new.contains_key(id) {
+				if !new.0.contains_key(id) {
 					removed.push(entry);
 				}
 			}
@@ -55,57 +53,77 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 		(added, removed)
 	}
 	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
-		self.lock()
+		self.0
 			.iter()
-			.filter_map(|pair| pair.1.upgrade())
+			.filter_map(|pair| pair.value().upgrade())
 			.collect()
 	}
 	pub fn set(&self, other: &Registry<T>) {
-		self.lock().clone_from(&other.lock());
+		self.clear();
+		for (key, value) in other.0.deref().clone().into_iter() {
+			self.0.insert(key, value);
+		}
 	}
 	pub fn take_valid_contents(&self) -> Vec<Arc<T>> {
-		self.0
-			.lock()
-			.take()
-			.unwrap_or_default()
-			.into_iter()
-			.filter_map(|pair| pair.1.upgrade())
-			.collect()
+		let contents = self.get_valid_contents();
+		self.0.clear();
+		contents
 	}
 	pub fn retain<F: Fn(&Arc<T>) -> bool>(&self, f: F) {
-		self.lock().retain(|_, v| {
+		self.0.retain(|_, v| {
 			let Some(v) = v.upgrade() else {
+				// why would we want to retain things we can't upgrade?
 				return true;
 			};
 			(f)(&v)
 		})
 	}
 	pub fn remove(&self, t: &T) {
-		self.lock()
-			.remove(&(ptr::addr_of!(*t) as *const () as usize));
+		self.0.remove(&(ptr::addr_of!(*t) as *const () as usize));
 	}
 	pub fn clear(&self) {
-		self.lock().clear();
+		self.0.clear();
 	}
 	pub fn is_empty(&self) -> bool {
-		let registry = self.0.lock();
-		let Some(registry) = &*registry else {
-			return true;
-		};
-		if registry.is_empty() {
+		if self.0.is_empty() {
 			return true;
 		}
-		registry.values().all(|v| v.strong_count() == 0)
+		self.0.iter().all(|v| v.value().strong_count() == 0)
 	}
 }
+
 impl<T: Send + Sync + ?Sized> Clone for Registry<T> {
 	fn clone(&self) -> Self {
-		Self(Mutex::new(self.0.lock().clone()))
+		Self(self.0.clone())
 	}
 }
 impl<T: Send + Sync + ?Sized> Default for Registry<T> {
 	fn default() -> Self {
 		Self::new()
+	}
+}
+
+#[derive(Debug)]
+enum MaybeLazy<T> {
+	Lazy(LazyLock<T>),
+	NonLazy(T),
+}
+impl<T: Clone> Clone for MaybeLazy<T> {
+	fn clone(&self) -> Self {
+		match self {
+			MaybeLazy::Lazy(lazy_lock) => Self::NonLazy(lazy_lock.deref().clone()),
+			MaybeLazy::NonLazy(v) => Self::NonLazy(v.clone()),
+		}
+	}
+}
+impl<T> Deref for MaybeLazy<T> {
+	type Target = T;
+
+	fn deref(&self) -> &Self::Target {
+		match self {
+			MaybeLazy::Lazy(lazy_lock) => lazy_lock,
+			MaybeLazy::NonLazy(v) => v,
+		}
 	}
 }
 
