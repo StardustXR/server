@@ -17,7 +17,7 @@ use play_space::PlaySpaceBounds;
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use std::{
 	marker::PhantomData,
-	sync::{atomic::Ordering, Arc},
+	sync::{Arc, atomic::Ordering},
 };
 use stereokit_rust::{
 	material::Material,
@@ -65,10 +65,7 @@ impl ServerObjects {
 	) -> ServerObjects {
 		let hmd = SpatialRef::create(&connection, "/org/stardustxr/HMD");
 
-		let play_space = (World::has_bounds()
-			&& World::get_bounds_size().x != 0.0
-			&& World::get_bounds_size().y != 0.0)
-			.then(|| SpatialRef::create(&connection, "/org/stardustxr/PlaySpace"));
+		let play_space = Some(SpatialRef::create(&connection, "/org/stardustxr/PlaySpace"));
 		if play_space.is_some() {
 			let dbus_connection = connection.clone();
 			tokio::task::spawn(async move {
