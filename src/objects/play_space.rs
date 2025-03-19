@@ -15,12 +15,19 @@ impl PlaySpaceBounds {
 impl PlaySpaceBounds {
 	#[zbus(property)]
 	fn bounds(&self) -> Vec<(f64, f64)> {
-		let bounds = World::get_bounds_size();
-		vec![
-			((bounds.x).into(), (bounds.y).into()),
-			((bounds.x).into(), (-bounds.y).into()),
-			((-bounds.x).into(), (-bounds.y).into()),
-			((-bounds.x).into(), (bounds.y).into()),
-		]
+		if (World::has_bounds()
+			&& World::get_bounds_size().x != 0.0
+			&& World::get_bounds_size().y != 0.0)
+		{
+			let bounds = World::get_bounds_size();
+			vec![
+				((bounds.x).into(), (bounds.y).into()),
+				((bounds.x).into(), (-bounds.y).into()),
+				((-bounds.x).into(), (-bounds.y).into()),
+				((-bounds.x).into(), (bounds.y).into()),
+			]
+		} else {
+			vec![]
+		}
 	}
 }
