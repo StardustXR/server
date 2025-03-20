@@ -184,7 +184,7 @@ impl FieldTrait for Field {
 				v.length() + q.x.max(q.y.max(q.z)).min(0_f32)
 			}
 			Shape::Cylinder(CylinderShape { length, radius }) => {
-				let d = vec2(p.xy().length().abs() - radius, p.z.abs() - (length * 0.5));
+				let d = vec2(p.xz().length().abs() - radius, p.y.abs() - (length * 0.5));
 				d.x.max(d.y).min(0.0) + d.max(vec2(0.0, 0.0)).length()
 			}
 			Shape::Sphere(radius) => p.length() - radius,
