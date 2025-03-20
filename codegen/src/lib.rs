@@ -143,7 +143,7 @@ fn generate_custom_union(custom_union: &CustomUnion) -> TokenStream {
 	quote! {
 		#[doc = #description]
 		#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-		#[serde(untagged)]
+		#[serde(tag = "type")]
 		pub enum #name {#option_decls}
 	}
 }
