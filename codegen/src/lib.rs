@@ -49,6 +49,110 @@ pub fn codegen_item_panel_protocol(_input: proc_macro::TokenStream) -> proc_macr
 	codegen_protocol(ITEM_PANEL_PROTOCOL)
 }
 
+#[proc_macro]
+pub fn codegen_id_to_name_functions(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+	let mut aspect_map: Vec<(u64, String)> = Vec::new();
+	let mut method_map: Vec<(u64, String)> = Vec::new();
+	let mut signal_map: Vec<(u64, String)> = Vec::new();
+	let protocols = [
+		ROOT_PROTOCOL,
+		NODE_PROTOCOL,
+		SPATIAL_PROTOCOL,
+		FIELD_PROTOCOL,
+		AUDIO_PROTOCOL,
+		DRAWABLE_PROTOCOL,
+		INPUT_PROTOCOL,
+		ITEM_PROTOCOL,
+		ITEM_CAMERA_PROTOCOL,
+		ITEM_PANEL_PROTOCOL,
+	];
+	let mut interface_found = false;
+	for protocol in protocols
+		.into_iter()
+		.filter_map(|p| Protocol::parse(p).ok())
+	{
+		if let Some(i) = protocol.interface {
+			if interface_found {
+				panic!("more than one interface?! wha? pls help? someone?");
+			}
+			interface_found = true;
+			aspect_map.push((0, "interface".to_owned()));
+			for m in i.members {
+				match m._type {
+					MemberType::Signal => &mut signal_map,
+					MemberType::Method => &mut method_map,
+				}
+				.push((m.opcode, m.name));
+			}
+		}
+		for aspect in protocol.aspects.into_iter() {
+			aspect_map.push((aspect.id, aspect.name));
+			for m in aspect.members.into_iter() {
+				match m._type {
+					MemberType::Signal => &mut signal_map,
+					MemberType::Method => &mut method_map,
+				}
+				.push((m.opcode, m.name));
+			}
+		}
+	}
+
+	let aspect_id_to_name = aspect_map
+		.iter()
+		.map(|(id, name)| {
+			quote! {
+				#id => Some(#name),
+			}
+		})
+		.reduce(fold_tokens);
+	let aspect_id_to_name_fn = quote! {
+		pub const fn aspect_id_to_name(id: u64) -> Option<&'static str> {
+			match id {
+				#aspect_id_to_name
+				_ => None,
+			}
+		}
+	};
+	let method_id_to_name = method_map
+		.iter()
+		.map(|(id, name)| {
+			quote! {
+				#id => Some(#name),
+			}
+		})
+		.reduce(fold_tokens);
+	let method_id_to_name_fn = quote! {
+		pub const fn method_id_to_name(id: u64) -> Option<&'static str> {
+			match id {
+				#method_id_to_name
+				_ => None,
+			}
+		}
+	};
+	let signal_id_to_name = signal_map
+		.iter()
+		.map(|(id, name)| {
+			quote! {
+				#id => Some(#name),
+			}
+		})
+		.reduce(fold_tokens);
+	let signal_id_to_name_fn = quote! {
+		pub const fn signal_id_to_name(id: u64) -> Option<&'static str> {
+			match id {
+				#signal_id_to_name
+				_ => None
+			}
+		}
+	};
+	quote! {
+		#aspect_id_to_name_fn
+		#method_id_to_name_fn
+		#signal_id_to_name_fn
+	}
+	.into()
+}
+
 fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 	let protocol = Protocol::parse(protocol).unwrap();
 	let interface = protocol
@@ -143,7 +247,7 @@ fn generate_custom_union(custom_union: &CustomUnion) -> TokenStream {
 	quote! {
 		#[doc = #description]
 		#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-		#[serde(tag = "type")]
+		// #[serde(tag = "type")]
 		pub enum #name {#option_decls}
 	}
 }
