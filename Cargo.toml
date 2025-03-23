@@ -12,9 +12,6 @@ homepage = "https://stardustxr.org"
 [workspace]
 members = ["codegen"]
 
-[patch."https://github.com/StardustXR/core.git"]
-stardust-xr.path = "../core/core"
-
 [workspace.dependencies.stardust-xr]
 git = "https://github.com/StardustXR/core.git"
 branch = "dev"
