@@ -247,7 +247,7 @@ fn generate_custom_union(custom_union: &CustomUnion) -> TokenStream {
 	quote! {
 		#[doc = #description]
 		#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-		// #[serde(tag = "type")]
+		#[serde(tag = "t", content = "c")]
 		pub enum #name {#option_decls}
 	}
 }
@@ -512,7 +512,7 @@ fn generate_member(aspect_id: u64, aspect_name: &str, member: &Member) -> TokenS
 
 					let result = stardust_xr::schemas::flex::serialize((#argument_uses)).map_err(|e|e.into()).and_then(|serialized|_node.send_remote_signal(#aspect_id, #opcode, serialized));
 					if let Err(err) = result.as_ref() {
-						::tracing::error!("failed to send remote signal: {}::{}, error: {}",#aspect_name,#name_str,err);
+						::tracing::warn!("failed to send remote signal: {}::{}, error: {}",#aspect_name,#name_str,err);
 					} else {
 						::tracing::trace!("sent remote signal: {}::{}",#aspect_name,#name_str);
 					}
@@ -526,7 +526,7 @@ fn generate_member(aspect_id: u64, aspect_name: &str, member: &Member) -> TokenS
 				pub async fn #name(#argument_decls) -> crate::core::error::Result<(#return_type, Vec<std::os::fd::OwnedFd>)> {
 					let result = _node.execute_remote_method_typed(#aspect_id, #opcode, &(#argument_uses), vec![]).await;
 					if let Err(err) = result.as_ref() {
-						::tracing::error!("failed to call remote method: {}::{}, error: {}",#aspect_name,#name_str,err);
+						::tracing::warn!("failed to call remote method: {}::{}, error: {}",#aspect_name,#name_str,err);
 					} else {
 						::tracing::trace!("called remote method: {}::{}",#aspect_name,#name_str);
 					}
@@ -596,7 +596,7 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 				<Self as #aspect_name>::#member_name_ident(_node, _calling_client.clone(), #argument_uses)
 			})().map_err(|e: crate::core::error::ServerError| stardust_xr::scenegraph::ScenegraphError::MemberError { error: e.to_string() });
 				if let Err(err) = result.as_ref() {
-					::tracing::error!("failed to receive local signal: {}::{}, error: {}",#aspect_name_str,#member_name,err);
+					::tracing::warn!("failed to receive local signal: {}::{}, error: {}",#aspect_name_str,#member_name,err);
 				} else {
 					::tracing::trace!("received local signal: {}::{}",#aspect_name_str,#member_name);
 				}
@@ -608,7 +608,7 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 					#deserialize
 					let result = <Self as #aspect_name>::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await;
 					if let Err(err) = result.as_ref() {
-						::tracing::error!("failed to call local method: {}::{}, error: {}",#aspect_name_str,#member_name,err);
+						::tracing::warn!("failed to call local method: {}::{}, error: {}",#aspect_name_str,#member_name,err);
 					} else {
 						::tracing::trace!("called local method: {}::{}",#aspect_name_str,#member_name);
 					};
