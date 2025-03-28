@@ -1,85 +1,164 @@
-# Stardust XR Reference Server
+# Stardust XR Server
 
-This project is a usable Linux display server that reinvents human-computer interaction for all kinds of XR, from putting 2D/XR apps into various 3D shells for varying uses to SDF-based interaction.
+Stardust XR is a display server for VR and AR headsets on Linux-based systems. [Stardust provides a 3D environment](https://www.youtube.com/watch?v=v2WblwbaLaA), where anything from 2D windows (including your existing apps!), to 3D apps built from objects, can exist together in physical space.  
 
-## Prerequisites
-1. Cargo
-2. CMake
-3. EGL+GLES 3.2
-4. GLX+Xlib
-5. fontconfig
-6. dlopen
-7. OpenXR Loader (required even if run in flatscreen mode)
+![workflow](/img/workflow.png)
 
-## Build
+## Core Dependencies 
+| **Dependency**              | **Ubuntu/Debian**                                                                               | **Arch Linux**                                    | **Fedora**                                                  |
+|-----------------------------|-------------------------------------------------------------------------------------------------|---------------------------------------------------|-------------------------------------------------------------|
+| **Cargo**                   | `cargo`                                                                                       | `cargo` | `cargo` |
+| **CMake**                   | `cmake`                                                                                       | `cmake`                                           | `cmake`                                                     |
+| **EGL+GLES 3.2**            | `libegl1-mesa-dev`, `libgles2-mesa-dev`                                                         | `mesa` *(provides EGL/GLES libraries and headers)* | `mesa-libEGL-devel`, `mesa-libGLES-devel`                     |
+| **GLX+Xlib**                | `libx11-dev`, `libxfixes-dev`, `libxcb1-dev`, `libgl1-mesa-dev`, `libxkbcommon-dev`              | `libx11`, `libxfixes`, `libxcb` *(and GLX via mesa)*| `libX11-devel`, `libXfixes-devel`, `libxcb-devel`, `mesa-libGL-devel` *(or equivalent)* |
+| **fontconfig**              | `libfontconfig1-dev`                                                                            | `fontconfig`                                      | `fontconfig-devel`                                          |
+| **dlopen** (glibc function) | Provided by `libc6-dev` (part of the core C library)                                            | Provided by `glibc` *(included in base-devel)*    | Provided by `glibc-devel`                                     |
+| **OpenXR Loader**           | `libopenxr-loader1`, `libopenxr-dev`, `libopenxr1-monado`                                       | `openxr`                                          | `openxr-devel`                                              |
+
+Command line installation of core & dynamic dependencies are provided below:
+<details>
+<summary>Ubuntu/Debian</summary> 
+  <pre><code class="language-bash">
+  sudo apt-get update && sudo apt-get install -y \
+  build-essential \
+  cargo \
+  cmake \
+  libegl1-mesa-dev libgles2-mesa-dev \
+  libx11-dev libxfixes-dev libxcb1-dev libxau-dev libgl1-mesa-dev libxkbcommon-dev \
+  libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libgraphite2-dev \
+  libc6-dev \
+  libopenxr-loader1 libopenxr-dev libopenxr1-monado libwayland-dev \
+  libjsoncpp-dev libdrm-dev libexpat1-dev libxcb-randr0-dev \
+  libxml2-dev libffi-dev libbz2-dev libpng-dev libbrotli-dev liblzma-dev libglib2.0-dev libpcre2-dev
+  </code></pre>
+</details>
+
+<details>
+<summary>Arch Linux</summary> 
+  <pre><code class="language-bash">
+  sudo pacman -Syu --needed \
+  base-devel \
+  rust \
+  cmake \
+  mesa \
+  libx11 \
+  libxfixes \
+  libxcb \
+  libxkbcommon \
+  fontconfig \
+  freetype2 \
+  openxr \
+  jsoncpp \
+  libffi \
+  wayland \
+  expat \
+  libxml2 \
+  libxau \
+  bzip2 \
+  xz \
+  libpng \
+  brotli \
+  pcre2 \
+  glib2 \
+  libdrm
+  </code></pre>
+</details>
+<details>
+<summary>Fedora</summary> 
+  <pre><code class="language-bash">
+sudo dnf group install development-tools && \
+sudo dnf install -y \
+  cargo \
+  cmake \
+  mesa-libEGL-devel \
+  mesa-libGLES-devel \
+  libX11-devel \
+  libXfixes-devel \
+  libxcb-devel \
+  libxkbcommon-devel \
+  fontconfig-devel \
+  freetype-devel \
+  harfbuzz-devel \
+  graphite2-devel \
+  openxr-devel \ 
+  wayland-devel \
+  jsoncpp-devel \
+  libdrm-devel \
+  expat-devel \
+  xcb-util-devel \
+  libxml2-devel \
+  libXau-devel \
+  bzip2-devel \
+  xz-devel \
+  libpng-devel \
+  brotli-devel \
+  pcre2-devel \
+  glib2-devel
+  </code></pre>
+</details>
+
+## Installation
+
+More detailed instructions and walkthroughs are provided at https://www.stardustxr.org
+
+The [Terra Repository](https://terra.fyralabs.com/) is required, and comes pre-installed with [Ultramarine Linux](https://ultramarine-linux.org/). Other Fedora Editions and derivatives can directly install terra-release:
+
+```bash
+sudo dnf install --nogpgcheck --repofrompath 'terra,https://repos.fyralabs.com/terra$releasever' terra-release
+```
+
+For a full installation of the Stardust XR server *and* a selected group of clients, run:
+
+```bash
+sudo dnf group install stardust-xr
+```
+
+## Manual Build
+We've provided a manual installation script [here](https://github.com/cyberneticmelon/usefulscripts/blob/main/stardustxr_setup.sh) that clones and builds the Stardust XR server along with a number of other clients from their respective repositories, and provides a startup script for automatically launching some clients.
+
+After cloning the repository
 ```bash
 cargo build
 ```
-The latest stable server is automatically built to an appimage at https://github.com/StardustXR/server/releases for easy testing.
 
 ## Usage
+> [!NOTE]
+> For help with setting up an XR headset on linux, visit https://stardustxr.org/docs/get-started/setup-openxr
 
-First, try running `cargo run` in a terminal window. If a headset is plugged in and OpenXR is working no window will show up. However, the headset should show the same things as the window that opens:
 
-![A pitch black void with a single bleach white hand in the middle](/img/xr_mode_windowed_blank.png)
+The **Stardust XR Server** is a server that runs clients, so without any running, you will see a black screen. If you only have the server installed, we recommend also cloning and building the following clients to start: [Flatland](https://github.com/StardustXR/flatland), which allows normal 2D apps to run in Stardust, [Protostar](https://github.com/StardustXR/protostar), which contains Hexagon Launcher, an app launcher menu, and [Black Hole](https://github.com/StardustXR/black-hole) to quickly tuck away your objects and apps (kind of like desktop peek on Windows).
 
-Stardust won't do anything interesting without clients! Try some from https://github.com/StardustXR.
+First, try running `cargo run -- -f` in a terminal window to check out flatscreen mode, (or `stardust-xr-server -f` / `stardust-xr-server_dev -f` if you installed via dnf or the manual installation script, respectively, as they provide symlinks.)
 
-### Default Sky
+If there aren't already any clients running, you'll need to manually launch them by either navigating to their repositories and running `cargo run`, or running them via their names if you installed via dnf or the manual installation script, such as `flatland`, `hexagon_launcher`, etc.
 
-You can set a default skytex/skylight by putting your favorite HDRI equirectangular sky in `~/.config/stardust/skytex.hdr`. Certain clients can override this.
+> [!IMPORTANT]
+> [Flatland](https://github.com/StardustXR/flatland) must be running for 2D apps to launch. 
 
-Flatscreen mode when the default skybox is [Zhengyang Gate](https://polyhaven.com/a/zhengyang_gate):
-![A pitch black window representing Stardust in flatscreen mode](/img/flatscreen_3.png)
+### Startup Script
+A startup script can be created at `~/.config/stardust/startup` that will launch specified settings and clients/applications, an example of which is shown [here](https://github.com/cyberneticmelon/usefulscripts/blob/main/startup). If you used the [installation script](https://github.com/cyberneticmelon/usefulscripts/blob/main/stardustxr_setup.sh), one will have already been made for you. This allows wide flexibility of what clients to launch upon startup (and, for example, *where*, using the [Gravity](https://github.com/StardustXR/gravity) client to specify X Y and Z co-ordinates).
 
-### Windowed Mode
+### Flatscreen Navigation
+A video guide showcasing flatscreen controls is available [here](https://www.youtube.com/watch?v=JCYecSlKlDI)  
 
-If the stardust server can't connect to an OpenXR runtime or you force it into flatscreen mode with `-f`, the server will show in a window.
-![A black void representing Stardust in XR mode with a hand skeleton in the middle](/img/flatscreen_2.png)
+To move around, hold down `Shift + W A S D`, with `Q` for moving down and `E` for moving up.
+![wasd](https://github.com/StardustXR/website/blob/main/static/img/updated_flat_wasd.GIF)
 
-You can navigate around by right click + dragging to look around, Shift+W/A/S/D/Q/E to move. If you have a virtual hand, left click pinches, right click points, both make a fist.
+To look around, hold down `Shift + Right` Click while moving the mouse. 
+![updated_look](https://github.com/StardustXR/website/blob/main/static/img/updated_flat_look.GIF)
 
-### Flags
-#### Flatscreen (-f)
+To drag applications out of the app launcher, hold down `Shift + ~`
+![updated_drag](https://github.com/StardustXR/website/blob/main/static/img/updated_flat_drag.GIF)
 
-The server will show up in windowed mode no matter what with your mouse pointer being turned into a 3D pointer. Keyboard input will be sent to whatever your mouse is hovering over like visionOS simulator.
-Flatscreen mode upon initial startup:
-![A pitch black window representing Stardust in flatscreen mode](/img/flatscreen_1.png)
+### XR Navigation
+A video guide showcasing XR controls is available [here](https://www.youtube.com/watch?v=RbxFq6JjliA)  
 
-#### Overlay (-o \<PRIORITY>)
+**Quest 3 Hand tracking**:
+Pinch to drag and drop, grasp with full hand for grabbing, point and click with pointer finger to click or pinch from a distance  
 
-The server will, if in XR mode, be overlaid using the OpenXR overlay extension with the given priority.
+![hand_pinching](https://github.com/StardustXR/website/blob/main/static/img/hand_pinching.GIF)
 
-#### Disable controller (--disable-controller)
+**Quest 3 Controller**:
+Grab with the grip buttons, click by touching the tip of the cones or by using the trigger from a distance  
 
-Some runtimes such as Monado may emulate a controller using a hand, and this messes with Stardust's input system. Set this flag to ignore the controllers that the OpenXR runtime provides.
-
-#### Execute (-e </path/to/executable>)
-
-When wayland and OpenXR and such are initialized, run the given executable (such as a bash script) with all the environment variables needed to connect all clients of any type to the server. If not set, the server will run the executable at `~/.config/stardust/startup` if it exists. This is how stardust desktop environments can be made.
-
-#### Help (-h, --help)
-
-help
-
-## Test
-
-##### Gnome Graphical Integration Test
-
-- `nix build .#gnome-graphical-test`
-
-   This test uses Nix to reproducibly execute a QEMU virtual machine which
-   spawns a full Gnome desktop. It runs `monado-service`, `stardust-xr-server`
-   `flatland` underneath of Gnome and then attaches `weston-cliptest` to the
-   `flatland` process running underneath of `stardust-xr-server`, the result is
-   a screenshot in PNG format that should look like expected. If any process in
-   this test produces an exit code above 0, the test will fail, graphical bugs
-   should be visible in the screenshot. An example of the result is below.
-
-   ###### Result
-
-   ![image](https://github.com/StardustXR/server/assets/26458780/e21cd039-2528-4568-b20a-ce4abfab6d9b)
-
-##### Everything
-
-`nix flake check` will build every test underneath of the `checks` attribute in the `flake.nix`
+![controller_click](https://github.com/StardustXR/website/blob/main/static/img/controller_click.GIF)

@@ -123,7 +123,7 @@ impl MousePointer {
 				select: Input::key(Key::MouseLeft).is_active() as u32 as f32,
 				middle: Input::key(Key::MouseCenter).is_active() as u32 as f32,
 				context: Input::key(Key::MouseRight).is_active() as u32 as f32,
-				grab: Input::key(Key::MouseBack).is_active() as u32 as f32,
+				grab: (Input::key(Key::Backtick).is_active() && Input::key(Key::Shift).is_active()) as u32 as f32, // Was Mouse 5
 				scroll_continuous: [0.0, mouse.scroll_change / 120.0].into(),
 				scroll_discrete: [0.0, mouse.scroll_change / 120.0].into(),
 				raw_input_events: vec![],
