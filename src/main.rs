@@ -29,7 +29,7 @@ use stereokit_rust::sk::{
 use stereokit_rust::system::{Handed, Input, LogLevel, Renderer};
 use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
 use stereokit_rust::ui::Ui;
-use stereokit_rust::util::{Color128, Time};
+use stereokit_rust::util::{Color128, SphericalHarmonics, Time};
 use tokio::net::UnixListener;
 use tokio::sync::Notify;
 use tracing::metadata::LevelFilter;
@@ -202,6 +202,9 @@ async fn main() {
 	info!("Cleanly shut down Stardust");
 }
 
+static DEFAULT_SKYTEX: OnceLock<Tex> = OnceLock::new();
+static DEFAULT_SKYLIGHT: OnceLock<SphericalHarmonics> = OnceLock::new();
+
 fn stereokit_loop(
 	sk_ready_notifier: Arc<Notify>,
 	project_dirs: Option<ProjectDirs>,
@@ -249,6 +252,14 @@ fn stereokit_loop(
 
 	// Skytex/light stuff
 	{
+		let _ = DEFAULT_SKYTEX.set(Tex::gen_color(
+			Color128::BLACK,
+			1,
+			1,
+			TexType::Cubemap,
+			TexFormat::RGBA32,
+		));
+		let _ = DEFAULT_SKYLIGHT.set(Renderer::get_skylight());
 		if let Some(sky) = project_dirs
 			.as_ref()
 			.map(|dirs| dirs.config_dir().join("skytex.hdr"))
@@ -257,13 +268,7 @@ fn stereokit_loop(
 		{
 			sky.render_as_sky();
 		} else {
-			Renderer::skytex(Tex::gen_color(
-				Color128::BLACK,
-				1,
-				1,
-				TexType::Cubemap,
-				TexFormat::RGBA32,
-			));
+			Renderer::skytex(DEFAULT_SKYTEX.get().unwrap());
 		}
 	}
 
