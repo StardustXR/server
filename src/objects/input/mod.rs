@@ -16,10 +16,10 @@ pub struct CaptureManager {
 	pub capture: Option<Arc<InputHandler>>,
 }
 impl CaptureManager {
-	pub fn update_capture(&mut self, pointer: &InputMethod) {
+	pub fn update_capture(&mut self, method: &InputMethod) {
 		if let Some(capture) = &self.capture {
-			if !pointer
-				.internal_capture_requests
+			if !method
+				.capture_attempts
 				.get_valid_contents()
 				.contains(capture)
 			{
@@ -29,11 +29,11 @@ impl CaptureManager {
 	}
 	pub fn set_new_capture(
 		&mut self,
-		pointer: &InputMethod,
+		method: &InputMethod,
 		distance_calculator: DistanceCalculator,
 	) {
 		if self.capture.is_none() {
-			self.capture = find_closest_capture(pointer, distance_calculator);
+			self.capture = find_closest_capture(method, distance_calculator);
 		}
 	}
 	pub fn apply_capture(&self, method: &InputMethod) {
@@ -52,7 +52,7 @@ pub fn find_closest_capture(
 	distance_calculator: DistanceCalculator,
 ) -> Option<Arc<InputHandler>> {
 	method
-		.internal_capture_requests
+		.capture_attempts
 		.get_valid_contents()
 		.into_iter()
 		.filter_map(|h| {

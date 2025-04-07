@@ -24,7 +24,7 @@ pub struct InputMethod {
 	handler_aliases: AliasList,
 	handler_field_aliases: AliasList,
 	pub(super) handler_order: Mutex<Vec<Weak<InputHandler>>>,
-	pub internal_capture_requests: Registry<InputHandler>,
+	pub capture_attempts: Registry<InputHandler>,
 	pub captures: Registry<InputHandler>,
 }
 impl InputMethod {
@@ -41,7 +41,7 @@ impl InputMethod {
 			handler_aliases: AliasList::default(),
 			handler_field_aliases: AliasList::default(),
 			handler_order: Mutex::new(Vec::new()),
-			internal_capture_requests: Registry::new(),
+			capture_attempts: Registry::new(),
 			captures: Registry::new(),
 		};
 		for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
@@ -151,6 +151,16 @@ impl InputMethod {
 			captured: self.captures.get_valid_contents().contains(handler),
 		}
 	}
+
+	pub(super) fn cull_capture_attempts(&self) {
+		let sent = self
+			.handler_order
+			.lock()
+			.iter()
+			.filter_map(Weak::upgrade)
+			.collect::<Registry<InputHandler>>();
+		self.captures.retain(|handler| sent.contains(handler));
+	}
 }
 impl InputMethodAspect for InputMethod {
 	#[doc = "Set the spatial input component of this input method. You must keep the same input data type throughout the entire thing."]
@@ -213,8 +223,8 @@ impl Drop for InputMethod {
 
 pub struct InputMethodRef;
 impl InputMethodRefAspect for InputMethodRef {
-	#[doc = "Have the input handler that this method reference came from capture the method for the next frame."]
-	fn request_capture(
+	#[doc = "Try to capture the input method with the given handler. When the handler does not get input from the method, it will be released."]
+	fn try_capture(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		handler: Arc<Node>,
@@ -222,9 +232,16 @@ impl InputMethodRefAspect for InputMethodRef {
 		let input_method = node.get_aspect::<InputMethod>()?;
 		let input_handler = handler.get_aspect::<InputHandler>()?;
 
-		input_method
-			.internal_capture_requests
-			.add_raw(&input_handler);
+		input_method.capture_attempts.add_raw(&input_handler);
+		Ok(())
+	}
+
+	#[doc = "If captured by this handler, release it (e.g. the object is let go of after grabbing)."]
+	fn release(node: Arc<Node>, _calling_client: Arc<Client>, handler: Arc<Node>) -> Result<()> {
+		let input_method = node.get_aspect::<InputMethod>()?;
+		let input_handler = handler.get_aspect::<InputHandler>()?;
+
+		input_method.capture_attempts.remove(&input_handler);
 		Ok(())
 	}
 }

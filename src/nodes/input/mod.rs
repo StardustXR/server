@@ -165,6 +165,6 @@ pub fn process_input() {
 		let _ = input_handler_client::input(&handler_node, &methods, &datas);
 	}
 	for method in methods {
-		method.internal_capture_requests.clear();
+		method.cull_capture_attempts();
 	}
 }
