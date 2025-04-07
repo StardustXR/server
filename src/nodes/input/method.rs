@@ -129,6 +129,7 @@ impl InputMethod {
 		self.handler_aliases.remove_aspect(handler);
 		self.handler_field_aliases
 			.remove_aspect(handler.field.as_ref());
+		self.capture_attempts.remove(handler);
 	}
 
 	pub(super) fn serialize(&self, alias_id: u64, handler: &Arc<InputHandler>) -> InputData {

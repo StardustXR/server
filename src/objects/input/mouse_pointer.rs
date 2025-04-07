@@ -142,7 +142,7 @@ impl MousePointer {
 			.set_new_capture(&self.pointer, distance_calculator);
 		self.capture_manager.apply_capture(&self.pointer);
 
-		if self.capture_manager.capture.is_some() {
+		if self.capture_manager.capture.upgrade().is_some() {
 			return;
 		}
 
