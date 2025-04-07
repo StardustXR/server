@@ -96,7 +96,7 @@ impl SkController {
 				controller.aim.position.into(),
 			);
 			self.material
-				.color_tint(if self.capture_manager.capture.is_none() {
+				.color_tint(if self.capture_manager.capture.upgrade().is_none() {
 					Color128::new_rgb(1.0, 1.0, 1.0)
 				} else {
 					Color128::new_rgb(0.0, 1.0, 0.75)
@@ -128,7 +128,7 @@ impl SkController {
 			.set_new_capture(&self.input, distance_calculator);
 		self.capture_manager.apply_capture(&self.input);
 
-		if self.capture_manager.capture.is_some() {
+		if self.capture_manager.capture.upgrade().is_some() {
 			return;
 		}
 
