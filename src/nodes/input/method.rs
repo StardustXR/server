@@ -159,7 +159,15 @@ impl InputMethod {
 			.iter()
 			.filter_map(Weak::upgrade)
 			.collect::<Registry<InputHandler>>();
-		self.captures.retain(|handler| sent.contains(handler));
+		self.captures.retain(|handler| {
+			!handler
+				.spatial
+				.node()
+				.and_then(|n| n.get_client())
+				.map(|c| c.unresponsive())
+				.unwrap_or(false)
+				&& sent.contains(handler)
+		});
 	}
 }
 impl InputMethodAspect for InputMethod {

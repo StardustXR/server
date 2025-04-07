@@ -23,12 +23,14 @@ use std::{
 	iter::FromIterator,
 	path::PathBuf,
 	sync::{Arc, OnceLock},
+	time::Instant,
 };
-use tokio::{net::UnixStream, task::JoinHandle};
+use tokio::{net::UnixStream, sync::watch, task::JoinHandle};
 use tracing::info;
 
 lazy_static! {
 	pub static ref CLIENTS: OwnedRegistry<Client> = OwnedRegistry::new();
+	static ref INTERNAL_CLIENT_MESSAGE_TIMES: (watch::Sender<Instant>, watch::Receiver<Instant>) = watch::channel(Instant::now());
 	pub static ref INTERNAL_CLIENT: Arc<Client> = CLIENTS.add(Client {
 		pid: None,
 		// env: None,
@@ -38,13 +40,17 @@ lazy_static! {
 		flush_join_handle: OnceLock::new(),
 		disconnect_status: OnceLock::new(),
 
-		message_sender_handle: None,
 		id_counter: CounterU32::new(0),
+		message_last_received: INTERNAL_CLIENT_MESSAGE_TIMES.1.clone(),
+		message_sender_handle: None,
 		scenegraph: Default::default(),
 		root: OnceLock::new(),
 		base_resource_prefixes: Default::default(),
 		state: OnceLock::default(),
 	});
+}
+pub fn tick_internal_client() {
+	let _ = INTERNAL_CLIENT_MESSAGE_TIMES.0.send(Instant::now());
 }
 
 pub fn get_env(pid: i32) -> Result<FxHashMap<String, String>, std::io::Error> {
@@ -69,6 +75,7 @@ pub struct Client {
 	disconnect_status: OnceLock<Result<()>>,
 
 	id_counter: CounterU32,
+	message_last_received: watch::Receiver<Instant>,
 	pub message_sender_handle: Option<MessageSenderHandle>,
 	pub scenegraph: Arc<Scenegraph>,
 	pub root: OnceLock<Arc<Root>>,
@@ -95,6 +102,7 @@ impl Client {
 			.and_then(state)
 			.unwrap_or_else(|| Arc::new(ClientStateParsed::default()));
 
+		let (message_time_tx, message_last_received) = watch::channel(Instant::now());
 		let client = CLIENTS.add(Client {
 			pid,
 			// env,
@@ -105,6 +113,7 @@ impl Client {
 			disconnect_status: OnceLock::new(),
 
 			id_counter: CounterU32::new(256),
+			message_last_received,
 			message_sender_handle: Some(messenger_tx.handle()),
 			scenegraph: scenegraph.clone(),
 			root: OnceLock::new(),
@@ -148,6 +157,7 @@ impl Client {
 							if let Err(e) = messenger_rx.dispatch(&*scenegraph).await {
 								client.disconnect(Err(e.into()));
 							}
+							let _ = message_time_tx.send(Instant::now());
 						}
 					}
 				},
@@ -204,6 +214,11 @@ impl Client {
 		self.scenegraph
 			.get_node(id)
 			.ok_or_else(|| eyre!("{} not found", name))
+	}
+
+	pub fn unresponsive(&self) -> bool {
+		let time_since_last_message = self.message_last_received.borrow().elapsed();
+		time_since_last_message.as_millis() > 500
 	}
 
 	pub fn disconnect(&self, reason: Result<()>) {
