@@ -11,7 +11,7 @@ use crate::nodes::items::camera;
 use crate::nodes::{audio, drawable, input};
 
 use clap::Parser;
-use core::client::Client;
+use core::client::{Client, tick_internal_client};
 use core::task;
 use directories::ProjectDirs;
 use objects::ServerObjects;
@@ -307,6 +307,7 @@ fn stereokit_loop(
 			Duration::from_micros(250),
 		);
 
+		tick_internal_client();
 		#[cfg(feature = "wayland")]
 		wayland.update();
 		drawable::draw(token);
