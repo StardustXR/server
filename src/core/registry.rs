@@ -103,6 +103,16 @@ impl<T: Send + Sync + ?Sized> Default for Registry<T> {
 	}
 }
 
+impl<T: Send + Sync + Sized> FromIterator<Arc<T>> for Registry<T> {
+	fn from_iter<I: IntoIterator<Item = Arc<T>>>(iter: I) -> Self {
+		Registry(MaybeLazy::NonLazy(
+			iter.into_iter()
+				.map(|i| (Arc::as_ptr(&i) as usize, Arc::downgrade(&i)))
+				.collect(),
+		))
+	}
+}
+
 #[derive(Debug)]
 enum MaybeLazy<T> {
 	Lazy(LazyLock<T>),
