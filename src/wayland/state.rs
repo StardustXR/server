@@ -7,7 +7,7 @@ use smithay::{
 		egl::EGLDevice,
 		renderer::gles::GlesRenderer,
 	},
-	delegate_dmabuf, delegate_output, delegate_shm,
+	delegate_dmabuf, delegate_output, delegate_shm, delegate_viewporter,
 	desktop::PopupManager,
 	input::{SeatState, keyboard::XkbConfig},
 	output::{Mode, Output, Scale, Subpixel},
@@ -39,6 +39,7 @@ use smithay::{
 			xdg::{WmCapabilitySet, XdgShellState},
 		},
 		shm::{ShmHandler, ShmState},
+		viewporter::ViewporterState,
 	},
 };
 use std::sync::{Arc, OnceLock};
@@ -71,6 +72,7 @@ pub struct WaylandState {
 	pub kde_decoration_state: KdeDecorationState,
 	pub shm_state: ShmState,
 	dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
+	pub viewporter_state: ViewporterState,
 	pub drm_formats: Vec<Fourcc>,
 	pub dmabuf_tx: UnboundedSender<(Dmabuf, Option<dmabuf::ImportNotifier>)>,
 	pub seat_state: SeatState<Self>,
@@ -159,6 +161,7 @@ impl WaylandState {
 		output.set_preferred(mode);
 
 		let mut xdg_shell = XdgShellState::new::<Self>(&display_handle);
+		let viewporter_state = ViewporterState::new::<Self>(&display_handle);
 		let popup_manager = PopupManager::default();
 		let mut capabilities = WmCapabilitySet::default();
 		capabilities.set(WmCapabilities::Maximize);
@@ -186,6 +189,7 @@ impl WaylandState {
 				xdg_shell,
 				popup_manager,
 				output,
+				viewporter_state,
 			})
 		})
 	}
@@ -223,3 +227,4 @@ impl OutputHandler for WaylandState {
 delegate_dmabuf!(WaylandState);
 delegate_shm!(WaylandState);
 delegate_output!(WaylandState);
+delegate_viewporter!(WaylandState);
