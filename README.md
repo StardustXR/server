@@ -62,7 +62,6 @@ Command line installation of core & dynamic dependencies are provided below:
   xz glib2 graphite pcre2
   </code></pre>
 </details>
-<details>
 
 ## Installation
 
