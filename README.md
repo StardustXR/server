@@ -43,6 +43,8 @@ Command line installation of core & dynamic dependencies are provided below:
 <summary>Fedora</summary> 
   <pre><code class="language-bash">
   sudo apt update && sudo apt install \
+  cargo \
+  cmake \
   libxkbcommon-dev libxkbcommon-x11-dev libstdc++-dev libx11-dev libxfixes-dev \
   libegl-dev libgbm-dev libfontconfig1-dev libxcb1-dev libgl-dev libdrm-dev \
   libexpat1-dev libfreetype6-dev libxml2-dev libxau-dev zlib1g-dev libbz2-dev \
