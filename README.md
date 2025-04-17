@@ -54,6 +54,7 @@ Command line installation of core & dynamic dependencies are provided below:
 
 <details>
 <summary>Arch Linux</summary> 
+  <pre><code class="language-bash">
   sudo pacman -Syu --needed \
   cargo \
   cmake \
