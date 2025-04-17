@@ -5,97 +5,64 @@ Stardust XR is a display server for VR and AR headsets on Linux-based systems. [
 ![workflow](/img/workflow.png)
 
 ## Core Dependencies 
-| **Dependency**              | **Ubuntu/Debian**                                                                               | **Arch Linux**                                    | **Fedora**                                                  |
-|-----------------------------|-------------------------------------------------------------------------------------------------|---------------------------------------------------|-------------------------------------------------------------|
-| **Cargo**                   | `cargo`                                                                                       | `cargo` | `cargo` |
-| **CMake**                   | `cmake`                                                                                       | `cmake`                                           | `cmake`                                                     |
-| **EGL+GLES 3.2**            | `libegl1-mesa-dev`, `libgles2-mesa-dev`                                                         | `mesa` *(provides EGL/GLES libraries and headers)* | `mesa-libEGL-devel`, `mesa-libGLES-devel`                     |
-| **GLX+Xlib**                | `libx11-dev`, `libxfixes-dev`, `libxcb1-dev`, `libgl1-mesa-dev`, `libxkbcommon-dev`              | `libx11`, `libxfixes`, `libxcb` *(and GLX via mesa)*| `libX11-devel`, `libXfixes-devel`, `libxcb-devel`, `mesa-libGL-devel` *(or equivalent)* |
-| **fontconfig**              | `libfontconfig1-dev`                                                                            | `fontconfig`                                      | `fontconfig-devel`                                          |
-| **dlopen** (glibc function) | Provided by `libc6-dev` (part of the core C library)                                            | Provided by `glibc` *(included in base-devel)*    | Provided by `glibc-devel`                                     |
-| **OpenXR Loader**           | `libopenxr-loader1`, `libopenxr-dev`, `libopenxr1-monado`                                       | `openxr`                                          | `openxr-devel`                                              |
+| Functionality      | Ubuntu (apt)                                        | Fedora (dnf)                                                         | Arch Linux (pacman)                        |
+| ------------------ | --------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------ |
+| **EGL / GL**       | libegl-dev, libgl-dev, libgbm-dev, libdrm-dev       | mesa-libEGL-devel, mesa-libGL-devel, mesa-libgbm-devel, libdrm-devel | mesa (includes development files), libdrm  |
+| **GLES 3.2**       | libgles2-mesa-dev                                   | mesa-libGLES-devel                                                   | mesa (provides GLES libraries and headers) |
+| **X11**            | libx11-dev, libxcb1-dev, libxfixes-dev, libxau-dev  | libX11-devel, libxcb-devel, libXfixes-devel, libXau-devel            | libx11, libxcb, libxfixes, libxau          |
+| **Font Rendering** | libfontconfig1-dev, libfreetype6-dev                | fontconfig-devel, freetype-devel                                     | fontconfig, freetype2                      |
+| **Compression**    | zlib1g-dev, libbz2-dev, libbrotli-dev, liblzma-dev  | zlib-devel, bzip2-devel, brotli-devel, xz-devel                      | zlib, bzip2, brotli, xz                    |
+| **Text Rendering** | libharfbuzz-dev, libgraphite2-dev                   | harfbuzz-devel, graphite2-devel                                      | harfbuzz, graphite                         |
+| **XML / Parsing**  | libxml2-dev, libexpat1-dev, libpcre2-dev            | libxml2-devel, expat-devel, pcre2-devel                              | libxml2, expat, pcre2                      |
+| **Standard C++**   | libstdc++-dev-12                                    | libstdc++-devel                                                      | gcc-libs (includes libstdc++)              |
+| **XKB / Keyboard** | libxkbcommon-dev, libxkbcommon-x11-dev              | libxkbcommon-devel, libxkbcommon-x11-devel                           | libxkbcommon, libxkbcommon-x11             |
+| **Core System**    | libglib2.0-dev                                      | glib2-devel                                                          | glib2                                      |
+| **PNG Support**    | libpng-dev                                          | libpng-devel                                                         | libpng                                     |
+| **Cargo (Rust)**   | cargo                                               | cargo                                                                | cargo (part of the rust package)           |
+| **CMake**          | cmake                                               | cmake                                                                | cmake                                      |
+| **dlopen (glibc)** | libc6-dev                                           | glibc-devel                                                          | glibc                                      |
+| **OpenXR Loader**  | libopenxr-dev, libopenxr-loader1, libopenxr1-monado | openxr-devel                                                         | openxr                                     |
 
 Command line installation of core & dynamic dependencies are provided below:
 <details>
 <summary>Ubuntu/Debian</summary> 
   <pre><code class="language-bash">
-  sudo apt-get update && sudo apt-get install -y \
+  sudo apt update && sudo apt install \
   build-essential \
   cargo \
   cmake \
-  libegl1-mesa-dev libgles2-mesa-dev \
-  libx11-dev libxfixes-dev libxcb1-dev libxau-dev libgl1-mesa-dev libxkbcommon-dev \
-  libfontconfig1-dev libfreetype6-dev libharfbuzz-dev libgraphite2-dev \
-  libc6-dev \
-  libopenxr-loader1 libopenxr-dev libopenxr1-monado libwayland-dev \
-  libjsoncpp-dev libdrm-dev libexpat1-dev libxcb-randr0-dev \
-  libxml2-dev libffi-dev libbz2-dev libpng-dev libbrotli-dev liblzma-dev libglib2.0-dev libpcre2-dev
+  libxkbcommon-dev libxkbcommon-x11-dev libstdc++-dev libx11-dev libxfixes-dev \
+  libegl-dev libgbm-dev libfontconfig1-dev libxcb1-dev libgl-dev libdrm-dev \
+  libexpat1-dev libfreetype6-dev libxml2-dev libxau-dev zlib1g-dev libbz2-dev \
+  libpng-dev libharfbuzz-dev libbrotli-dev liblzma-dev libglib2.0-dev \
+  libgraphite2-dev libpcre2-dev
   </code></pre>
 </details>
 
 <details>
-<summary>Arch Linux</summary> 
+<summary>Fedora</summary> 
   <pre><code class="language-bash">
+  sudo apt update && sudo apt install \
+  libxkbcommon-dev libxkbcommon-x11-dev libstdc++-dev libx11-dev libxfixes-dev \
+  libegl-dev libgbm-dev libfontconfig1-dev libxcb1-dev libgl-dev libdrm-dev \
+  libexpat1-dev libfreetype6-dev libxml2-dev libxau-dev zlib1g-dev libbz2-dev \
+  libpng-dev libharfbuzz-dev libbrotli-dev liblzma-dev libglib2.0-dev \
+  libgraphite2-dev libpcre2-dev
+  </code></pre>
+</details>
+
+
+<details>
+<summary>Arch Linux</summary> 
   sudo pacman -Syu --needed \
-  base-devel \
-  rust \
+  cargo \
   cmake \
-  mesa \
-  libx11 \
-  libxfixes \
-  libxcb \
-  libxkbcommon \
-  fontconfig \
-  freetype2 \
-  openxr \
-  jsoncpp \
-  libffi \
-  wayland \
-  expat \
-  libxml2 \
-  libxau \
-  bzip2 \
-  xz \
-  libpng \
-  brotli \
-  pcre2 \
-  glib2 \
-  libdrm
+  libxkbcommon libxkbcommon-x11 libx11 libxfixes mesa fontconfig libxcb \
+  libdrm expat freetype2 libxml2 libxau zlib bzip2 libpng harfbuzz brotli \
+  xz glib2 graphite pcre2
   </code></pre>
 </details>
 <details>
-<summary>Fedora</summary> 
-  <pre><code class="language-bash">
-sudo dnf group install development-tools && \
-sudo dnf install -y \
-  cargo \
-  cmake \
-  mesa-libEGL-devel \
-  mesa-libGLES-devel \
-  libX11-devel \
-  libXfixes-devel \
-  libxcb-devel \
-  libxkbcommon-devel \
-  fontconfig-devel \
-  freetype-devel \
-  harfbuzz-devel \
-  graphite2-devel \
-  openxr-devel \ 
-  wayland-devel \
-  jsoncpp-devel \
-  libdrm-devel \
-  expat-devel \
-  xcb-util-devel \
-  libxml2-devel \
-  libXau-devel \
-  bzip2-devel \
-  xz-devel \
-  libpng-devel \
-  brotli-devel \
-  pcre2-devel \
-  glib2-devel
-  </code></pre>
-</details>
 
 ## Installation
 
