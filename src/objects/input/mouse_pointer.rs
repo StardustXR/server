@@ -146,8 +146,18 @@ impl MousePointer {
 			return;
 		}
 
-		let sorted_handlers = get_sorted_handlers(&self.pointer, distance_calculator);
-		self.pointer.set_handler_order(sorted_handlers.iter());
+		let mut handlers = get_sorted_handlers(&self.pointer, distance_calculator);
+		let first_distance = handlers
+			.first()
+			.map(|(_, distance)| *distance)
+			.unwrap_or(std::f32::NEG_INFINITY);
+
+		self.pointer.set_handler_order(
+			handlers
+				.iter()
+				.filter(|(handler, distance)| (distance - first_distance).abs() <= 0.001)
+				.map(|(handler, _)| handler),
+		);
 	}
 
 	pub fn send_keyboard_input(

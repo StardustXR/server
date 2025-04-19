@@ -9,7 +9,10 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use glam::vec3;
-use std::sync::{Arc, Weak};
+use std::{
+	collections::VecDeque,
+	sync::{Arc, Weak},
+};
 
 #[derive(Default)]
 pub struct CaptureManager {
@@ -64,11 +67,12 @@ pub fn find_closest_capture(
 		.unwrap_or_default()
 }
 
+/// sorts them greatest to least distance (so you can pop off the closest ones easily)
 pub fn get_sorted_handlers(
 	method: &InputMethod,
 	distance_calculator: DistanceCalculator,
-) -> Vec<Arc<InputHandler>> {
-	INPUT_HANDLER_REGISTRY
+) -> Vec<(Arc<InputHandler>, f32)> {
+	let mut handlers = INPUT_HANDLER_REGISTRY
 		.get_valid_contents()
 		.into_iter()
 		.filter(|handler| handler.spatial.node().is_some_and(|node| node.enabled()))
@@ -81,19 +85,9 @@ pub fn get_sorted_handlers(
 		})
 		.filter_map(|handler| {
 			distance_calculator(&method.spatial, &method.data.lock(), &handler.field)
-				.map(|distance| (vec![handler], distance))
+				.map(|distance| (handler, distance))
 		})
-		.filter(|(_, distance)| *distance > 0.0)
-		.reduce(|(mut handlers_a, distance_a), (handlers_b, distance_b)| {
-			if (distance_a - distance_b).abs() < 0.001 {
-				handlers_a.extend(handlers_b);
-				(handlers_a, distance_a)
-			} else if distance_a < distance_b {
-				(handlers_a, distance_a)
-			} else {
-				(handlers_b, distance_b)
-			}
-		})
-		.map(|(handlers, _)| handlers)
-		.unwrap_or_default()
+		.collect::<Vec<_>>();
+	handlers.sort_by(|(_, dist_a), (_, dist_b)| dist_a.partial_cmp(dist_b).unwrap());
+	handlers
 }
