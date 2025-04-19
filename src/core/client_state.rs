@@ -69,7 +69,7 @@ impl ClientStateParsed {
 		let app_name = self
 			.launch_info
 			.as_ref()
-			.map(|l| l.cmdline.first().unwrap().split('/').last().unwrap())
+			.map(|l| l.cmdline.first().unwrap().split('/').next_back().unwrap())
 			.unwrap_or("unknown");
 		let state_file_path = directory
 			.join(format!("{app_name}-{}", nanoid::nanoid!()))
