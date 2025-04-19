@@ -150,7 +150,7 @@ impl MousePointer {
 		let first_distance = handlers
 			.first()
 			.map(|(_, distance)| *distance)
-			.unwrap_or(std::f32::NEG_INFINITY);
+			.unwrap_or(f32::NEG_INFINITY);
 
 		self.pointer.set_handler_order(
 			handlers
