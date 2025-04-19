@@ -160,7 +160,7 @@ impl InputMethod {
 			.iter()
 			.filter_map(Weak::upgrade)
 			.collect::<Registry<InputHandler>>();
-		self.captures.retain(|handler| {
+		self.capture_attempts.retain(|handler| {
 			!handler
 				.spatial
 				.node()
