@@ -72,7 +72,7 @@ pub struct WaylandState {
 	pub kde_decoration_state: KdeDecorationState,
 	pub shm_state: ShmState,
 	dmabuf_state: (DmabufState, DmabufGlobal, Option<DmabufFeedback>),
-	pub viewporter_state: ViewporterState,
+	pub _viewporter_state: ViewporterState,
 	pub drm_formats: Vec<Fourcc>,
 	pub dmabuf_tx: UnboundedSender<(Dmabuf, Option<dmabuf::ImportNotifier>)>,
 	pub seat_state: SeatState<Self>,
@@ -161,7 +161,7 @@ impl WaylandState {
 		output.set_preferred(mode);
 
 		let mut xdg_shell = XdgShellState::new::<Self>(&display_handle);
-		let viewporter_state = ViewporterState::new::<Self>(&display_handle);
+		let _viewporter_state = ViewporterState::new::<Self>(&display_handle);
 		let popup_manager = PopupManager::default();
 		let mut capabilities = WmCapabilitySet::default();
 		capabilities.set(WmCapabilities::Maximize);
@@ -189,7 +189,7 @@ impl WaylandState {
 				xdg_shell,
 				popup_manager,
 				output,
-				viewporter_state,
+				_viewporter_state,
 			})
 		})
 	}
