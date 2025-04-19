@@ -179,7 +179,8 @@ impl SkHand {
 		}
 
 		let sorted_handlers = get_sorted_handlers(&self.input, distance_calculator);
-		self.input.set_handler_order(sorted_handlers.iter());
+		self.input
+			.set_handler_order(sorted_handlers.iter().map(|(handler, _)| handler));
 	}
 }
 impl Drop for SkHand {
