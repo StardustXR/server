@@ -28,22 +28,22 @@ pub fn draw(token: &MainThreadToken) {
 	match QUEUED_SKYTEX.lock().take() {
 		Some(Some(skytex)) => {
 			if let Ok(skytex) = SHCubemap::from_cubemap(skytex, true, 100) {
-				Renderer::skytex(skytex.tex);
+				Renderer::sky_tex(skytex.tex);
 			}
 		}
 		Some(None) => {
-			Renderer::skytex(DEFAULT_SKYTEX.get().unwrap());
+			Renderer::sky_tex(DEFAULT_SKYTEX.get().unwrap());
 		}
 		None => {}
 	}
 	match QUEUED_SKYLIGHT.lock().take() {
 		Some(Some(skylight)) => {
 			if let Ok(skylight) = SHCubemap::from_cubemap(skylight, true, 100) {
-				Renderer::skylight(skylight.sh);
+				Renderer::sky_light(skylight.sh);
 			}
 		}
 		Some(None) => {
-			Renderer::skylight(*DEFAULT_SKYLIGHT.get().unwrap());
+			Renderer::sky_light(*DEFAULT_SKYLIGHT.get().unwrap());
 		}
 		None => {}
 	}

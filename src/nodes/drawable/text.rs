@@ -16,7 +16,7 @@ use std::{
 use stereokit_rust::{
 	font::Font,
 	sk::MainThreadToken,
-	system::{TextAlign, TextFit, TextStyle as SkTextStyle},
+	system::{Align, Pivot, TextFit, TextStyle as SkTextStyle},
 	util::{Color32, Color128},
 };
 
@@ -24,17 +24,30 @@ use super::{TextAspect, TextStyle};
 
 static TEXT_REGISTRY: Registry<Text> = Registry::new();
 
-fn convert_align(x_align: super::XAlign, y_align: super::YAlign) -> TextAlign {
+fn convert_pivot(x_align: super::XAlign, y_align: super::YAlign) -> Pivot {
 	match (x_align, y_align) {
-		(super::XAlign::Left, super::YAlign::Top) => TextAlign::TopLeft,
-		(super::XAlign::Left, super::YAlign::Center) => TextAlign::CenterLeft,
-		(super::XAlign::Left, super::YAlign::Bottom) => TextAlign::BottomLeft,
-		(super::XAlign::Center, super::YAlign::Top) => TextAlign::Center,
-		(super::XAlign::Center, super::YAlign::Center) => TextAlign::Center,
-		(super::XAlign::Center, super::YAlign::Bottom) => TextAlign::BottomCenter,
-		(super::XAlign::Right, super::YAlign::Top) => TextAlign::TopRight,
-		(super::XAlign::Right, super::YAlign::Center) => TextAlign::CenterRight,
-		(super::XAlign::Right, super::YAlign::Bottom) => TextAlign::BottomRight,
+		(super::XAlign::Left, super::YAlign::Top) => Pivot::TopLeft,
+		(super::XAlign::Left, super::YAlign::Center) => Pivot::CenterLeft,
+		(super::XAlign::Left, super::YAlign::Bottom) => Pivot::BottomLeft,
+		(super::XAlign::Center, super::YAlign::Top) => Pivot::Center,
+		(super::XAlign::Center, super::YAlign::Center) => Pivot::Center,
+		(super::XAlign::Center, super::YAlign::Bottom) => Pivot::BottomCenter,
+		(super::XAlign::Right, super::YAlign::Top) => Pivot::TopRight,
+		(super::XAlign::Right, super::YAlign::Center) => Pivot::CenterRight,
+		(super::XAlign::Right, super::YAlign::Bottom) => Pivot::BottomRight,
+	}
+}
+fn convert_align(x_align: super::XAlign, y_align: super::YAlign) -> Align {
+	match (x_align, y_align) {
+		(super::XAlign::Left, super::YAlign::Top) => Align::TopLeft,
+		(super::XAlign::Left, super::YAlign::Center) => Align::CenterLeft,
+		(super::XAlign::Left, super::YAlign::Bottom) => Align::BottomLeft,
+		(super::XAlign::Center, super::YAlign::Top) => Align::Center,
+		(super::XAlign::Center, super::YAlign::Center) => Align::Center,
+		(super::XAlign::Center, super::YAlign::Bottom) => Align::BottomCenter,
+		(super::XAlign::Right, super::YAlign::Top) => Align::TopRight,
+		(super::XAlign::Right, super::YAlign::Center) => Align::CenterRight,
+		(super::XAlign::Right, super::YAlign::Bottom) => Align::BottomRight,
 	}
 }
 
@@ -104,7 +117,7 @@ impl Text {
 				)),
 				data.bounds
 					.as_ref()
-					.map(|b| convert_align(b.anchor_align_x, b.anchor_align_y)),
+					.map(|b| convert_pivot(b.anchor_align_x, b.anchor_align_y)),
 				Some(convert_align(data.text_align_x, data.text_align_y)),
 				None,
 				None,
@@ -124,7 +137,7 @@ impl Text {
 				)),
 				data.bounds
 					.as_ref()
-					.map(|b| convert_align(b.anchor_align_x, b.anchor_align_y)),
+					.map(|b| convert_pivot(b.anchor_align_x, b.anchor_align_y)),
 				Some(convert_align(data.text_align_x, data.text_align_y)),
 				None,
 				None,

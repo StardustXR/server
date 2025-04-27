@@ -32,7 +32,12 @@ impl Hash for MaterialWrapper {
 		self.0.get_shader().0.as_ptr().hash(state);
 		for param in self.0.get_all_param_info() {
 			param.name.hash(state);
-			param.to_string().hash(state);
+			(param.get_type() as u32).hash(state);
+			let data = self
+				.0
+				.get_all_param_info()
+				.get_data(&param.name, param.get_type());
+			data.hash(state);
 		}
 		self.0.get_chain().map(MaterialWrapper).hash(state)
 	}
@@ -53,7 +58,14 @@ impl PartialEq for MaterialWrapper {
 			else {
 				return false;
 			};
-			if self_param.to_string() != other_param.to_string() {
+			let Some(self_param) = self
+				.0
+				.get_all_param_info()
+				.get_data(self_param.get_name(), self_param.get_type())
+			else {
+				return false;
+			};
+			if self_param != other_param {
 				return false;
 			}
 		}
@@ -118,10 +130,10 @@ impl MaterialParameter {
 				params.set_float(parameter_name, *val);
 			}
 			MaterialParameter::Vec2(val) => {
-				params.set_vec2(parameter_name, Vec2::from(*val));
+				params.set_vector2(parameter_name, Vec2::from(*val));
 			}
 			MaterialParameter::Vec3(val) => {
-				params.set_vec3(parameter_name, Vec3::from(*val));
+				params.set_vector3(parameter_name, Vec3::from(*val));
 			}
 			MaterialParameter::Color(val) => {
 				params.set_color(
@@ -172,7 +184,7 @@ impl ModelPart {
 		let mut parts = model.parts.lock();
 		let parent_part = part
 			.get_parent()
-			.and_then(|part| parts.iter().find(|p| p.id == *part.get_id()));
+			.and_then(|part| parts.iter().find(|p| p.id == part.get_id()));
 
 		let stardust_model_part = model.space.node()?;
 		let client = stardust_model_part.get_client()?;
@@ -215,7 +227,7 @@ impl ModelPart {
 		});
 
 		let model_part = Arc::new(ModelPart {
-			id: *part.get_id(),
+			id: part.get_id(),
 			path: part_path,
 			space,
 			model: Arc::downgrade(model),
@@ -353,7 +365,7 @@ impl Model {
 		MODEL_REGISTRY.add_raw(&model);
 
 		// technically doing this in anything but the main thread isn't a good idea but dangit we need those model nodes ASAP
-		let sk_model = SKModel::copy(SKModel::from_file(
+		let sk_model = SKModel::copy(&SKModel::from_file(
 			pending_model_path.to_str().unwrap(),
 			None,
 		)?);

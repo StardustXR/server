@@ -189,7 +189,7 @@ async fn main() {
 
 	tokio::select! {
 		_ = stereokit_loop => (),
-		_ = tokio::signal::ctrl_c() => unsafe {sk_quit(QuitReason::SystemClose)},
+		_ = tokio::signal::ctrl_c() => unsafe {sk_quit(QuitReason::User)},
 	}
 	info!("Stopping...");
 	if let Some(project_dirs) = project_dirs {
@@ -259,7 +259,7 @@ fn stereokit_loop(
 			TexType::Cubemap,
 			TexFormat::RGBA32,
 		));
-		let _ = DEFAULT_SKYLIGHT.set(Renderer::get_skylight());
+		let _ = DEFAULT_SKYLIGHT.set(Renderer::get_sky_light());
 		if let Some(sky) = project_dirs
 			.as_ref()
 			.map(|dirs| dirs.config_dir().join("skytex.hdr"))
@@ -268,7 +268,7 @@ fn stereokit_loop(
 		{
 			sky.render_as_sky();
 		} else {
-			Renderer::skytex(DEFAULT_SKYTEX.get().unwrap());
+			Renderer::sky_tex(DEFAULT_SKYTEX.get().unwrap());
 		}
 	}
 

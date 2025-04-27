@@ -97,9 +97,9 @@ impl SkController {
 			);
 			self.material
 				.color_tint(if self.capture_manager.capture.upgrade().is_none() {
-					Color128::new_rgb(1.0, 1.0, 1.0)
+					Color128::rgb(1.0, 1.0, 1.0)
 				} else {
-					Color128::new_rgb(0.0, 1.0, 0.75)
+					Color128::rgb(0.0, 1.0, 0.75)
 				});
 			self.model.draw(
 				token,
