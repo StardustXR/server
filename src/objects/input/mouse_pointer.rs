@@ -244,9 +244,9 @@ impl MousePointer {
 					};
 					let input_state = Input::key(key);
 					if input_state.is_just_active() {
-						let _ = keyboard_handler.key_state(mapped_key, true).await;
+						let _ = keyboard_handler.key_state(mapped_key + 8, true).await;
 					} else if input_state.is_just_inactive() {
-						let _ = keyboard_handler.key_state(mapped_key, false).await;
+						let _ = keyboard_handler.key_state(mapped_key + 8, false).await;
 					}
 				}
 			}
