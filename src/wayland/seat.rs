@@ -13,7 +13,7 @@ use smithay::{
 	input::{
 		Seat, SeatHandler,
 		keyboard::{FilterResult, LedState},
-		pointer::{AxisFrame, ButtonEvent, CursorImageStatus, MotionEvent},
+		pointer::{AxisFrame, ButtonEvent, CursorImageStatus, CursorImageSurfaceData, MotionEvent},
 		touch::{self, DownEvent, UpEvent},
 	},
 	reexports::wayland_server::{Resource, Weak as WlWeak, protocol::wl_surface::WlSurface},
@@ -38,6 +38,11 @@ impl SeatHandler for WaylandState {
 			CursorImageStatus::Surface(surface) => {
 				CoreSurface::add_to(&surface);
 				compositor::with_states(&surface, |data| {
+					if let Some(cursor_attributes) = data.data_map.get::<CursorImageSurfaceData>() {
+						let hotspot = cursor_attributes.lock().unwrap().hotspot;
+						c.hotspot_x = hotspot.x;
+						c.hotspot_y = hotspot.y;
+					}
 					if let Some(core_surface) = data.data_map.get::<Arc<CoreSurface>>() {
 						core_surface.set_material_offset(1);
 					}
