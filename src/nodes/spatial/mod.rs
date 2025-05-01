@@ -15,8 +15,8 @@ use mint::Vector3;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::fmt::Debug;
-use std::ptr;
 use std::sync::{Arc, OnceLock, Weak};
+use std::{f32, ptr};
 use stereokit_rust::maths::Bounds;
 
 stardust_xr_server_codegen::codegen_spatial_protocol!();
@@ -242,7 +242,7 @@ impl Spatial {
 			.upgrade()
 			.map(|zone| zone.field.clone())
 			.map(|field| field.distance(self, vec3a(0.0, 0.0, 0.0)))
-			.unwrap_or(f32::MAX)
+			.unwrap_or(f32::NEG_INFINITY)
 	}
 }
 impl AspectIdentifier for Spatial {
