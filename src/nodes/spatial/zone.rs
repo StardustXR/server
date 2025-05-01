@@ -80,6 +80,11 @@ impl Zone {
 
 		let current_zoneables = Registry::new();
 		for zoneable in ZONEABLE_REGISTRY.get_valid_contents() {
+			// Skip if the zoneable is an ancestor of the zone or the zone itself
+			if zoneable.is_ancestor_of(self.spatial.clone()) {
+				continue;
+			}
+
 			let distance = self.field.distance(&zoneable, [0.0; 3].into());
 			if distance > 0.0 {
 				continue;
