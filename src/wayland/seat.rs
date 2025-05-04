@@ -240,7 +240,6 @@ impl SeatWrapper {
 			0,
 			|_, _, _| FilterResult::Forward::<()>,
 		);
-		keyboard.set_focus(&mut state.lock(), None, SERIAL_COUNTER.next_serial());
 	}
 
 	pub fn touch_down(&self, surface: WlSurface, id: u32, position: Vector2<f32>) {
