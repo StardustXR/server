@@ -472,6 +472,7 @@ impl Backend for XdgBackend {
 
 	fn close_toplevel(&self) {
 		if let Some(toplevel) = self.toplevel.lock().clone() {
+			self.seat.unfocus_internal_state(toplevel.wl_surface());
 			toplevel.send_close();
 		}
 	}

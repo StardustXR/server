@@ -108,6 +108,12 @@ impl SeatWrapper {
 			touches: Mutex::new(FxHashMap::default()),
 		}
 	}
+	pub fn unfocus_internal_state(&self, surface: &WlSurface) {
+		let Some(state) = self.wayland_state.upgrade() else {
+			return;
+		};
+		self.unfocus(surface, &mut state.lock());
+	}
 	pub fn unfocus(&self, surface: &WlSurface, state: &mut WaylandState) {
 		let pointer = self.seat.get_pointer().unwrap();
 		if pointer.current_focus() == Some(surface.clone()) {
