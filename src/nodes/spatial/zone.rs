@@ -16,26 +16,28 @@ use std::sync::{Arc, Weak};
 pub fn capture(spatial: &Arc<Spatial>, zone: &Arc<Zone>) {
 	let old_distance = spatial.zone_distance();
 	let new_distance = zone.field.distance(spatial, vec3a(0.0, 0.0, 0.0));
-	if new_distance.abs() < old_distance.abs() {
-		release(spatial);
-		*spatial.old_parent.lock() = spatial.get_parent();
-		*spatial.zone.lock() = Arc::downgrade(zone);
-		let Some(zone_node) = zone.spatial.node.upgrade() else {
-			return;
-		};
-		let Some(spatial_node) = spatial.node.upgrade() else {
-			return;
-		};
-		let Ok(spatial_alias) = Alias::create(
-			&spatial_node,
-			&zone_node.get_client().unwrap(),
-			SPATIAL_ASPECT_ALIAS_INFO.clone(),
-			Some(&zone.captured),
-		) else {
-			return;
-		};
-		let _ = super::zone_client::capture(&zone_node, &spatial_alias);
+	if new_distance.abs() > old_distance.abs() {
+		return;
 	}
+
+	release(spatial);
+	*spatial.old_parent.lock() = spatial.get_parent();
+	*spatial.zone.lock() = Arc::downgrade(zone);
+	let Some(zone_node) = zone.spatial.node.upgrade() else {
+		return;
+	};
+	let Some(spatial_node) = spatial.node.upgrade() else {
+		return;
+	};
+	let Ok(spatial_alias) = Alias::create(
+		&spatial_node,
+		&zone_node.get_client().unwrap(),
+		SPATIAL_ASPECT_ALIAS_INFO.clone(),
+		Some(&zone.captured),
+	) else {
+		return;
+	};
+	let _ = super::zone_client::capture(&zone_node, &spatial_alias);
 }
 pub fn release(spatial: &Spatial) {
 	let Some(spatial_node) = spatial.node.upgrade() else {
@@ -89,11 +91,8 @@ impl Zone {
 			if distance > 0.0 {
 				continue;
 			}
-			if let Some(zone) = zoneable.zone.lock().upgrade() {
-				let zoneable_distance = zone.field.distance(&zoneable, [0.0; 3].into());
-				if zoneable_distance < distance {
-					continue;
-				}
+			if distance < zoneable.zone_distance() {
+				continue;
 			}
 			current_zoneables.add_raw(&zoneable);
 		}
