@@ -1,10 +1,10 @@
 # Stardust XR Server
 
-Stardust XR is a display server for VR and AR headsets on Linux-based systems. [Stardust provides a 3D environment](https://www.youtube.com/watch?v=v2WblwbaLaA), where anything from 2D windows (including your existing apps!), to 3D apps built from objects, can exist together in physical space.  
+Stardust XR is a display server for VR and AR headsets on Linux-based systems. [Stardust provides a 3D environment](https://www.youtube.com/watch?v=v2WblwbaLaA), where anything from 2D windows (including your existing apps!), to 3D apps built from objects, can exist together in physical space.
 
 ![workflow](/img/workflow.png)
 
-## Core Dependencies 
+## Core Dependencies
 | Functionality      | Ubuntu (apt)                                        | Fedora (dnf)                                                         | Arch Linux (pacman)                        |
 | ------------------ | --------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------ |
 | **EGL / GL**       | libegl-dev, libgl-dev, libgbm-dev, libdrm-dev       | mesa-libEGL-devel, mesa-libGL-devel, mesa-libgbm-devel, libdrm-devel | mesa (includes development files), libdrm  |
@@ -25,7 +25,7 @@ Stardust XR is a display server for VR and AR headsets on Linux-based systems. [
 
 Command line installation of core & dynamic dependencies are provided below:
 <details>
-<summary>Ubuntu/Debian</summary> 
+<summary>Ubuntu/Debian</summary>
   <pre><code class="language-bash">
   sudo apt update && sudo apt install \
   build-essential \
@@ -40,7 +40,7 @@ Command line installation of core & dynamic dependencies are provided below:
 </details>
 
 <details>
-<summary>Fedora</summary> 
+<summary>Fedora</summary>
   <pre><code class="language-bash">
   sudo apt update && sudo apt install \
   cargo \
@@ -55,7 +55,7 @@ Command line installation of core & dynamic dependencies are provided below:
 
 
 <details>
-<summary>Arch Linux</summary> 
+<summary>Arch Linux</summary>
   <pre><code class="language-bash">
   sudo pacman -Syu --needed \
   cargo \
@@ -87,7 +87,7 @@ We've provided a manual installation script [here](https://github.com/cybernetic
 
 After cloning the repository
 ```bash
-cargo build
+cargo build --release # this is needed to skip validation layers
 ```
 
 ## Usage
@@ -102,32 +102,32 @@ First, try running `cargo run -- -f` in a terminal window to check out flatscree
 If there aren't already any clients running, you'll need to manually launch them by either navigating to their repositories and running `cargo run`, or running them via their names if you installed via dnf or the manual installation script, such as `flatland`, `hexagon_launcher`, etc.
 
 > [!IMPORTANT]
-> [Flatland](https://github.com/StardustXR/flatland) must be running for 2D apps to launch. 
+> [Flatland](https://github.com/StardustXR/flatland) must be running for 2D apps to launch.
 
 ### Startup Script
 A startup script can be created at `~/.config/stardust/startup` that will launch specified settings and clients/applications, an example of which is shown [here](https://github.com/cyberneticmelon/usefulscripts/blob/main/startup). If you used the [installation script](https://github.com/cyberneticmelon/usefulscripts/blob/main/stardustxr_setup.sh), one will have already been made for you. This allows wide flexibility of what clients to launch upon startup (and, for example, *where*, using the [Gravity](https://github.com/StardustXR/gravity) client to specify X Y and Z co-ordinates).
 
 ### Flatscreen Navigation
-A video guide showcasing flatscreen controls is available [here](https://www.youtube.com/watch?v=JCYecSlKlDI)  
+A video guide showcasing flatscreen controls is available [here](https://www.youtube.com/watch?v=JCYecSlKlDI)
 
 To move around, hold down `Shift + W A S D`, with `Q` for moving down and `E` for moving up.
 ![wasd](https://github.com/StardustXR/website/blob/main/static/img/updated_flat_wasd.GIF)
 
-To look around, hold down `Shift + Right` Click while moving the mouse. 
+To look around, hold down `Shift + Right` Click while moving the mouse.
 ![updated_look](https://github.com/StardustXR/website/blob/main/static/img/updated_flat_look.GIF)
 
 To drag applications out of the app launcher, hold down `Shift + ~`
 ![updated_drag](https://github.com/StardustXR/website/blob/main/static/img/updated_flat_drag.GIF)
 
 ### XR Navigation
-A video guide showcasing XR controls is available [here](https://www.youtube.com/watch?v=RbxFq6JjliA)  
+A video guide showcasing XR controls is available [here](https://www.youtube.com/watch?v=RbxFq6JjliA)
 
 **Quest 3 Hand tracking**:
-Pinch to drag and drop, grasp with full hand for grabbing, point and click with pointer finger to click or pinch from a distance  
+Pinch to drag and drop, grasp with full hand for grabbing, point and click with pointer finger to click or pinch from a distance
 
 ![hand_pinching](https://github.com/StardustXR/website/blob/main/static/img/hand_pinching.GIF)
 
 **Quest 3 Controller**:
-Grab with the grip buttons, click by touching the tip of the cones or by using the trigger from a distance  
+Grab with the grip buttons, click by touching the tip of the cones or by using the trigger from a distance
 
 ![controller_click](https://github.com/StardustXR/website/blob/main/static/img/controller_click.GIF)
