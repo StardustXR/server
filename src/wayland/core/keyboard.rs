@@ -182,7 +182,7 @@ impl Keyboard {
 			self.id,
 			serial,
 			0, // time
-			key,
+			key - 8,
 			if pressed {
 				KeyState::Pressed
 			} else {
