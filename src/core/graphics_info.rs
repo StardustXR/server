@@ -39,6 +39,7 @@ pub struct GraphicsInfo {
 unsafe impl Send for GraphicsInfo {}
 unsafe impl Sync for GraphicsInfo {}
 impl GraphicsInfo {
+	#[allow(unused)]
 	pub fn register_debug_callback(&self) -> Result<(), Error> {
 		let extensions_str = self.extensions()?;
 		dbg!(&extensions_str);

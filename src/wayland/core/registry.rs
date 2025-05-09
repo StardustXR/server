@@ -6,15 +6,13 @@ use crate::wayland::{
 		seat::{Seat, WlSeat},
 		shm::{Shm, WlShm},
 	},
-	dmabuf::Dmabuf,
 	xdg::wm_base::{WmBase, XdgWmBase},
 };
 pub use waynest::server::protocol::core::wayland::wl_registry::*;
+#[cfg(feature = "dmabuf")]
+use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
 use waynest::{
-	server::{
-		Client, Dispatcher, Error, Result,
-		protocol::stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
-	},
+	server::{Client, Dispatcher, Error, Result},
 	wire::{NewId, ObjectId},
 };
 
@@ -25,6 +23,7 @@ impl RegistryGlobals {
 	pub const WM_BASE: u32 = 2;
 	pub const SEAT: u32 = 3;
 	pub const OUTPUT: u32 = 4;
+	#[cfg(feature = "dmabuf")]
 	pub const DMABUF: u32 = 5;
 }
 
@@ -78,11 +77,12 @@ impl Registry {
 		)
 		.await?;
 
+		#[cfg(feature = "dmabuf")]
 		self.global(
 			client,
 			sender_id,
 			RegistryGlobals::DMABUF,
-			Dmabuf::INTERFACE.to_string(),
+			crate::wayland::dmabuf::Dmabuf::INTERFACE.to_string(),
 			Dmabuf::VERSION,
 		)
 		.await?;
@@ -131,6 +131,7 @@ impl WlRegistry for Registry {
 				tracing::info!("Binding output");
 				client.insert(new_id.object_id, Output);
 			}
+			#[cfg(feature = "dmabuf")]
 			RegistryGlobals::DMABUF => {
 				tracing::info!("Binding dmabuf");
 				let dmabuf = client.insert(new_id.object_id, Dmabuf::new());

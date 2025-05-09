@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
+#[cfg(feature = "dmabuf")]
+use crate::wayland::dmabuf::buffer_backing::DmabufBacking;
 use crate::{
 	core::registry::Registry,
-	wayland::{
-		GraphicsInfo, core::shm_buffer_backing::ShmBufferBacking,
-		dmabuf::buffer_backing::DmabufBacking,
-	},
+	wayland::{GraphicsInfo, core::shm_buffer_backing::ShmBufferBacking},
 };
 use mint::Vector2;
 use stereokit_rust::tex::Tex;
@@ -20,6 +19,7 @@ pub static BUFFER_REGISTRY: Registry<Buffer> = Registry::new();
 #[derive(Debug)]
 pub enum BufferBacking {
 	Shm(ShmBufferBacking),
+	#[cfg(feature = "dmabuf")]
 	Dmabuf(DmabufBacking),
 }
 impl BufferBacking {
@@ -42,9 +42,11 @@ impl Buffer {
 		buffer
 	}
 
+	#[allow(unused)]
 	pub fn init_tex(self: Arc<Self>, graphics_info: &Arc<GraphicsInfo>) {
 		match &self.backing {
 			BufferBacking::Shm(_) => (),
+			#[cfg(feature = "dmabuf")]
 			BufferBacking::Dmabuf(backing) => backing.init_tex(graphics_info, self.clone()),
 		}
 	}
@@ -54,6 +56,7 @@ impl Buffer {
 		tracing::info!("Updating texture for buffer {:?}", self.id);
 		match &self.backing {
 			BufferBacking::Shm(backing) => backing.update_tex(),
+			#[cfg(feature = "dmabuf")]
 			BufferBacking::Dmabuf(backing) => backing
 				.get_tex()
 				.map(|tex| tex.get_id().to_string())
@@ -68,6 +71,7 @@ impl Buffer {
 	pub fn size(&self) -> Vector2<usize> {
 		match &self.backing {
 			BufferBacking::Shm(backing) => backing.size(),
+			#[cfg(feature = "dmabuf")]
 			BufferBacking::Dmabuf(backing) => backing.size(),
 		}
 	}
