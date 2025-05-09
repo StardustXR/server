@@ -2,6 +2,34 @@ use khronos_egl::{Context, Display, Instance};
 use std::ffi::CStr;
 use std::io::{self, Error};
 
+const EGL_EXTENSIONS: i32 = 0x3055;
+
+// Define function pointers for the missing EGL extension functions
+type EglQueryDisplayAttribEXT = unsafe extern "C" fn(
+	egl_display: khronos_egl::EGLDisplay,
+	attribute: i32,
+	value: *mut *const std::ffi::c_void,
+) -> khronos_egl::Boolean;
+
+type EglQueryDeviceStringEXT =
+	unsafe extern "C" fn(device: *const std::ffi::c_void, name: i32) -> *const i8;
+
+extern "C" fn egl_debug_callback(
+	error: i32,
+	command: *const std::os::raw::c_char,
+	message_type: std::os::raw::c_int,
+	thread: std::os::raw::c_void,
+	object: std::os::raw::c_void,
+	message: *const std::os::raw::c_char,
+) {
+	let command = unsafe { std::ffi::CStr::from_ptr(command) }.to_string_lossy();
+	let message = unsafe { std::ffi::CStr::from_ptr(message) }.to_string_lossy();
+	eprintln!(
+		"EGL Debug: Error: {:?}, Command: {}, Message Type: {}, Thread: {:?}, Object: {:?}, Message: {}",
+		error, command, message_type, thread, object, message
+	);
+}
+
 #[derive(Debug)]
 pub struct GraphicsInfo {
 	pub instance: Instance<khronos_egl::Static>,
@@ -10,75 +38,127 @@ pub struct GraphicsInfo {
 }
 unsafe impl Send for GraphicsInfo {}
 unsafe impl Sync for GraphicsInfo {}
-
 impl GraphicsInfo {
-	#[allow(unused)]
-	pub fn get_drm_device_file_path(&self) -> Result<String, Error> {
-		// Define function pointers for the missing EGL extension functions
-		type EglQueryDisplayAttribEXT = unsafe extern "C" fn(
-			egl_display: khronos_egl::EGLDisplay,
-			attribute: i32,
-			value: *mut *const std::ffi::c_void,
-		) -> khronos_egl::Boolean;
-
-		type EglQueryDeviceStringEXT =
-			unsafe extern "C" fn(device: *const std::ffi::c_void, name: i32) -> *const i8;
-
-		// Load the missing EGL extension functions
-		let egl_query_display_attrib_ext = {
-			let func = self.instance.get_proc_address("eglQueryDisplayAttribEXT");
-			let func = func.ok_or_else(|| {
-				io::Error::new(
-					io::ErrorKind::Other,
-					"eglQueryDisplayAttribEXT not available",
-				)
-			})?;
-			unsafe { std::mem::transmute::<extern "system" fn(), EglQueryDisplayAttribEXT>(func) }
-		};
-
-		let egl_query_device_string_ext = {
-			let func = self.instance.get_proc_address("eglQueryDeviceStringEXT");
-			let func = func.ok_or_else(|| {
-				io::Error::new(
-					io::ErrorKind::Other,
-					"eglQueryDeviceStringEXT not available",
-				)
-			})?;
-			unsafe { std::mem::transmute::<extern "system" fn(), EglQueryDeviceStringEXT>(func) }
-		};
-
-		// Query the EGL device
-		let egl_display = self.display;
-		let egl_attributes: i32 = 0x322C; // EGL_DEVICE_EXT
-		let egl_device = {
-			let mut device: *const std::ffi::c_void = std::ptr::null_mut();
-			let success = unsafe {
-				egl_query_display_attrib_ext(egl_display.as_ptr(), egl_attributes, &mut device)
+	pub fn register_debug_callback(&self) -> Result<(), Error> {
+		let extensions_str = self.extensions()?;
+		dbg!(&extensions_str);
+		if extensions_str.contains("EGL_KHR_debug") {
+			let egl_debug_message_control_khr = {
+				let func = self.instance.get_proc_address("eglDebugMessageControlKHR");
+				let func = func.ok_or_else(|| {
+					io::Error::new(
+						io::ErrorKind::Other,
+						"eglDebugMessageControlKHR not available",
+					)
+				})?;
+				unsafe {
+					std::mem::transmute::<
+						extern "system" fn(),
+						unsafe extern "C" fn(
+							callback: Option<
+								extern "C" fn(
+									error: i32,
+									command: *const std::os::raw::c_char,
+									message_type: std::os::raw::c_int,
+									thread: std::os::raw::c_void,
+									object: std::os::raw::c_void,
+									message: *const std::os::raw::c_char,
+								),
+							>,
+							*const std::ffi::c_void,
+						) -> khronos_egl::Boolean,
+					>(func)
+				}
 			};
-			if device.is_null() {
-				return Err(io::Error::new(io::ErrorKind::Other, "egl_device is null"));
+
+			unsafe {
+				egl_debug_message_control_khr(Some(egl_debug_callback), std::ptr::null());
 			}
-			if success == khronos_egl::FALSE {
-				let egl_error = self.instance.get_error();
-				return Err(io::Error::new(
-					io::ErrorKind::Other,
-					format!("Failed to query EGL device: {:?}", egl_error),
-				));
-			}
-			device
-		};
+			Ok(())
+		} else {
+			eprintln!("EGL_KHR_debug extension is not supported");
+			Err(io::Error::new(
+				io::ErrorKind::Other,
+				"EGL_KHR_debug extension is not supported",
+			))
+		}
+	}
+
+	pub fn extensions(&self) -> Result<String, Error> {
+		let egl_device = self.egl_device()?;
 
 		// Check supported attributes for the device
-		const EGL_EXTENSIONS: i32 = 0x3055;
 		let supported_attributes =
-			unsafe { egl_query_device_string_ext(egl_device, EGL_EXTENSIONS) };
+			unsafe { self.egl_query_device_string_ext()?(egl_device, EGL_EXTENSIONS) };
 		if supported_attributes.is_null() {
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
 				"Failed to query supported attributes",
 			));
 		}
-		let extensions = unsafe { CStr::from_ptr(supported_attributes).to_str().unwrap_or("") };
+		Ok(unsafe {
+			CStr::from_ptr(supported_attributes)
+				.to_string_lossy()
+				.to_string()
+		})
+	}
+
+	fn egl_device(&self) -> Result<*const std::ffi::c_void, Error> {
+		let egl_display = self.display;
+		let egl_attributes: i32 = 0x322C;
+		let mut device: *const std::ffi::c_void = std::ptr::null_mut();
+		let success = unsafe {
+			self.egl_query_display_attrib_ext()?(egl_display.as_ptr(), egl_attributes, &mut device)
+		};
+		if device.is_null() {
+			return Err(io::Error::new(io::ErrorKind::Other, "egl_device is null"));
+		}
+		if success == khronos_egl::FALSE {
+			let egl_error = self.instance.get_error();
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!("Failed to query EGL device: {:?}", egl_error),
+			));
+		}
+
+		Ok(device)
+	}
+
+	fn egl_query_display_attrib_ext(&self) -> Result<EglQueryDisplayAttribEXT, Error> {
+		let func = self.instance.get_proc_address("eglQueryDisplayAttribEXT");
+		let func = func.ok_or_else(|| {
+			io::Error::new(
+				io::ErrorKind::Other,
+				"eglQueryDisplayAttribEXT not available",
+			)
+		})?;
+		unsafe {
+			Ok(std::mem::transmute::<
+				extern "system" fn(),
+				EglQueryDisplayAttribEXT,
+			>(func))
+		}
+	}
+
+	fn egl_query_device_string_ext(&self) -> Result<EglQueryDeviceStringEXT, Error> {
+		let func = self.instance.get_proc_address("eglQueryDeviceStringEXT");
+		let func = func.ok_or_else(|| {
+			io::Error::new(
+				io::ErrorKind::Other,
+				"eglQueryDeviceStringEXT not available",
+			)
+		})?;
+		unsafe {
+			Ok(std::mem::transmute::<
+				extern "system" fn(),
+				EglQueryDeviceStringEXT,
+			>(func))
+		}
+	}
+
+	#[allow(unused)]
+	pub fn get_drm_device_file_path(&self) -> Result<String, Error> {
+		let extensions = self.extensions()?;
 		if !extensions.contains("EGL_DRM_DEVICE_FILE_EXT") {
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
@@ -95,7 +175,7 @@ impl GraphicsInfo {
 				io::Error::new(io::ErrorKind::Other, "Failed to make EGL context current")
 			})?;
 		let drm_device_file_path = unsafe {
-			let cstr = egl_query_device_string_ext(egl_device, 0x3376); // EGL_DRM_DEVICE_FILE_EXT
+			let cstr = self.egl_query_device_string_ext()?(self.egl_device()?, 0x3376); // EGL_DRM_DEVICE_FILE_EXT
 			if cstr.is_null() {
 				let egl_error = self.instance.get_error();
 				return Err(io::Error::new(
