@@ -42,12 +42,13 @@ impl Buffer {
 		buffer
 	}
 
-	pub fn init_tex(self: Arc<Self>, graphics_info: &GraphicsInfo) {
+	pub fn init_tex(self: Arc<Self>, graphics_info: &Arc<GraphicsInfo>) {
 		match &self.backing {
 			BufferBacking::Shm(_) => (),
 			BufferBacking::Dmabuf(backing) => backing.init_tex(graphics_info, self.clone()),
 		}
 	}
+
 	/// Returns the tex if it was updated
 	pub fn update_tex(&self) -> Option<Tex> {
 		tracing::info!("Updating texture for buffer {:?}", self.id);

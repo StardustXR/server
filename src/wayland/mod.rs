@@ -5,6 +5,7 @@ pub mod xdg;
 
 use crate::core::{
 	error::{Result, ServerError},
+	graphics_info::GraphicsInfo,
 	task,
 };
 use crate::wayland::core::seat::SeatMessage;
@@ -118,12 +119,15 @@ struct WaylandClient {
 	abort_handle: AbortHandle,
 }
 impl WaylandClient {
-	pub fn from_stream(socket: UnixStream) -> Result<Self> {
+	pub fn from_stream(socket: UnixStream, graphics_info: Arc<GraphicsInfo>) -> Result<Self> {
 		let pid = socket.peer_cred().ok().and_then(|c| c.pid());
 		let mut client = server::Client::new(socket)?;
 		let (message_sink, message_source) = mpsc::unbounded_channel();
 
-		client.insert(ObjectId::DISPLAY, Display::new(message_sink, pid));
+		client.insert(
+			ObjectId::DISPLAY,
+			Display::new(message_sink, pid, graphics_info.clone()),
+		);
 		let abort_handle = task::new(
 			|| "wayland client",
 			Self::handle_client_messages(client, message_source),
@@ -232,18 +236,11 @@ impl Drop for WaylandClient {
 }
 
 #[derive(Debug)]
-pub struct GraphicsInfo {
-	pub egl_instance: khronos_egl::Instance<khronos_egl::Static>,
-	pub display: khronos_egl::Display,
-	pub context: khronos_egl::Context,
-}
-
-#[derive(Debug)]
 pub struct Wayland {
 	abort_handle: AbortHandle,
 }
 impl Wayland {
-	pub fn new(socket_path: Option<PathBuf>) -> Result<Self> {
+	pub fn new(socket_path: Option<PathBuf>, graphics_info: Arc<GraphicsInfo>) -> Result<Self> {
 		let socket_path = if let Some(path) = socket_path {
 			path
 		} else {
@@ -257,17 +254,23 @@ impl Wayland {
 		let listener =
 			server::Listener::new_with_path(&socket_path).map_err(ServerError::WaylandError)?;
 
-		let abort_handle =
-			task::new(|| "wayland loop", Self::handle_wayland_loop(listener))?.abort_handle();
+		let abort_handle = task::new(
+			|| "wayland loop",
+			Self::handle_wayland_loop(listener, graphics_info),
+		)?
+		.abort_handle();
 
 		Ok(Self { abort_handle })
 	}
-	async fn handle_wayland_loop(mut listener: server::Listener) -> Result<()> {
+	async fn handle_wayland_loop(
+		mut listener: server::Listener,
+		graphics_info: Arc<GraphicsInfo>,
+	) -> Result<()> {
 		let mut clients = Vec::new();
 		loop {
 			if let Ok(Some(stream)) = listener.try_next().await {
 				debug_span!("Accept wayland client").in_scope(|| {
-					if let Ok(client) = WaylandClient::from_stream(stream) {
+					if let Ok(client) = WaylandClient::from_stream(stream, graphics_info.clone()) {
 						clients.push(client);
 					}
 				});
@@ -286,7 +289,7 @@ impl Wayland {
 		}
 	}
 
-	pub fn early_frame(&self, graphics_info: &GraphicsInfo) {
+	pub fn early_frame(&self, graphics_info: &Arc<GraphicsInfo>) {
 		for buffer in BUFFER_REGISTRY.get_valid_contents() {
 			buffer.init_tex(graphics_info);
 		}

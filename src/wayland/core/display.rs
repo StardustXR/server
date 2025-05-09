@@ -1,5 +1,5 @@
 use crate::wayland::{
-	MessageSink,
+	GraphicsInfo, MessageSink,
 	core::{
 		callback::{Callback, WlCallback},
 		registry::Registry,
@@ -19,14 +19,20 @@ pub struct Display {
 	pub message_sink: MessageSink,
 	pub pid: Option<i32>,
 	pub seat: OnceLock<Arc<Seat>>,
+	pub graphics_info: Arc<GraphicsInfo>,
 	id_counter: CounterU32,
 }
 impl Display {
-	pub fn new(message_sink: MessageSink, pid: Option<i32>) -> Self {
+	pub fn new(
+		message_sink: MessageSink,
+		pid: Option<i32>,
+		graphics_info: Arc<GraphicsInfo>,
+	) -> Self {
 		Self {
 			message_sink,
 			pid,
 			seat: OnceLock::new(),
+			graphics_info,
 			id_counter: CounterU32::new(0xff000000), // Start at 0xff000000 to avoid conflicts with client-generated IDs
 		}
 	}

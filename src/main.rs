@@ -12,6 +12,7 @@ use crate::nodes::{audio, drawable, input};
 
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
+use core::graphics_info::GraphicsInfo;
 use core::task;
 use directories::ProjectDirs;
 use objects::ServerObjects;
@@ -35,7 +36,6 @@ use tokio::sync::Notify;
 use tracing::metadata::LevelFilter;
 use tracing::{debug_span, error, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
-use wayland::GraphicsInfo;
 use zbus::Connection;
 use zbus::fdo::ObjectManager;
 
@@ -274,15 +274,16 @@ fn stereokit_loop(
 	}
 
 	let graphics_info = unsafe {
-		GraphicsInfo {
+		Arc::new(GraphicsInfo {
 			egl_instance: khronos_egl::Instance::new(khronos_egl::Static),
 			display: khronos_egl::Display::from_ptr(BackendOpenGLESEGL::display()),
 			context: khronos_egl::Context::from_ptr(BackendOpenGLESEGL::context()),
-		}
+		})
 	};
 
 	#[cfg(feature = "wayland")]
-	let mut wayland = wayland::Wayland::new(None).expect("Could not initialize wayland");
+	let mut wayland =
+		wayland::Wayland::new(None, graphics_info.clone()).expect("Could not initialize wayland");
 	sk_ready_notifier.notify_waiters();
 	info!("Stardust ready!");
 

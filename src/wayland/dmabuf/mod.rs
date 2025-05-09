@@ -86,8 +86,8 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 		id: ObjectId,
 	) -> Result<()> {
 		// Create feedback object for default (non-surface-specific) settings
-		client.insert(id, DmabufFeedback);
-		// feedback.send_params(client, id).await?;
+		let feedback = client.insert(id, DmabufFeedback);
+		feedback.send_params(client, id).await?;
 		Ok(())
 	}
 
@@ -101,8 +101,8 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 		// Create feedback object for surface-specific settings
 		// Note: Surface-specific feedback could be optimized based on the surface's
 		// requirements, but for now we use the same feedback as default
-		client.insert(id, DmabufFeedback);
-		// feedback.send_params(client, id).await?;
+		let feedback = client.insert(id, DmabufFeedback);
+		feedback.send_params(client, id).await?;
 		Ok(())
 	}
 }

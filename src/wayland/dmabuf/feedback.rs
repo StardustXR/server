@@ -1,6 +1,9 @@
+use crate::wayland::util::ClientExt;
 use drm_fourcc::DrmFourcc;
-use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
-use std::os::unix::fs::MetadataExt;
+use std::os::{
+	fd::{FromRawFd, IntoRawFd, OwnedFd},
+	unix::fs::MetadataExt,
+};
 use tempfile::tempfile;
 use waynest::{
 	server::{
@@ -14,16 +17,17 @@ use waynest::{
 
 #[derive(Debug, Dispatcher)]
 pub struct DmabufFeedback;
-
 impl DmabufFeedback {
 	pub async fn send_params(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
 		// Send format table first
 		self.send_format_table(client, sender_id).await?;
 
-		// TODO: This is bad! We should get the actual device from our EGL display/context
-		// using eglQueryDisplayAttribEXT -> EGL_DEVICE_EXT -> eglQueryDeviceStringEXT -> EGL_DRM_DEVICE_FILE_EXT
-		// For now, hardcoding to match what stereokit uses to render
-		let dev_stat = std::fs::metadata("/dev/dri/renderD128")?;
+		let graphics_info = &client.display().graphics_info;
+
+		// Get the DRM device file path using the new method
+		let device_file = graphics_info.get_drm_device_file_path()?;
+
+		let dev_stat = std::fs::metadata(device_file)?;
 		let dev_id = dev_stat.rdev().to_ne_bytes().to_vec();
 
 		self.main_device(client, sender_id, dev_id.clone()).await?;
