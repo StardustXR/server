@@ -3,9 +3,8 @@ use memfd::MemfdOptions;
 use slotmap::{DefaultKey, KeyData};
 use std::{
 	collections::HashSet,
-	io::Write,
 	os::{
-		fd::IntoRawFd,
+		fd::{AsRawFd, IntoRawFd},
 		unix::io::{FromRawFd, OwnedFd},
 	},
 	sync::{Arc, Weak},
@@ -82,12 +81,18 @@ impl Keyboard {
 	}
 
 	async fn send_keymap(&self, client: &mut Client, keymap: &[u8]) -> Result<()> {
-		let mut file = MemfdOptions::default()
+		let file = MemfdOptions::default()
 			.create("stardust-keymap")
 			.map_err(|e| waynest::server::Error::Custom(e.to_string()))?
 			.into_file();
-		file.write_all(keymap)?;
-		file.flush()?;
+		file.set_len(keymap.len() as u64)?;
+		// file.write_all(keymap)?;
+		// file.flush()?;
+
+		// let map = libc::mmap(addr, len, prot, flags, fd, offset)
+
+		let mut map = unsafe { memmap2::MmapMut::map_mut(file.as_raw_fd()) }?;
+		map.copy_from_slice(keymap);
 
 		let fd = unsafe { OwnedFd::from_raw_fd(file.into_raw_fd()) };
 

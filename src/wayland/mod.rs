@@ -1,4 +1,5 @@
 pub mod core;
+#[cfg(feature = "dmabuf")]
 pub mod dmabuf;
 pub mod util;
 pub mod xdg;
@@ -16,6 +17,7 @@ use core::{
 	display::Display,
 	surface::WL_SURFACE_REGISTRY,
 };
+#[cfg(feature = "dmabuf")]
 use dmabuf::buffer_params::BufferParams;
 use mint::Vector2;
 use std::{
@@ -28,15 +30,14 @@ use std::{
 use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
 use tokio_stream::StreamExt;
 use tracing::{debug_span, instrument};
+#[cfg(feature = "dmabuf")]
+use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1;
 use waynest::{
 	server::{
 		self,
 		protocol::{
 			core::wayland::{wl_buffer::WlBuffer, wl_callback::WlCallback, wl_display::WlDisplay},
-			stable::{
-				linux_dmabuf_v1::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1,
-				xdg_shell::xdg_toplevel::XdgToplevel,
-			},
+			stable::xdg_shell::xdg_toplevel::XdgToplevel,
 		},
 	},
 	wire::{DecodeError, ObjectId},
@@ -98,7 +99,9 @@ pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
 pub enum Message {
 	Frame(Arc<Callback>),
 	ReleaseBuffer(Arc<Buffer>),
+	#[cfg(feature = "dmabuf")]
 	DmabufImportSuccess(Arc<BufferParams>, Arc<Buffer>),
+	#[cfg(feature = "dmabuf")]
 	DmabufImportFailure(Arc<BufferParams>),
 	CloseToplevel(Arc<Toplevel>),
 	ResizeToplevel {
@@ -203,9 +206,11 @@ impl WaylandClient {
 				client.remove(callback.0);
 				callback.done(client, callback.0, serial).await
 			}
+			#[cfg(feature = "dmabuf")]
 			Message::DmabufImportSuccess(params, buffer) => {
 				params.created(client, params.id, buffer.id).await
 			}
+			#[cfg(feature = "dmabuf")]
 			Message::DmabufImportFailure(params) => {
 				client.remove(params.id);
 				params.failed(client, params.id).await
