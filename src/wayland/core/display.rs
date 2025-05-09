@@ -19,6 +19,7 @@ pub struct Display {
 	pub message_sink: MessageSink,
 	pub pid: Option<i32>,
 	pub seat: OnceLock<Arc<Seat>>,
+	#[allow(unused)]
 	pub graphics_info: Arc<GraphicsInfo>,
 	id_counter: CounterU32,
 }
