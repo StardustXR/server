@@ -127,8 +127,8 @@ impl Surface {
 
 			// Set default shader parameters
 			let mut params = mat_wrapper.0.get_all_param_info();
-			params.set_vec2("uv_scale", stereokit_rust::maths::Vec2::new(1.0, 1.0));
-			params.set_vec2("uv_offset", stereokit_rust::maths::Vec2::new(0.0, 0.0));
+			params.set_vector2("uv_scale", stereokit_rust::maths::Vec2::new(1.0, 1.0));
+			params.set_vector2("uv_offset", stereokit_rust::maths::Vec2::new(0.0, 0.0));
 			params.set_float("fcFactor", 1.0);
 			params.set_float("ripple", 4.0);
 			params.set_float("alpha_min", 0.0);

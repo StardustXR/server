@@ -55,7 +55,7 @@ impl DmabufBacking {
 		}
 	}
 
-	fn import_dmabuf(&self, graphics_info: &GraphicsInfo) -> Result<Tex, khronos_egl::Error> {
+	fn import_dmabuf(&self, graphics_info: &Arc<GraphicsInfo>) -> Result<Tex, khronos_egl::Error> {
 		let mut tex = Tex::new(
 			TexType::ImageNomips | TexType::Dynamic,
 			TexFormat::RGBA32,
@@ -86,9 +86,9 @@ impl DmabufBacking {
 			unsafe { ClientBuffer::from_ptr(EGL_NO_BUFFER) },
 			&[
 				EGL_WIDTH as usize,
-				self.size.x as usize,
+				self.size.x,
 				EGL_HEIGHT as usize,
-				self.size.y as usize,
+				self.size.y,
 				EGL_LINUX_DRM_FOURCC_EXT as usize,
 				self.format as usize,
 				EGL_DMA_BUF_PLANE0_FD_EXT as usize,
@@ -116,15 +116,17 @@ impl DmabufBacking {
 
 		// Set the native texture handle directly
 		// Mesa will handle the OES texture implicitly
-		tex.set_native_surface(
-			gl_tex as *mut std::os::raw::c_void,
-			TexType::ImageNomips | TexType::Dynamic,
-			0x8058, // GL_RGBA8
-			self.size.x as i32,
-			self.size.y as i32,
-			1,    // single surface
-			true, // we own this texture
-		);
+		unsafe {
+			tex.set_native_surface(
+				gl_tex as *mut std::os::raw::c_void,
+				TexType::ImageNomips | TexType::Dynamic,
+				0x8058, // GL_RGBA8
+				self.size.x as i32,
+				self.size.y as i32,
+				1,    // single surface
+				true, // we own this texture
+			)
+		};
 
 		// Clean up EGL image
 		graphics_info
@@ -135,7 +137,7 @@ impl DmabufBacking {
 		Ok(tex)
 	}
 
-	pub fn init_tex(&self, graphics_info: &GraphicsInfo, buffer: Arc<Buffer>) {
+	pub fn init_tex(&self, graphics_info: &Arc<GraphicsInfo>, buffer: Arc<Buffer>) {
 		if self.tex.get().is_none() {
 			match self.import_dmabuf(graphics_info) {
 				Ok(tex) => {

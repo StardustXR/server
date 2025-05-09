@@ -80,7 +80,7 @@ impl ShmBufferBacking {
 
 		let tex_id = self.tex.lock().get_id().to_string();
 		let mut tex = Tex::find(tex_id).unwrap();
-		tex.set_colors(self.size.x, self.size.y, pixels.as_mut_ptr() as *mut c_void);
+		unsafe { tex.set_colors(self.size.x, self.size.y, pixels.as_mut_ptr() as *mut c_void) };
 		Some(tex)
 	}
 

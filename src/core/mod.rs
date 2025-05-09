@@ -3,6 +3,7 @@ pub mod client_state;
 pub mod delta;
 pub mod destroy_queue;
 pub mod error;
+pub mod graphics_info;
 pub mod registry;
 pub mod resource;
 pub mod scenegraph;

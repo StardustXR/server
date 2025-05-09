@@ -108,7 +108,10 @@ waynest = { git = "https://github.com/verdiwm/waynest.git", features = [
 tokio-stream = { version = "0.1.17", optional = true }
 memmap2 = { version = "0.9.5", optional = true }
 drm-fourcc = { version = "2.2.0", optional = true }
-khronos-egl = { version = "6.0.0", features = ["static"], optional = true }
+khronos-egl = { version = "6.0.0", features = [
+	"static",
+	"no-pkg-config",
+], optional = true }
 gl = { version = "0.14.0", optional = true }
 dashmap = "6.1.0"
 

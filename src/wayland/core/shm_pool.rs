@@ -22,7 +22,7 @@ impl ShmPool {
 		let map = unsafe {
 			MmapOptions::new()
 				.len(size as usize)
-				.map_mut(&fd.into_raw_fd())?
+				.map_mut(fd.into_raw_fd())?
 		};
 
 		Ok(Self {
