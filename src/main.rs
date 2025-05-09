@@ -275,7 +275,7 @@ fn stereokit_loop(
 
 	let graphics_info = unsafe {
 		Arc::new(GraphicsInfo {
-			egl_instance: khronos_egl::Instance::new(khronos_egl::Static),
+			instance: khronos_egl::Instance::new(khronos_egl::Static),
 			display: khronos_egl::Display::from_ptr(BackendOpenGLESEGL::display()),
 			context: khronos_egl::Context::from_ptr(BackendOpenGLESEGL::context()),
 		})

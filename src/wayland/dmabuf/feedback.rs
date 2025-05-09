@@ -1,9 +1,5 @@
-use crate::wayland::util::ClientExt;
 use drm_fourcc::DrmFourcc;
-use std::os::{
-	fd::{FromRawFd, IntoRawFd, OwnedFd},
-	unix::fs::MetadataExt,
-};
+use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
 use tempfile::tempfile;
 use waynest::{
 	server::{
@@ -22,19 +18,19 @@ impl DmabufFeedback {
 		// Send format table first
 		self.send_format_table(client, sender_id).await?;
 
-		let graphics_info = &client.display().graphics_info;
+		// let graphics_info = &client.display().graphics_info;
 
 		// Get the DRM device file path using the new method
-		let device_file = graphics_info.get_drm_device_file_path()?;
+		// let device_file = graphics_info.get_drm_device_file_path()?;
 
-		let dev_stat = std::fs::metadata(device_file)?;
-		let dev_id = dev_stat.rdev().to_ne_bytes().to_vec();
+		// let dev_stat = std::fs::metadata(device_file)?;
+		// let dev_id = dev_stat.rdev().to_ne_bytes().to_vec();
 
-		self.main_device(client, sender_id, dev_id.clone()).await?;
+		// self.main_device(client, sender_id, dev_id.clone()).await?;
 
 		// Send single tranche with same device since we only support the main GPU
-		self.tranche_target_device(client, sender_id, dev_id)
-			.await?;
+		// self.tranche_target_device(client, sender_id, dev_id)
+		// .await?;
 
 		// We only have one format at index 0
 		let indices = vec![0u16]

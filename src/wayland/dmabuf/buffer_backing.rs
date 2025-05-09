@@ -79,7 +79,7 @@ impl DmabufBacking {
 			self.params.id
 		);
 		// Create EGL image
-		let image = graphics_info.egl_instance.create_image(
+		let image = graphics_info.instance.create_image(
 			graphics_info.display,
 			graphics_info.context,
 			EGL_LINUX_DMA_BUF_EXT as u32,
@@ -130,7 +130,7 @@ impl DmabufBacking {
 
 		// Clean up EGL image
 		graphics_info
-			.egl_instance
+			.instance
 			.destroy_image(graphics_info.display, image)
 			.ok();
 
