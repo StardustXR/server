@@ -281,6 +281,10 @@ fn stereokit_loop(
 		})
 	};
 
+	// graphics_info
+	// 	.register_debug_callback()
+	// 	.expect("Failed to debug GL");
+
 	#[cfg(feature = "wayland")]
 	let mut wayland =
 		wayland::Wayland::new(None, graphics_info.clone()).expect("Could not initialize wayland");

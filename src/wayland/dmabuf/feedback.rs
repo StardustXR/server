@@ -1,6 +1,9 @@
 use drm_fourcc::DrmFourcc;
-use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
-use tempfile::tempfile;
+use memfd::MemfdOptions;
+use std::{
+	io::Write,
+	os::fd::{FromRawFd, IntoRawFd, OwnedFd},
+};
 use waynest::{
 	server::{
 		Client, Dispatcher, Result,
@@ -54,14 +57,11 @@ impl DmabufFeedback {
 	pub async fn send_format_table(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
 		// Create a temporary file for the format table
 		let size = 16u32; // One format+modifier pair
-		let fd = tempfile()?;
+		let mfd = MemfdOptions::default()
+			.create("stardustxr-format-table")
+			.map_err(|e| waynest::server::Error::Custom(e.to_string()))?;
 
-		// Map the file for writing
-		let mut mmap = unsafe {
-			memmap2::MmapOptions::new()
-				.len(size as usize)
-				.map_mut(&fd)?
-		};
+		mfd.as_file().set_len(size as u64)?;
 
 		// Format + modifier pair (16 bytes):
 		// - format: u32
@@ -71,17 +71,13 @@ impl DmabufFeedback {
 		let modifier: u64 = 0; // Linear modifier
 
 		// Write the format+modifier pair
-		let bytes = mmap.as_mut();
-		bytes[0..4].copy_from_slice(&format.to_ne_bytes());
-		bytes[8..16].copy_from_slice(&modifier.to_ne_bytes());
-
-		// Drop the map to ensure all writes are flushed
-		mmap.flush()?;
+		mfd.as_file().write_all(&format.to_ne_bytes())?;
+		mfd.as_file().write_all(&modifier.to_ne_bytes())?;
 
 		self.format_table(
 			client,
 			sender_id,
-			unsafe { OwnedFd::from_raw_fd(fd.into_raw_fd()) },
+			unsafe { OwnedFd::from_raw_fd(mfd.into_raw_fd()) },
 			size,
 		)
 		.await?;

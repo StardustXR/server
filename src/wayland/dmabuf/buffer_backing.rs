@@ -16,7 +16,7 @@ const EGL_HEIGHT: i32 = 0x3056;
 const EGL_LINUX_DRM_FOURCC_EXT: i32 = 0x3272;
 const EGL_DMA_BUF_PLANE0_FD_EXT: i32 = 0x3373;
 const EGL_DMA_BUF_PLANE0_OFFSET_EXT: i32 = 0x3273;
-const EGL_DMA_BUF_PLANE0_PITCH_EXT: i32 = 0x3274;
+const EGL_DMA_BUF_PLANE0_PITCH_EXT: i32 = 0x3275;
 const EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT: i32 = 0x3443;
 const EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT: i32 = 0x3444;
 const EGL_LINUX_DMA_BUF_EXT: i32 = 0x3270;
@@ -56,6 +56,23 @@ impl DmabufBacking {
 	}
 
 	fn import_dmabuf(&self, graphics_info: &Arc<GraphicsInfo>) -> Result<Tex, khronos_egl::Error> {
+		// Sanity check for required EGL extensions
+		let extensions = graphics_info
+			.instance
+			.query_string(Some(graphics_info.display), egl::EXTENSIONS)?;
+		let extensions_str = extensions.to_string_lossy();
+		let extensions_list: Vec<&str> = extensions_str.split_whitespace().collect();
+		if !extensions_list.contains(&"EGL_EXT_image_dma_buf_import") {
+			tracing::error!("EGL extension EGL_EXT_image_dma_buf_import is not supported");
+			return Err(khronos_egl::Error::BadParameter);
+		}
+		if !extensions_list.contains(&"EGL_EXT_image_dma_buf_import_modifiers") {
+			tracing::error!(
+				"EGL extension EGL_EXT_image_dma_buf_import_modifiers is not supported"
+			);
+			return Err(khronos_egl::Error::BadParameter);
+		}
+
 		let mut tex = Tex::new(
 			TexType::ImageNomips | TexType::Dynamic,
 			TexFormat::RGBA32,
@@ -78,17 +95,14 @@ impl DmabufBacking {
 			plane.fd.as_raw_fd(),
 			self.params.id
 		);
+
 		// Create EGL image
-		let image = graphics_info.instance.create_image(
+		let image = match graphics_info.instance.create_image(
 			graphics_info.display,
 			graphics_info.context,
 			EGL_LINUX_DMA_BUF_EXT as u32,
 			unsafe { ClientBuffer::from_ptr(EGL_NO_BUFFER) },
 			&[
-				EGL_WIDTH as usize,
-				self.size.x,
-				EGL_HEIGHT as usize,
-				self.size.y,
 				EGL_LINUX_DRM_FOURCC_EXT as usize,
 				self.format as usize,
 				EGL_DMA_BUF_PLANE0_FD_EXT as usize,
@@ -97,20 +111,34 @@ impl DmabufBacking {
 				plane.offset as usize,
 				EGL_DMA_BUF_PLANE0_PITCH_EXT as usize,
 				plane.stride as usize,
-				EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT as usize,
-				0,
-				EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT as usize,
-				0,
 				egl::ATTRIB_NONE,
-				0,
 			],
-		)?;
+		) {
+			Ok(image) => image,
+			Err(e) => {
+				tracing::error!(
+					"Wayland: Failed to create EGL image. Error: {:?}, Params: size=({:?}, {:?}), format={:?}, fd={}, stride={}, offset={}",
+					e,
+					self.size.x,
+					self.size.y,
+					self.format,
+					plane.fd.as_raw_fd(),
+					plane.stride,
+					plane.offset
+				);
+				return Err(e);
+			}
+		};
 
 		// The cloned fd will be consumed by create_image, so we don't need to explicitly close it
 		// Create and bind GL texture
 		let mut gl_tex = 0;
 		unsafe {
 			gl::GenTextures(1, &mut gl_tex);
+			if gl_tex == 0 {
+				tracing::error!("Wayland: Failed to generate GL texture.");
+				return Err(khronos_egl::Error::BadParameter);
+			}
 			gl::BindTexture(gl::TEXTURE_2D, gl_tex);
 		}
 
@@ -129,10 +157,12 @@ impl DmabufBacking {
 		};
 
 		// Clean up EGL image
-		graphics_info
+		if let Err(e) = graphics_info
 			.instance
 			.destroy_image(graphics_info.display, image)
-			.ok();
+		{
+			tracing::error!("Wayland: Failed to destroy EGL image. Error: {:?}", e);
+		}
 
 		Ok(tex)
 	}

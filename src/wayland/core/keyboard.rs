@@ -1,14 +1,15 @@
 use crate::{nodes::items::panel::KEYMAPS, wayland::core::surface::Surface};
+use memfd::MemfdOptions;
 use slotmap::{DefaultKey, KeyData};
 use std::{
 	collections::HashSet,
-	fs,
 	io::Write,
-	os::unix::io::{AsRawFd, FromRawFd, OwnedFd},
-	path::PathBuf,
+	os::{
+		fd::IntoRawFd,
+		unix::io::{FromRawFd, OwnedFd},
+	},
 	sync::{Arc, Weak},
 };
-use tempfile;
 use tokio::sync::Mutex;
 pub use waynest::server::protocol::core::wayland::wl_keyboard::*;
 use waynest::{
@@ -81,25 +82,24 @@ impl Keyboard {
 	}
 
 	async fn send_keymap(&self, client: &mut Client, keymap: &[u8]) -> Result<()> {
-		// Get base directory (XDG_RUNTIME_DIR or /tmp)
-		let base_dir = std::env::var_os("XDG_RUNTIME_DIR")
-			.map(PathBuf::from)
-			.unwrap_or_else(std::env::temp_dir);
-
-		// Create our subdirectory for keymap files
-		let keymap_dir = base_dir.join("stardust_xr/keymaps");
-		fs::create_dir_all(&keymap_dir)?;
-
-		let mut file = tempfile::tempfile_in(keymap_dir)?;
+		let mut file = MemfdOptions::default()
+			.create("stardust-keymap")
+			.map_err(|e| waynest::server::Error::Custom(e.to_string()))?
+			.into_file();
 		file.write_all(keymap)?;
 		file.flush()?;
 
-		let size = keymap.len();
-		let fd = unsafe { OwnedFd::from_raw_fd(file.as_raw_fd()) };
+		let fd = unsafe { OwnedFd::from_raw_fd(file.into_raw_fd()) };
 
 		// Send keymap to client
-		self.keymap(client, self.id, KeymapFormat::XkbV1, fd, size as u32)
-			.await?;
+		self.keymap(
+			client,
+			self.id,
+			KeymapFormat::XkbV1,
+			fd,
+			keymap.len() as u32,
+		)
+		.await?;
 
 		Ok(())
 	}
