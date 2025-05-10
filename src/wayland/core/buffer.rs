@@ -53,7 +53,7 @@ impl Buffer {
 
 	/// Returns the tex if it was updated
 	pub fn update_tex(&self) -> Option<Tex> {
-		tracing::info!("Updating texture for buffer {:?}", self.id);
+		tracing::debug!("Updating texture for buffer {:?}", self.id);
 		match &self.backing {
 			BufferBacking::Shm(backing) => backing.update_tex(),
 			#[cfg(feature = "dmabuf")]

@@ -172,7 +172,7 @@ impl Backend for XdgBackend {
 	}
 
 	fn keyboard_key(&self, surface: &SurfaceId, keymap_id: u64, key: u32, pressed: bool) {
-		tracing::info!(
+		tracing::debug!(
 			"Backend: Keyboard key {} {}",
 			key,
 			if pressed { "pressed" } else { "released" }
@@ -194,7 +194,7 @@ impl Backend for XdgBackend {
 	}
 
 	fn touch_down(&self, surface: &SurfaceId, id: u32, position: Vector2<f32>) {
-		tracing::info!(
+		tracing::debug!(
 			"Backend: Touch down {} at ({}, {})",
 			id,
 			position.x,
@@ -216,7 +216,7 @@ impl Backend for XdgBackend {
 	}
 
 	fn touch_move(&self, id: u32, position: Vector2<f32>) {
-		tracing::info!(
+		tracing::debug!(
 			"Backend: Touch move {} to ({}, {})",
 			id,
 			position.x,
@@ -229,7 +229,7 @@ impl Backend for XdgBackend {
 	}
 
 	fn touch_up(&self, id: u32) {
-		tracing::info!("Backend: Touch up {}", id);
+		tracing::debug!("Backend: Touch up {}", id);
 		let surface = self.toplevel().surface();
 		let _ = surface.message_sink.send(crate::wayland::Message::Seat(
 			crate::wayland::core::seat::SeatMessage::TouchUp { id },
@@ -237,7 +237,7 @@ impl Backend for XdgBackend {
 	}
 
 	fn reset_input(&self) {
-		tracing::info!("Backend: Reset input");
+		tracing::debug!("Backend: Reset input");
 		let surface = self.toplevel().surface();
 		let _ = surface.message_sink.send(crate::wayland::Message::Seat(
 			crate::wayland::core::seat::SeatMessage::Reset,

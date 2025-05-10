@@ -198,13 +198,14 @@ impl WaylandClient {
 		match message {
 			Message::Frame(callback) => {
 				let serial = client.next_event_serial();
+				callback.done(client, callback.0, serial).await?;
 				client
 					.get::<Display>(ObjectId::DISPLAY)
 					.unwrap()
 					.delete_id(client, ObjectId::DISPLAY, callback.0.as_raw())
 					.await?;
 				client.remove(callback.0);
-				callback.done(client, callback.0, serial).await
+				Ok(())
 			}
 			#[cfg(feature = "dmabuf")]
 			Message::DmabufImportSuccess(params, buffer) => {

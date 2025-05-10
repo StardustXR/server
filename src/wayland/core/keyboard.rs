@@ -1,4 +1,8 @@
-use crate::{nodes::items::panel::KEYMAPS, wayland::core::surface::Surface};
+use crate::{
+	nodes::items::panel::KEYMAPS,
+	wayland::{core::surface::Surface, util::ClientExt},
+};
+use dashmap::{DashMap, DashSet};
 use memfd::MemfdOptions;
 use slotmap::{DefaultKey, KeyData};
 use std::{
@@ -69,6 +73,8 @@ pub struct Keyboard {
 	pub id: ObjectId,
 	focused_surface: Mutex<Weak<Surface>>,
 	modifier_state: Mutex<ModifierState>,
+	pressed_keys: DashMap<ObjectId, DashSet<u32>>,
+	current_keymap_id: Mutex<u64>,
 }
 
 impl Keyboard {
@@ -77,6 +83,8 @@ impl Keyboard {
 			id,
 			focused_surface: Mutex::new(Weak::new()),
 			modifier_state: Mutex::new(ModifierState::default()),
+			pressed_keys: DashMap::default(),
+			current_keymap_id: Mutex::new(0),
 		}
 	}
 
@@ -109,6 +117,7 @@ impl Keyboard {
 		Ok(())
 	}
 
+	/// has to be the wayland key, so -8 or whatever
 	pub async fn handle_keyboard_key(
 		&self,
 		client: &mut Client,
@@ -117,51 +126,93 @@ impl Keyboard {
 		key: u32,
 		pressed: bool,
 	) -> Result<()> {
+		// KEYMAP UPDATES
+		{
+			let mut old_keymap_id = self.current_keymap_id.lock().await;
+
+			if *old_keymap_id != keymap_id {
+				// println!("Updating keymap to {keymap_id}");
+				let keymap_key = DefaultKey::from(KeyData::from_ffi(keymap_id));
+
+				// Get keymap data and drop the lock immediately
+				let keymap_data = {
+					let keymap_lock = KEYMAPS.lock();
+					keymap_lock
+						.get(keymap_key)
+						.map(|s| s.as_bytes().to_vec())
+						.unwrap_or_default()
+				};
+
+				// Now we can safely await
+				self.send_keymap(client, &keymap_data).await?;
+			};
+			*old_keymap_id = keymap_id;
+			drop(old_keymap_id);
+		}
+
+		// PRESSED KEYS UPDATE
+		let pressed_keys = self.pressed_keys.entry(surface.id).or_default();
+		if pressed {
+			pressed_keys.insert(key);
+		} else {
+			pressed_keys.remove(&key);
+		}
+		// println!("pressed keys: {:?}", &*pressed_keys);
+
+		// FOCUS UPDATES
 		let mut focused = self.focused_surface.lock().await;
 		let mut modifier_state = self.modifier_state.lock().await;
 
+		let refocus = focused.as_ptr() != Arc::as_ptr(&surface);
 		// If we're entering a new surface
-		if focused.as_ptr() != Arc::as_ptr(&surface) {
+		if refocus {
 			// Send leave to old surface if it exists and is still alive
 			if let Some(old_surface) = focused.upgrade() {
 				let serial = client.next_event_serial();
 				self.leave(client, old_surface.id, serial, self.id).await?;
+				// println!("Left surface {}", old_surface.id);
 			}
 
 			// Send enter to new surface
 			let serial = client.next_event_serial();
-			let keymap_key = DefaultKey::from(KeyData::from_ffi(keymap_id));
-
-			// Get keymap data and drop the lock immediately
-			let keymap_data = {
-				let keymap_lock = KEYMAPS.lock();
-				keymap_lock
-					.get(keymap_key)
-					.map(|s| s.as_bytes().to_vec())
-					.unwrap_or_default()
-			};
-
-			// Now we can safely await
-			self.send_keymap(client, &keymap_data).await?;
 			self.enter(
 				client,
 				self.id,
 				serial,
 				surface.id,
-				modifier_state
-					.pressed_keys
-					.iter()
-					.flat_map(|&k| k.to_ne_bytes())
-					.collect(),
+				pressed_keys.iter().flat_map(|k| k.to_ne_bytes()).collect(),
 			)
 			.await?;
+			// println!("Entered new surface {}", surface.id);
 
 			// Update focused surface
 			*focused = Arc::downgrade(&surface);
 		}
 
+		// KEY EVENT SENDING
+		let serial = client.next_event_serial();
+		// println!(
+		// 	"Sent key {key} {}",
+		// 	if pressed { "pressed" } else { "released" }
+		// );
+		self.key(
+			client,
+			self.id,
+			serial,
+			client.display().creation_time.elapsed().as_millis() as u32, // time
+			key,
+			if pressed {
+				KeyState::Pressed
+			} else {
+				KeyState::Released
+			},
+		)
+		.await?;
+
+		// MODIFIER UPDATES
 		// Update modifier state and send modifiers event if changed
-		if modifier_state.update_key(key, pressed) {
+		if refocus || modifier_state.update_key(key, pressed) {
+			// println!("Update modifiers");
 			let serial = client.next_event_serial();
 			self.modifiers(
 				client,
@@ -174,22 +225,6 @@ impl Keyboard {
 			)
 			.await?;
 		}
-
-		// Send key event
-		let serial = client.next_event_serial();
-		self.key(
-			client,
-			self.id,
-			serial,
-			0, // time
-			key - 8,
-			if pressed {
-				KeyState::Pressed
-			} else {
-				KeyState::Released
-			},
-		)
-		.await?;
 
 		Ok(())
 	}
