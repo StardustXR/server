@@ -146,9 +146,7 @@ impl Surface {
 
 			// For SHM buffers, we can release immediately after copying to GPU
 			if buffer.can_release_after_update() {
-				let _ = self
-					.message_sink
-					.send(Message::ReleaseBuffer(buffer.clone()));
+				let _ = self.message_sink.send(Message::ReleaseBuffer(buffer));
 			}
 		}
 

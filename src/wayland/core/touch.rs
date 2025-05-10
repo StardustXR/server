@@ -30,7 +30,8 @@ impl Touch {
 			fixed_from_f32(position.x),
 			fixed_from_f32(position.y),
 		)
-		.await
+		.await?;
+		self.frame(client, self.0).await
 	}
 
 	pub async fn handle_touch_move(
@@ -47,12 +48,14 @@ impl Touch {
 			fixed_from_f32(position.x),
 			fixed_from_f32(position.y),
 		)
-		.await
+		.await?;
+		self.frame(client, self.0).await
 	}
 
 	pub async fn handle_touch_up(&self, client: &mut Client, id: u32) -> Result<()> {
 		let serial = client.next_event_serial();
-		self.up(client, self.0, serial, 0, id as i32).await
+		self.up(client, self.0, serial, 0, id as i32).await?;
+		self.frame(client, self.0).await
 	}
 
 	pub async fn reset(&self, client: &mut Client) -> Result<()> {

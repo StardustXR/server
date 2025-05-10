@@ -29,7 +29,7 @@ impl Pointer {
 		surface: Arc<Surface>,
 		position: Vector2<f32>,
 	) -> Result<()> {
-		tracing::info!(
+		tracing::debug!(
 			"Handling pointer motion at ({}, {})",
 			position.x,
 			position.y
@@ -38,17 +38,17 @@ impl Pointer {
 
 		// If we're entering a new surface
 		if focused.as_ptr() != Arc::as_ptr(&surface) {
-			tracing::info!("Surface transition detected");
+			tracing::debug!("Surface transition detected");
 			// Send leave to old surface if it exists and is still alive
 			if let Some(old_surface) = focused.upgrade() {
 				let serial = client.next_event_serial();
-				tracing::info!("Sending leave event with serial {}", serial);
+				tracing::debug!("Sending leave event with serial {}", serial);
 				self.leave(client, self.id, serial, old_surface.id).await?;
 			}
 
 			// Send enter to new surface
 			let serial = client.next_event_serial();
-			tracing::info!(
+			tracing::debug!(
 				"Sending enter event with serial {} to surface {:?}",
 				serial,
 				surface.id
@@ -68,7 +68,7 @@ impl Pointer {
 		}
 
 		// Send motion event to current surface
-		tracing::info!("Sending motion event to surface");
+		tracing::debug!("Sending motion event to surface");
 		self.motion(
 			client,
 			self.id,
@@ -77,6 +77,7 @@ impl Pointer {
 			fixed_from_f32(position.y),
 		)
 		.await?;
+		self.frame(client, self.id).await?;
 
 		Ok(())
 	}
@@ -88,7 +89,7 @@ impl Pointer {
 		button: u32,
 		pressed: bool,
 	) -> Result<()> {
-		tracing::info!(
+		tracing::debug!(
 			"Handling pointer button {} {} on surface {:?}",
 			button,
 			if pressed { "pressed" } else { "released" },
@@ -107,7 +108,8 @@ impl Pointer {
 				ButtonState::Released
 			},
 		)
-		.await
+		.await?;
+		self.frame(client, self.id).await
 	}
 	pub async fn handle_pointer_scroll(
 		&self,
@@ -116,7 +118,7 @@ impl Pointer {
 		scroll_distance: Option<Vector2<f32>>,
 		scroll_steps: Option<Vector2<f32>>,
 	) -> Result<()> {
-		tracing::info!(
+		tracing::debug!(
 			"Handling pointer scroll: distance={:?}, steps={:?}",
 			scroll_distance,
 			scroll_steps
@@ -145,7 +147,7 @@ impl Pointer {
 			self.axis_discrete(client, self.id, Axis::VerticalScroll, steps.y as i32)
 				.await?;
 		}
-		Ok(())
+		self.frame(client, self.id).await
 	}
 
 	pub async fn reset(&self, client: &mut Client) -> Result<()> {
@@ -153,6 +155,7 @@ impl Pointer {
 		if let Some(old_surface) = focused.upgrade() {
 			let serial = client.next_event_serial();
 			self.leave(client, self.id, serial, old_surface.id).await?;
+			self.frame(client, self.id).await?;
 		}
 		*focused = Weak::new();
 		Ok(())

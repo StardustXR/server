@@ -104,13 +104,10 @@ impl Seat {
 				key,
 				pressed,
 			} => {
-				tracing::info!("Handling keyboard key message");
 				if let Some(keyboard) = self.keyboard.get() {
-					tracing::info!("Found keyboard, handling key");
 					keyboard
-						.handle_keyboard_key(client, surface, keymap_id, key, pressed)
+						.handle_keyboard_key(client, surface, keymap_id, key - 8, pressed)
 						.await?;
-					tracing::info!("Keyboard key handled successfully");
 				}
 			}
 			SeatMessage::TouchDown {
@@ -118,33 +115,23 @@ impl Seat {
 				id,
 				position,
 			} => {
-				tracing::info!("Handling touch down message");
 				if let Some(touch) = self.touch.get() {
-					tracing::info!("Found touch, handling down");
 					touch
 						.handle_touch_down(client, surface, id, position)
 						.await?;
-					tracing::info!("Touch down handled successfully");
 				}
 			}
 			SeatMessage::TouchMove { id, position } => {
-				tracing::info!("Handling touch move message");
 				if let Some(touch) = self.touch.get() {
-					tracing::info!("Found touch, handling move");
 					touch.handle_touch_move(client, id, position).await?;
-					tracing::info!("Touch move handled successfully");
 				}
 			}
 			SeatMessage::TouchUp { id } => {
-				tracing::info!("Handling touch up message");
 				if let Some(touch) = self.touch.get() {
-					tracing::info!("Found touch, handling up");
 					touch.handle_touch_up(client, id).await?;
-					tracing::info!("Touch up handled successfully");
 				}
 			}
 			SeatMessage::Reset => {
-				tracing::info!("Handling reset message");
 				if let Some(pointer) = self.pointer.get() {
 					pointer.reset(client).await?;
 				}

@@ -7,7 +7,10 @@ use crate::wayland::{
 	},
 };
 use global_counter::primitive::exact::CounterU32;
-use std::sync::{Arc, OnceLock};
+use std::{
+	sync::{Arc, OnceLock},
+	time::Instant,
+};
 pub use waynest::server::protocol::core::wayland::wl_display::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -22,6 +25,7 @@ pub struct Display {
 	#[allow(unused)]
 	pub graphics_info: Arc<GraphicsInfo>,
 	id_counter: CounterU32,
+	pub creation_time: Instant,
 }
 impl Display {
 	pub fn new(
@@ -35,6 +39,7 @@ impl Display {
 			seat: OnceLock::new(),
 			graphics_info,
 			id_counter: CounterU32::new(0xff000000), // Start at 0xff000000 to avoid conflicts with client-generated IDs
+			creation_time: Instant::now(),
 		}
 	}
 	pub fn next_server_id(&self) -> ObjectId {
