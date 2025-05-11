@@ -18,6 +18,7 @@ impl Shm {
 	}
 }
 impl WlShm for Shm {
+	/// https://wayland.app/protocols/wayland#wl_shm:request:create_pool
 	async fn create_pool(
 		&self,
 		client: &mut Client,
@@ -31,6 +32,7 @@ impl WlShm for Shm {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_shm:request:release
 	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}

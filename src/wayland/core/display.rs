@@ -47,6 +47,7 @@ impl Display {
 	}
 }
 impl WlDisplay for Display {
+	/// https://wayland.app/protocols/wayland#wl_display:request:sync
 	async fn sync(
 		&self,
 		client: &mut Client,
@@ -63,6 +64,7 @@ impl WlDisplay for Display {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_display:request:get_registry
 	async fn get_registry(
 		&self,
 		client: &mut Client,

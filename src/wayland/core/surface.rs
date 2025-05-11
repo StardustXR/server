@@ -11,7 +11,7 @@ use crate::{
 	wayland::{
 		Message, MessageSink,
 		util::{ClientExt, DoubleBuffer},
-		xdg::toplevel::Toplevel,
+		xdg::{popup::Popup, toplevel::Toplevel},
 	},
 };
 use mint::Vector2;
@@ -31,7 +31,7 @@ pub static WL_SURFACE_REGISTRY: Registry<Surface> = Registry::new();
 #[derive(Debug, Clone)]
 pub enum SurfaceRole {
 	XdgToplevel(Arc<Toplevel>),
-	// XDGPopup(Arc<Popup>),
+	XDGPopup(Arc<Popup>),
 }
 
 #[derive(Debug, Clone)]
@@ -209,6 +209,7 @@ impl Surface {
 	// }
 }
 impl WlSurface for Surface {
+	/// https://wayland.app/protocols/wayland#wl_surface:request:attach
 	async fn attach(
 		&self,
 		client: &mut Client,
@@ -221,6 +222,7 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_surface:request:damage
 	async fn damage(
 		&self,
 		_client: &mut Client,
@@ -235,6 +237,7 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_surface:request:frame
 	async fn frame(
 		&self,
 		client: &mut Client,
@@ -246,6 +249,7 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_surface:request:set_opaque_region
 	async fn set_opaque_region(
 		&self,
 		_client: &mut Client,
@@ -256,6 +260,7 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_surface:request:set_input_region
 	async fn set_input_region(
 		&self,
 		_client: &mut Client,
@@ -266,6 +271,7 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_surface:request:commit
 	async fn commit(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		{
 			let mut lock = self.state.lock();
@@ -299,6 +305,7 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_surface:request:set_buffer_transform
 	async fn set_buffer_transform(
 		&self,
 		_client: &mut Client,
@@ -309,6 +316,7 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_surface:request:set_buffer_scale
 	async fn set_buffer_scale(
 		&self,
 		_client: &mut Client,
@@ -319,6 +327,7 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_surface:request:damage_buffer
 	async fn damage_buffer(
 		&self,
 		_client: &mut Client,
@@ -333,6 +342,7 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_surface:request:offset
 	async fn offset(
 		&self,
 		_client: &mut Client,
@@ -343,12 +353,8 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_surface:request:destroy
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
-		if let Some(role) = self.role.lock().take() {
-			match role {
-				SurfaceRole::XdgToplevel(_) => {}
-			}
-		}
 		Ok(())
 	}
 }

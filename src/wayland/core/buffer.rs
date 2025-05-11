@@ -78,6 +78,7 @@ impl Buffer {
 }
 
 impl WlBuffer for Buffer {
+	/// https://wayland.app/protocols/wayland#wl_buffer:request:destroy
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		tracing::info!("Destroying buffer {:?}", self.id);
 		Ok(())

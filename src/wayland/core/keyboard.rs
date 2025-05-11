@@ -252,6 +252,7 @@ impl Keyboard {
 }
 
 impl WlKeyboard for Keyboard {
+	/// https://wayland.app/protocols/wayland#wl_keyboard:request:release
 	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}

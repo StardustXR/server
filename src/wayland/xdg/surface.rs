@@ -1,3 +1,4 @@
+use super::{popup::Popup, positioner::Positioner, toplevel::Mapped};
 use crate::wayland::{
 	core::{display::Display, surface::SurfaceRole},
 	xdg::toplevel::Toplevel,
@@ -10,42 +11,56 @@ use waynest::{
 	wire::ObjectId,
 };
 
-use super::toplevel::Mapped;
-
 #[derive(Debug, Dispatcher)]
 pub struct Surface {
+	id: ObjectId,
 	wl_surface: Weak<crate::wayland::core::surface::Surface>,
 	configured: Arc<std::sync::atomic::AtomicBool>,
 }
 impl Surface {
-	pub fn new(wl_surface: Arc<crate::wayland::core::surface::Surface>) -> Self {
+	pub fn new(id: ObjectId, wl_surface: Arc<crate::wayland::core::surface::Surface>) -> Self {
 		Self {
+			id,
 			wl_surface: Arc::downgrade(&wl_surface),
 			configured: Arc::new(std::sync::atomic::AtomicBool::new(false)),
 		}
 	}
 
-	pub fn surface(&self) -> Arc<crate::wayland::core::surface::Surface> {
+	pub fn wl_surface(&self) -> Arc<crate::wayland::core::surface::Surface> {
 		// We can safely unwrap as the surface must exist for the lifetime of the xdg_surface
 		self.wl_surface
 			.upgrade()
 			.expect("Surface was dropped before xdg_surface")
 	}
+
+	pub async fn reconfigure(&self, client: &mut Client) -> Result<()> {
+		let serial = client.next_event_serial();
+		self.configure(client, self.id, serial).await
+	}
 }
 
 impl XdgSurface for Surface {
+	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:destroy
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:get_toplevel
 	async fn get_toplevel(
 		&self,
 		client: &mut Client,
 		sender_id: ObjectId,
 		toplevel_id: ObjectId,
 	) -> Result<()> {
-		let surface = self.surface();
-		let toplevel = client.insert(toplevel_id, Toplevel::new(toplevel_id, surface.clone()));
+		let surface = self.wl_surface();
+		let toplevel = client.insert(
+			toplevel_id,
+			Toplevel::new(
+				toplevel_id,
+				surface.clone(),
+				client.get::<Self>(sender_id).unwrap(),
+			),
+		);
 
 		{
 			let mut surface_role = surface.role.lock();
@@ -94,17 +109,75 @@ impl XdgSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:get_popup
 	async fn get_popup(
 		&self,
-		_client: &mut Client,
-		_sender_id: ObjectId,
-		_id: ObjectId,
-		_parent: Option<ObjectId>,
-		_positioner: ObjectId,
+		client: &mut Client,
+		sender_id: ObjectId,
+		popup_id: ObjectId,
+		parent: Option<ObjectId>,
+		positioner: ObjectId,
 	) -> Result<()> {
-		todo!()
+		let parent = client.get::<Surface>(parent.unwrap()).unwrap();
+		let panel_item = match parent.wl_surface().role.lock().as_ref().unwrap() {
+			SurfaceRole::XdgToplevel(toplevel) => {
+				let toplevel_lock = toplevel.mapped.lock();
+				toplevel_lock.as_ref().unwrap()._panel_item.clone()
+			}
+			SurfaceRole::XDGPopup(popup) => popup.panel_item.upgrade().unwrap(),
+		};
+		let positioner = client.get::<Positioner>(positioner).unwrap();
+
+		let surface = client.get::<Surface>(self.id).unwrap();
+
+		let popup = client.insert(
+			popup_id,
+			Popup::new(popup_id, &parent, &panel_item, &surface, &positioner),
+		);
+
+		{
+			let wl_surface = self.wl_surface();
+			let mut surface_role = wl_surface.role.lock();
+
+			if surface_role.is_some() {
+				// We should send "role" error here as per xdg_wm_base.error enum
+				// But we'll ignore for now
+			} else {
+				surface_role.replace(SurfaceRole::XDGPopup(popup.clone()));
+			}
+		}
+
+		let serial = client.next_event_serial();
+		self.configure(client, sender_id, serial).await?;
+
+		// let pid = client.get::<Display>(ObjectId::DISPLAY).unwrap().pid;
+		// let configured = self.configured.clone();
+		// surface.add_commit_handler(move |surface, state| {
+		// 	let Some(SurfaceRole::XDGPopup(popup)) = &mut *surface.role.lock() else {
+		// 		return true;
+		// 	};
+
+		// 	// Only proceed if configured and has valid buffer
+		// 	let has_valid_buffer = state
+		// 		.buffer
+		// 		.as_ref()
+		// 		.is_some_and(|b| b.size().x > 0 && b.size().y > 0);
+
+		// 	let mut mapped_lock = popup.mapped.lock();
+		// 	if mapped_lock.is_none()
+		// 		&& configured.load(std::sync::atomic::Ordering::SeqCst)
+		// 		&& has_valid_buffer
+		// 	{
+		// 		mapped_lock.replace(Mapped::create(popup.clone(), pid));
+		// 		return false;
+		// 	}
+		// 	true
+		// });
+
+		Ok(())
 	}
 
+	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:set_window_geometry
 	async fn set_window_geometry(
 		&self,
 		_client: &mut Client,
@@ -119,6 +192,7 @@ impl XdgSurface for Surface {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:ack_configure
 	async fn ack_configure(
 		&self,
 		_client: &mut Client,

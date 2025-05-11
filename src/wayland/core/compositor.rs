@@ -9,6 +9,7 @@ use waynest::{
 #[derive(Debug, Dispatcher, Default)]
 pub struct Compositor;
 impl WlCompositor for Compositor {
+	/// https://wayland.app/protocols/wayland#wl_compositor:request:create_surface
 	async fn create_surface(
 		&self,
 		client: &mut Client,
@@ -21,6 +22,7 @@ impl WlCompositor for Compositor {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_compositor:request:create_region
 	async fn create_region(
 		&self,
 		client: &mut Client,
@@ -35,6 +37,7 @@ impl WlCompositor for Compositor {
 #[derive(Debug, Dispatcher, Default)]
 pub struct Region {}
 impl WlRegion for Region {
+	/// https://wayland.app/protocols/wayland#wl_region:request:add
 	async fn add(
 		&self,
 		_client: &mut Client,
@@ -47,6 +50,7 @@ impl WlRegion for Region {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_region:request:subtract
 	async fn subtract(
 		&self,
 		_client: &mut Client,
@@ -59,6 +63,7 @@ impl WlRegion for Region {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_region:request:destroy
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}

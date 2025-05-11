@@ -34,6 +34,7 @@ impl Default for Geometry {
 		}
 	}
 }
+impl Copy for Geometry {}
 
 lazy_static! {
 	pub static ref KEYMAPS: Mutex<SlotMap<DefaultKey, String>> = Mutex::new(SlotMap::default());

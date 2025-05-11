@@ -163,6 +163,7 @@ impl Pointer {
 }
 
 impl WlPointer for Pointer {
+	/// https://wayland.app/protocols/wayland#wl_pointer:request:set_cursor
 	async fn set_cursor(
 		&self,
 		_client: &mut Client,
@@ -174,6 +175,8 @@ impl WlPointer for Pointer {
 	) -> Result<()> {
 		Ok(())
 	}
+
+	/// https://wayland.app/protocols/wayland#wl_pointer:request:release
 	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}

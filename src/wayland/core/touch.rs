@@ -64,6 +64,7 @@ impl Touch {
 }
 
 impl WlTouch for Touch {
+	/// https://wayland.app/protocols/wayland#wl_touch:request:release
 	async fn release(
 		&self,
 		_client: &mut waynest::server::Client,

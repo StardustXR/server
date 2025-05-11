@@ -147,6 +147,7 @@ impl Seat {
 	}
 }
 impl WlSeat for Seat {
+	/// https://wayland.app/protocols/wayland#wl_seat:request:get_pointer
 	async fn get_pointer(
 		&self,
 		client: &mut Client,
@@ -158,6 +159,7 @@ impl WlSeat for Seat {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_seat:request:get_keyboard
 	async fn get_keyboard(
 		&self,
 		client: &mut Client,
@@ -170,6 +172,7 @@ impl WlSeat for Seat {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_seat:request:get_touch
 	async fn get_touch(
 		&self,
 		client: &mut Client,
@@ -181,6 +184,7 @@ impl WlSeat for Seat {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/wayland#wl_seat:request:release
 	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}

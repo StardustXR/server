@@ -54,16 +54,22 @@ impl Default for ToplevelData {
 
 #[derive(Debug, Dispatcher)]
 pub struct Toplevel {
-	pub object_id: ObjectId,
+	pub id: ObjectId,
 	wl_surface: Weak<Surface>,
+	xdg_surface: Weak<super::surface::Surface>,
 	pub mapped: Mutex<Option<Mapped>>,
 	data: Mutex<ToplevelData>,
 }
 impl Toplevel {
-	pub fn new(object_id: ObjectId, wl_surface: Arc<Surface>) -> Self {
+	pub fn new(
+		object_id: ObjectId,
+		wl_surface: Arc<Surface>,
+		xdg_surface: Arc<super::surface::Surface>,
+	) -> Self {
 		Toplevel {
-			object_id,
+			id: object_id,
 			wl_surface: Arc::downgrade(&wl_surface),
+			xdg_surface: Arc::downgrade(&xdg_surface),
 			mapped: Mutex::new(None),
 			data: Mutex::new(ToplevelData::default()),
 		}
@@ -131,10 +137,9 @@ impl Toplevel {
 			states.push(State::Activated);
 		}
 
-		XdgToplevel::configure(
-			self,
+		self.configure(
 			client,
-			self.object_id,
+			self.id,
 			size.map(|v| v.x as i32).unwrap_or(0),
 			size.map(|v| v.y as i32).unwrap_or(0),
 			states
@@ -142,7 +147,12 @@ impl Toplevel {
 				.flat_map(|x| (x as u32).to_ne_bytes())
 				.collect(),
 		)
-		.await
+		.await?;
+		self.xdg_surface
+			.upgrade()
+			.unwrap()
+			.reconfigure(client)
+			.await
 	}
 }
 impl XdgToplevel for Toplevel {

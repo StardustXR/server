@@ -217,7 +217,7 @@ impl WaylandClient {
 				params.failed(client, params.id).await
 			}
 			Message::ReleaseBuffer(buffer) => buffer.release(client, buffer.id).await,
-			Message::CloseToplevel(toplevel) => toplevel.close(client, toplevel.object_id).await,
+			Message::CloseToplevel(toplevel) => toplevel.close(client, toplevel.id).await,
 			Message::ResizeToplevel { toplevel, size } => {
 				toplevel.set_size(size);
 				toplevel.reconfigure(client).await

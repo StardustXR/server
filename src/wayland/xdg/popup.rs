@@ -1,94 +1,88 @@
-use waynest::server::protocol::stable::xdg_shell::xdg_positioner::*;
-use waynest::server::{Client, Dispatcher, Result};
-use waynest::wire::ObjectId;
+use super::{
+	backend::XdgBackend,
+	positioner::{Positioner, PositionerData},
+	surface::Surface,
+};
+use crate::{
+	nodes::items::panel::{Geometry, PanelItem},
+	wayland::util::DoubleBuffer,
+};
+use parking_lot::Mutex;
+use std::sync::{Arc, Weak, atomic::AtomicBool};
+use waynest::{
+	server::{Client, Dispatcher, Result, protocol::stable::xdg_shell::xdg_popup::XdgPopup},
+	wire::ObjectId,
+};
 
-#[derive(Debug, Dispatcher, Default)]
-pub struct Positioner {
-	// TOOD: impl this
+#[derive(Debug, Dispatcher)]
+pub struct Popup {
+	id: ObjectId,
+	parent: Weak<Surface>,
+	surface: Weak<Surface>,
+	pub panel_item: Weak<PanelItem<XdgBackend>>,
+	positioner_data: Mutex<PositionerData>,
+	geometry: DoubleBuffer<Geometry>,
+	mapped: AtomicBool,
 }
-impl XdgPositioner for Positioner {
-	async fn set_size(
+impl Popup {
+	pub fn new(
+		id: ObjectId,
+		parent: &Arc<Surface>,
+		panel_item: &Arc<PanelItem<XdgBackend>>,
+		xdg_surface: &Arc<Surface>,
+		positioner: &Positioner,
+	) -> Self {
+		let positioner_data = positioner.data();
+		Self {
+			id,
+			parent: Arc::downgrade(parent),
+			surface: Arc::downgrade(xdg_surface),
+			panel_item: Arc::downgrade(panel_item),
+			positioner_data: Mutex::new(positioner_data),
+			geometry: DoubleBuffer::new(positioner_data.infinite_geometry()),
+			mapped: AtomicBool::new(false),
+		}
+	}
+}
+impl XdgPopup for Popup {
+	/// https://wayland.app/protocols/xdg-shell#xdg_popup:request:grab
+	async fn grab(
 		&self,
 		_client: &mut Client,
 		_sender_id: ObjectId,
-		_width: i32,
-		_height: i32,
-	) -> Result<()> {
-		Ok(())
-	}
-
-	async fn set_anchor_rect(
-		&self,
-		_client: &mut Client,
-		_sender_id: ObjectId,
-		_x: i32,
-		_y: i32,
-		_width: i32,
-		_height: i32,
-	) -> Result<()> {
-		Ok(())
-	}
-
-	async fn set_anchor(
-		&self,
-		_client: &mut Client,
-		_sender_id: ObjectId,
-		_anchor: Anchor,
-	) -> Result<()> {
-		Ok(())
-	}
-
-	async fn set_gravity(
-		&self,
-		_client: &mut Client,
-		_sender_id: ObjectId,
-		_gravity: Gravity,
-	) -> Result<()> {
-		Ok(())
-	}
-
-	async fn set_constraint_adjustment(
-		&self,
-		_client: &mut Client,
-		_sender_id: ObjectId,
-		_constraint_adjustment: ConstraintAdjustment,
-	) -> Result<()> {
-		Ok(())
-	}
-
-	async fn set_offset(
-		&self,
-		_client: &mut Client,
-		_sender_id: ObjectId,
-		_x: i32,
-		_y: i32,
-	) -> Result<()> {
-		Ok(())
-	}
-
-	async fn set_reactive(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
-		Ok(())
-	}
-
-	async fn set_parent_size(
-		&self,
-		_client: &mut Client,
-		_sender_id: ObjectId,
-		_parent_width: i32,
-		_parent_height: i32,
-	) -> Result<()> {
-		Ok(())
-	}
-
-	async fn set_parent_configure(
-		&self,
-		_client: &mut Client,
-		_sender_id: ObjectId,
+		_seat: ObjectId,
 		_serial: u32,
 	) -> Result<()> {
 		Ok(())
 	}
 
+	/// https://wayland.app/protocols/xdg-shell#xdg_popup:request:reposition
+	async fn reposition(
+		&self,
+		client: &mut Client,
+		sender_id: ObjectId,
+		positioner: ObjectId,
+		token: u32,
+	) -> Result<()> {
+		let positioner = client.get::<Positioner>(positioner).unwrap();
+		let positioner_data = positioner.data();
+		*self.positioner_data.lock() = positioner_data;
+		self.repositioned(client, sender_id, token).await?;
+		let geometry = positioner_data.infinite_geometry();
+		self.configure(
+			client,
+			sender_id,
+			geometry.origin.x,
+			geometry.origin.y,
+			geometry.size.x as i32,
+			geometry.size.y as i32,
+		)
+		.await?;
+		self.surface.upgrade().unwrap().reconfigure(client).await?;
+		Ok(())
+	}
+
+	/// https://wayland.app/protocols/xdg-shell#xdg_popup:request:destroy
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}
