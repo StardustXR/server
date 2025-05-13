@@ -4,25 +4,6 @@ Stardust XR is a display server for VR and AR headsets on Linux-based systems. [
 
 ![workflow](/img/workflow.png)
 
-## Core Dependencies
-| Functionality      | Ubuntu (apt)                                        | Fedora (dnf)                                                         | Arch Linux (pacman)                        |
-| ------------------ | --------------------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------ |
-| **EGL / GL**       | libegl-dev, libgl-dev, libgbm-dev, libdrm-dev       | mesa-libEGL-devel, mesa-libGL-devel, mesa-libgbm-devel, libdrm-devel | mesa (includes development files), libdrm  |
-| **GLES 3.2**       | libgles2-mesa-dev                                   | mesa-libGLES-devel                                                   | mesa (provides GLES libraries and headers) |
-| **X11**            | libx11-dev, libxcb1-dev, libxfixes-dev, libxau-dev  | libX11-devel, libxcb-devel, libXfixes-devel, libXau-devel            | libx11, libxcb, libxfixes, libxau          |
-| **Font Rendering** | libfontconfig1-dev, libfreetype6-dev                | fontconfig-devel, freetype-devel                                     | fontconfig, freetype2                      |
-| **Compression**    | zlib1g-dev, libbz2-dev, libbrotli-dev, liblzma-dev  | zlib-devel, bzip2-devel, brotli-devel, xz-devel                      | zlib, bzip2, brotli, xz                    |
-| **Text Rendering** | libharfbuzz-dev, libgraphite2-dev                   | harfbuzz-devel, graphite2-devel                                      | harfbuzz, graphite                         |
-| **XML / Parsing**  | libxml2-dev, libexpat1-dev, libpcre2-dev            | libxml2-devel, expat-devel, pcre2-devel                              | libxml2, expat, pcre2                      |
-| **Standard C++**   | libstdc++-dev-12                                    | libstdc++-devel                                                      | gcc-libs (includes libstdc++)              |
-| **XKB / Keyboard** | libxkbcommon-dev, libxkbcommon-x11-dev              | libxkbcommon-devel, libxkbcommon-x11-devel                           | libxkbcommon, libxkbcommon-x11             |
-| **Core System**    | libglib2.0-dev                                      | glib2-devel                                                          | glib2                                      |
-| **PNG Support**    | libpng-dev                                          | libpng-devel                                                         | libpng                                     |
-| **Cargo (Rust)**   | cargo                                               | cargo                                                                | cargo (part of the rust package)           |
-| **CMake**          | cmake                                               | cmake                                                                | cmake                                      |
-| **dlopen (glibc)** | libc6-dev                                           | glibc-devel                                                          | glibc                                      |
-| **OpenXR Loader**  | libopenxr-dev, libopenxr-loader1, libopenxr1-monado | openxr-devel                                                         | openxr                                     |
-
 Command line installation of core & dynamic dependencies are provided below:
 <details>
 <summary>Ubuntu/Debian</summary>
@@ -31,11 +12,11 @@ Command line installation of core & dynamic dependencies are provided below:
   build-essential \
   cargo \
   cmake \
-  libxkbcommon-dev libxkbcommon-x11-dev libstdc++-dev libx11-dev libxfixes-dev \
-  libegl-dev libgbm-dev libfontconfig1-dev libxcb1-dev libgl-dev libdrm-dev \
-  libexpat1-dev libfreetype6-dev libxml2-dev libxau-dev zlib1g-dev libbz2-dev \
-  libpng-dev libharfbuzz-dev libbrotli-dev liblzma-dev libglib2.0-dev \
-  libgraphite2-dev libpcre2-dev
+  libxkbcommon-dev libudev1 libinput10 libcap2 libmtdev1 libevdev2 libwacom9 libgudev-1.0-0 \
+  libglib2.0-dev libffi8 libpcre2-dev libxkbcommon-x11-dev libxcb-dev libxcb-xkb-dev libxau-dev \ 
+  libstdc++-dev libx11-dev libxfixes-dev libegl-dev libgbm-dev libfontconfig1-dev libgl-dev \
+  libdrm-dev libexpat1-dev libfreetype6-dev libxml2-dev zlib1g-dev libbz2-dev libpng-dev \ 
+  libharfbuzz-dev libbrotli-dev liblzma-dev libraphite2-dev
   </code></pre>
 </details>
 
@@ -45,11 +26,10 @@ Command line installation of core & dynamic dependencies are provided below:
   sudo apt update && sudo apt install \
   cargo \
   cmake \
-  libxkbcommon-dev libxkbcommon-x11-dev libstdc++-dev libx11-dev libxfixes-dev \
-  libegl-dev libgbm-dev libfontconfig1-dev libxcb1-dev libgl-dev libdrm-dev \
-  libexpat1-dev libfreetype6-dev libxml2-dev libxau-dev zlib1g-dev libbz2-dev \
-  libpng-dev libharfbuzz-dev libbrotli-dev liblzma-dev libglib2.0-dev \
-  libgraphite2-dev libpcre2-dev
+  libxkbcommon-devel systemd-devel libinput-devel libcap-devel mtdev-devel libevdev-devel glib2-devel \
+  libffi-devel pcre2-devel libxkbcommon-x11-devel libxcb-devel libXau-devel libstdc++-devel libx11-devel libxfixes-devel \
+  mesa-libEGL-devel mesa-libgbm-devel fontconfig-devel libdrm-devel expat-devel freetype-devel libxml2-devel zlib-devel \
+  bzip2-devel libpng-devel harfbuzz-devel brotli-devel xz-devel graphite2-devel
   </code></pre>
 </details>
 
@@ -60,9 +40,9 @@ Command line installation of core & dynamic dependencies are provided below:
   sudo pacman -Syu --needed \
   cargo \
   cmake \
-  libxkbcommon libxkbcommon-x11 libx11 libxfixes mesa fontconfig libxcb \
-  libdrm expat freetype2 libxml2 libxau zlib bzip2 libpng harfbuzz brotli \
-  xz glib2 graphite pcre2
+  libxkbcommon systemd libinput libcap mtdev libevdev libwacom glib2 libffi pcre2 libxkbcommon-x11 \
+  libxcb libxau libx11 libxfixes mesa fontconfig libdrm expat freetype2 libxml2 zlib bzip2 \ 
+  libpng harfbuzz brotli xz graphite
   </code></pre>
 </details>
 
