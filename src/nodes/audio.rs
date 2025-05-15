@@ -6,7 +6,7 @@ use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::spatial::{SPATIAL_ASPECT_ALIAS_INFO, Spatial, Transform};
 use color_eyre::eyre::eyre;
-use glam::{Vec4Swizzles, vec3};
+use glam::Vec4Swizzles;
 use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
 
@@ -60,7 +60,7 @@ impl Sound {
 			}
 		}
 		if self.instance.lock().is_none() && self.play.lock().take().is_some() {
-			let instance = sound.play(vec3(0.0, 0.0, 0.0), Some(self.volume));
+			let instance = sound.play([0.0; 3], Some(self.volume));
 			self.instance.lock().replace(instance);
 		}
 		if let Some(instance) = self.instance.lock().deref_mut() {

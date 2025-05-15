@@ -96,7 +96,11 @@ impl CoreSurface {
 
 		// Import all surface buffers into textures
 		if let Err(err) = import_surface_tree(renderer, &wl_surface) {
-			tracing::error!("Failed to import surface tree for surface {}: {}", wl_surface.id(), err);
+			tracing::error!(
+				"Failed to import surface tree for surface {}: {}",
+				wl_surface.id(),
+				err
+			);
 			return;
 		}
 
@@ -112,7 +116,9 @@ impl CoreSurface {
 		let Some(smithay_tex) = wl_surface
 			.get_data_raw::<RendererSurfaceStateUserData, _, _>(|surface_states| {
 				let locked = surface_states.lock().unwrap();
-				locked.texture::<GlesRenderer>(renderer.id()).cloned()
+				locked
+					.texture::<GlesTexture>(renderer.context_id())
+					.cloned()
 			})
 			.flatten()
 		else {
@@ -127,20 +133,22 @@ impl CoreSurface {
 			tracing::error!("No sk_mat found for surface");
 			return;
 		};
-		sk_tex
-			.lock()
-			.0
-			.set_native_surface(
-				smithay_tex.tex_id() as usize as *mut c_void,
-				TexType::ImageNomips,
-				smithay::backend::renderer::gles::ffi::RGBA8.into(),
-				smithay_tex.width() as i32,
-				smithay_tex.height() as i32,
-				1,
-				false,
-			)
-			.sample_mode(TexSample::Point)
-			.address_mode(TexAddress::Clamp);
+		unsafe {
+			sk_tex
+				.lock()
+				.0
+				.set_native_surface(
+					smithay_tex.tex_id() as usize as *mut c_void,
+					TexType::ImageNomips,
+					smithay::backend::renderer::gles::ffi::RGBA8.into(),
+					smithay_tex.width() as i32,
+					smithay_tex.height() as i32,
+					1,
+					false,
+				)
+				.sample_mode(TexSample::Point)
+				.address_mode(TexAddress::Clamp)
+		};
 
 		if let Some(material_offset) = self.material_offset.lock().delta() {
 			sk_mat.lock().0.queue_offset(*material_offset as i32);
