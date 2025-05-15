@@ -97,7 +97,11 @@ async fn main() {
 		.with_thread_names(true)
 		.with_ansi(true)
 		.with_line_number(true)
-		.with_filter(EnvFilter::from_default_env());
+		.with_filter(
+			EnvFilter::builder()
+				.with_default_directive(LevelFilter::WARN.into())
+				.from_env_lossy(),
+		);
 	registry.with(log_layer).init();
 
 	let cli_args = CliArgs::parse();
