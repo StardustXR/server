@@ -2715,19 +2715,13 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stereokit-macros"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f8b194c544b34bb744b66759c09109e7547cfa12f86d3dc500ed735c3f80fce"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.87",
-]
+version = "0.1.0"
+source = "git+https://github.com/mvvvv/StereoKit-rust.git?rev=73ffaae6f42aa369e599a6ea0391f77840d682d8#73ffaae6f42aa369e599a6ea0391f77840d682d8"
 
 [[package]]
 name = "stereokit-rust"
-version = "0.4.0-alpha.6"
-source = "git+https://github.com/mvvvv/StereoKit-rust.git#4e09cf084b03334afe913bb66f5106a5f9163f3f"
+version = "0.1.0"
+source = "git+https://github.com/mvvvv/StereoKit-rust.git?rev=73ffaae6f42aa369e599a6ea0391f77840d682d8#73ffaae6f42aa369e599a6ea0391f77840d682d8"
 dependencies = [
  "android-activity",
  "android_logger",
