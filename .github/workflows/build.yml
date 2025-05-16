@@ -26,9 +26,3 @@ jobs:
 
       - name: Build server
         run: cargo build --release
-
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v4
-        with:
-          name: stardust-xr-server
-          path: "target/release/stardust-xr-server"
