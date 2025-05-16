@@ -1,10 +1,9 @@
 use super::spatial::Spatial;
 use super::{Aspect, AspectIdentifier, Node};
 use crate::bail;
-use crate::core::client::Client;
+use crate::core::client::{CLIENTS, Client};
 use crate::core::client_state::ClientStateParsed;
 use crate::core::error::Result;
-use crate::core::registry::Registry;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::session::connection_env;
 use glam::Mat4;
@@ -12,8 +11,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use tracing::info;
-
-static ROOT_REGISTRY: Registry<Root> = Registry::new();
 
 stardust_xr_server_codegen::codegen_root_protocol!();
 
@@ -30,12 +27,14 @@ impl Root {
 			node: node.clone(),
 			connect_instant: Instant::now(),
 		});
-		ROOT_REGISTRY.add_raw(&root_aspect);
 		Ok(root_aspect)
 	}
 
 	pub fn send_frame_events(delta: f64) {
-		for root in ROOT_REGISTRY.get_valid_contents() {
+		for client in CLIENTS.get_vec() {
+			let Some(root) = client.root.get() else {
+				continue;
+			};
 			let _ = root_client::frame(
 				&root.node,
 				&FrameInfo {
@@ -102,10 +101,5 @@ impl RootAspect for Root {
 	fn disconnect(_node: Arc<Node>, calling_client: Arc<Client>) -> Result<()> {
 		calling_client.disconnect(Ok(()));
 		Ok(())
-	}
-}
-impl Drop for Root {
-	fn drop(&mut self) {
-		ROOT_REGISTRY.remove(self);
 	}
 }
