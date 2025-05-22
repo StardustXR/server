@@ -6,6 +6,7 @@
 , xorg
 , fontconfig
 , libxkbcommon
+, xkeyboard_config
 , libclang
 
 , cmake
@@ -15,6 +16,7 @@
 , fetchFromGitHub
 , sk_gpu
 , libXau
+, libgbm
 
 , libXdmcp
 , stdenv
@@ -47,10 +49,17 @@ rustPlatform.buildRustPackage rec {
     rev = "900e40fb5d2502927360fe2f31762bdbb624455f";
     sha256 = "sha256-zBRAXgG5Fi6+5uPQCI/RCGatY6O4ELuYBoKrPNn4K+8=";
   };
+  openxr_loader = fetchFromGitHub {
+    owner = "KhronosGroup";
+    repo = "OpenXR-SDK";
+    rev = "288d3a7ebc1ad959f62d51da75baa3d27438c499";
+    sha256 = "sha256-RdmnBe26hqPmqwCHIJolF6bSmZRmIKVlGF+TXAY35ig=";
+  };
 
   DEP_MESHOPTIMIZER_SOURCE = "${meshoptimizer}";
   DEP_BASIS_UNIVERSAL_SOURCE = "${basis_universal}";
   DEP_SK_GPU_SOURCE = "${sk_gpu}";
+  DEP_OPENXR_LOADER_SOURCE = "${openxr_loader}";
 
   postPatch = let libPath = lib.makeLibraryPath [ stdenv.cc.cc.lib ];
   in ''
@@ -78,9 +87,11 @@ rustPlatform.buildRustPackage rec {
     xorg.libXfixes
     fontconfig
     libxkbcommon
+    xkeyboard_config
     libXau
     libXdmcp
     openxr-loader
+    libgbm
   ];
   LIBCLANG_PATH = "${libclang.lib}/lib";
 }
