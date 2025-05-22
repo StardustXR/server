@@ -22,6 +22,7 @@
 , stdenv
 , lib
 , openxr-loader
+, makeWrapper
 }:
 
 rustPlatform.buildRustPackage rec {
@@ -78,7 +79,8 @@ rustPlatform.buildRustPackage rec {
                       --set-rpath "${libPath}" \
                     $sk/sk_gpu/tools/linux_x64/skshaderc
   '';
-  nativeBuildInputs = [ cmake pkg-config llvmPackages.libcxxClang ];
+
+  nativeBuildInputs = [ cmake pkg-config llvmPackages.libcxxClang makeWrapper ];
   buildInputs = [
     libGL
     mesa
@@ -94,4 +96,9 @@ rustPlatform.buildRustPackage rec {
     libgbm
   ];
   LIBCLANG_PATH = "${libclang.lib}/lib";
+
+  postFixup = ''
+    wrapProgram $out/bin/stardust-xr-server \
+      --set XKB_CONFIG_ROOT "${xkeyboard_config}/share/X11/xkb"
+  '';
 }
