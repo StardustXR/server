@@ -3,8 +3,8 @@
 let
   sk_gpu_zip = fetchurl {
     url =
-      "https://github.com/StereoKit/sk_gpu/releases/download/v2024.8.16/sk_gpu.v2024.8.16.zip";
-    sha256 = "sha256-Wk3PZFlWqhrsQ8xG0sQaV2xSasdg2D7TMiPvl/CgtGU=";
+      "https://github.com/StereoKit/sk_gpu/releases/download/v2024.9.26/sk_gpu.v2024.9.26.zip";
+    sha256 = "sha256-W32RveeCszioWGtbCsvAqB28YHvOsw2xJ15MosYLFXk=";
   };
 in stdenv.mkDerivation rec {
   name = "sk_gpu";
