@@ -242,7 +242,7 @@ impl InputMethodRefAspect for InputMethodRef {
 		let input_handler = handler.get_aspect::<InputHandler>()?;
 
 		input_method.capture_attempts.add_raw(&input_handler);
-		Ok(())
+		input_method_client::request_capture_handler(&node, handler.get_id())
 	}
 
 	#[doc = "If captured by this handler, release it (e.g. the object is let go of after grabbing)."]
@@ -251,6 +251,6 @@ impl InputMethodRefAspect for InputMethodRef {
 		let input_handler = handler.get_aspect::<InputHandler>()?;
 
 		input_method.capture_attempts.remove(&input_handler);
-		Ok(())
+		input_method_client::release_handler(&node, handler.get_id())
 	}
 }

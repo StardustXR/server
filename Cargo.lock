@@ -2620,7 +2620,7 @@ checksum = "2f2b15926089e5526bb2dd738a2eb0e59034356e06eb71e1cd912358c0e62c4d"
 [[package]]
 name = "stardust-xr"
 version = "0.45.0"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#d2964d8db079afaadb7faa4987e34814e62d6279"
+source = "git+https://github.com/StardustXR/core.git?branch=dev#bce6ec660f026c577156b3cff41f9312c1caa1d3"
 dependencies = [
  "cluFlock",
  "color-eyre",
@@ -2641,7 +2641,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-schemas"
 version = "1.5.3"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#d2964d8db079afaadb7faa4987e34814e62d6279"
+source = "git+https://github.com/StardustXR/core.git?branch=dev#bce6ec660f026c577156b3cff41f9312c1caa1d3"
 dependencies = [
  "flatbuffers",
  "flexbuffers",
@@ -3359,7 +3359,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
