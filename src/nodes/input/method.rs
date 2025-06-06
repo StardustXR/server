@@ -4,7 +4,11 @@ use super::{
 	input_method_client,
 };
 use crate::{
-	core::{client::Client, error::Result, registry::Registry},
+	core::{
+		client::Client,
+		error::{Result, ServerError},
+		registry::Registry,
+	},
 	nodes::{
 		Node,
 		alias::{Alias, AliasList},
@@ -12,6 +16,7 @@ use crate::{
 		spatial::Spatial,
 	},
 };
+use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
 use stardust_xr::values::Datamap;
 use std::sync::{Arc, Weak};
@@ -242,7 +247,16 @@ impl InputMethodRefAspect for InputMethodRef {
 		let input_handler = handler.get_aspect::<InputHandler>()?;
 
 		input_method.capture_attempts.add_raw(&input_handler);
-		input_method_client::request_capture_handler(&node, handler.get_id())
+
+		let Some(handler_alias) = input_method
+			.handler_aliases
+			.get_from_aspect(&*input_handler)
+		else {
+			return Err(ServerError::Report(eyre!(
+				"Internal: Couldn't get handler alias somehow?"
+			)));
+		};
+		input_method_client::request_capture_handler(&node, handler_alias.get_id())
 	}
 
 	#[doc = "If captured by this handler, release it (e.g. the object is let go of after grabbing)."]
@@ -251,6 +265,15 @@ impl InputMethodRefAspect for InputMethodRef {
 		let input_handler = handler.get_aspect::<InputHandler>()?;
 
 		input_method.capture_attempts.remove(&input_handler);
-		input_method_client::release_handler(&node, handler.get_id())
+
+		let Some(handler_alias) = input_method
+			.handler_aliases
+			.get_from_aspect(&*input_handler)
+		else {
+			return Err(ServerError::Report(eyre!(
+				"Internal: Couldn't get handler alias somehow?"
+			)));
+		};
+		input_method_client::release_handler(&node, handler_alias.get_id())
 	}
 }
