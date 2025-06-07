@@ -10,11 +10,39 @@ use crate::core::destroy_queue;
 use crate::nodes::items::camera;
 use crate::nodes::{audio, drawable, input};
 
+use bevy::MinimalPlugins;
+use bevy::a11y::AccessibilityPlugin;
+use bevy::app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
+use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
+use bevy::audio::AudioPlugin;
+use bevy::core_pipeline::CorePipelinePlugin;
+use bevy::gizmos::GizmoPlugin;
+use bevy::gltf::GltfPlugin;
+use bevy::input::{InputPlugin, InputSystem};
+use bevy::pbr::PbrPlugin;
+use bevy::remote::RemotePlugin;
+use bevy::remote::http::RemoteHttpPlugin;
+use bevy::render::{RenderDebugFlags, RenderPlugin};
+use bevy::scene::ScenePlugin;
+use bevy::text::FontLoader;
+use bevy::winit::{WakeUp, WinitPlugin};
+use bevy_mod_meshtext::MeshTextPlugin;
+use bevy_mod_openxr::add_xr_plugins;
+use bevy_mod_openxr::exts::OxrExtensions;
+use bevy_mod_openxr::features::overlay::OxrOverlaySettings;
+use bevy_mod_openxr::init::OxrInitPlugin;
+use bevy_mod_openxr::reference_space::OxrReferenceSpacePlugin;
+use bevy_mod_openxr::resources::OxrSessionConfig;
+use bevy_mod_openxr::types::AppInfo;
+use bevy_mod_xr::hand_debug_gizmos::HandGizmosPlugin;
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
 use core::task;
 use directories::ProjectDirs;
+use nodes::drawable::model::ModelNodePlugin;
+use nodes::spatial::SpatialNodePlugin;
 use objects::ServerObjects;
+use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use session::{launch_start, save_session};
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use stardust_xr::server;
@@ -37,6 +65,8 @@ use tracing::{debug_span, error, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use zbus::Connection;
 use zbus::fdo::ObjectManager;
+
+use bevy::prelude::*;
 
 #[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -176,7 +206,7 @@ async fn main() {
 		let cli_args = cli_args.clone();
 		let dbus_connection = dbus_connection.clone();
 		move || {
-			stereokit_loop(
+			bevy_loop(
 				sk_ready_notifier,
 				project_dirs,
 				cli_args,
@@ -208,6 +238,129 @@ async fn main() {
 
 static DEFAULT_SKYTEX: OnceLock<Tex> = OnceLock::new();
 static DEFAULT_SKYLIGHT: OnceLock<SphericalHarmonics> = OnceLock::new();
+
+fn bevy_loop(
+	ready_notifier: Arc<Notify>,
+	project_dirs: Option<ProjectDirs>,
+	args: CliArgs,
+	dbus_connection: Connection,
+	object_registry: ObjectRegistry,
+) {
+	let mut app = App::new();
+	app.add_plugins(AssetPlugin {
+		meta_check: AssetMetaCheck::Never,
+		unapproved_path_mode: UnapprovedPathMode::Allow,
+		..default()
+	});
+	let mut plugins = MinimalPlugins
+		.build()
+		.disable::<ScheduleRunnerPlugin>()
+		.add(TransformPlugin)
+		.add(InputPlugin)
+		/* .add(AccessibilityPlugin) */;
+	// TODO: figure out headless
+	{
+		plugins = plugins.add(WindowPlugin::default()).add({
+			let mut winit = WinitPlugin::<WakeUp>::default();
+			winit.run_on_any_thread = true;
+			winit
+		});
+	}
+	plugins = plugins
+		.add(TerminalCtrlCHandlerPlugin)
+		// bevy_mod_openxr will replace this, TODO: figure out how to mix this with
+		// bevy-dmabuf
+		.add(RenderPlugin::default())
+		.add(ImagePlugin::default())
+		.add(CorePipelinePlugin)
+		// theoretically we shouldn't need this because of bevy_sk, but everything is tangled in
+		// there and idk what we actually need to run
+		.add(PbrPlugin {
+			// this seems to only apply to StandardMaterial, we don't use that
+			prepass_enabled: true,
+			add_default_deferred_lighting_plugin: false,
+			use_gpu_instance_buffer_builder: true,
+			debug_flags: RenderDebugFlags::default(),
+		})
+		// required for gltf
+		.add(ScenePlugin)
+		.add(GltfPlugin::default())
+		.add(AudioPlugin::default())
+		.add(GizmoPlugin)
+		.add(AccessibilityPlugin);
+	app.add_plugins(
+		add_xr_plugins(plugins)
+			.set(OxrInitPlugin {
+				app_info: AppInfo {
+					name: "Stardust XR".into(),
+					version: bevy_mod_openxr::types::Version(0, 44, 1),
+				},
+				exts: {
+					// all OpenXR extensions can be requested here
+					let mut exts = OxrExtensions::default();
+					exts.enable_hand_tracking();
+					if args.overlay_priority.is_some() {
+						exts.enable_extx_overlay();
+					}
+					exts
+				},
+				..default()
+			})
+			.set(OxrReferenceSpacePlugin {
+				default_primary_ref_space: ReferenceSpaceType::LOCAL,
+			}),
+	);
+	app.init_asset::<Font>().init_asset_loader::<FontLoader>();
+	if let Some(priority) = args.overlay_priority {
+		app.insert_resource(OxrOverlaySettings {
+			session_layer_placement: priority,
+			..default()
+		});
+	}
+	app.add_plugins((
+		bevy_sk::hand::HandPlugin,
+		bevy_sk::vr_materials::SkMaterialPlugin {
+			replace_standard_material: true,
+		},
+		bevy_sk::skytext::SphericalHarmonicsPlugin,
+	));
+	app.add_plugins(HandGizmosPlugin);
+	app.add_plugins(MeshTextPlugin);
+	app.insert_resource(OxrSessionConfig {
+		blend_modes: Some(vec![
+			EnvironmentBlendMode::ALPHA_BLEND,
+			EnvironmentBlendMode::ADDITIVE,
+			EnvironmentBlendMode::OPAQUE,
+		]),
+		..default()
+	});
+	app.insert_resource(ClearColor(Color::BLACK.with_alpha(0.0)));
+	app.add_plugins((RemotePlugin::default(), RemoteHttpPlugin::default()));
+	app.add_plugins((SpatialNodePlugin, ModelNodePlugin));
+	ready_notifier.notify_waiters();
+	app.add_systems(PreUpdate, main_loop_system.after(InputSystem));
+	app.run();
+}
+
+fn main_loop_system(world: &mut World) {
+	// camera::update(token);
+	#[cfg(feature = "wayland")]
+	wayland.frame_event();
+	destroy_queue::clear();
+
+	// objects.update(&sk, token, &dbus_connection, &object_registry);
+	// input::process_input();
+	let time = world.resource::<bevy::prelude::Time>().delta_secs_f64();
+	nodes::root::Root::send_frame_events(time);
+
+	// Wait
+
+	tick_internal_client();
+	#[cfg(feature = "wayland")]
+	wayland.update();
+	// drawable::draw(token);
+	// audio::update();
+}
 
 fn stereokit_loop(
 	sk_ready_notifier: Arc<Notify>,

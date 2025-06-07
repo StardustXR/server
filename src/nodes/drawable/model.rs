@@ -6,128 +6,350 @@ use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::Node;
 use crate::nodes::alias::{Alias, AliasList};
-use crate::nodes::spatial::Spatial;
+use crate::nodes::spatial::{Spatial, SpatialNode};
+use bevy::prelude::*;
+use bevy_sk::vr_materials::PbrMaterial;
 use color_eyre::eyre::eyre;
-use glam::{Mat4, Vec2, Vec3};
 use parking_lot::Mutex;
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr::values::ResourceID;
 use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
-use std::sync::{Arc, LazyLock, OnceLock, Weak};
-use stereokit_rust::material::Transparency;
+use std::path::PathBuf;
+use std::sync::{Arc, OnceLock, Weak};
 use stereokit_rust::maths::Bounds;
-use stereokit_rust::sk::MainThreadToken;
-use stereokit_rust::{material::Material, model::Model as SKModel, tex::Tex, util::Color128};
+use tokio::sync::mpsc;
 
-pub struct MaterialWrapper(pub Material);
-impl Drop for MaterialWrapper {
-	fn drop(&mut self) {
-		MATERIAL_REGISTRY.remove(self);
+static LOAD_MODEL: OnceLock<mpsc::UnboundedSender<(Arc<Model>, PathBuf)>> = OnceLock::new();
+
+pub struct ModelNodePlugin;
+impl Plugin for ModelNodePlugin {
+	fn build(&self, app: &mut App) {
+		let (tx, rx) = mpsc::unbounded_channel();
+		LOAD_MODEL.set(tx).unwrap();
+		app.insert_resource(MpscReceiver(rx));
+		app.add_systems(Update, load_models);
+		app.add_systems(PostUpdate, (gen_model_parts, apply_materials).chain());
 	}
 }
 
-impl Hash for MaterialWrapper {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		self.0.get_shader().0.as_ptr().hash(state);
-		for param in self.0.get_all_param_info() {
-			param.name.hash(state);
-			param.to_string().hash(state);
-		}
-		self.0.get_chain().map(MaterialWrapper).hash(state)
-	}
-}
-impl PartialEq for MaterialWrapper {
-	fn eq(&self, other: &Self) -> bool {
-		if self.0.get_shader().0.as_ptr() != other.0.get_shader().0.as_ptr() {
-			return false;
-		}
-		if self.0.get_all_param_info().count() != other.0.get_all_param_info().count() {
-			return false;
-		}
-		for self_param in self.0.get_all_param_info() {
-			let Some(other_param) = other
-				.0
-				.get_all_param_info()
-				.get_data(self_param.get_name(), self_param.get_type())
-			else {
-				return false;
-			};
-			if self_param.to_string() != other_param.to_string() {
-				return false;
-			}
-		}
-		self.0.get_chain().map(MaterialWrapper) == other.0.get_chain().map(MaterialWrapper)
-	}
-}
-impl Eq for MaterialWrapper {}
-unsafe impl Send for MaterialWrapper {}
-unsafe impl Sync for MaterialWrapper {}
+#[derive(Resource)]
+struct MpscReceiver<T>(mpsc::UnboundedReceiver<T>);
+#[derive(Component)]
+struct ModelNode(Weak<Model>);
 
-#[derive(Default)]
-struct MaterialRegistry(Mutex<FxHashMap<u64, Weak<MaterialWrapper>>>);
-impl MaterialRegistry {
-	fn add_or_get(&self, material: Arc<MaterialWrapper>) -> Arc<MaterialWrapper> {
-		let hash = {
-			use std::hash::{Hash, Hasher};
-			let mut hasher = std::collections::hash_map::DefaultHasher::new();
-			material.hash(&mut hasher);
-			hasher.finish()
+fn load_models(
+	asset_server: Res<AssetServer>,
+	mut cmds: Commands,
+	mut mpsc_receiver: ResMut<MpscReceiver<(Arc<Model>, PathBuf)>>,
+) {
+	while let Ok((model, path)) = mpsc_receiver.0.try_recv() {
+		// idk of the asset label is the correct approach here
+		let handle = asset_server.load(GltfAssetLabel::Scene(0).from_asset(path));
+		let entity = cmds
+			.spawn((
+				SceneRoot(handle),
+				ModelNode(Arc::downgrade(&model)),
+				SpatialNode(Arc::downgrade(&model.space)),
+			))
+			.id();
+		model.bevy_scene_entity.set(entity).unwrap();
+	}
+}
+
+fn apply_materials(
+	mut query: Query<&mut MeshMaterial3d<PbrMaterial>>,
+	mut material_registry: Local<MaterialRegistry>,
+	asset_server: Res<AssetServer>,
+	mut materials: ResMut<Assets<PbrMaterial>>,
+) -> bevy::prelude::Result {
+	for model_part in MODEL_REGISTRY
+		.get_valid_contents()
+		.iter()
+		.filter_map(|p| p.parts.get())
+		.flatten()
+	{
+		let mut mesh_mat = query.get_mut(*model_part.mesh_entity.get().unwrap())?;
+		if let Some(material) = model_part.pending_material_replacement.lock().take() {
+			let pbr_mat = material.to_pbr_mat(&asset_server);
+			let handle = material_registry.get_handle(pbr_mat, &mut materials);
+			mesh_mat.0 = handle;
+		}
+		for (param_name, param) in model_part.pending_material_parameters.lock().drain() {
+			let mut new_mat = materials.get(&mesh_mat.0).unwrap().clone();
+			param.apply_to_material(
+				&model_part.space.node().unwrap().get_client().unwrap(),
+				&mut new_mat,
+				&param_name,
+				&asset_server,
+			);
+			let handle = material_registry.get_handle(new_mat, &mut materials);
+			mesh_mat.0 = handle;
+		}
+	}
+
+	Ok(())
+}
+
+fn gen_model_parts(
+	scenes: Res<Assets<Scene>>,
+	query: Query<(Entity, &SceneRoot, &ModelNode, &Children)>,
+	children_query: Query<&Children>,
+	part_query: Query<(&Name, Option<&Children>, &Transform), Without<Mesh3d>>,
+	has_mesh: Query<Has<Mesh3d>>,
+	mut cmds: Commands,
+) {
+	for (entity, scene_root, model_node, model_children) in query.iter() {
+		let Some(model) = model_node.0.upgrade() else {
+			cmds.entity(entity).despawn();
+			return;
 		};
-
-		let mut lock = self.0.lock();
-		if let Some(mat) = lock.get(&hash) {
-			if let Some(mat) = mat.upgrade() {
-				return mat;
-			}
+		if model.parts.get().is_some() {
+			continue;
 		}
-
-		lock.insert(hash, Arc::downgrade(&material));
-		material
-	}
-	fn remove(&self, material: &MaterialWrapper) {
-		let hash = {
-			use std::hash::{Hash, Hasher};
-			let mut hasher = std::collections::hash_map::DefaultHasher::new();
-			material.hash(&mut hasher);
-			hasher.finish()
-		};
-		let mut lock = self.0.lock();
-		lock.remove(&hash);
+		if scenes.get(scene_root.0.id()).is_none() {
+			continue;
+		}
+		let mut parts = Vec::new();
+		for entity in model_children
+			.iter()
+			.filter_map(|e| children_query.get(e).ok())
+			.flat_map(|c| c.iter())
+		{
+			gen_path(
+				entity,
+				&part_query,
+				None,
+				&mut |entity, name, transform, parent| {
+					let path = parent
+						.as_ref()
+						.map(|p| format!("{}/{}", &p.path, name.as_str()))
+						.unwrap_or_else(|| name.to_string());
+					let parent_spatial = parent
+						.as_ref()
+						.map(|p| p.space.clone())
+						.unwrap_or_else(|| model.space.clone());
+					let client = model.space.node()?.get_client()?;
+					let (spatial, model_part) =
+						match model.pre_bound_parts.lock().iter().find(|v| v.path == path) {
+							None => {
+								let node =
+									client.scenegraph.add_node(Node::generate(&client, false));
+								let spatial = Spatial::add_to(
+									&node,
+									Some(parent_spatial),
+									transform.compute_matrix(),
+									false,
+								);
+								let model_part = node.add_aspect(ModelPart {
+									entity: OnceLock::new(),
+									mesh_entity: OnceLock::new(),
+									path,
+									space: spatial.clone(),
+									model: Arc::downgrade(&model),
+									pending_material_parameters: Mutex::default(),
+									pending_material_replacement: Mutex::default(),
+									aliases: AliasList::default(),
+								});
+								(spatial, model_part)
+							}
+							Some(part) => {
+								part.space
+									.set_spatial_parent(Some(&parent_spatial))
+									.unwrap();
+								(part.space.clone(), part.clone())
+							}
+						};
+					_ = spatial.bounding_box_calc.set(|_| {
+						// TODO: actually impl aabb
+						Bounds::default()
+					});
+					cmds.entity(entity)
+						.insert(SpatialNode(Arc::downgrade(&spatial)));
+					let mesh_entity = children_query
+						.get(entity)
+						.iter()
+						.flat_map(|v| v.iter())
+						.find(|e| has_mesh.get(*e).unwrap_or(false))?;
+					_ = model_part.entity.set(entity);
+					_ = model_part.mesh_entity.set(mesh_entity);
+					parts.push(model_part.clone());
+					Some(model_part)
+				},
+			);
+		}
+		_ = model.parts.set(parts);
 	}
 }
 
-static MATERIAL_REGISTRY: LazyLock<MaterialRegistry> = LazyLock::new(MaterialRegistry::default);
+fn gen_path(
+	current_entity: Entity,
+	part_query: &Query<(&Name, Option<&Children>, &Transform), Without<Mesh3d>>,
+	parent: Option<Arc<ModelPart>>,
+	func: &mut dyn FnMut(
+		Entity,
+		&Name,
+		&Transform,
+		Option<Arc<ModelPart>>,
+	) -> Option<Arc<ModelPart>>,
+) {
+	let Ok((name, children, transform)) = part_query.get(current_entity) else {
+		return;
+	};
+	let Some(parent) = func(current_entity, name, transform, parent) else {
+		return;
+	};
+	for e in children.iter().flat_map(|c| c.iter()) {
+		gen_path(e, part_query, Some(parent.clone()), func);
+	}
+}
+
+#[derive(PartialEq, Deref, DerefMut, Clone, Copy, Eq, PartialOrd, Ord, Hash)]
+struct HashedPbrMaterial(u64);
+impl HashedPbrMaterial {
+	fn new(material: &PbrMaterial) -> Self {
+		let mut hasher = FxHasher::default();
+		Self::hash_pbr_mat(material, &mut hasher);
+		Self(hasher.finish())
+	}
+	fn hash_pbr_mat<H: Hasher>(mat: &PbrMaterial, state: &mut H) {
+		hash_color(mat.color, state);
+		hash_color(mat.emission_factor, state);
+		state.write_u32(mat.metallic.to_bits());
+		state.write_u32(mat.roughness.to_bits());
+		mat.use_stereokit_uvs.hash(state);
+		match mat.alpha_mode {
+			AlphaMode::Opaque => state.write_u8(0),
+			AlphaMode::Mask(v) => {
+				state.write_u8(1);
+				state.write_u32(v.to_bits());
+			}
+			AlphaMode::Blend => state.write_u8(2),
+			AlphaMode::Premultiplied => state.write_u8(3),
+			AlphaMode::AlphaToCoverage => state.write_u8(4),
+			AlphaMode::Add => state.write_u8(5),
+			AlphaMode::Multiply => state.write_u8(6),
+		}
+		state.write_u8(mat.double_sided as u8);
+		mat.diffuse_texture.hash(state);
+		mat.emission_texture.hash(state);
+		mat.metal_texture.hash(state);
+		mat.occlusion_texture.hash(state);
+		// should always be the same, TODO: make the spherical harmonics buffer a per mesh instance thing
+		mat.spherical_harmonics.hash(state);
+	}
+}
+fn hash_color<H: Hasher>(color: Color, state: &mut H) {
+	match color {
+		Color::Srgba(srgba) => {
+			state.write_u8(0);
+			state.write(&srgba.to_u8_array());
+		}
+		Color::LinearRgba(linear_rgba) => {
+			state.write_u8(1);
+			state.write(&linear_rgba.to_u8_array());
+		}
+		Color::Hsla(hsla) => {
+			state.write_u8(2);
+			hsla.to_f32_array()
+				.iter()
+				.for_each(|v| state.write_u32(v.to_bits()));
+		}
+		Color::Hsva(hsva) => {
+			state.write_u8(3);
+			hsva.to_f32_array()
+				.iter()
+				.for_each(|v| state.write_u32(v.to_bits()));
+		}
+		Color::Hwba(hwba) => {
+			state.write_u8(4);
+			hwba.to_f32_array()
+				.iter()
+				.for_each(|v| state.write_u32(v.to_bits()));
+		}
+		Color::Laba(laba) => {
+			state.write_u8(5);
+			laba.to_f32_array()
+				.iter()
+				.for_each(|v| state.write_u32(v.to_bits()));
+		}
+		Color::Lcha(lcha) => {
+			state.write_u8(6);
+			lcha.to_f32_array()
+				.iter()
+				.for_each(|v| state.write_u32(v.to_bits()));
+		}
+		Color::Oklaba(oklaba) => {
+			state.write_u8(7);
+			oklaba
+				.to_f32_array()
+				.iter()
+				.for_each(|v| state.write_u32(v.to_bits()));
+		}
+		Color::Oklcha(oklcha) => {
+			state.write_u8(8);
+			oklcha
+				.to_f32_array()
+				.iter()
+				.for_each(|v| state.write_u32(v.to_bits()));
+		}
+		Color::Xyza(xyza) => {
+			state.write_u8(9);
+			xyza.to_f32_array()
+				.iter()
+				.for_each(|v| state.write_u32(v.to_bits()));
+		}
+	}
+}
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
-static HOLDOUT_MATERIAL: OnceLock<Arc<MaterialWrapper>> = OnceLock::new();
 
 impl MaterialParameter {
-	fn apply_to_material(&self, client: &Client, material: &Material, parameter_name: &str) {
-		let mut params = material.get_all_param_info();
+	fn apply_to_material(
+		&self,
+		client: &Client,
+		mat: &mut PbrMaterial,
+		parameter_name: &str,
+		asset_server: &AssetServer,
+	) {
 		match self {
-			MaterialParameter::Bool(val) => {
-				params.set_bool(parameter_name, *val);
+			MaterialParameter::Bool(val) => match parameter_name {
+				"double_sided" => mat.double_sided = *val,
+				v => {
+					error!("unknown param_name ({v}) for color")
+				}
+			},
+			MaterialParameter::Int(_val) => {
+				// nothing uses an int
 			}
-			MaterialParameter::Int(val) => {
-				params.set_int(parameter_name, &[*val]);
-			}
-			MaterialParameter::UInt(val) => {
-				params.set_uint(parameter_name, &[*val]);
+			MaterialParameter::UInt(_val) => {
+				// nothing uses an uint
 			}
 			MaterialParameter::Float(val) => {
-				params.set_float(parameter_name, *val);
+				match parameter_name {
+					"metallic" => mat.metallic = *val,
+					"roughness" => mat.roughness = *val,
+					// we probably don't want to expose tex_scale
+					// "tex_scale" => mat.tex_scale = *val,
+					v => {
+						error!("unknown param_name ({v}) for float")
+					}
+				}
 			}
-			MaterialParameter::Vec2(val) => {
-				params.set_vec2(parameter_name, Vec2::from(*val));
+			MaterialParameter::Vec2(_val) => {
+				// nothing uses a Vec2
 			}
-			MaterialParameter::Vec3(val) => {
-				params.set_vec3(parameter_name, Vec3::from(*val));
+			MaterialParameter::Vec3(_val) => {
+				// nothing uses a Vec3
 			}
 			MaterialParameter::Color(val) => {
-				params.set_color(
-					parameter_name,
-					Color128::new(val.c.r, val.c.g, val.c.b, val.a),
-				);
+				let rgba = Srgba::new(val.c.r, val.c.g, val.c.b, val.a);
+				match parameter_name {
+					"color" => mat.color = rgba.into(),
+					"emission_factor" => mat.emission_factor = rgba.into(),
+					v => {
+						error!("unknown param_name ({v}) for color")
+					}
+				}
 			}
 			MaterialParameter::Texture(resource) => {
 				let Some(texture_path) =
@@ -135,180 +357,103 @@ impl MaterialParameter {
 				else {
 					return;
 				};
-				if let Ok(tex) = Tex::from_file(texture_path, true, None) {
-					params.set_texture(parameter_name, &tex);
+				info!(texture_param = parameter_name, path = ?texture_path);
+				let handle = asset_server.load(texture_path);
+				match parameter_name {
+					"diffuse" => mat.diffuse_texture = Some(handle),
+					"emission" => mat.emission_texture = Some(handle),
+					"metal" => mat.metal_texture = Some(handle),
+					"occlusion" => mat.occlusion_texture = Some(handle),
+					v => {
+						error!("unknown param_name ({v}) for texture");
+						return;
+					}
 				}
+				mat.alpha_mode = AlphaMode::AlphaToCoverage;
+				mat.use_stereokit_uvs = true;
 			}
+		}
+	}
+}
+
+pub struct Material {
+	pub color: Color,
+	pub emission_factor: Color,
+	pub metallic: f32,
+	pub roughness: f32,
+	pub alpha_mode: AlphaMode,
+	pub double_sided: bool,
+
+	pub diffuse_texture: Option<PathBuf>,
+	pub emission_texture: Option<PathBuf>,
+	pub metal_texture: Option<PathBuf>,
+	pub occlusion_texture: Option<PathBuf>,
+}
+
+impl Material {
+	fn to_pbr_mat(&self, asset_server: &AssetServer) -> PbrMaterial {
+		PbrMaterial {
+			color: self.color,
+			emission_factor: self.emission_factor,
+			metallic: self.metallic,
+			roughness: self.roughness,
+			alpha_mode: self.alpha_mode,
+			double_sided: self.double_sided,
+			diffuse_texture: self
+				.diffuse_texture
+				.as_ref()
+				.map(|p| asset_server.load(p.as_path())),
+			emission_texture: self
+				.emission_texture
+				.as_ref()
+				.map(|p| asset_server.load(p.as_path())),
+			metal_texture: self
+				.metal_texture
+				.as_ref()
+				.map(|p| asset_server.load(p.as_path())),
+			occlusion_texture: self
+				.occlusion_texture
+				.as_ref()
+				.map(|p| asset_server.load(p.as_path())),
+			spherical_harmonics: bevy_sk::skytext::SPHERICAL_HARMONICS_HANDLE,
+			use_stereokit_uvs: true,
 		}
 	}
 }
 
 pub struct ModelPart {
-	id: i32,
+	entity: OnceLock<Entity>,
+	mesh_entity: OnceLock<Entity>,
 	path: String,
 	space: Arc<Spatial>,
 	model: Weak<Model>,
-	material: Mutex<Option<Arc<MaterialWrapper>>>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
-	pending_material_replacement: Mutex<Option<Arc<MaterialWrapper>>>,
+	pending_material_replacement: Mutex<Option<Material>>,
 	aliases: AliasList,
 }
 impl ModelPart {
-	fn create_for_model(model: &Arc<Model>, sk_model: &SKModel) {
-		HOLDOUT_MATERIAL.get_or_init(|| {
-			let mut mat = Material::copy(&Material::unlit());
-			mat.transparency(Transparency::None);
-			mat.color_tint(Color128::BLACK_TRANSPARENT);
-			Arc::new(MaterialWrapper(mat))
-		});
-
-		let nodes = sk_model.get_nodes();
-		for part in nodes.all() {
-			ModelPart::create(model, &part);
-		}
-	}
-
-	fn create(model: &Arc<Model>, part: &stereokit_rust::model::ModelNode) -> Option<Arc<Self>> {
-		let mut parts = model.parts.lock();
-		let parent_part = part
-			.get_parent()
-			.and_then(|part| parts.iter().find(|p| p.id == *part.get_id()));
-
-		let stardust_model_part = model.space.node()?;
-		let client = stardust_model_part.get_client()?;
-		let mut part_path = parent_part
-			.map(|n| n.path.clone() + "/")
-			.unwrap_or_default();
-		part_path += part.get_name().unwrap();
-
-		let node = client.scenegraph.add_node(Node::generate(&client, false));
-		let spatial_parent = parent_part
-			.map(|n| n.space.clone())
-			.unwrap_or_else(|| model.space.clone());
-
-		let local_transform = unsafe { part.get_local_transform().m };
-		let space = Spatial::add_to(
-			&node,
-			Some(spatial_parent),
-			Mat4::from_cols_array(&local_transform),
-			false,
-		);
-
-		let _ = space.bounding_box_calc.set(|node| {
-			let Ok(model_part) = node.get_aspect::<ModelPart>() else {
-				return Bounds::default();
-			};
-			let Some(model) = model_part.model.upgrade() else {
-				return Bounds::default();
-			};
-			let Some(sk_model) = model.sk_model.get() else {
-				return Bounds::default();
-			};
-			let model_nodes = sk_model.get_nodes();
-			let Some(model_node) = model_nodes.get_index(model_part.id) else {
-				return Bounds::default();
-			};
-			let Some(sk_mesh) = model_node.get_mesh() else {
-				return Bounds::default();
-			};
-			sk_mesh.get_bounds()
-		});
-
-		let model_part = Arc::new(ModelPart {
-			id: *part.get_id(),
-			path: part_path,
-			space,
-			model: Arc::downgrade(model),
-			pending_material_parameters: Mutex::new(FxHashMap::default()),
-			pending_material_replacement: Mutex::new(None),
-			aliases: AliasList::default(),
-			material: Mutex::new(part.get_material().map(MaterialWrapper).map(Arc::new)),
-		});
-		node.add_aspect_raw(model_part.clone());
-		parts.push(model_part.clone());
-		Some(model_part)
-	}
-
-	pub fn replace_material(&self, replacement: Arc<MaterialWrapper>) {
-		let shared_material = MATERIAL_REGISTRY.add_or_get(replacement);
+	pub fn replace_material(&self, replacement: Material) {
 		self.pending_material_replacement
 			.lock()
-			.replace(shared_material);
-	}
-	/// only to be run on the main thread
-	pub fn replace_material_now(&self, replacement: &Material) {
-		let Some(model) = self.model.upgrade() else {
-			return;
-		};
-		let Some(sk_model) = model.sk_model.get() else {
-			return;
-		};
-		let nodes = sk_model.get_nodes();
-		let Some(mut part) = nodes.get_index(self.id) else {
-			return;
-		};
-		let shared_material =
-			MATERIAL_REGISTRY.add_or_get(Arc::new(MaterialWrapper(replacement.copy())));
-
-		let mut lock = self.material.lock();
-		part.material(&shared_material.0);
-		lock.replace(shared_material);
-	}
-
-	fn update(&self) {
-		let Some(model) = self.model.upgrade() else {
-			return;
-		};
-		let Some(sk_model) = model.sk_model.get() else {
-			return;
-		};
-		let Some(node) = model.space.node() else {
-			return;
-		};
-		let nodes = sk_model.get_nodes();
-		let Some(mut part) = nodes.get_index(self.id) else {
-			return;
-		};
-		part.model_transform(Spatial::space_to_space_matrix(
-			Some(&self.space),
-			Some(&model.space),
-		));
-
-		let Some(client) = node.get_client() else {
-			return;
-		};
-
-		if let Some(material_replacement) = self.pending_material_replacement.lock().take() {
-			let mut lock = self.material.lock();
-			part.material(&material_replacement.0);
-			lock.replace(material_replacement);
-		}
-
-		'mat_params: {
-			let mut material_parameters = self.pending_material_parameters.lock();
-			if !material_parameters.is_empty() {
-				let Some(material) = part.get_material() else {
-					break 'mat_params;
-				};
-				let new_material = material.copy();
-				for (parameter_name, parameter_value) in material_parameters.drain() {
-					parameter_value.apply_to_material(&client, &new_material, &parameter_name);
-				}
-
-				let shared_material =
-					MATERIAL_REGISTRY.add_or_get(Arc::new(MaterialWrapper(new_material)));
-				let mut lock = self.material.lock();
-				part.material(&shared_material.0);
-				lock.replace(shared_material);
-			}
-		}
+			.replace(replacement);
 	}
 }
 impl ModelPartAspect for ModelPart {
 	#[doc = "Set this model part's material to one that cuts a hole in the world. Often used for overlays/passthrough where you want to show the background through an object."]
 	fn apply_holdout_material(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
 		let model_part = node.get_aspect::<ModelPart>()?;
-		model_part.replace_material(HOLDOUT_MATERIAL.get().unwrap().clone());
+		model_part.replace_material(Material {
+			color: Color::BLACK.with_alpha(0.0),
+			emission_factor: Color::BLACK,
+			metallic: 0.0,
+			roughness: 1.0,
+			alpha_mode: AlphaMode::Opaque,
+			double_sided: false,
+			diffuse_texture: None,
+			emission_texture: None,
+			metal_texture: None,
+			occlusion_texture: None,
+		});
 		Ok(())
 	}
 
@@ -328,12 +473,37 @@ impl ModelPartAspect for ModelPart {
 		Ok(())
 	}
 }
+#[derive(Default)]
+struct MaterialRegistry(FxHashMap<HashedPbrMaterial, Handle<PbrMaterial>>);
+impl MaterialRegistry {
+	/// returns strong handle for PbrMaterial elminitating duplications
+	fn get_handle(
+		&mut self,
+		material: PbrMaterial,
+		materials: &mut ResMut<Assets<PbrMaterial>>,
+	) -> Handle<PbrMaterial> {
+		let hash = HashedPbrMaterial::new(&material);
+		match self
+			.0
+			.get(&hash)
+			.and_then(|v| materials.get_strong_handle(v.id()))
+		{
+			Some(v) => v,
+			None => {
+				let handle = materials.add(material);
+				self.0.insert(hash, handle.clone_weak());
+				handle
+			}
+		}
+	}
+}
 
 pub struct Model {
 	space: Arc<Spatial>,
 	_resource_id: ResourceID,
-	sk_model: OnceLock<SKModel>,
-	parts: Mutex<Vec<Arc<ModelPart>>>,
+	bevy_scene_entity: OnceLock<Entity>,
+	parts: OnceLock<Vec<Arc<ModelPart>>>,
+	pre_bound_parts: Mutex<Vec<Arc<ModelPart>>>,
 }
 impl Model {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Model>> {
@@ -347,42 +517,21 @@ impl Model {
 		let model = Arc::new(Model {
 			space: node.get_aspect::<Spatial>().unwrap().clone(),
 			_resource_id: resource_id,
-			sk_model: OnceLock::new(),
-			parts: Mutex::new(Vec::default()),
+			bevy_scene_entity: OnceLock::new(),
+			pre_bound_parts: Mutex::default(),
+			parts: OnceLock::new(),
 		});
+		LOAD_MODEL
+			.get()
+			.unwrap()
+			.send((model.clone(), pending_model_path))
+			.unwrap();
 		MODEL_REGISTRY.add_raw(&model);
 
-		// technically doing this in anything but the main thread isn't a good idea but dangit we need those model nodes ASAP
-		let sk_model = SKModel::copy(SKModel::from_file(
-			pending_model_path.to_str().unwrap(),
-			None,
-		)?);
-		ModelPart::create_for_model(&model, &sk_model);
-		let _ = model.sk_model.set(sk_model);
 		node.add_aspect_raw(model.clone());
 		Ok(model)
 	}
-
-	fn draw(&self, token: &MainThreadToken) {
-		let Some(sk_model) = self.sk_model.get() else {
-			return;
-		};
-		let parts = self.parts.lock();
-		for model_node in &*parts {
-			model_node.update();
-		}
-		drop(parts);
-
-		if let Some(node) = self.space.node() {
-			if node.enabled() {
-				sk_model.draw(token, self.space.global_transform(), None, None);
-			}
-		}
-	}
 }
-// TODO: proper hread safety in stereokit_rust (probably just bind stereokit directly)
-unsafe impl Send for Model {}
-unsafe impl Sync for Model {}
 impl ModelAspect for Model {
 	#[doc = "Bind a model part to the node with the ID input."]
 	fn bind_model_part(
@@ -392,10 +541,44 @@ impl ModelAspect for Model {
 		part_path: String,
 	) -> Result<()> {
 		let model = node.get_aspect::<Model>()?;
-		let parts = model.parts.lock();
-		let Some(part) = parts.iter().find(|p| p.path == part_path) else {
-			let paths = parts.iter().map(|p| &p.path).collect::<Vec<_>>();
-			bail!("Couldn't find model part at path {part_path}, all available paths: {paths:?}",);
+		let part = match model
+			.parts
+			.get()
+			.map(|v| v.iter().find(|p| p.path == part_path))
+		{
+			Some(Some(part)) => part.clone(),
+			Some(None) => {
+				let paths = model
+					.parts
+					.get()
+					.unwrap()
+					.iter()
+					.map(|p| &p.path)
+					.collect::<Vec<_>>();
+				bail!(
+					"Couldn't find model part at path {part_path}, all available paths: {paths:?}",
+				);
+			}
+			None => {
+				let part_node = calling_client
+					.scenegraph
+					.add_node(Node::generate(&calling_client, false));
+				let model = node.get_aspect::<Model>()?;
+				let spatial =
+					Spatial::add_to(&part_node, Some(model.space.clone()), Mat4::IDENTITY, false);
+				let part = part_node.add_aspect(ModelPart {
+					entity: OnceLock::new(),
+					mesh_entity: OnceLock::new(),
+					path: part_path,
+					space: spatial,
+					model: Arc::downgrade(&model),
+					pending_material_parameters: Mutex::default(),
+					pending_material_replacement: Mutex::default(),
+					aliases: AliasList::default(),
+				});
+				model.pre_bound_parts.lock().push(part.clone());
+				part
+			}
 		};
 		Alias::create_with_id(
 			&part.space.node().unwrap(),
@@ -410,11 +593,5 @@ impl ModelAspect for Model {
 impl Drop for Model {
 	fn drop(&mut self) {
 		MODEL_REGISTRY.remove(self);
-	}
-}
-
-pub fn draw_all(token: &MainThreadToken) {
-	for model in MODEL_REGISTRY.get_valid_contents() {
-		model.draw(token);
 	}
 }
