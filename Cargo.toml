@@ -21,37 +21,29 @@ name = "stardust-xr-server"
 path = "src/main.rs"
 
 [features]
-default = ["wayland"]
+default = []
 wayland = ["dep:smithay", "dep:wayland-scanner", "dep:wayland-backend"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy"]
-local_deps = ["stereokit-rust/force-local-deps"]
 
 [package.metadata.appimage]
 auto_link = true
-auto_link_exclude_list = [
-	"libc*",
-	"libdl*",
-	"libpthread*",
-	"ld-linux*",
-	"libGL*",
-	"libEGL*",
-]
+auto_link_exclude_list = ["libc*", "libdl*", "libpthread*", "ld-linux*"]
 
 [profile.dev.package."*"]
 opt-level = 3
-debug = true
-strip = false
-debug-assertions = true
-overflow-checks = true
 
-[profile.release]
-opt-level = 3
-debug = "line-tables-only"
-strip = true
-debug-assertions = true
-overflow-checks = false
-lto = "thin"
+# [profile.release]
+# opt-level = 3
+# debug = "line-tables-only"
+# strip = true
+# debug-assertions = true
+# overflow-checks = false
+# lto = "thin"
+
+[patch.crates-io]
+bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "non_default_wait_frame_system" }
+bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "non_default_wait_frame_system" }
 
 [dependencies]
 # small utility thingys
@@ -63,6 +55,7 @@ send_wrapper = "0.6.0"
 slotmap = "1.0.7"
 global_counter = "=0.2.2"
 parking_lot = "0.12.3"
+dashmap = "6.1.0"
 
 # rust errors/logging
 color-eyre = { version = "0.6.3", default-features = false }
@@ -83,6 +76,17 @@ glam = { version = "0.29.0", features = ["mint", "serde"] }
 mint = "0.5.9"
 tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
 
+# bevy
+bevy = { version = "0.16", features = ["wayland", "bevy_remote"] }
+bevy_mod_xr = "0.3"
+bevy_mod_openxr = "0.3"
+bevy_mod_meshtext.git = "https://github.com/Schmarni-Dev/bevy_mod_meshtext"
+# bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
+# bevy_sk = { git = "https://github.com/Schmarni-Dev/bevy_sk", branch = "fix_mat_stuff" }
+bevy_sk.path = "../bevy_sk"
+
+openxr = "0.19"
+
 # linux stuffs
 input-event-codes = "6.2.0"
 zbus = { version = "5.0.0", default-features = false, features = ["tokio"] }
@@ -92,14 +96,13 @@ xkbcommon-rs = "0.1.0"
 # wayland
 wayland-backend = { version = "0.3.7", optional = true, default-features = false }
 wayland-scanner = { version = "0.31.4", optional = true }
-dashmap = "6.1.0"
+
 
 [dependencies.smithay]
 git = "https://github.com/smithay/smithay.git"
 default-features = false
 features = ["desktop", "backend_drm", "renderer_gl", "wayland_frontend"]
 optional = true
-
 
 [dependencies.stereokit-rust]
 git = "https://github.com/mvvvv/StereoKit-rust.git"

@@ -9,10 +9,7 @@ use crate::{
 	core::{client::Client, registry::Registry, scenegraph::MethodResponseSender},
 	nodes::{
 		Message, Node,
-		drawable::{
-			model::{MaterialWrapper, ModelPart},
-			shaders::UNLIT_SHADER_BYTES,
-		},
+		drawable::{model::ModelPart, shaders::UNLIT_SHADER_BYTES},
 		items::TypeInfo,
 		spatial::{Spatial, Transform},
 	},
@@ -68,7 +65,6 @@ pub struct CameraItem {
 	space: Arc<Spatial>,
 	frame_info: Mutex<FrameInfo>,
 	sk_tex: OnceLock<TexWrapper>,
-	sk_mat: OnceLock<Arc<MaterialWrapper>>,
 	applied_to: Registry<ModelPart>,
 	apply_to: Registry<ModelPart>,
 }
@@ -82,7 +78,6 @@ impl CameraItem {
 				px_size,
 			}),
 			sk_tex: OnceLock::new(),
-			sk_mat: OnceLock::new(),
 			applied_to: Registry::new(),
 			apply_to: Registry::new(),
 		});
@@ -139,15 +134,15 @@ impl CameraItem {
 				TexFormat::RGBA32Linear,
 			))
 		});
-		let sk_mat = self.sk_mat.get_or_init(|| {
-			let shader = Shader::from_memory(UNLIT_SHADER_BYTES).unwrap();
-			let mut mat = Material::new(&shader, None);
-			mat.get_all_param_info().set_texture("diffuse", &sk_tex.0);
-			mat.transparency(Transparency::Blend);
-			Arc::new(MaterialWrapper(mat))
-		});
+		// let sk_mat = self.sk_mat.get_or_init(|| {
+		// 	let shader = Shader::from_memory(UNLIT_SHADER_BYTES).unwrap();
+		// 	let mut mat = Material::new(&shader, None);
+		// 	mat.get_all_param_info().set_texture("diffuse", &sk_tex.0);
+		// 	mat.transparency(Transparency::Blend);
+		// 	Arc::new(MaterialWrapper(mat))
+		// });
 		for model_part in self.apply_to.take_valid_contents() {
-			model_part.replace_material(sk_mat.clone())
+			// model_part.replace_material(sk_mat.clone())
 		}
 
 		if !self.applied_to.is_empty() {

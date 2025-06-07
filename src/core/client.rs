@@ -26,7 +26,7 @@ use std::{
 	time::Instant,
 };
 use tokio::{net::UnixStream, sync::watch, task::JoinHandle};
-use tracing::info;
+use tracing::{info, warn};
 
 lazy_static! {
 	pub static ref CLIENTS: OwnedRegistry<Client> = OwnedRegistry::new();
@@ -201,7 +201,9 @@ impl Client {
 		std::fs::read_link(cwd_proc_path).ok()
 	}
 	pub async fn save_state(&self) -> Option<ClientStateParsed> {
+		println!("start save state");
 		let internal = self.root.get()?.save_state().await.ok()?;
+		println!("finished save state");
 		Some(ClientStateParsed::from_deserialized(self, internal))
 	}
 
