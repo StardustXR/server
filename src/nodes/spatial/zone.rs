@@ -45,7 +45,10 @@ pub fn release(spatial: &Spatial) {
 	};
 	let spatial = spatial_node.get_aspect::<Spatial>().unwrap();
 
-	let _ = spatial.set_spatial_parent_in_place(spatial.old_parent.lock().take().as_ref());
+	let Some(old_parent) = spatial.old_parent.lock().take() else {
+		return;
+	};
+	let _ = spatial.set_spatial_parent_in_place(&old_parent);
 	let mut spatial_zone = spatial.zone.lock();
 
 	if let Some(spatial_zone) = spatial_zone.upgrade() {

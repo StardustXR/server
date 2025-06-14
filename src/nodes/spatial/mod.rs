@@ -192,45 +192,29 @@ impl Spatial {
 	fn get_parent(&self) -> Option<Arc<Spatial>> {
 		self.parent.lock().clone()
 	}
-	fn set_parent(self: &Arc<Self>, new_parent: Option<&Arc<Spatial>>) {
+	fn set_parent(self: &Arc<Self>, new_parent: &Arc<Spatial>) {
 		if let Some(parent) = self.get_parent() {
 			parent.children.remove(self);
 		}
-		if let Some(new_parent) = &new_parent {
-			new_parent.children.add_raw(self);
-		}
+		new_parent.children.add_raw(self);
 
-		*self.parent.lock() = new_parent.cloned();
+		*self.parent.lock() = Some(new_parent.clone());
 	}
 
-	pub fn set_spatial_parent(self: &Arc<Self>, parent: Option<&Arc<Spatial>>) -> Result<()> {
-		let is_ancestor = parent
-			.as_ref()
-			.map(|parent| self.is_ancestor_of((*parent).clone()))
-			.unwrap_or(false);
-		if is_ancestor {
+	pub fn set_spatial_parent(self: &Arc<Self>, parent: &Arc<Spatial>) -> Result<()> {
+		if self.is_ancestor_of(parent.clone()) {
 			bail!("Setting spatial parent would cause a loop");
 		}
 		self.set_parent(parent);
 
 		Ok(())
 	}
-	pub fn set_spatial_parent_in_place(
-		self: &Arc<Self>,
-		parent: Option<&Arc<Spatial>>,
-	) -> Result<()> {
-		let is_ancestor = parent
-			.as_ref()
-			.map(|parent| self.is_ancestor_of((*parent).clone()))
-			.unwrap_or(false);
-		if is_ancestor {
+	pub fn set_spatial_parent_in_place(self: &Arc<Self>, parent: &Arc<Spatial>) -> Result<()> {
+		if self.is_ancestor_of(parent.clone()) {
 			bail!("Setting spatial parent would cause a loop");
 		}
 
-		self.set_local_transform(Spatial::space_to_space_matrix(
-			Some(self),
-			parent.map(AsRef::as_ref),
-		));
+		self.set_local_transform(Spatial::space_to_space_matrix(Some(self), Some(parent)));
 		self.set_parent(parent);
 
 		Ok(())
@@ -282,7 +266,7 @@ impl SpatialAspect for Spatial {
 		let this_spatial = node.get_aspect::<Spatial>()?;
 		let parent = parent.get_aspect::<Spatial>()?;
 
-		this_spatial.set_spatial_parent(Some(&parent))?;
+		this_spatial.set_spatial_parent(&parent)?;
 		Ok(())
 	}
 
@@ -294,7 +278,7 @@ impl SpatialAspect for Spatial {
 		let this_spatial = node.get_aspect::<Spatial>()?;
 		let parent = parent.get_aspect::<Spatial>()?;
 
-		this_spatial.set_spatial_parent_in_place(Some(&parent))?;
+		this_spatial.set_spatial_parent_in_place(&parent)?;
 		Ok(())
 	}
 
