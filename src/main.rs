@@ -50,6 +50,7 @@ use directories::ProjectDirs;
 use nodes::drawable::model::ModelNodePlugin;
 use nodes::spatial::SpatialNodePlugin;
 use objects::ServerObjects;
+use objects::input::sk_controller::ControllerPlugin;
 use objects::input::sk_hand::HandPlugin;
 use objects::play_space::PlaySpacePlugin;
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
@@ -351,8 +352,7 @@ fn bevy_loop(
 			.disable::<OxrPassthroughPlugin>()
 			// we don't do any action stuff that needs to integrate with the ecosystem
 			.disable::<OxrActionAttachingPlugin>()
-			.disable::<OxrActionSyncingPlugin>()
-			.disable::<OxrActionBindingPlugin>(),
+			.disable::<OxrActionSyncingPlugin>(),
 	);
 	app.add_plugins((
 		bevy_sk::hand::HandPlugin,
@@ -390,8 +390,11 @@ fn bevy_loop(
 		ModelNodePlugin,
 		PlaySpacePlugin,
 		HandPlugin,
+		ControllerPlugin,
 	));
-	ready_notifier.notify_waiters();
+	app.add_systems(PostStartup, move || {
+		ready_notifier.notify_waiters();
+	});
 	app.add_systems(
 		XrFirst,
 		xr_step

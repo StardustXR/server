@@ -146,7 +146,7 @@ fn gen_model_parts(
 									mesh_entity: OnceLock::new(),
 									path,
 									space: spatial.clone(),
-									model: Arc::downgrade(&model),
+									_model: Arc::downgrade(&model),
 									pending_material_parameters: Mutex::default(),
 									pending_material_replacement: Mutex::default(),
 									aliases: AliasList::default(),
@@ -370,7 +370,7 @@ impl MaterialParameter {
 					}
 				}
 				mat.alpha_mode = AlphaMode::AlphaToCoverage;
-				mat.use_stereokit_uvs = true;
+				mat.use_stereokit_uvs = false;
 			}
 		}
 	}
@@ -416,7 +416,7 @@ impl Material {
 				.as_ref()
 				.map(|p| asset_server.load(p.as_path())),
 			spherical_harmonics: bevy_sk::skytext::SPHERICAL_HARMONICS_HANDLE,
-			use_stereokit_uvs: true,
+			use_stereokit_uvs: false,
 		}
 	}
 }
@@ -426,7 +426,7 @@ pub struct ModelPart {
 	mesh_entity: OnceLock<Entity>,
 	path: String,
 	space: Arc<Spatial>,
-	model: Weak<Model>,
+	_model: Weak<Model>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Material>>,
 	aliases: AliasList,
@@ -436,6 +436,11 @@ impl ModelPart {
 		self.pending_material_replacement
 			.lock()
 			.replace(replacement);
+	}
+	pub fn set_material_parameter(&self, parameter_name: String, value: MaterialParameter) {
+		self.pending_material_parameters
+			.lock()
+			.insert(parameter_name, value);
 	}
 }
 impl ModelPartAspect for ModelPart {
@@ -465,11 +470,7 @@ impl ModelPartAspect for ModelPart {
 		value: MaterialParameter,
 	) -> Result<()> {
 		let model_part = node.get_aspect::<ModelPart>()?;
-		model_part
-			.pending_material_parameters
-			.lock()
-			.insert(parameter_name, value);
-
+		model_part.set_material_parameter(parameter_name, value);
 		Ok(())
 	}
 }
@@ -531,24 +532,15 @@ impl Model {
 		node.add_aspect_raw(model.clone());
 		Ok(model)
 	}
-}
-impl ModelAspect for Model {
-	#[doc = "Bind a model part to the node with the ID input."]
-	fn bind_model_part(
-		node: Arc<Node>,
-		calling_client: Arc<Client>,
-		id: u64,
-		part_path: String,
-	) -> Result<()> {
-		let model = node.get_aspect::<Model>()?;
-		let part = match model
+	pub fn get_model_part(self: &Arc<Self>, part_path: String) -> Result<Arc<ModelPart>> {
+		let part = match self
 			.parts
 			.get()
 			.map(|v| v.iter().find(|p| p.path == part_path))
 		{
 			Some(Some(part)) => part.clone(),
 			Some(None) => {
-				let paths = model
+				let paths = self
 					.parts
 					.get()
 					.unwrap()
@@ -560,26 +552,38 @@ impl ModelAspect for Model {
 				);
 			}
 			None => {
-				let part_node = calling_client
-					.scenegraph
-					.add_node(Node::generate(&calling_client, false));
-				let model = node.get_aspect::<Model>()?;
+				// TODO: this could be a denail of service vector
+				let client = self.space.node().unwrap().get_client().unwrap();
+				let part_node = client.scenegraph.add_node(Node::generate(&client, false));
 				let spatial =
-					Spatial::add_to(&part_node, Some(model.space.clone()), Mat4::IDENTITY, false);
+					Spatial::add_to(&part_node, Some(self.space.clone()), Mat4::IDENTITY, false);
 				let part = part_node.add_aspect(ModelPart {
 					entity: OnceLock::new(),
 					mesh_entity: OnceLock::new(),
 					path: part_path,
 					space: spatial,
-					model: Arc::downgrade(&model),
+					_model: Arc::downgrade(self),
 					pending_material_parameters: Mutex::default(),
 					pending_material_replacement: Mutex::default(),
 					aliases: AliasList::default(),
 				});
-				model.pre_bound_parts.lock().push(part.clone());
+				self.pre_bound_parts.lock().push(part.clone());
 				part
 			}
 		};
+		Ok(part)
+	}
+}
+impl ModelAspect for Model {
+	#[doc = "Bind a model part to the node with the ID input."]
+	fn bind_model_part(
+		node: Arc<Node>,
+		calling_client: Arc<Client>,
+		id: u64,
+		part_path: String,
+	) -> Result<()> {
+		let model = node.get_aspect::<Model>()?;
+		let part = model.get_model_part(part_path)?;
 		Alias::create_with_id(
 			&part.space.node().unwrap(),
 			&calling_client,

@@ -44,6 +44,7 @@ opt-level = 3
 [patch.crates-io]
 bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "non_default_wait_frame_system" }
 bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "non_default_wait_frame_system" }
+bevy_gltf = { git = "https://github.com/Schmarni-Dev/bevy", branch = "gltf_backport" }
 
 [dependencies]
 # small utility thingys
