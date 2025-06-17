@@ -33,8 +33,8 @@ pub mod play_space;
 
 enum Inputs {
 	XR {
-		controller_left: SkController,
-		controller_right: SkController,
+		// controller_left: SkController,
+		// controller_right: SkController,
 		// hand_left: SkHand,
 		// hand_right: SkHand,
 		eye_pointer: Option<EyePointer>,
@@ -95,8 +95,6 @@ impl ServerObjects {
 
 		let inputs = if sk.get_active_display_mode() == DisplayMode::MixedReality {
 			Inputs::XR {
-				controller_left: SkController::new(&connection, Handed::Left).unwrap(),
-				controller_right: SkController::new(&connection, Handed::Right).unwrap(),
 				// hand_left: SkHand::new(&connection, Handed::Left).unwrap(),
 				// hand_right: SkHand::new(&connection, Handed::Right).unwrap(),
 				eye_pointer: Device::has_eye_gaze()
@@ -166,14 +164,14 @@ impl ServerObjects {
 
 		match &mut self.inputs {
 			Inputs::XR {
-				controller_left,
-				controller_right,
+				// controller_left,
+				// controller_right,
 				eye_pointer,
 			} => {
-				if !self.disable_controllers {
-					controller_left.update(token);
-					controller_right.update(token);
-				}
+				// if !self.disable_controllers {
+				// 	controller_left.update(token);
+				// 	controller_right.update(token);
+				// }
 				Input::hand_visible(Handed::Left, !self.disable_hands);
 				Input::hand_visible(Handed::Right, !self.disable_hands);
 				// if !self.disable_hands {
