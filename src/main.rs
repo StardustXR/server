@@ -12,10 +12,11 @@ use crate::nodes::{audio, drawable, input};
 
 use bevy::MinimalPlugins;
 use bevy::a11y::AccessibilityPlugin;
-use bevy::app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
+use bevy::app::{App, MainScheduleOrder, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
 use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
 use bevy::audio::AudioPlugin;
 use bevy::core_pipeline::CorePipelinePlugin;
+use bevy::ecs::schedule::{ExecutorKind, ScheduleLabel};
 use bevy::gizmos::GizmoPlugin;
 use bevy::gltf::GltfPlugin;
 use bevy::input::{InputPlugin, InputSystem};
@@ -27,14 +28,21 @@ use bevy::scene::ScenePlugin;
 use bevy::text::FontLoader;
 use bevy::winit::{WakeUp, WinitPlugin};
 use bevy_mod_meshtext::MeshTextPlugin;
+use bevy_mod_openxr::action_binding::OxrActionBindingPlugin;
+use bevy_mod_openxr::action_set_attaching::OxrActionAttachingPlugin;
+use bevy_mod_openxr::action_set_syncing::OxrActionSyncingPlugin;
 use bevy_mod_openxr::add_xr_plugins;
 use bevy_mod_openxr::exts::OxrExtensions;
+use bevy_mod_openxr::features::handtracking::HandTrackingPlugin;
 use bevy_mod_openxr::features::overlay::OxrOverlaySettings;
-use bevy_mod_openxr::init::OxrInitPlugin;
+use bevy_mod_openxr::features::passthrough::OxrPassthroughPlugin;
+use bevy_mod_openxr::init::{OxrInitPlugin, should_run_frame_loop};
 use bevy_mod_openxr::reference_space::OxrReferenceSpacePlugin;
-use bevy_mod_openxr::resources::OxrSessionConfig;
+use bevy_mod_openxr::render::{OxrRenderPlugin, OxrWaitFrameSystem};
+use bevy_mod_openxr::resources::{OxrFrameState, OxrFrameWaiter, OxrSessionConfig};
 use bevy_mod_openxr::types::AppInfo;
 use bevy_mod_xr::hand_debug_gizmos::HandGizmosPlugin;
+use bevy_mod_xr::session::{XrFirst, XrHandleEvents, session_running};
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
 use core::task;
@@ -42,6 +50,8 @@ use directories::ProjectDirs;
 use nodes::drawable::model::ModelNodePlugin;
 use nodes::spatial::SpatialNodePlugin;
 use objects::ServerObjects;
+use objects::input::sk_hand::HandPlugin;
+use objects::play_space::PlaySpacePlugin;
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use session::{launch_start, save_session};
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
@@ -239,6 +249,13 @@ async fn main() {
 static DEFAULT_SKYTEX: OnceLock<Tex> = OnceLock::new();
 static DEFAULT_SKYLIGHT: OnceLock<SphericalHarmonics> = OnceLock::new();
 
+#[derive(ScheduleLabel, Hash, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct PreFrameWait;
+#[derive(Resource, Deref)]
+pub struct ObjectRegistryRes(ObjectRegistry);
+#[derive(Resource, Deref)]
+pub struct DbusConnection(Connection);
+
 fn bevy_loop(
 	ready_notifier: Arc<Notify>,
 	project_dirs: Option<ProjectDirs>,
@@ -247,6 +264,7 @@ fn bevy_loop(
 	object_registry: ObjectRegistry,
 ) {
 	let mut app = App::new();
+	app.insert_resource(DbusConnection(dbus_connection));
 	app.add_plugins(AssetPlugin {
 		meta_check: AssetMetaCheck::Never,
 		unapproved_path_mode: UnapprovedPathMode::Allow,
@@ -254,18 +272,18 @@ fn bevy_loop(
 	});
 	let mut plugins = MinimalPlugins
 		.build()
-		.disable::<ScheduleRunnerPlugin>()
+		// .disable::<ScheduleRunnerPlugin>()
 		.add(TransformPlugin)
 		.add(InputPlugin)
 		/* .add(AccessibilityPlugin) */;
 	// TODO: figure out headless
-	{
-		plugins = plugins.add(WindowPlugin::default()).add({
-			let mut winit = WinitPlugin::<WakeUp>::default();
-			winit.run_on_any_thread = true;
-			winit
-		});
-	}
+	// {
+	// 	plugins = plugins.add(WindowPlugin::default()).add({
+	// 		let mut winit = WinitPlugin::<WakeUp>::default();
+	// 		winit.run_on_any_thread = true;
+	// 		winit
+	// 	});
+	// }
 	plugins = plugins
 		.add(TerminalCtrlCHandlerPlugin)
 		// bevy_mod_openxr will replace this, TODO: figure out how to mix this with
@@ -288,8 +306,23 @@ fn bevy_loop(
 		.add(AudioPlugin::default())
 		.add(GizmoPlugin)
 		.add(AccessibilityPlugin);
+	let mut task_pool_plugin = TaskPoolPlugin::default();
+	// make tokio work
+	let handle = tokio::runtime::Handle::current();
+	let enter_runtime_context = Arc::new(move || {
+		// TODO: this might be a memory leak
+		std::mem::forget(handle.enter());
+	});
+	task_pool_plugin.task_pool_options.io.on_thread_spawn = Some(enter_runtime_context.clone());
+	task_pool_plugin.task_pool_options.compute.on_thread_spawn =
+		Some(enter_runtime_context.clone());
+	task_pool_plugin
+		.task_pool_options
+		.async_compute
+		.on_thread_spawn = Some(enter_runtime_context.clone());
+	plugins = plugins.set(task_pool_plugin);
 	app.add_plugins(
-		add_xr_plugins(plugins)
+		add_xr_plugins(plugins.add(WindowPlugin::default()))
 			.set(OxrInitPlugin {
 				app_info: AppInfo {
 					name: "Stardust XR".into(),
@@ -306,17 +339,21 @@ fn bevy_loop(
 				},
 				..default()
 			})
+			.set(OxrRenderPlugin {
+				default_wait_frame: false,
+				..default()
+			})
 			.set(OxrReferenceSpacePlugin {
 				default_primary_ref_space: ReferenceSpaceType::LOCAL,
-			}),
+			})
+			// Disable a bunch of unneeded plugins
+			// this plugin uses the fb extention, blend mode still works
+			.disable::<OxrPassthroughPlugin>()
+			// we don't do any action stuff that needs to integrate with the ecosystem
+			.disable::<OxrActionAttachingPlugin>()
+			.disable::<OxrActionSyncingPlugin>()
+			.disable::<OxrActionBindingPlugin>(),
 	);
-	app.init_asset::<Font>().init_asset_loader::<FontLoader>();
-	if let Some(priority) = args.overlay_priority {
-		app.insert_resource(OxrOverlaySettings {
-			session_layer_placement: priority,
-			..default()
-		});
-	}
 	app.add_plugins((
 		bevy_sk::hand::HandPlugin,
 		bevy_sk::vr_materials::SkMaterialPlugin {
@@ -325,7 +362,14 @@ fn bevy_loop(
 		bevy_sk::skytext::SphericalHarmonicsPlugin,
 	));
 	app.add_plugins(HandGizmosPlugin);
-	app.add_plugins(MeshTextPlugin);
+	// app.add_plugins(MeshTextPlugin);
+	// app.init_asset::<Font>().init_asset_loader::<FontLoader>();
+	if let Some(priority) = args.overlay_priority {
+		app.insert_resource(OxrOverlaySettings {
+			session_layer_placement: priority,
+			..default()
+		});
+	}
 	app.insert_resource(OxrSessionConfig {
 		blend_modes: Some(vec![
 			EnvironmentBlendMode::ALPHA_BLEND,
@@ -334,26 +378,63 @@ fn bevy_loop(
 		]),
 		..default()
 	});
+	let mut pre_frame_wait = Schedule::new(PreFrameWait);
+	pre_frame_wait.set_executor_kind(ExecutorKind::MultiThreaded);
+	app.add_schedule(pre_frame_wait);
 	app.insert_resource(ClearColor(Color::BLACK.with_alpha(0.0)));
+	app.insert_resource(ObjectRegistryRes(object_registry));
 	app.add_plugins((RemotePlugin::default(), RemoteHttpPlugin::default()));
-	app.add_plugins((SpatialNodePlugin, ModelNodePlugin));
+	// the Stardust server plugins
+	app.add_plugins((
+		SpatialNodePlugin,
+		ModelNodePlugin,
+		PlaySpacePlugin,
+		HandPlugin,
+	));
 	ready_notifier.notify_waiters();
-	app.add_systems(PreUpdate, main_loop_system.after(InputSystem));
+	app.add_systems(
+		XrFirst,
+		xr_step
+			.in_set(OxrWaitFrameSystem)
+			.in_set(XrHandleEvents::FrameLoop),
+	);
 	app.run();
 }
 
-fn main_loop_system(world: &mut World) {
+fn xr_step(world: &mut World) {
 	// camera::update(token);
 	#[cfg(feature = "wayland")]
 	wayland.frame_event();
 	destroy_queue::clear();
 
-	// objects.update(&sk, token, &dbus_connection, &object_registry);
-	// input::process_input();
+	// update things like the Xr input methods
+	world.run_schedule(PreFrameWait);
+	input::process_input();
 	let time = world.resource::<bevy::prelude::Time>().delta_secs_f64();
 	nodes::root::Root::send_frame_events(time);
 
-	// Wait
+	// we are targeting the frame after the wait
+	if let Some(mut state) = world.get_resource_mut::<OxrFrameState>() {
+		state.predicted_display_time = openxr::Time::from_nanos(
+			state.predicted_display_time.as_nanos() + state.predicted_display_period.as_nanos(),
+		);
+	}
+
+	let should_wait = world
+		.run_system_cached(should_run_frame_loop)
+		.unwrap_or(false);
+	if should_wait {
+		world.resource_scope::<OxrFrameWaiter, _>(|world, mut waiter| {
+			let state = waiter
+				.wait()
+				.inspect_err(|err| error!("failed to wait OpenXR frame: {err}"))
+				.ok();
+
+			if let Some(state) = state {
+				world.insert_resource(OxrFrameState(state));
+			}
+		});
+	}
 
 	tick_internal_client();
 	#[cfg(feature = "wayland")]

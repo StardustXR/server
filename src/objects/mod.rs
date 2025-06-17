@@ -13,6 +13,7 @@ use input::{
 	eye_pointer::EyePointer, mouse_pointer::MousePointer, sk_controller::SkController,
 	sk_hand::SkHand,
 };
+use parking_lot::RwLock;
 use play_space::PlaySpaceBounds;
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use std::{
@@ -34,16 +35,16 @@ enum Inputs {
 	XR {
 		controller_left: SkController,
 		controller_right: SkController,
-		hand_left: SkHand,
-		hand_right: SkHand,
+		// hand_left: SkHand,
+		// hand_right: SkHand,
 		eye_pointer: Option<EyePointer>,
 	},
 	MousePointer(MousePointer),
 	// Controllers((SkController, SkController)),
-	Hands {
-		left: SkHand,
-		right: SkHand,
-	},
+	// Hands {
+	// 	left: SkHand,
+	// 	right: SkHand,
+	// },
 }
 
 pub struct ServerObjects {
@@ -69,7 +70,8 @@ impl ServerObjects {
 		if play_space.is_some() {
 			let dbus_connection = connection.clone();
 			tokio::task::spawn(async move {
-				PlaySpaceBounds::create(&dbus_connection).await;
+				let play_space_data = Arc::new(RwLock::default());
+				PlaySpaceBounds::create(&dbus_connection, play_space_data).await;
 				dbus_connection
 					.request_name("org.stardustxr.PlaySpace")
 					.await
@@ -95,8 +97,8 @@ impl ServerObjects {
 			Inputs::XR {
 				controller_left: SkController::new(&connection, Handed::Left).unwrap(),
 				controller_right: SkController::new(&connection, Handed::Right).unwrap(),
-				hand_left: SkHand::new(&connection, Handed::Left).unwrap(),
-				hand_right: SkHand::new(&connection, Handed::Right).unwrap(),
+				// hand_left: SkHand::new(&connection, Handed::Left).unwrap(),
+				// hand_right: SkHand::new(&connection, Handed::Right).unwrap(),
 				eye_pointer: Device::has_eye_gaze()
 					.then(EyePointer::new)
 					.transpose()
@@ -166,8 +168,6 @@ impl ServerObjects {
 			Inputs::XR {
 				controller_left,
 				controller_right,
-				hand_left,
-				hand_right,
 				eye_pointer,
 			} => {
 				if !self.disable_controllers {
@@ -176,10 +176,10 @@ impl ServerObjects {
 				}
 				Input::hand_visible(Handed::Left, !self.disable_hands);
 				Input::hand_visible(Handed::Right, !self.disable_hands);
-				if !self.disable_hands {
-					hand_left.update(sk, token, &mut self.hand_materials[0]);
-					hand_right.update(sk, token, &mut self.hand_materials[1]);
-				}
+				// if !self.disable_hands {
+				// 	hand_left.update(sk, token, &mut self.hand_materials[0]);
+				// 	hand_right.update(sk, token, &mut self.hand_materials[1]);
+				// }
 				if let Some(eye_pointer) = eye_pointer {
 					eye_pointer.update();
 				}
@@ -191,10 +191,10 @@ impl ServerObjects {
 			// 	left.update(token);
 			// 	right.update(token);
 			// }
-			Inputs::Hands { left, right } => {
-				left.update(sk, token, &mut self.hand_materials[0]);
-				right.update(sk, token, &mut self.hand_materials[1]);
-			}
+			// Inputs::Hands { left, right } => {
+			// 	left.update(sk, token, &mut self.hand_materials[0]);
+			// 	right.update(sk, token, &mut self.hand_materials[1]);
+			// }
 		}
 	}
 }
