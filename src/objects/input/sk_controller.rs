@@ -135,6 +135,16 @@ fn suggest_bindings(
 			),
 		],
 	);
+	bind_all(
+		"/interaction_profiles/khr/simple_controller",
+		&[(
+			actions.space.as_raw(),
+			&[
+				"/user/hand/left/input/aim/pose",
+				"/user/hand/right/input/aim/pose",
+			],
+		)],
+	);
 }
 
 fn update(
@@ -360,6 +370,13 @@ impl SkController {
 				HandSide::Right => "/user/hand/right",
 			})
 			.unwrap();
+		if let Ok(path) = session.current_interaction_profile(path) {
+			if session.instance().path_to_string(path).unwrap()
+				== "/interaction_profiles/khr/simple_controller"
+			{
+				self.set_enabled(false);
+			}
+		}
 		fn get<T: openxr::ActionInput + Default>(
 			session: &OxrSession,
 			path: openxr::Path,
