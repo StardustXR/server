@@ -1,6 +1,7 @@
 use super::{MODEL_PART_ASPECT_ALIAS_INFO, MaterialParameter, ModelAspect, ModelPartAspect};
 use crate::bail;
 use crate::core::client::Client;
+use crate::core::color::ColorConvert as _;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
@@ -27,9 +28,13 @@ impl Plugin for ModelNodePlugin {
 	fn build(&self, app: &mut App) {
 		let (tx, rx) = mpsc::unbounded_channel();
 		LOAD_MODEL.set(tx).unwrap();
+		app.init_resource::<MaterialRegistry>();
 		app.insert_resource(MpscReceiver(rx));
 		app.add_systems(Update, load_models);
-		app.add_systems(PostUpdate, (gen_model_parts, apply_materials).chain());
+		app.add_systems(
+			PostUpdate,
+			(gen_model_parts, apply_materials, update_visibillity).chain(),
+		);
 	}
 }
 
@@ -37,6 +42,24 @@ impl Plugin for ModelNodePlugin {
 struct MpscReceiver<T>(mpsc::UnboundedReceiver<T>);
 #[derive(Component)]
 struct ModelNode(Weak<Model>);
+
+fn update_visibillity(mut cmds: Commands) {
+	for model in MODEL_REGISTRY.get_valid_contents().into_iter() {
+		let Some(entity) = model.bevy_scene_entity.get().copied() else {
+			continue;
+		};
+		match model.spatial.node().map(|n| n.enabled()).unwrap_or(false) {
+			true => {
+				cmds.entity(entity)
+					.insert_recursive::<Children>(Visibility::Visible);
+			}
+			false => {
+				cmds.entity(entity)
+					.insert_recursive::<Children>(Visibility::Hidden);
+			}
+		}
+	}
+}
 
 fn load_models(
 	asset_server: Res<AssetServer>,
@@ -50,7 +73,7 @@ fn load_models(
 			.spawn((
 				SceneRoot(handle),
 				ModelNode(Arc::downgrade(&model)),
-				SpatialNode(Arc::downgrade(&model.space)),
+				SpatialNode(Arc::downgrade(&model.spatial)),
 			))
 			.id();
 		model.bevy_scene_entity.set(entity).unwrap();
@@ -59,7 +82,7 @@ fn load_models(
 
 fn apply_materials(
 	mut query: Query<&mut MeshMaterial3d<PbrMaterial>>,
-	mut material_registry: Local<MaterialRegistry>,
+	mut material_registry: ResMut<MaterialRegistry>,
 	asset_server: Res<AssetServer>,
 	mut materials: ResMut<Assets<PbrMaterial>>,
 ) -> bevy::prelude::Result {
@@ -69,7 +92,9 @@ fn apply_materials(
 		.filter_map(|p| p.parts.get())
 		.flatten()
 	{
-		let mut mesh_mat = query.get_mut(*model_part.mesh_entity.get().unwrap())?;
+		let Ok(mut mesh_mat) = query.get_mut(*model_part.mesh_entity.get().unwrap()) else {
+			continue;
+		};
 		if let Some(material) = model_part.pending_material_replacement.lock().take() {
 			let pbr_mat = material.to_pbr_mat(&asset_server);
 			let handle = material_registry.get_handle(pbr_mat, &mut materials);
@@ -128,8 +153,8 @@ fn gen_model_parts(
 					let parent_spatial = parent
 						.as_ref()
 						.map(|p| p.space.clone())
-						.unwrap_or_else(|| model.space.clone());
-					let client = model.space.node()?.get_client()?;
+						.unwrap_or_else(|| model.spatial.clone());
+					let client = model.spatial.node()?.get_client()?;
 					let (spatial, model_part) =
 						match model.pre_bound_parts.lock().iter().find(|v| v.path == path) {
 							None => {
@@ -341,16 +366,13 @@ impl MaterialParameter {
 			MaterialParameter::Vec3(_val) => {
 				// nothing uses a Vec3
 			}
-			MaterialParameter::Color(val) => {
-				let rgba = Srgba::new(val.c.r, val.c.g, val.c.b, val.a);
-				match parameter_name {
-					"color" => mat.color = rgba.into(),
-					"emission_factor" => mat.emission_factor = rgba.into(),
-					v => {
-						error!("unknown param_name ({v}) for color")
-					}
+			MaterialParameter::Color(color) => match parameter_name {
+				"color" => mat.color = color.to_bevy(),
+				"emission_factor" => mat.emission_factor = color.to_bevy(),
+				v => {
+					error!("unknown param_name ({v}) for color")
 				}
-			}
+			},
 			MaterialParameter::Texture(resource) => {
 				let Some(texture_path) =
 					get_resource_file(resource, client, &[OsStr::new("png"), OsStr::new("jpg")])
@@ -474,11 +496,11 @@ impl ModelPartAspect for ModelPart {
 		Ok(())
 	}
 }
-#[derive(Default)]
-struct MaterialRegistry(FxHashMap<HashedPbrMaterial, Handle<PbrMaterial>>);
+#[derive(Default, Resource)]
+pub struct MaterialRegistry(FxHashMap<HashedPbrMaterial, Handle<PbrMaterial>>);
 impl MaterialRegistry {
 	/// returns strong handle for PbrMaterial elminitating duplications
-	fn get_handle(
+	pub fn get_handle(
 		&mut self,
 		material: PbrMaterial,
 		materials: &mut ResMut<Assets<PbrMaterial>>,
@@ -500,7 +522,7 @@ impl MaterialRegistry {
 }
 
 pub struct Model {
-	space: Arc<Spatial>,
+	spatial: Arc<Spatial>,
 	_resource_id: ResourceID,
 	bevy_scene_entity: OnceLock<Entity>,
 	parts: OnceLock<Vec<Arc<ModelPart>>>,
@@ -516,7 +538,7 @@ impl Model {
 		.ok_or_else(|| eyre!("Resource not found"))?;
 
 		let model = Arc::new(Model {
-			space: node.get_aspect::<Spatial>().unwrap().clone(),
+			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
 			_resource_id: resource_id,
 			bevy_scene_entity: OnceLock::new(),
 			pre_bound_parts: Mutex::default(),
@@ -553,10 +575,14 @@ impl Model {
 			}
 			None => {
 				// TODO: this could be a denail of service vector
-				let client = self.space.node().unwrap().get_client().unwrap();
+				let client = self.spatial.node().unwrap().get_client().unwrap();
 				let part_node = client.scenegraph.add_node(Node::generate(&client, false));
-				let spatial =
-					Spatial::add_to(&part_node, Some(self.space.clone()), Mat4::IDENTITY, false);
+				let spatial = Spatial::add_to(
+					&part_node,
+					Some(self.spatial.clone()),
+					Mat4::IDENTITY,
+					false,
+				);
 				let part = part_node.add_aspect(ModelPart {
 					entity: OnceLock::new(),
 					mesh_entity: OnceLock::new(),

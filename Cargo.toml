@@ -24,7 +24,8 @@ path = "src/main.rs"
 default = []
 wayland = ["dep:smithay", "dep:wayland-scanner", "dep:wayland-backend"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
-profile_app = ["dep:tracing-tracy"]
+profile_app = ["dep:tracing-tracy", "bevy/trace_tracy"]
+change_tracking = ["bevy/track_location"]
 
 [package.metadata.appimage]
 auto_link = true
@@ -81,9 +82,10 @@ tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
 bevy = { version = "0.16", features = ["wayland", "bevy_remote"] }
 bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"
-bevy_mod_meshtext.git = "https://github.com/Schmarni-Dev/bevy_mod_meshtext"
+# bevy_mod_meshtext.git = "https://github.com/Schmarni-Dev/bevy_mod_meshtext"
 # bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
 # bevy_sk = { git = "https://github.com/Schmarni-Dev/bevy_sk", branch = "fix_mat_stuff" }
+bevy-mesh-text-3d.git = "https://github.com/terhechte/bevy-mesh-text-3d"
 bevy_sk.path = "../bevy_sk"
 
 openxr = "0.19"
@@ -97,6 +99,7 @@ xkbcommon-rs = "0.1.0"
 # wayland
 wayland-backend = { version = "0.3.7", optional = true, default-features = false }
 wayland-scanner = { version = "0.31.4", optional = true }
+cosmic-text = "0.14.2"
 
 
 [dependencies.smithay]

@@ -23,7 +23,6 @@ use stereokit_rust::{sk::MainThreadToken, system::Renderer, tex::SHCubemap};
 // #[instrument(level = "debug", skip(sk))]
 pub fn draw(token: &MainThreadToken) {
 	lines::draw_all(token);
-	text::draw_all(token);
 	match QUEUED_SKYTEX.lock().take() {
 		Some(Some(skytex)) => {
 			if let Ok(skytex) = SHCubemap::from_cubemap(skytex, true, 100) {
