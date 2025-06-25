@@ -9,7 +9,6 @@ use crate::core::client::Client;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
-use bevy::ecs::entity_disabling::Disabled;
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use color_eyre::eyre::OptionExt;
@@ -18,7 +17,6 @@ use mint::Vector3;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::fmt::Debug;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, Weak};
 use std::{f32, ptr};
 use stereokit_rust::maths::Bounds;
@@ -28,61 +26,38 @@ impl Plugin for SpatialNodePlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(
 			PostUpdate,
-			(replace_childof, update_spatial_nodes).before(TransformSystem::TransformPropagate),
+			update_spatial_nodes.before(TransformSystem::TransformPropagate),
 		);
 	}
 }
 
 fn update_spatial_nodes(
-	mut query: Query<(Entity, &mut BevyTransform, &SpatialNode, Has<Disabled>)>,
-	cmds: ParallelCommands,
+	mut query: Query<(&mut BevyTransform, &SpatialNode, Option<&ChildOf>)>,
+	parent_query: Query<&GlobalTransform>,
 ) {
 	query
 		.par_iter_mut()
-		.for_each(|(entity, mut transform, spatial_node, disabled)| {
+		.for_each(|(mut transform, spatial_node, child_of)| {
 			let Some(spatial) = spatial_node.0.upgrade() else {
+				// should we despawn the entity?
 				return;
 			};
-			if !spatial
-				.node()
-				.map(|n| n.enabled.load(Ordering::Relaxed))
-				.unwrap_or(true)
-			{
-				// cmds.command_scope(|mut cmds| {
-				// 	cmds.entity(entity).insert(Visibility::Hidden);
-				// });
-				// return;
-			}
 			let mat4 = spatial.global_transform();
-
-			let scale_zero = mat4.to_scale_rotation_translation().0.length_squared() > 0.0;
-			if scale_zero {
-				// cmds.command_scope(|mut cmds| {
-				// 	cmds.entity(entity).insert(Visibility::Hidden);
-				// });
-			} else if disabled {
-				// cmds.command_scope(|mut cmds| {
-				// 	cmds.entity(entity).insert(Visibility::Visible);
-				// });
+			match child_of {
+				Some(child_of) => {
+					let Ok(parent) = parent_query.get(child_of.0) else {
+						warn!("SpatialNode bevy Parent doesn't have global transform");
+						return;
+					};
+					*transform =
+						BevyTransform::from_matrix(parent.compute_matrix().inverse() * mat4);
+				}
+				None => {
+					*transform = BevyTransform::from_matrix(mat4);
+				}
 			}
-			*transform = BevyTransform::from_matrix(mat4);
 		});
 }
-
-fn replace_childof(query: Query<(Entity, &ChildOf), With<SpatialNode>>, mut cmds: Commands) {
-	for (entity, parent) in &query {
-		cmds.entity(entity)
-			.insert(NonSpatialChildOf(parent.0))
-			.remove::<ChildOf>();
-	}
-}
-
-#[derive(Component, Default, Debug, PartialEq, Eq)]
-#[relationship_target(relationship = NonSpatialChildOf, linked_spawn)]
-pub struct NonSpatialChildren(Vec<Entity>);
-#[derive(Component, Debug, PartialEq, Eq)]
-#[relationship(relationship_target = NonSpatialChildren)]
-pub struct NonSpatialChildOf(Entity);
 
 #[derive(Clone, Component, Debug)]
 #[require(BevyTransform)]

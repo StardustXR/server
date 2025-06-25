@@ -154,9 +154,7 @@ fn update(
 	ref_space: Option<Res<XrPrimaryReferenceSpace>>,
 	state: Option<Res<OxrFrameState>>,
 ) {
-	info!("calling update");
 	let (Some(session), Some(state), Some(ref_space)) = (session, state, ref_space) else {
-		info!("something is missing");
 		controllers.left.set_enabled(false);
 		controllers.right.set_enabled(false);
 		return;
@@ -288,6 +286,7 @@ impl SkController {
 		let tracked = Tracked::new(connection, &path);
 		let tip = InputDataType::Tip(Tip::default());
 		let node = spatial.node().unwrap();
+		node.set_enabled(false);
 		let model = Model::add_to(&node, ResourceID::Direct(CURSOR_MODEL_PATH.into())).unwrap();
 		let model_part = model.get_model_part("Cursor".to_string()).unwrap();
 		let input = InputMethod::add_to(
@@ -324,7 +323,6 @@ impl SkController {
 		ref_space: XrReferenceSpace,
 	) {
 		let Some(space) = self.space.as_ref() else {
-			info!("no space 3:");
 			return;
 		};
 		let Ok(location) = session
@@ -339,10 +337,8 @@ impl SkController {
 				| SpaceLocationFlags::ORIENTATION_VALID
 				| SpaceLocationFlags::ORIENTATION_TRACKED,
 		);
-		info!("{:#?}", location.location_flags);
 		self.set_enabled(enabled);
 		if enabled {
-			info!("update");
 			let world_transform = Mat4::from(Affine3A::from(location.pose.to_xr_pose()));
 			self.model_part
 				.set_material_parameter("roughness".to_string(), MaterialParameter::Float(1.0));

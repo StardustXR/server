@@ -8,6 +8,7 @@ mod tip;
 
 pub use handler::*;
 pub use method::*;
+use tracing::debug_span;
 
 use super::Aspect;
 use super::AspectIdentifier;
@@ -120,6 +121,7 @@ pub fn process_input() {
 			node.enabled()
 		});
 	for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
+		let _span = debug_span!("handle input handler").entered();
 		for method_alias in handler.method_aliases.get_aliases() {
 			method_alias.set_enabled(false);
 		}
@@ -136,6 +138,7 @@ pub fn process_input() {
 			}
 		};
 
+		let ser_span = debug_span!("serializing input").entered();
 		let (methods, datas) = methods
 			.clone()
 			// filter out methods without the handler in their handler order
@@ -161,7 +164,9 @@ pub fn process_input() {
 			// serialize the data
 			.map(|(a, m)| (a.clone(), m.serialize(a.get_id(), &handler)))
 			.unzip::<_, _, Vec<_>, Vec<_>>();
+		drop(ser_span);
 
+		let _span = debug_span!("client input").entered();
 		let _ = input_handler_client::input(&handler_node, &methods, &datas);
 	}
 	for method in methods {

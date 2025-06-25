@@ -12,28 +12,25 @@ use crate::nodes::{audio, drawable, input};
 
 use bevy::MinimalPlugins;
 use bevy::a11y::AccessibilityPlugin;
-use bevy::app::{App, MainScheduleOrder, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
+use bevy::app::{App, TerminalCtrlCHandlerPlugin};
 use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
 use bevy::audio::AudioPlugin;
 use bevy::core_pipeline::CorePipelinePlugin;
+use bevy::diagnostic::DiagnosticsPlugin;
 use bevy::ecs::schedule::{ExecutorKind, ScheduleLabel};
 use bevy::gizmos::GizmoPlugin;
 use bevy::gltf::GltfPlugin;
-use bevy::input::{InputPlugin, InputSystem};
+use bevy::input::InputPlugin;
 use bevy::pbr::PbrPlugin;
 use bevy::remote::RemotePlugin;
 use bevy::remote::http::RemoteHttpPlugin;
 use bevy::render::{RenderDebugFlags, RenderPlugin};
 use bevy::scene::ScenePlugin;
 use bevy::text::FontLoader;
-use bevy::winit::{WakeUp, WinitPlugin};
-use bevy_mod_meshtext::MeshTextPlugin;
-use bevy_mod_openxr::action_binding::OxrActionBindingPlugin;
 use bevy_mod_openxr::action_set_attaching::OxrActionAttachingPlugin;
 use bevy_mod_openxr::action_set_syncing::OxrActionSyncingPlugin;
 use bevy_mod_openxr::add_xr_plugins;
 use bevy_mod_openxr::exts::OxrExtensions;
-use bevy_mod_openxr::features::handtracking::HandTrackingPlugin;
 use bevy_mod_openxr::features::overlay::OxrOverlaySettings;
 use bevy_mod_openxr::features::passthrough::OxrPassthroughPlugin;
 use bevy_mod_openxr::init::{OxrInitPlugin, should_run_frame_loop};
@@ -42,12 +39,13 @@ use bevy_mod_openxr::render::{OxrRenderPlugin, OxrWaitFrameSystem};
 use bevy_mod_openxr::resources::{OxrFrameState, OxrFrameWaiter, OxrSessionConfig};
 use bevy_mod_openxr::types::AppInfo;
 use bevy_mod_xr::hand_debug_gizmos::HandGizmosPlugin;
-use bevy_mod_xr::session::{XrFirst, XrHandleEvents, session_running};
+use bevy_mod_xr::session::{XrFirst, XrHandleEvents};
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
 use core::task;
 use directories::ProjectDirs;
 use nodes::drawable::model::ModelNodePlugin;
+use nodes::drawable::text::TextNodePlugin;
 use nodes::spatial::SpatialNodePlugin;
 use objects::ServerObjects;
 use objects::input::sk_controller::ControllerPlugin;
@@ -272,8 +270,7 @@ fn bevy_loop(
 		..default()
 	});
 	let mut plugins = MinimalPlugins
-		.build()
-		// .disable::<ScheduleRunnerPlugin>()
+		.build().add(DiagnosticsPlugin)
 		.add(TransformPlugin)
 		.add(InputPlugin)
 		/* .add(AccessibilityPlugin) */;
@@ -354,6 +351,7 @@ fn bevy_loop(
 			.disable::<OxrActionAttachingPlugin>()
 			.disable::<OxrActionSyncingPlugin>(),
 	);
+	// font size is in meters
 	app.add_plugins((
 		bevy_sk::hand::HandPlugin,
 		bevy_sk::vr_materials::SkMaterialPlugin {
@@ -363,7 +361,7 @@ fn bevy_loop(
 	));
 	app.add_plugins(HandGizmosPlugin);
 	// app.add_plugins(MeshTextPlugin);
-	// app.init_asset::<Font>().init_asset_loader::<FontLoader>();
+	app.init_asset::<Font>().init_asset_loader::<FontLoader>();
 	if let Some(priority) = args.overlay_priority {
 		app.insert_resource(OxrOverlaySettings {
 			session_layer_placement: priority,
@@ -388,6 +386,7 @@ fn bevy_loop(
 	app.add_plugins((
 		SpatialNodePlugin,
 		ModelNodePlugin,
+		TextNodePlugin,
 		PlaySpacePlugin,
 		HandPlugin,
 		ControllerPlugin,
@@ -401,6 +400,17 @@ fn bevy_loop(
 			.in_set(OxrWaitFrameSystem)
 			.in_set(XrHandleEvents::FrameLoop),
 	);
+	use std::process::Command;
+
+	let output = Command::new("fc-match")
+		.arg("-f")
+		.arg("%{file}")
+		.output()
+		.expect("Failed to run fc-match");
+
+	let font_path = String::from_utf8_lossy(&output.stdout);
+	info!("Default font path: {}", font_path);
+
 	app.run();
 }
 
