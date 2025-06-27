@@ -226,7 +226,6 @@ impl SkHand {
 		let material = materials.add(PbrMaterial {
 			color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
 			alpha_mode: AlphaMode::Blend,
-			use_stereokit_uvs: false,
 			diffuse_texture: Some(GRADIENT_TEXTURE_HANDLE),
 			roughness: 1.0,
 			..default()

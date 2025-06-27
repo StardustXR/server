@@ -242,7 +242,6 @@ impl HashedPbrMaterial {
 		hash_color(mat.emission_factor, state);
 		state.write_u32(mat.metallic.to_bits());
 		state.write_u32(mat.roughness.to_bits());
-		mat.use_stereokit_uvs.hash(state);
 		match mat.alpha_mode {
 			AlphaMode::Opaque => state.write_u8(0),
 			AlphaMode::Mask(v) => {
@@ -392,7 +391,6 @@ impl MaterialParameter {
 					}
 				}
 				mat.alpha_mode = AlphaMode::AlphaToCoverage;
-				mat.use_stereokit_uvs = false;
 			}
 		}
 	}
@@ -438,7 +436,6 @@ impl Material {
 				.as_ref()
 				.map(|p| asset_server.load(p.as_path())),
 			spherical_harmonics: bevy_sk::skytext::SPHERICAL_HARMONICS_HANDLE,
-			use_stereokit_uvs: false,
 		}
 	}
 }

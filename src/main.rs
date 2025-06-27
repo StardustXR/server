@@ -44,6 +44,7 @@ use clap::Parser;
 use core::client::{Client, tick_internal_client};
 use core::task;
 use directories::ProjectDirs;
+use nodes::drawable::lines::LinesNodePlugin;
 use nodes::drawable::model::ModelNodePlugin;
 use nodes::drawable::text::TextNodePlugin;
 use nodes::spatial::SpatialNodePlugin;
@@ -117,6 +118,13 @@ static STARDUST_INSTANCE: OnceLock<String> = OnceLock::new();
 // #[tokio::main(flavor = "current_thread")]
 #[tokio::main]
 async fn main() {
+	// let mut out = Vec::new();
+	// for i in 0..8 {
+	// 	for base in [0, 8, 1, 8, 9, 1] {
+	// 		out.push(base + i as u16);
+	// 	}
+	// }
+	// panic!("{out:?}");
 	color_eyre::install().unwrap();
 
 	let registry = tracing_subscriber::registry();
@@ -387,6 +395,7 @@ fn bevy_loop(
 		SpatialNodePlugin,
 		ModelNodePlugin,
 		TextNodePlugin,
+		LinesNodePlugin,
 		PlaySpacePlugin,
 		HandPlugin,
 		ControllerPlugin,
@@ -400,16 +409,6 @@ fn bevy_loop(
 			.in_set(OxrWaitFrameSystem)
 			.in_set(XrHandleEvents::FrameLoop),
 	);
-	use std::process::Command;
-
-	let output = Command::new("fc-match")
-		.arg("-f")
-		.arg("%{file}")
-		.output()
-		.expect("Failed to run fc-match");
-
-	let font_path = String::from_utf8_lossy(&output.stdout);
-	info!("Default font path: {}", font_path);
 
 	app.run();
 }
