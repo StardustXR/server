@@ -6402,7 +6402,8 @@ dependencies = [
 [[package]]
 name = "tracing-tracy"
 version = "0.11.4"
-source = "git+https://github.com/nagisa/rust_tracy_client?tag=tracy-client-v0.18.1#7d084307f54959999ca3729c42bd4f4f3f0df54d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0eaa1852afa96e0fe9e44caa53dc0bd2d9d05e0f2611ce09f97f8677af56e4ba"
 dependencies = [
  "tracing-core",
  "tracing-subscriber",
@@ -6423,7 +6424,8 @@ dependencies = [
 [[package]]
 name = "tracy-client"
 version = "0.18.1"
-source = "git+https://github.com/nagisa/rust_tracy_client?tag=tracy-client-v0.18.1#7d084307f54959999ca3729c42bd4f4f3f0df54d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3927832d93178f979a970d26deed7b03510586e328f31b0f9ad7a73985b8332a"
 dependencies = [
  "loom",
  "once_cell",
@@ -6433,7 +6435,8 @@ dependencies = [
 [[package]]
 name = "tracy-client-sys"
 version = "0.25.0"
-source = "git+https://github.com/nagisa/rust_tracy_client?tag=tracy-client-v0.18.1#7d084307f54959999ca3729c42bd4f4f3f0df54d"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c032d68a49d25d9012a864fef1c64ac17aee43c87e0477bf7301d8ae8bfea7b7"
 dependencies = [
  "cc",
  "windows-targets 0.48.5",
