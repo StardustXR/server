@@ -1,12 +1,9 @@
 use crate::{
 	core::{
-		client::Client, color::ColorConvert, error::Result, registry::Registry,
-		resource::get_resource_file,
+		bevy_channel::{BevyChannel, BevyChannelReader}, client::Client, color::ColorConvert, entity_handle::EntityHandle, error::Result, registry::Registry, resource::get_resource_file
 	},
 	nodes::{
-		Node,
-		drawable::XAlign,
-		spatial::{Spatial, SpatialNode},
+		drawable::XAlign, spatial::{Spatial, SpatialNode}, Node
 	},
 };
 use bevy::{platform::collections::HashMap, prelude::*};
@@ -19,31 +16,15 @@ use color_eyre::eyre::eyre;
 use core::f32;
 use cosmic_text::Metrics;
 use parking_lot::Mutex;
-use std::{
-	ffi::OsStr,
-	mem,
-	path::PathBuf,
-	sync::{Arc, OnceLock},
-};
-use tokio::sync::mpsc;
+use std::{ffi::OsStr, mem, path::PathBuf, sync::Arc};
 
-static SPAWN_TEXT: OnceLock<mpsc::UnboundedSender<Arc<Text>>> = OnceLock::new();
-
-#[derive(Resource)]
-struct MpscReceiver<T>(mpsc::UnboundedReceiver<T>);
+static SPAWN_TEXT: BevyChannel<Arc<Text>> = BevyChannel::new();
 
 pub struct TextNodePlugin;
 
 impl Plugin for TextNodePlugin {
 	fn build(&self, app: &mut App) {
 		// Text init stuff
-		// app.init_asset::<Font>().init_asset_loader::<FontLoader>();
-		// load_internal_binary_asset!(
-		// 	app,
-		// 	Handle::default(),
-		// 	"assets/FiraMono-subset.ttf",
-		// 	|bytes: &[u8], _path: String| { Font::try_from_bytes(bytes.to_vec()).unwrap() }
-		// );
 		// 1.0 for font size in meters
 		app.add_plugins(MeshTextPlugin::new(1.0));
 		app.world_mut()
@@ -52,17 +33,15 @@ impl Plugin for TextNodePlugin {
 			.db_mut()
 			.load_system_fonts();
 
-		let (tx, rx) = mpsc::unbounded_channel();
-		SPAWN_TEXT.set(tx).unwrap();
+		SPAWN_TEXT.init(app);
 		app.init_resource::<MaterialRegistry>();
-		app.insert_resource(MpscReceiver(rx));
 		app.add_systems(Update, (spawn_text, update_visibillity).chain());
 	}
 }
 
 fn update_visibillity(mut cmds: Commands) {
 	for text in TEXT_REGISTRY.get_valid_contents().into_iter() {
-		let Some(entity) = text.entity.lock().as_ref().copied() else {
+		let Some(entity) = text.entity.lock().as_deref().copied() else {
 			continue;
 		};
 		match text.spatial.node().map(|n| n.enabled()).unwrap_or(false) {
@@ -79,7 +58,7 @@ fn update_visibillity(mut cmds: Commands) {
 }
 
 fn spawn_text(
-	mut mpsc: ResMut<MpscReceiver<Arc<Text>>>,
+	mut mpsc: ResMut<BevyChannelReader<Arc<Text>>>,
 	mut cmds: Commands,
 	mut font_settings: ResMut<FontSettings>,
 	mut material_registry: ResMut<MaterialRegistry>,
@@ -87,9 +66,9 @@ fn spawn_text(
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut font_registry: Local<FontDatabaseRegistry>,
 ) {
-	while let Ok(text) = mpsc.0.try_recv() {
+	while let Some(text) = mpsc.read() {
 		if let Some(entity) = text.entity.lock().take() {
-			cmds.entity(entity).despawn();
+			cmds.entity(*entity).despawn();
 		}
 		let style = text.data.lock();
 		let old_db = text.font_path.clone().map(|p| {
@@ -157,17 +136,11 @@ fn spawn_text(
 		};
 		let dist = meshes.iter().fold(f32::MAX, |dist, v| {
 			dist.min(v.transform.translation.x)
-			// if dist > v.transform.translation.x {
-			// 	v.transform.translation.x
-			// } else {
-			// 	dist
-			// }
 		});
 		// TODO: text align
 		let letters = meshes
 			.into_iter()
 			.map(|v| {
-				// info!("{:?}", v.transform);
 				cmds.spawn((
 					Mesh3d(v.mesh),
 					MeshMaterial3d(v.material),
@@ -177,7 +150,7 @@ fn spawn_text(
 							-dist
 								+ match style.bounds.as_ref().map(|v| v.anchor_align_x) {
 									Some(XAlign::Center) => width * -0.5,
-									Some(XAlign::Right) => width * -1.0,
+									Some(XAlign::Right) => -width,
 									Some(XAlign::Left) => 0.0,
 									None => 0.0,
 								},
@@ -192,7 +165,7 @@ fn spawn_text(
 			.spawn((SpatialNode(Arc::downgrade(&text.spatial)),))
 			.add_children(&letters)
 			.id();
-		text.entity.lock().replace(entity);
+		text.entity.lock().replace(EntityHandle(entity));
 	}
 }
 
@@ -217,7 +190,7 @@ static TEXT_REGISTRY: Registry<Text> = Registry::new();
 pub struct Text {
 	spatial: Arc<Spatial>,
 	font_path: Option<PathBuf>,
-	entity: Mutex<Option<Entity>>,
+	entity: Mutex<Option<EntityHandle>>,
 	text: Mutex<String>,
 	data: Mutex<TextStyle>,
 }
@@ -235,7 +208,7 @@ impl Text {
 			data: Mutex::new(style),
 		});
 		node.add_aspect_raw(text.clone());
-		_ = SPAWN_TEXT.get().unwrap().send(text.clone());
+		_ = SPAWN_TEXT.send(text.clone());
 
 		Ok(text)
 	}
@@ -248,14 +221,14 @@ impl TextAspect for Text {
 	) -> Result<()> {
 		let this_text = node.get_aspect::<Text>()?;
 		this_text.data.lock().character_height = height;
-		_ = SPAWN_TEXT.get().unwrap().send(this_text.clone());
+		_ = SPAWN_TEXT.send(this_text);
 		Ok(())
 	}
 
 	fn set_text(node: Arc<Node>, _calling_client: Arc<Client>, text: String) -> Result<()> {
 		let this_text = node.get_aspect::<Text>()?;
 		*this_text.text.lock() = text;
-		_ = SPAWN_TEXT.get().unwrap().send(this_text.clone());
+		_ = SPAWN_TEXT.send(this_text);
 		Ok(())
 	}
 }

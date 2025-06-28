@@ -1,6 +1,9 @@
 use super::{Line, LinesAspect};
 use crate::{
-	core::{client::Client, color::ColorConvert, error::Result, registry::Registry},
+	core::{
+		client::Client, color::ColorConvert, entity_handle::EntityHandle, error::Result,
+		registry::Registry,
+	},
 	nodes::{
 		Node,
 		spatial::{Spatial, SpatialNode},
@@ -26,7 +29,25 @@ pub struct LinesNodePlugin;
 
 impl Plugin for LinesNodePlugin {
 	fn build(&self, app: &mut App) {
-		app.add_systems(Update, build_line_mesh);
+		app.add_systems(Update, (build_line_mesh, update_visibillity).chain());
+	}
+}
+
+fn update_visibillity(mut cmds: Commands) {
+	for lines in LINES_REGISTRY.get_valid_contents().into_iter() {
+		let Some(entity) = lines.entity.get().map(|e| **e) else {
+			continue;
+		};
+		match lines.spatial.node().map(|n| n.enabled()).unwrap_or(false) {
+			true => {
+				cmds.entity(entity)
+					.insert_recursive::<Children>(Visibility::Visible);
+			}
+			false => {
+				cmds.entity(entity)
+					.insert_recursive::<Children>(Visibility::Hidden);
+			}
+		}
 	}
 }
 
@@ -132,8 +153,12 @@ fn build_line_mesh(
 		}
 
 		match lines.entity.get() {
-			Some(e) => cmds.entity(*e),
-			None => cmds.spawn(SpatialNode(Arc::downgrade(&lines.spatial))),
+			Some(e) => cmds.entity(**e),
+			None => {
+				let e = cmds.spawn(SpatialNode(Arc::downgrade(&lines.spatial)));
+				_ = lines.entity.set(e.id().into());
+				e
+			}
 		}
 		.insert((
 			Mesh3d(meshes.add(mesh)),
@@ -182,7 +207,7 @@ pub struct Lines {
 	spatial: Arc<Spatial>,
 	data: Mutex<Vec<Line>>,
 	gen_mesh: AtomicBool,
-	entity: OnceLock<Entity>,
+	entity: OnceLock<EntityHandle>,
 	bounds: Mutex<Aabb>,
 }
 impl Lines {
@@ -194,7 +219,7 @@ impl Lines {
 			.set(|node| {
 				node.get_aspect::<Lines>()
 					.ok()
-					.map(|v| v.bounds.lock().clone())
+					.map(|v| *v.bounds.lock())
 					.unwrap_or_default()
 			});
 

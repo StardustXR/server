@@ -14,12 +14,20 @@ use std::ops::DerefMut;
 use std::sync::{Arc, OnceLock};
 use std::{ffi::OsStr, path::PathBuf};
 use stereokit_rust::sound::{Sound as SkSound, SoundInst};
+use bevy::prelude::*;
+
+pub struct AudioNodePlugin;
+impl Plugin for AudioNodePlugin {
+    fn build(&self, app: &mut App) {
+        todo!()
+    }
+}
 
 static SOUND_REGISTRY: Registry<Sound> = Registry::new();
 
 stardust_xr_server_codegen::codegen_audio_protocol!();
 pub struct Sound {
-	space: Arc<Spatial>,
+	spatial: Arc<Spatial>,
 
 	volume: f32,
 	pending_audio_path: PathBuf,
@@ -37,7 +45,7 @@ impl Sound {
 		)
 		.ok_or_else(|| eyre!("Resource not found"))?;
 		let sound = Sound {
-			space: node.get_aspect::<Spatial>().unwrap().clone(),
+			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
 			volume: 1.0,
 			pending_audio_path,
 			sk_sound: OnceLock::new(),
@@ -64,7 +72,7 @@ impl Sound {
 			self.instance.lock().replace(instance);
 		}
 		if let Some(instance) = self.instance.lock().deref_mut() {
-			instance.position(self.space.global_transform().w_axis.xyz());
+			instance.position(self.spatial.global_transform().w_axis.xyz());
 		}
 	}
 }

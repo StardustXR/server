@@ -8,3 +8,5 @@ pub mod resource;
 pub mod scenegraph;
 pub mod task;
 pub mod color;
+pub mod entity_handle;
+pub mod bevy_channel;

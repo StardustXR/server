@@ -1,7 +1,9 @@
 use super::{MODEL_PART_ASPECT_ALIAS_INFO, MaterialParameter, ModelAspect, ModelPartAspect};
 use crate::bail;
+use crate::core::bevy_channel::{BevyChannel, BevyChannelReader};
 use crate::core::client::Client;
 use crate::core::color::ColorConvert as _;
+use crate::core::entity_handle::EntityHandle;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
@@ -19,17 +21,14 @@ use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, Weak};
-use tokio::sync::mpsc;
 
-static LOAD_MODEL: OnceLock<mpsc::UnboundedSender<(Arc<Model>, PathBuf)>> = OnceLock::new();
+static LOAD_MODEL: BevyChannel<(Arc<Model>, PathBuf)> = BevyChannel::new();
 
 pub struct ModelNodePlugin;
 impl Plugin for ModelNodePlugin {
 	fn build(&self, app: &mut App) {
-		let (tx, rx) = mpsc::unbounded_channel();
-		LOAD_MODEL.set(tx).unwrap();
+		LOAD_MODEL.init(app);
 		app.init_resource::<MaterialRegistry>();
-		app.insert_resource(MpscReceiver(rx));
 		app.add_systems(Update, load_models);
 		app.add_systems(
 			PostUpdate,
@@ -38,23 +37,21 @@ impl Plugin for ModelNodePlugin {
 	}
 }
 
-#[derive(Resource)]
-struct MpscReceiver<T>(mpsc::UnboundedReceiver<T>);
 #[derive(Component)]
 struct ModelNode(Weak<Model>);
 
 fn update_visibillity(mut cmds: Commands) {
 	for model in MODEL_REGISTRY.get_valid_contents().into_iter() {
-		let Some(entity) = model.bevy_scene_entity.get().copied() else {
+		let Some(entity) = model.bevy_scene_entity.get() else {
 			continue;
 		};
 		match model.spatial.node().map(|n| n.enabled()).unwrap_or(false) {
 			true => {
-				cmds.entity(entity)
+				cmds.entity(entity.0)
 					.insert_recursive::<Children>(Visibility::Visible);
 			}
 			false => {
-				cmds.entity(entity)
+				cmds.entity(entity.0)
 					.insert_recursive::<Children>(Visibility::Hidden);
 			}
 		}
@@ -64,9 +61,9 @@ fn update_visibillity(mut cmds: Commands) {
 fn load_models(
 	asset_server: Res<AssetServer>,
 	mut cmds: Commands,
-	mut mpsc_receiver: ResMut<MpscReceiver<(Arc<Model>, PathBuf)>>,
+	mut mpsc_receiver: ResMut<BevyChannelReader<(Arc<Model>, PathBuf)>>,
 ) {
-	while let Ok((model, path)) = mpsc_receiver.0.try_recv() {
+	while let Some((model, path)) = mpsc_receiver.read() {
 		// idk of the asset label is the correct approach here
 		let handle = asset_server.load(GltfAssetLabel::Scene(0).from_asset(path));
 		let entity = cmds
@@ -76,7 +73,7 @@ fn load_models(
 				SpatialNode(Arc::downgrade(&model.spatial)),
 			))
 			.id();
-		model.bevy_scene_entity.set(entity).unwrap();
+		model.bevy_scene_entity.set(entity.into()).unwrap();
 	}
 }
 
@@ -92,7 +89,7 @@ fn apply_materials(
 		.filter_map(|p| p.parts.get())
 		.flatten()
 	{
-		let Ok(mut mesh_mat) = query.get_mut(*model_part.mesh_entity.get().unwrap()) else {
+		let Ok(mut mesh_mat) = query.get_mut(**model_part.mesh_entity.get().unwrap()) else {
 			continue;
 		};
 		if let Some(material) = model_part.pending_material_replacement.lock().take() {
@@ -214,8 +211,8 @@ fn gen_model_parts(
 						.flat_map(|v| v.iter())
 						.find(|e| has_mesh.get(*e).unwrap_or(false))?;
 					_ = model_part.bounds.set(aabb);
-					_ = model_part.entity.set(entity);
-					_ = model_part.mesh_entity.set(mesh_entity);
+					_ = model_part.entity.set(entity.into());
+					_ = model_part.mesh_entity.set(mesh_entity.into());
 					parts.push(model_part.clone());
 					Some(model_part)
 				},
@@ -460,8 +457,8 @@ impl Material {
 }
 
 pub struct ModelPart {
-	entity: OnceLock<Entity>,
-	mesh_entity: OnceLock<Entity>,
+	entity: OnceLock<EntityHandle>,
+	mesh_entity: OnceLock<EntityHandle>,
 	path: String,
 	space: Arc<Spatial>,
 	_model: Weak<Model>,
@@ -541,7 +538,7 @@ impl MaterialRegistry {
 pub struct Model {
 	spatial: Arc<Spatial>,
 	_resource_id: ResourceID,
-	bevy_scene_entity: OnceLock<Entity>,
+	bevy_scene_entity: OnceLock<EntityHandle>,
 	parts: OnceLock<Vec<Arc<ModelPart>>>,
 	pre_bound_parts: Mutex<Vec<Arc<ModelPart>>>,
 }
@@ -562,8 +559,6 @@ impl Model {
 			parts: OnceLock::new(),
 		});
 		LOAD_MODEL
-			.get()
-			.unwrap()
 			.send((model.clone(), pending_model_path))
 			.unwrap();
 		MODEL_REGISTRY.add_raw(&model);

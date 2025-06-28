@@ -16,9 +16,6 @@ use bevy::app::{App, TerminalCtrlCHandlerPlugin};
 use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
 use bevy::audio::AudioPlugin;
 use bevy::core_pipeline::CorePipelinePlugin;
-use bevy::core_pipeline::oit::{
-	OrderIndependentTransparencyPlugin, OrderIndependentTransparencySettings,
-};
 use bevy::diagnostic::DiagnosticsPlugin;
 use bevy::ecs::schedule::{ExecutorKind, ScheduleLabel};
 use bevy::gizmos::GizmoPlugin;
@@ -46,6 +43,7 @@ use bevy_mod_xr::hand_debug_gizmos::HandGizmosPlugin;
 use bevy_mod_xr::session::{XrFirst, XrHandleEvents};
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
+use core::entity_handle::EntityHandlePlugin;
 use core::task;
 use directories::ProjectDirs;
 use nodes::drawable::lines::LinesNodePlugin;
@@ -283,18 +281,11 @@ fn bevy_loop(
 		..default()
 	});
 	let mut plugins = MinimalPlugins
-		.build().add(DiagnosticsPlugin)
+		.build()
+		.add(DiagnosticsPlugin)
 		.add(TransformPlugin)
 		.add(InputPlugin)
-		/* .add(AccessibilityPlugin) */;
-	// TODO: figure out headless
-	// {
-	// 	plugins = plugins.add(WindowPlugin::default()).add({
-	// 		let mut winit = WinitPlugin::<WakeUp>::default();
-	// 		winit.run_on_any_thread = true;
-	// 		winit
-	// 	});
-	// }
+		.add(AccessibilityPlugin);
 	plugins = plugins
 		.add(TerminalCtrlCHandlerPlugin)
 		// bevy_mod_openxr will replace this, TODO: figure out how to mix this with
@@ -315,8 +306,7 @@ fn bevy_loop(
 		.add(ScenePlugin)
 		.add(GltfPlugin::default())
 		.add(AudioPlugin::default())
-		.add(GizmoPlugin)
-		.add(AccessibilityPlugin);
+		.add(GizmoPlugin);
 	let mut task_pool_plugin = TaskPoolPlugin::default();
 	// make tokio work
 	let handle = tokio::runtime::Handle::current();
@@ -396,15 +386,17 @@ fn bevy_loop(
 	app.insert_resource(ObjectRegistryRes(object_registry));
 	app.add_plugins((RemotePlugin::default(), RemoteHttpPlugin::default()));
 	// the Stardust server plugins
+	// infra plugins
+	app.add_plugins(EntityHandlePlugin);
+	// node plugins
 	app.add_plugins((
 		SpatialNodePlugin,
 		ModelNodePlugin,
 		TextNodePlugin,
 		LinesNodePlugin,
-		PlaySpacePlugin,
-		HandPlugin,
-		ControllerPlugin,
 	));
+	// object plugins
+	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin));
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
@@ -418,14 +410,7 @@ fn bevy_loop(
 
 	app.run();
 }
-fn update_cameras(
-	mut camera: Query<
-		&mut Projection,
-		(
-			With<Camera3d>,
-		),
-	>,
-) {
+fn update_cameras(mut camera: Query<&mut Projection, (With<Camera3d>,)>) {
 	for mut projection in &mut camera {
 		match projection.deref_mut() {
 			Projection::Perspective(perspective_projection) => perspective_projection.near = 0.003,
