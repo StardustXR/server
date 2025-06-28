@@ -42,6 +42,7 @@ use bevy_mod_xr::camera::XrProjection;
 use bevy_mod_xr::hand_debug_gizmos::HandGizmosPlugin;
 use bevy_mod_xr::session::{XrFirst, XrHandleEvents};
 use clap::Parser;
+use nodes::audio::AudioNodePlugin;
 use core::client::{Client, tick_internal_client};
 use core::entity_handle::EntityHandlePlugin;
 use core::task;
@@ -394,6 +395,7 @@ fn bevy_loop(
 		ModelNodePlugin,
 		TextNodePlugin,
 		LinesNodePlugin,
+		AudioNodePlugin,
 	));
 	// object plugins
 	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin));
@@ -576,7 +578,7 @@ fn stereokit_loop(
 		#[cfg(feature = "wayland")]
 		wayland.update();
 		drawable::draw(token);
-		audio::update();
+		// audio::update();
 	}
 
 	info!("Cleanly shut down StereoKit");

@@ -68,6 +68,7 @@ fn load_models(
 		let handle = asset_server.load(GltfAssetLabel::Scene(0).from_asset(path));
 		let entity = cmds
 			.spawn((
+				Name::new("ModelNode"),
 				SceneRoot(handle),
 				ModelNode(Arc::downgrade(&model)),
 				SpatialNode(Arc::downgrade(&model.spatial)),
@@ -394,7 +395,6 @@ impl MaterialParameter {
 				else {
 					return;
 				};
-				info!(texture_param = parameter_name, path = ?texture_path);
 				let handle = asset_server.load(texture_path);
 				match parameter_name {
 					"diffuse" => mat.diffuse_texture = Some(handle),
