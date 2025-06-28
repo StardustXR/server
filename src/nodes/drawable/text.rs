@@ -105,7 +105,7 @@ fn spawn_text(
 		let max_height = style.bounds.as_ref().map(|v| v.bounds.x);
 		let (width, _height) =
 			text_glyphs.measure(max_width, max_height, &mut font_settings.font_system);
-		let meshes = generate_meshes(
+		let char_meshes = generate_meshes(
 			bevy_mesh_text_3d::InputText::Simple {
 				text: text_string,
 				material: material_registry.get_handle(
@@ -137,7 +137,7 @@ fn spawn_text(
 		if let Some(db) = old_db {
 			mem::swap(font_settings.font_system.db_mut(), db);
 		}
-		let Ok(meshes) = meshes.inspect_err(|err| error!("unable to create text meshes: {err}"))
+		let Ok(meshes) = char_meshes.inspect_err(|err| error!("unable to create text meshes: {err}"))
 		else {
 			continue;
 		};
