@@ -68,6 +68,19 @@ fn build_line_mesh(
 		let mut vertex_indecies = Vec::<u32>::new();
 		let lines_data = lines.data.lock();
 		if lines_data.is_empty() {
+			*lines.bounds.lock() = Aabb::default();
+			match lines.entity.get() {
+				Some(e) => cmds.entity(**e),
+				None => {
+					let e = cmds.spawn((
+						Name::new("LinesNode"),
+						SpatialNode(Arc::downgrade(&lines.spatial)),
+					));
+					_ = lines.entity.set(e.id().into());
+					e
+				}
+			}
+			.remove::<Mesh3d>();
 			continue;
 		}
 
@@ -158,20 +171,18 @@ fn build_line_mesh(
 				let e = cmds.spawn((
 					Name::new("LinesNode"),
 					SpatialNode(Arc::downgrade(&lines.spatial)),
+					MeshMaterial3d(materials.add(PbrMaterial {
+						color: Color::WHITE,
+						roughness: 1.0,
+						alpha_mode: AlphaMode::Opaque,
+						..default()
+					})),
 				));
 				_ = lines.entity.set(e.id().into());
 				e
 			}
 		}
-		.insert((
-			Mesh3d(meshes.add(mesh)),
-			MeshMaterial3d(materials.add(PbrMaterial {
-				color: Color::WHITE,
-				roughness: 1.0,
-				alpha_mode: AlphaMode::Opaque,
-				..default()
-			})),
-		));
+		.insert(Mesh3d(meshes.add(mesh)));
 	}
 }
 
