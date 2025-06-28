@@ -307,6 +307,9 @@ impl SkController {
 		})
 	}
 	pub fn set_enabled(&self, enabled: bool) {
+		if let Some(node) = self.input.spatial.node() {
+			node.set_enabled(enabled);
+		}
 		tokio::spawn({
 			// this is suboptimal since it probably allocates a fresh string every frame
 			let handle = self.tracked.clone();
@@ -342,8 +345,6 @@ impl SkController {
 			let world_transform = Mat4::from(Affine3A::from(location.pose.to_xr_pose()));
 			self.model_part
 				.set_material_parameter("roughness".to_string(), MaterialParameter::Float(1.0));
-			// self.model_part
-			// 	.set_material_parameter("metallic".to_string(), MaterialParameter::Float(0.0));
 			self.model_part.set_material_parameter(
 				"color".to_string(),
 				MaterialParameter::Color(stardust_xr::values::Color::new(

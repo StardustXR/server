@@ -16,6 +16,9 @@ use bevy::app::{App, TerminalCtrlCHandlerPlugin};
 use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
 use bevy::audio::AudioPlugin;
 use bevy::core_pipeline::CorePipelinePlugin;
+use bevy::core_pipeline::oit::{
+	OrderIndependentTransparencyPlugin, OrderIndependentTransparencySettings,
+};
 use bevy::diagnostic::DiagnosticsPlugin;
 use bevy::ecs::schedule::{ExecutorKind, ScheduleLabel};
 use bevy::gizmos::GizmoPlugin;
@@ -38,6 +41,7 @@ use bevy_mod_openxr::reference_space::OxrReferenceSpacePlugin;
 use bevy_mod_openxr::render::{OxrRenderPlugin, OxrWaitFrameSystem};
 use bevy_mod_openxr::resources::{OxrFrameState, OxrFrameWaiter, OxrSessionConfig};
 use bevy_mod_openxr::types::AppInfo;
+use bevy_mod_xr::camera::XrProjection;
 use bevy_mod_xr::hand_debug_gizmos::HandGizmosPlugin;
 use bevy_mod_xr::session::{XrFirst, XrHandleEvents};
 use clap::Parser;
@@ -56,6 +60,7 @@ use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use session::{launch_start, save_session};
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use stardust_xr::server;
+use std::ops::DerefMut as _;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -359,7 +364,7 @@ fn bevy_loop(
 			.disable::<OxrActionAttachingPlugin>()
 			.disable::<OxrActionSyncingPlugin>(),
 	);
-	// font size is in meters
+
 	app.add_plugins((
 		bevy_sk::hand::HandPlugin,
 		bevy_sk::vr_materials::SkMaterialPlugin {
@@ -403,6 +408,7 @@ fn bevy_loop(
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
+	app.add_systems(Update, update_cameras);
 	app.add_systems(
 		XrFirst,
 		xr_step
@@ -411,6 +417,30 @@ fn bevy_loop(
 	);
 
 	app.run();
+}
+fn update_cameras(
+	mut camera: Query<
+		&mut Projection,
+		(
+			With<Camera3d>,
+		),
+	>,
+) {
+	for mut projection in &mut camera {
+		match projection.deref_mut() {
+			Projection::Perspective(perspective_projection) => perspective_projection.near = 0.003,
+			Projection::Orthographic(orthographic_projection) => {
+				orthographic_projection.near = 0.003
+			}
+			Projection::Custom(custom_projection) => {
+				if let Some(xr) = custom_projection.get_mut::<XrProjection>() {
+					xr.near = 0.003
+				} else {
+					error_once!("unknown custom camera projection");
+				}
+			}
+		}
+	}
 }
 
 fn xr_step(world: &mut World) {

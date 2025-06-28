@@ -11,6 +11,7 @@ use crate::core::registry::Registry;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
+use bevy::render::primitives::Aabb;
 use color_eyre::eyre::OptionExt;
 use glam::{Mat4, Quat, Vec3, vec3a};
 use mint::Vector3;
@@ -19,7 +20,6 @@ use rustc_hash::FxHashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, OnceLock, Weak};
 use std::{f32, ptr};
-use stereokit_rust::maths::Bounds;
 
 pub struct SpatialNodePlugin;
 impl Plugin for SpatialNodePlugin {
@@ -102,7 +102,7 @@ pub struct Spatial {
 	transform: Mutex<Mat4>,
 	zone: Mutex<Weak<Zone>>,
 	children: Registry<Spatial>,
-	pub bounding_box_calc: OnceLock<fn(&Node) -> Bounds>,
+	pub bounding_box_calc: OnceLock<fn(&Node) -> Aabb>,
 }
 
 impl Spatial {
@@ -146,9 +146,9 @@ impl Spatial {
 	}
 
 	// the output bounds are probably way bigger than they need to be
-	pub fn get_bounding_box(&self) -> Bounds {
+	pub fn get_bounding_box(&self) -> Aabb {
 		let Some(node) = self.node() else {
-			return Bounds::default();
+			return Aabb::default();
 		};
 		let mut bounds = self
 			.bounding_box_calc
@@ -156,7 +156,15 @@ impl Spatial {
 			.map(|b| (b)(&node))
 			.unwrap_or_default();
 		for child in self.children.get_valid_contents() {
-			bounds.grown_box(child.get_bounding_box(), child.local_transform());
+			let mat = child.local_transform();
+			let child_aabb = child.get_bounding_box();
+			bounds = Aabb::enclosing([
+				bounds.min().into(),
+				bounds.max().into(),
+				mat.transform_point3(child_aabb.min().into()),
+				mat.transform_point3(child_aabb.max().into()),
+			])
+			.unwrap();
 		}
 		bounds
 	}
@@ -398,7 +406,7 @@ impl SpatialRefAspect for SpatialRef {
 
 		Ok(BoundingBox {
 			center: Vec3::from(bounds.center).into(),
-			size: Vec3::from(bounds.dimensions).into(),
+			size: Vec3::from(bounds.half_extents * 2.0).into(),
 		})
 	}
 
@@ -409,20 +417,17 @@ impl SpatialRefAspect for SpatialRef {
 	) -> Result<BoundingBox> {
 		let this_spatial = node.get_aspect::<Spatial>()?;
 		let relative_spatial = relative_to.get_aspect::<Spatial>()?;
-		let center = Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial))
-			.transform_point3([0.0; 3].into());
-		let mut bounds = Bounds {
-			center: center.into(),
-			dimensions: [0.0; 3].into(),
-		};
-		bounds.grown_box(
-			this_spatial.get_bounding_box(),
-			Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial)),
-		);
+		let mat = Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial));
+		let bb = this_spatial.get_bounding_box();
+		let bounds = Aabb::enclosing([
+			mat.transform_point3(bb.min().into()),
+			mat.transform_point3(bb.max().into()),
+		])
+		.unwrap();
 
 		Ok(BoundingBox {
 			center: Vec3::from(bounds.center).into(),
-			size: Vec3::from(bounds.dimensions).into(),
+			size: Vec3::from(bounds.half_extents * 2.0).into(),
 		})
 	}
 
