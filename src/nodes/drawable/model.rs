@@ -9,6 +9,7 @@ use crate::nodes::Node;
 use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::{Spatial, SpatialNode};
 use bevy::prelude::*;
+use bevy::render::primitives::Aabb;
 use bevy_sk::vr_materials::PbrMaterial;
 use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
@@ -18,7 +19,6 @@ use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock, Weak};
-use stereokit_rust::maths::Bounds;
 use tokio::sync::mpsc;
 
 static LOAD_MODEL: OnceLock<mpsc::UnboundedSender<(Arc<Model>, PathBuf)>> = OnceLock::new();
@@ -121,6 +121,7 @@ fn gen_model_parts(
 	query: Query<(Entity, &SceneRoot, &ModelNode, &Children)>,
 	children_query: Query<&Children>,
 	part_query: Query<(&Name, Option<&Children>, &Transform), Without<Mesh3d>>,
+	part_mesh_query: Query<(&Transform, &Aabb), With<Mesh3d>>,
 	has_mesh: Query<Has<Mesh3d>>,
 	mut cmds: Commands,
 ) {
@@ -145,7 +146,7 @@ fn gen_model_parts(
 				entity,
 				&part_query,
 				None,
-				&mut |entity, name, transform, parent| {
+				&mut |entity, name, transform, parent, children| {
 					let path = parent
 						.as_ref()
 						.map(|p| format!("{}/{}", &p.path, name.as_str()))
@@ -175,6 +176,7 @@ fn gen_model_parts(
 									pending_material_parameters: Mutex::default(),
 									pending_material_replacement: Mutex::default(),
 									aliases: AliasList::default(),
+									bounds: OnceLock::new(),
 								});
 								(spatial, model_part)
 							}
@@ -185,9 +187,24 @@ fn gen_model_parts(
 								(part.space.clone(), part.clone())
 							}
 						};
-					_ = spatial.bounding_box_calc.set(|_| {
-						// TODO: actually impl aabb
-						Bounds::default()
+					let aabb = Aabb::enclosing(
+						children
+							.iter()
+							.flat_map(|v| v.iter())
+							.filter_map(|e| part_mesh_query.get(e).ok())
+							.flat_map(|(transform, aabb)| {
+								[
+									transform.transform_point(aabb.min().into()),
+									transform.transform_point(aabb.max().into()),
+								]
+							}),
+					)
+					.unwrap_or_default();
+					_ = spatial.bounding_box_calc.set(move |n| {
+						n.get_aspect::<ModelPart>()
+							.ok()
+							.and_then(|v| v.bounds.get().copied())
+							.unwrap_or_default()
 					});
 					cmds.entity(entity)
 						.insert(SpatialNode(Arc::downgrade(&spatial)));
@@ -196,6 +213,7 @@ fn gen_model_parts(
 						.iter()
 						.flat_map(|v| v.iter())
 						.find(|e| has_mesh.get(*e).unwrap_or(false))?;
+					_ = model_part.bounds.set(aabb);
 					_ = model_part.entity.set(entity);
 					_ = model_part.mesh_entity.set(mesh_entity);
 					parts.push(model_part.clone());
@@ -216,12 +234,13 @@ fn gen_path(
 		&Name,
 		&Transform,
 		Option<Arc<ModelPart>>,
+		Option<&Children>,
 	) -> Option<Arc<ModelPart>>,
 ) {
 	let Ok((name, children, transform)) = part_query.get(current_entity) else {
 		return;
 	};
-	let Some(parent) = func(current_entity, name, transform, parent) else {
+	let Some(parent) = func(current_entity, name, transform, parent, children) else {
 		return;
 	};
 	for e in children.iter().flat_map(|c| c.iter()) {
@@ -449,6 +468,7 @@ pub struct ModelPart {
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Material>>,
 	aliases: AliasList,
+	bounds: OnceLock<Aabb>,
 }
 impl ModelPart {
 	pub fn replace_material(&self, replacement: Material) {
@@ -589,6 +609,7 @@ impl Model {
 					pending_material_parameters: Mutex::default(),
 					pending_material_replacement: Mutex::default(),
 					aliases: AliasList::default(),
+					bounds: OnceLock::new(),
 				});
 				self.pre_bound_parts.lock().push(part.clone());
 				part
