@@ -155,7 +155,10 @@ fn build_line_mesh(
 		match lines.entity.get() {
 			Some(e) => cmds.entity(**e),
 			None => {
-				let e = cmds.spawn(SpatialNode(Arc::downgrade(&lines.spatial)));
+				let e = cmds.spawn((
+					Name::new("LinesNode"),
+					SpatialNode(Arc::downgrade(&lines.spatial)),
+				));
 				_ = lines.entity.set(e.id().into());
 				e
 			}
@@ -223,7 +226,6 @@ impl Lines {
 					.unwrap_or_default()
 			});
 
-		info!("line::add_to");
 		let lines = LINES_REGISTRY.add(Lines {
 			spatial: node.get_aspect::<Spatial>()?.clone(),
 			data: Mutex::new(lines),
@@ -238,7 +240,6 @@ impl Lines {
 }
 impl LinesAspect for Lines {
 	fn set_lines(node: Arc<Node>, _calling_client: Arc<Client>, lines: Vec<Line>) -> Result<()> {
-		info!("set_lines");
 		let lines_aspect = node.get_aspect::<Lines>()?;
 		*lines_aspect.data.lock() = lines;
 		lines_aspect.gen_mesh.store(true, Ordering::Relaxed);

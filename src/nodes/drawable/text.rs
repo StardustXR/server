@@ -1,9 +1,17 @@
 use crate::{
 	core::{
-		bevy_channel::{BevyChannel, BevyChannelReader}, client::Client, color::ColorConvert, entity_handle::EntityHandle, error::Result, registry::Registry, resource::get_resource_file
+		bevy_channel::{BevyChannel, BevyChannelReader},
+		client::Client,
+		color::ColorConvert,
+		entity_handle::EntityHandle,
+		error::Result,
+		registry::Registry,
+		resource::get_resource_file,
 	},
 	nodes::{
-		drawable::XAlign, spatial::{Spatial, SpatialNode}, Node
+		Node,
+		drawable::XAlign,
+		spatial::{Spatial, SpatialNode},
 	},
 };
 use bevy::{platform::collections::HashMap, prelude::*};
@@ -95,9 +103,8 @@ fn spawn_text(
 		);
 		let max_width = style.bounds.as_ref().map(|v| v.bounds.x);
 		let max_height = style.bounds.as_ref().map(|v| v.bounds.x);
-		let (width, height) =
+		let (width, _height) =
 			text_glyphs.measure(max_width, max_height, &mut font_settings.font_system);
-		info!(width, height, ?style.text_align_x);
 		let meshes = generate_meshes(
 			bevy_mesh_text_3d::InputText::Simple {
 				text: text_string,
@@ -134,9 +141,9 @@ fn spawn_text(
 		else {
 			continue;
 		};
-		let dist = meshes.iter().fold(f32::MAX, |dist, v| {
-			dist.min(v.transform.translation.x)
-		});
+		let dist = meshes
+			.iter()
+			.fold(f32::MAX, |dist, v| dist.min(v.transform.translation.x));
 		// TODO: text align
 		let letters = meshes
 			.into_iter()
@@ -162,7 +169,10 @@ fn spawn_text(
 			})
 			.collect::<Vec<_>>();
 		let entity = cmds
-			.spawn((SpatialNode(Arc::downgrade(&text.spatial)),))
+			.spawn((
+				Name::new("TextNode"),
+				SpatialNode(Arc::downgrade(&text.spatial)),
+			))
 			.add_children(&letters)
 			.id();
 		text.entity.lock().replace(EntityHandle(entity));

@@ -1,26 +1,93 @@
+use super::spatial::SpatialNode;
 use super::{Aspect, AspectIdentifier, Node};
 use crate::core::client::Client;
-use crate::core::destroy_queue;
+use crate::core::entity_handle::EntityHandle;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::spatial::{SPATIAL_ASPECT_ALIAS_INFO, Spatial, Transform};
+use bevy::audio::{PlaybackMode, Volume};
+use bevy_mod_openxr::session::OxrSession;
+use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
+use bevy_mod_xr::spaces::XrSpace;
 use color_eyre::eyre::eyre;
-use glam::{Vec4Swizzles, vec3};
 use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
 
-use std::ops::DerefMut;
+use bevy::prelude::*;
+use bevy::transform::components::Transform as BevyTransform;
 use std::sync::{Arc, OnceLock};
 use std::{ffi::OsStr, path::PathBuf};
-use stereokit_rust::sound::{Sound as SkSound, SoundInst};
-use bevy::prelude::*;
 
 pub struct AudioNodePlugin;
 impl Plugin for AudioNodePlugin {
-    fn build(&self, app: &mut App) {
-        todo!()
-    }
+	fn build(&self, app: &mut App) {
+		app.add_systems(Update, update_sound_event);
+		app.add_systems(XrSessionCreated, spawn_hmd_audio_listener);
+		app.add_systems(XrPreDestroySession, despawn_hmd_audio_listener);
+	}
+}
+
+fn despawn_hmd_audio_listener(mut cmds: Commands, session: Res<OxrSession>, res: Res<HmdListener>) {
+	cmds.remove_resource::<HmdListener>();
+	cmds.entity(res.0).despawn();
+	_ = session.destroy_space(res.1);
+}
+
+fn spawn_hmd_audio_listener(mut cmds: Commands, session: Res<OxrSession>) {
+	let space = session
+		.create_reference_space(openxr::ReferenceSpaceType::VIEW, BevyTransform::IDENTITY)
+		.unwrap();
+	let listener = cmds
+		.spawn((
+			Name::new("HMD audio listener"),
+			space.0,
+			SpatialListener::new(0.2),
+		))
+		.id();
+	cmds.insert_resource(HmdListener(listener, space.0));
+}
+#[derive(Resource)]
+struct HmdListener(Entity, XrSpace);
+fn update_sound_event(
+	mut cmds: Commands,
+	sinks: Query<&SpatialAudioSink>,
+	asset_server: Res<AssetServer>,
+) {
+	for sound in SOUND_REGISTRY.get_valid_contents() {
+		if sound.entity.get().is_none() {
+			let handle = asset_server.load(sound.pending_audio_path.as_path());
+			sound
+				.entity
+				.set(
+					cmds.spawn((
+						Name::new("Audio Node"),
+						SpatialNode(Arc::downgrade(&sound.spatial)),
+						AudioPlayer::new(handle),
+						PlaybackSettings {
+							mode: PlaybackMode::Once,
+							volume: Volume::Linear(sound.volume),
+							speed: 1.0,
+							paused: true,
+							muted: false,
+							spatial: true,
+							spatial_scale: None,
+						},
+					))
+					.id()
+					.into(),
+				)
+				.unwrap();
+		}
+		if let Some(sink) = sound.entity.get().and_then(|e| sinks.get(e.0).ok()) {
+			if sound.play.lock().take().is_some() {
+				sink.play();
+			}
+			if sound.stop.lock().take().is_some() {
+				sink.stop();
+			}
+		}
+	}
 }
 
 static SOUND_REGISTRY: Registry<Sound> = Registry::new();
@@ -31,8 +98,7 @@ pub struct Sound {
 
 	volume: f32,
 	pending_audio_path: PathBuf,
-	sk_sound: OnceLock<SkSound>,
-	instance: Mutex<Option<SoundInst>>,
+	entity: OnceLock<EntityHandle>,
 	stop: Mutex<Option<()>>,
 	play: Mutex<Option<()>>,
 }
@@ -48,32 +114,13 @@ impl Sound {
 			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
 			volume: 1.0,
 			pending_audio_path,
-			sk_sound: OnceLock::new(),
-			instance: Mutex::new(None),
+			entity: OnceLock::new(),
 			stop: Mutex::new(None),
 			play: Mutex::new(None),
 		};
 		let sound_arc = SOUND_REGISTRY.add(sound);
 		node.add_aspect_raw(sound_arc.clone());
 		Ok(sound_arc)
-	}
-
-	fn update(&self) {
-		let sound = self
-			.sk_sound
-			.get_or_init(|| SkSound::from_file(self.pending_audio_path.clone()).unwrap());
-		if self.stop.lock().take().is_some() {
-			if let Some(instance) = self.instance.lock().take() {
-				instance.stop();
-			}
-		}
-		if self.instance.lock().is_none() && self.play.lock().take().is_some() {
-			let instance = sound.play(vec3(0.0, 0.0, 0.0), Some(self.volume));
-			self.instance.lock().replace(instance);
-		}
-		if let Some(instance) = self.instance.lock().deref_mut() {
-			instance.position(self.spatial.global_transform().w_axis.xyz());
-		}
 	}
 }
 impl AspectIdentifier for Sound {
@@ -96,19 +143,7 @@ impl SoundAspect for Sound {
 }
 impl Drop for Sound {
 	fn drop(&mut self) {
-		if let Some(instance) = self.instance.lock().take() {
-			instance.stop();
-		}
-		if let Some(sk_sound) = self.sk_sound.take() {
-			destroy_queue::add(sk_sound);
-		}
 		SOUND_REGISTRY.remove(self);
-	}
-}
-
-pub fn update() {
-	for sound in SOUND_REGISTRY.get_valid_contents() {
-		sound.update()
 	}
 }
 
