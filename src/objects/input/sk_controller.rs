@@ -40,12 +40,6 @@ use std::{
 	str::FromStr,
 	sync::Arc,
 };
-use stereokit_rust::{
-	material::Material,
-	sk::MainThreadToken,
-	system::{Handed, Input},
-	util::Color128,
-};
 use zbus::Connection;
 pub struct ControllerPlugin;
 const CURSOR_MODEL_PATH: &str = "/tmp/stardust_server/models/cursor.glb";

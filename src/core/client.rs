@@ -26,7 +26,7 @@ use std::{
 	time::Instant,
 };
 use tokio::{net::UnixStream, sync::watch, task::JoinHandle};
-use tracing::{info, warn};
+use tracing::info;
 
 lazy_static! {
 	pub static ref CLIENTS: OwnedRegistry<Client> = OwnedRegistry::new();
@@ -86,7 +86,7 @@ impl Client {
 	pub fn from_connection(connection: UnixStream) -> Result<Arc<Self>> {
 		let pid = connection.peer_cred().ok().and_then(|c| c.pid());
 		let env = pid.and_then(|pid| get_env(pid).ok());
-		let exe = pid.and_then(|pid| fs::read_link(format!("/proc/{}/exe", pid)).ok());
+		let exe = pid.and_then(|pid| fs::read_link(format!("/proc/{pid}/exe")).ok());
 		info!(
 			pid,
 			exe = exe

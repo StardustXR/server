@@ -102,6 +102,7 @@ pub struct PanelItem<B: Backend> {
 	pub backend: Box<B>,
 }
 impl<B: Backend> PanelItem<B> {
+	#[cfg_attr(not(feature = "wayland"), allow(dead_code))]
 	pub fn create(backend: Box<B>, pid: Option<i32>) -> (Arc<Node>, Arc<PanelItem<B>>) {
 		debug!(?pid, "Create panel item");
 

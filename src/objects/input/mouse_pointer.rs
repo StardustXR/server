@@ -29,7 +29,6 @@ use stardust_xr::{
 	values::Datamap,
 };
 use std::sync::Arc;
-use stereokit_rust::system::{Input, Key};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, timeout};
 use xkbcommon_rs::{Context, Keymap, KeymapFormat, xkb_keymap::CompileFlags};

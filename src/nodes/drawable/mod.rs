@@ -1,6 +1,6 @@
 pub mod lines;
 pub mod model;
-pub mod shaders;
+// pub mod shaders;
 pub mod text;
 
 use self::{lines::Lines, model::Model, text::Text};
@@ -8,43 +8,13 @@ use super::{
 	Aspect, AspectIdentifier, Node,
 	spatial::{Spatial, Transform},
 };
-use crate::{DEFAULT_SKYLIGHT, nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO};
-use crate::{
-	DEFAULT_SKYTEX,
-	core::{client::Client, error::Result, resource::get_resource_file},
-};
+use crate::core::{client::Client, error::Result, resource::get_resource_file};
+use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use color_eyre::eyre::eyre;
 use model::ModelPart;
 use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
-use stereokit_rust::{sk::MainThreadToken, system::Renderer, tex::SHCubemap};
-
-// #[instrument(level = "debug", skip(sk))]
-pub fn draw(token: &MainThreadToken) {
-	match QUEUED_SKYTEX.lock().take() {
-		Some(Some(skytex)) => {
-			if let Ok(skytex) = SHCubemap::from_cubemap(skytex, true, 100) {
-				Renderer::skytex(skytex.tex);
-			}
-		}
-		Some(None) => {
-			Renderer::skytex(DEFAULT_SKYTEX.get().unwrap());
-		}
-		None => {}
-	}
-	match QUEUED_SKYLIGHT.lock().take() {
-		Some(Some(skylight)) => {
-			if let Ok(skylight) = SHCubemap::from_cubemap(skylight, true, 100) {
-				Renderer::skylight(skylight.sh);
-			}
-		}
-		Some(None) => {
-			Renderer::skylight(*DEFAULT_SKYLIGHT.get().unwrap());
-		}
-		None => {}
-	}
-}
 
 static QUEUED_SKYLIGHT: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
 static QUEUED_SKYTEX: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);

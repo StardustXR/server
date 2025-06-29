@@ -7,8 +7,7 @@ mod session;
 mod wayland;
 
 use crate::core::destroy_queue;
-use crate::nodes::items::camera;
-use crate::nodes::{drawable, input};
+use crate::nodes::input;
 
 use bevy::MinimalPlugins;
 use bevy::a11y::AccessibilityPlugin;
@@ -52,7 +51,6 @@ use nodes::drawable::lines::LinesNodePlugin;
 use nodes::drawable::model::ModelNodePlugin;
 use nodes::drawable::text::TextNodePlugin;
 use nodes::spatial::SpatialNodePlugin;
-use objects::ServerObjects;
 use objects::input::mouse_pointer::FlatscreenInputPlugin;
 use objects::input::sk_controller::ControllerPlugin;
 use objects::input::sk_hand::HandPlugin;
@@ -64,20 +62,11 @@ use stardust_xr::server;
 use std::ops::DerefMut as _;
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
-use std::time::Duration;
-use stereokit_rust::material::Material;
-use stereokit_rust::shader::Shader;
-use stereokit_rust::sk::{
-	AppMode, DepthMode, DisplayBlend, OriginMode, QuitReason, SkSettings, sk_quit,
-};
-use stereokit_rust::system::{Handed, Input, LogLevel, Renderer};
-use stereokit_rust::tex::{SHCubemap, Tex, TexFormat, TexType};
-use stereokit_rust::ui::Ui;
-use stereokit_rust::util::{Color128, SphericalHarmonics, Time};
 use tokio::net::UnixListener;
 use tokio::sync::Notify;
+use tokio::task::JoinError;
 use tracing::metadata::LevelFilter;
-use tracing::{debug_span, error, info};
+use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use zbus::Connection;
 use zbus::fdo::ObjectManager;
@@ -123,14 +112,7 @@ static STARDUST_INSTANCE: OnceLock<String> = OnceLock::new();
 
 // #[tokio::main(flavor = "current_thread")]
 #[tokio::main]
-async fn main() {
-	// let mut out = Vec::new();
-	// for i in 0..8 {
-	// 	for base in [0, 8, 1, 8, 9, 1] {
-	// 		out.push(base + i as u16);
-	// 	}
-	// }
-	// panic!("{out:?}");
+async fn main() -> Result<AppExit, JoinError> {
 	color_eyre::install().unwrap();
 
 	let registry = tracing_subscriber::registry();
@@ -222,15 +204,15 @@ async fn main() {
 		"Couldn't make the object registry to find all objects with given interfaces in d-bus",
 	);
 
-	let sk_ready_notifier = Arc::new(Notify::new());
-	let stereokit_loop = tokio::task::spawn_blocking({
-		let sk_ready_notifier = sk_ready_notifier.clone();
+	let ready_notifier = Arc::new(Notify::new());
+	let io_loop = tokio::task::spawn_blocking({
+		let ready_notifier = ready_notifier.clone();
 		let project_dirs = project_dirs.clone();
 		let cli_args = cli_args.clone();
 		let dbus_connection = dbus_connection.clone();
 		move || {
 			bevy_loop(
-				sk_ready_notifier,
+				ready_notifier,
 				project_dirs,
 				cli_args,
 				dbus_connection,
@@ -238,16 +220,12 @@ async fn main() {
 			)
 		}
 	});
-	sk_ready_notifier.notified().await;
+	ready_notifier.notified().await;
 	let mut startup_children = project_dirs
 		.as_ref()
 		.map(|project_dirs| launch_start(&cli_args, project_dirs))
 		.unwrap_or_default();
-
-	tokio::select! {
-		_ = stereokit_loop => (),
-		_ = tokio::signal::ctrl_c() => unsafe {sk_quit(QuitReason::SystemClose)},
-	}
+	let return_value = io_loop.await;
 	info!("Stopping...");
 	if let Some(project_dirs) = project_dirs {
 		save_session(&project_dirs).await;
@@ -257,10 +235,11 @@ async fn main() {
 	}
 
 	info!("Cleanly shut down Stardust");
+	return_value
 }
 
-static DEFAULT_SKYTEX: OnceLock<Tex> = OnceLock::new();
-static DEFAULT_SKYLIGHT: OnceLock<SphericalHarmonics> = OnceLock::new();
+// static DEFAULT_SKYTEX: OnceLock<Tex> = OnceLock::new();
+// static DEFAULT_SKYLIGHT: OnceLock<SphericalHarmonics> = OnceLock::new();
 
 #[derive(ScheduleLabel, Hash, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct PreFrameWait;
@@ -271,11 +250,11 @@ pub struct DbusConnection(Connection);
 
 fn bevy_loop(
 	ready_notifier: Arc<Notify>,
-	project_dirs: Option<ProjectDirs>,
+	_project_dirs: Option<ProjectDirs>,
 	args: CliArgs,
 	dbus_connection: Connection,
 	object_registry: ObjectRegistry,
-) {
+) -> AppExit {
 	let mut app = App::new();
 	app.insert_resource(DbusConnection(dbus_connection));
 	app.add_plugins(AssetPlugin {
@@ -376,8 +355,7 @@ fn bevy_loop(
 		},
 		bevy_sk::skytext::SphericalHarmonicsPlugin,
 	));
-	app.add_plugins(HandGizmosPlugin);
-	// app.add_plugins(MeshTextPlugin);
+	// app.add_plugins(HandGizmosPlugin);
 	app.init_asset::<Font>().init_asset_loader::<FontLoader>();
 	if let Some(priority) = args.overlay_priority {
 		app.insert_resource(OxrOverlaySettings {
@@ -423,7 +401,7 @@ fn bevy_loop(
 			.in_set(XrHandleEvents::FrameLoop),
 	);
 
-	app.run();
+	app.run()
 }
 fn update_cameras(mut camera: Query<&mut Projection, (With<Camera3d>,)>) {
 	for mut projection in &mut camera {
@@ -465,6 +443,7 @@ fn xr_step(world: &mut World) {
 	let should_wait = world
 		.run_system_cached(should_run_frame_loop)
 		.unwrap_or(false);
+	// we might want to do an adaptive sleep when not OpenXR waiting
 	if should_wait {
 		world.resource_scope::<OxrFrameWaiter, _>(|world, mut waiter| {
 			let state = waiter
@@ -483,138 +462,4 @@ fn xr_step(world: &mut World) {
 	wayland.update();
 	// drawable::draw(token);
 	// audio::update();
-}
-
-fn stereokit_loop(
-	sk_ready_notifier: Arc<Notify>,
-	project_dirs: Option<ProjectDirs>,
-	args: CliArgs,
-	dbus_connection: Connection,
-	object_registry: ObjectRegistry,
-) {
-	let sk = SkSettings::default()
-		.app_name("Stardust XR")
-		.blend_preference(DisplayBlend::AnyTransparent)
-		.mode(if args.flatscreen {
-			AppMode::Simulator
-		} else {
-			AppMode::XR
-		})
-		.depth_mode(DepthMode::D32)
-		.log_filter(match EnvFilter::from_default_env().max_level_hint() {
-			Some(LevelFilter::ERROR) => LogLevel::Error,
-			Some(LevelFilter::WARN) => LogLevel::Warning,
-			Some(LevelFilter::INFO) => LogLevel::Inform,
-			Some(LevelFilter::DEBUG) => LogLevel::Diagnostic,
-			Some(LevelFilter::TRACE) => LogLevel::Diagnostic,
-			Some(LevelFilter::OFF) => LogLevel::None,
-			None => LogLevel::Warning,
-		})
-		.overlay_app(args.overlay_priority.is_some())
-		.overlay_priority(args.overlay_priority.unwrap_or(u32::MAX))
-		.disable_desktop_input_window(true)
-		.origin(OriginMode::Local)
-		.init()
-		.expect("StereoKit failed to initialize");
-	info!("Init StereoKit");
-
-	Renderer::multisample(0);
-	Material::default().shader(Shader::pbr_clip());
-	Ui::enable_far_interact(false);
-
-	let left_hand_material = Material::find("default/material_hand").unwrap();
-	let mut right_hand_material = left_hand_material.copy();
-	right_hand_material.id("right_hand");
-	Input::hand_material(Handed::Right, Some(Material::find("right_hand").unwrap()));
-
-	Input::hand_visible(Handed::Left, false);
-	Input::hand_visible(Handed::Right, false);
-
-	// Skytex/light stuff
-	{
-		let _ = DEFAULT_SKYTEX.set(Tex::gen_color(
-			Color128::BLACK,
-			1,
-			1,
-			TexType::Cubemap,
-			TexFormat::RGBA32,
-		));
-		let _ = DEFAULT_SKYLIGHT.set(Renderer::get_skylight());
-		if let Some(sky) = project_dirs
-			.as_ref()
-			.map(|dirs| dirs.config_dir().join("skytex.hdr"))
-			.filter(|f| f.exists())
-			.and_then(|p| SHCubemap::from_cubemap(p, true, 100).ok())
-		{
-			sky.render_as_sky();
-		} else {
-			Renderer::skytex(DEFAULT_SKYTEX.get().unwrap());
-		}
-	}
-
-	#[cfg(feature = "wayland")]
-	let mut wayland = wayland::Wayland::new().expect("Could not initialize wayland");
-	#[cfg(feature = "wayland")]
-	wayland.make_context_current();
-	sk_ready_notifier.notify_waiters();
-	info!("Stardust ready!");
-
-	let mut objects = ServerObjects::new(
-		dbus_connection.clone(),
-		&sk,
-		[left_hand_material, right_hand_material],
-		args.disable_controllers,
-		args.disable_hands,
-	);
-
-	let mut last_frame_delta = Duration::ZERO;
-	let mut sleep_duration = Duration::ZERO;
-	while let Some(token) = sk.step() {
-		let _span = debug_span!("StereoKit step");
-		let _span = _span.enter();
-
-		camera::update(token);
-		#[cfg(feature = "wayland")]
-		wayland.frame_event();
-		destroy_queue::clear();
-
-		objects.update(&sk, token, &dbus_connection, &object_registry);
-		input::process_input();
-		nodes::root::Root::send_frame_events(Time::get_step_unscaled());
-		adaptive_sleep(
-			&mut last_frame_delta,
-			&mut sleep_duration,
-			Duration::from_micros(250),
-		);
-
-		tick_internal_client();
-		#[cfg(feature = "wayland")]
-		wayland.update();
-		drawable::draw(token);
-		// audio::update();
-	}
-
-	info!("Cleanly shut down StereoKit");
-}
-
-fn adaptive_sleep(
-	last_frame_delta: &mut Duration,
-	sleep_duration: &mut Duration,
-	sleep_duration_increase: Duration,
-) {
-	let frame_delta = Duration::from_secs_f64(Time::get_step_unscaled());
-	if *last_frame_delta < frame_delta {
-		if let Some(frame_delta_delta) = frame_delta.checked_sub(*last_frame_delta) {
-			if let Some(new_sleep_duration) = sleep_duration.checked_sub(frame_delta_delta) {
-				*sleep_duration = new_sleep_duration;
-			}
-		}
-	} else {
-		*sleep_duration += sleep_duration_increase;
-	}
-
-	debug_span!("Sleep", ?sleep_duration, ?frame_delta, ?last_frame_delta).in_scope(|| {
-		*last_frame_delta = frame_delta;
-		std::thread::sleep(*sleep_duration); // to give clients a chance to even update anything before drawing
-	});
 }
