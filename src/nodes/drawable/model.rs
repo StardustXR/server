@@ -116,17 +116,16 @@ fn apply_materials(
 
 fn gen_model_parts(
 	scenes: Res<Assets<Scene>>,
-	query: Query<(Entity, &SceneRoot, &ModelNode, &Children)>,
+	query: Query<(&SceneRoot, &ModelNode, &Children)>,
 	children_query: Query<&Children>,
 	part_query: Query<(&Name, Option<&Children>, &Transform), Without<Mesh3d>>,
 	part_mesh_query: Query<(&Transform, &Aabb), With<Mesh3d>>,
 	has_mesh: Query<Has<Mesh3d>>,
 	mut cmds: Commands,
 ) {
-	for (entity, scene_root, model_node, model_children) in query.iter() {
+	for (scene_root, model_node, model_children) in query.iter() {
 		let Some(model) = model_node.0.upgrade() else {
-			cmds.entity(entity).despawn();
-			return;
+			continue;
 		};
 		if model.parts.get().is_some() {
 			continue;
