@@ -31,7 +31,7 @@ impl Plugin for ModelNodePlugin {
 		app.add_systems(Update, load_models);
 		app.add_systems(
 			PostUpdate,
-			(gen_model_parts, apply_materials, update_visibillity).chain(),
+			(gen_model_parts, apply_materials/* , update_visibillity */).chain(),
 		);
 	}
 }

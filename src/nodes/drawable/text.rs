@@ -1,4 +1,5 @@
 use crate::{
+	BevyMaterial,
 	core::{
 		bevy_channel::{BevyChannel, BevyChannelReader},
 		client::Client,
@@ -9,10 +10,12 @@ use crate::{
 		resource::get_resource_file,
 	},
 	nodes::{
-		drawable::XAlign, spatial::{Spatial, SpatialNode}, Node
-	}, BevyMaterial,
+		Node,
+		drawable::XAlign,
+		spatial::{Spatial, SpatialNode},
+	},
 };
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{platform::collections::HashMap, prelude::*, render::mesh::MeshAabb};
 use bevy_mesh_text_3d::{
 	Align, Attrs, MeshTextPlugin, Settings as FontSettings, generate_meshes,
 	text_glyphs::TextGlyphs,
@@ -40,25 +43,7 @@ impl Plugin for TextNodePlugin {
 
 		SPAWN_TEXT.init(app);
 		app.init_resource::<MaterialRegistry>();
-		app.add_systems(Update, (spawn_text, update_visibillity).chain());
-	}
-}
-
-fn update_visibillity(mut cmds: Commands) {
-	for text in TEXT_REGISTRY.get_valid_contents().into_iter() {
-		let Some(entity) = text.entity.lock().as_deref().copied() else {
-			continue;
-		};
-		match text.spatial.node().map(|n| n.enabled()).unwrap_or(false) {
-			true => {
-				cmds.entity(entity)
-					.insert_recursive::<Children>(Visibility::Visible);
-			}
-			false => {
-				cmds.entity(entity)
-					.insert_recursive::<Children>(Visibility::Hidden);
-			}
-		}
+		app.add_systems(Update, spawn_text);
 	}
 }
 
@@ -134,15 +119,25 @@ fn spawn_text(
 		if let Some(db) = old_db {
 			mem::swap(font_settings.font_system.db_mut(), db);
 		}
-		let Ok(meshes) = char_meshes.inspect_err(|err| error!("unable to create text meshes: {err}"))
+		let Ok(char_meshes) =
+			char_meshes.inspect_err(|err| error!("unable to create text meshes: {err}"))
 		else {
 			continue;
 		};
-		let dist = meshes
-			.iter()
-			.fold(f32::MAX, |dist, v| dist.min(v.transform.translation.x));
+		let dist = char_meshes.iter().fold(f32::MAX, |dist, v| {
+			dist.min(
+				v.transform.translation.x
+					- meshes
+						.get(&v.mesh)
+						.unwrap()
+						.compute_aabb()
+						.unwrap_or_default()
+						.half_extents
+						.x,
+			)
+		});
 		// TODO: text align
-		let letters = meshes
+		let letters = char_meshes
 			.into_iter()
 			.map(|v| {
 				cmds.spawn((
