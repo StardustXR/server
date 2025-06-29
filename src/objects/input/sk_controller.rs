@@ -27,7 +27,6 @@ use bevy_mod_xr::{
 	session::{XrPreDestroySession, XrSessionCreated, XrSessionCreatedEvent},
 	spaces::{XrPrimaryReferenceSpace, XrReferenceSpace, XrSpace},
 };
-use bevy_sk::vr_materials::PbrMaterial;
 use color_eyre::eyre::Result;
 use glam::{Affine3A, Mat4, Vec2, Vec3};
 use openxr::{Action, ActiveActionSet, SpaceLocationFlags};

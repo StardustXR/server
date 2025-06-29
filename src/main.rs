@@ -39,7 +39,6 @@ use bevy_mod_openxr::render::{OxrRenderPlugin, OxrWaitFrameSystem};
 use bevy_mod_openxr::resources::{OxrFrameState, OxrFrameWaiter, OxrSessionConfig};
 use bevy_mod_openxr::types::AppInfo;
 use bevy_mod_xr::camera::XrProjection;
-use bevy_mod_xr::hand_debug_gizmos::HandGizmosPlugin;
 use bevy_mod_xr::session::{XrFirst, XrHandleEvents};
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
@@ -107,6 +106,8 @@ struct CliArgs {
 	#[clap(long)]
 	nvidia: bool,
 }
+
+pub type BevyMaterial = StandardMaterial;
 
 static STARDUST_INSTANCE: OnceLock<String> = OnceLock::new();
 
@@ -350,13 +351,14 @@ fn bevy_loop(
 
 	app.add_plugins((
 		bevy_sk::hand::HandPlugin,
-		bevy_sk::vr_materials::SkMaterialPlugin {
-			replace_standard_material: true,
-		},
-		bevy_sk::skytext::SphericalHarmonicsPlugin,
+		// bevy_sk::vr_materials::SkMaterialPlugin {
+		// 	replace_standard_material: false,
+		// },
+		// bevy_sk::skytext::SphericalHarmonicsPlugin,
 	));
 	// app.add_plugins(HandGizmosPlugin);
 	app.init_asset::<Font>().init_asset_loader::<FontLoader>();
+	app.world_mut().resource_mut::<AmbientLight>().brightness = 2000.0;
 	if let Some(priority) = args.overlay_priority {
 		app.insert_resource(OxrOverlaySettings {
 			session_layer_placement: priority,

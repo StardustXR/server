@@ -8,7 +8,7 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use crate::objects::{ObjectHandle, SpatialRef, Tracked};
-use crate::{DbusConnection, ObjectRegistryRes, PreFrameWait};
+use crate::{BevyMaterial, DbusConnection, ObjectRegistryRes, PreFrameWait};
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
@@ -18,7 +18,6 @@ use bevy_mod_xr::hands::{HandBone, HandSide, XrHandBoneEntities, XrHandBoneRadiu
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::{XrPrimaryReferenceSpace, XrSpaceLocationFlags};
 use bevy_sk::hand::GRADIENT_TEXTURE_HANDLE;
-use bevy_sk::vr_materials::PbrMaterial;
 use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
 use openxr::{HandJointLocation, SpaceLocationFlags};
@@ -44,7 +43,7 @@ fn update_hands(
 	session: Option<Res<OxrSession>>,
 	state: Option<Res<OxrFrameState>>,
 	ref_space: Option<Res<XrPrimaryReferenceSpace>>,
-	mut materials: ResMut<Assets<PbrMaterial>>,
+	mut materials: ResMut<Assets<BevyMaterial>>,
 	mut joint_query: Query<(
 		&mut BevyTransform,
 		&mut XrSpaceLocationFlags,
@@ -116,7 +115,7 @@ fn update_hand_material(
 		(Entity, &HandSide),
 		(
 			With<XrHandBoneEntities>,
-			With<MeshMaterial3d<PbrMaterial>>,
+			With<MeshMaterial3d<BevyMaterial>>,
 			Without<CorrectHandMaterial>,
 		),
 	>,
@@ -137,7 +136,7 @@ fn update_hand_material(
 fn setup(
 	connection: Res<DbusConnection>,
 	mut cmds: Commands,
-	mut materials: ResMut<Assets<PbrMaterial>>,
+	mut materials: ResMut<Assets<BevyMaterial>>,
 ) {
 	tokio::task::spawn({
 		let connection = connection.clone();
@@ -186,13 +185,13 @@ pub struct SkHand {
 	tracked: ObjectHandle<Tracked>,
 	tracker: Option<openxr::HandTracker>,
 	captured: bool,
-	material: Handle<PbrMaterial>,
+	material: Handle<BevyMaterial>,
 }
 impl SkHand {
 	pub fn new(
 		connection: &Connection,
 		side: HandSide,
-		materials: &mut Assets<PbrMaterial>,
+		materials: &mut Assets<BevyMaterial>,
 	) -> Result<Self> {
 		let (palm_spatial, palm_object) = SpatialRef::create(
 			connection,
@@ -219,11 +218,11 @@ impl SkHand {
 		let datamap = Datamap::from_typed(HandDatamap::default())?;
 		let input = InputMethod::add_to(&node.0, hand, datamap)?;
 
-		let material = materials.add(PbrMaterial {
-			color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
+		let material = materials.add(BevyMaterial {
+			base_color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
 			alpha_mode: AlphaMode::Blend,
-			diffuse_texture: Some(GRADIENT_TEXTURE_HANDLE),
-			roughness: 1.0,
+			base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
+			perceptual_roughness: 1.0,
 			..default()
 		});
 		Ok(SkHand {
@@ -255,7 +254,7 @@ impl SkHand {
 	fn update(
 		&mut self,
 		joints: Option<&openxr::HandJointLocations>,
-		materials: &mut ResMut<Assets<PbrMaterial>>,
+		materials: &mut ResMut<Assets<BevyMaterial>>,
 	) {
 		// TODO: use the hand data source ext
 		let real_hand = true;
@@ -330,9 +329,9 @@ impl SkHand {
 			*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 			let captured = self.capture_manager.capture.upgrade().is_some();
 			if captured && !self.captured {
-				materials.get_mut(&self.material).unwrap().color = Srgba::rgb(0., 1., 0.75).into();
+				materials.get_mut(&self.material).unwrap().base_color = Srgba::rgb(0., 1., 0.75).into();
 			} else if self.captured && !captured {
-				materials.get_mut(&self.material).unwrap().color = Srgba::rgb(1., 1.0, 1.0).into();
+				materials.get_mut(&self.material).unwrap().base_color = Srgba::rgb(1., 1.0, 1.0).into();
 			}
 			self.captured = captured;
 		}
