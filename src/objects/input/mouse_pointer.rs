@@ -1,5 +1,6 @@
 use super::{CaptureManager, DistanceCalculator, get_sorted_handlers};
 use crate::{
+	DbusConnection, ObjectRegistryRes,
 	core::client::INTERNAL_CLIENT,
 	nodes::{
 		Node, OwnedNode,
@@ -8,6 +9,15 @@ use crate::{
 		items::panel::KEYMAPS,
 		spatial::Spatial,
 	},
+};
+use bevy::{
+	input::{
+		ButtonState,
+		keyboard::{KeyboardInput, NativeKey, NativeKeyCode},
+		mouse::{MouseMotion, MouseWheel},
+	},
+	prelude::*,
+	window::PrimaryWindow,
 };
 use color_eyre::eyre::Result;
 use glam::{Mat4, Vec3, vec3};
@@ -24,6 +34,97 @@ use tokio::task::JoinSet;
 use tokio::time::{Duration, timeout};
 use xkbcommon_rs::{Context, Keymap, KeymapFormat, xkb_keymap::CompileFlags};
 use zbus::{Connection, names::OwnedInterfaceName};
+
+pub struct FlatscreenInputPlugin;
+
+impl Plugin for FlatscreenInputPlugin {
+	fn build(&self, app: &mut App) {
+		app.add_systems(Startup, setup);
+		// yes the input method will be delayed by one frame, its only for debugging anyways
+		app.add_systems(Update, update_pointer);
+	}
+}
+
+#[derive(Component)]
+#[require(Camera3d)]
+struct FlatscreenCam;
+
+fn setup(mut cmds: Commands) {
+	let Ok(pointer) =
+		MousePointer::new().inspect_err(|err| error!("unable to create mouse pointer: {err}"))
+	else {
+		return;
+	};
+	cmds.spawn((FlatscreenCam, Name::new("Flatscreen Camera")));
+	cmds.insert_resource(pointer);
+}
+
+fn update_pointer(
+	window: Single<(&Window), With<PrimaryWindow>>,
+	mut cam: Single<(&Camera, &GlobalTransform, &mut Transform), With<FlatscreenCam>>,
+	mut pointer: ResMut<MousePointer>,
+	connection: Res<DbusConnection>,
+	object_registry: Res<ObjectRegistryRes>,
+	mouse_buttons: Res<ButtonInput<MouseButton>>,
+	keyboard_buttons: Res<ButtonInput<KeyCode>>,
+	mut scroll: EventReader<MouseWheel>,
+	mut motion: EventReader<MouseMotion>,
+	mut keyboard_input_events: EventReader<KeyboardInput>,
+	time: Res<Time>,
+) {
+	let (cam, cam_transform, mut cam_local_transform) = cam.into_inner();
+	if keyboard_buttons.pressed(KeyCode::ShiftLeft) && mouse_buttons.pressed(MouseButton::Right) {
+		let (mut yaw, mut pitch, _) = cam_local_transform.rotation.to_euler(EulerRot::YXZ);
+
+		for e in motion.read() {
+			let scale = -0.003;
+			pitch += e.delta.y * scale;
+			yaw += e.delta.x * scale;
+		}
+
+		cam_local_transform.rotation = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch);
+
+		let mut move_vec = Vec3::ZERO;
+		move_vec.x += keyboard_buttons.pressed(KeyCode::KeyD) as u32 as f32;
+		move_vec.x -= keyboard_buttons.pressed(KeyCode::KeyA) as u32 as f32;
+		move_vec.z += keyboard_buttons.pressed(KeyCode::KeyS) as u32 as f32;
+		move_vec.z -= keyboard_buttons.pressed(KeyCode::KeyW) as u32 as f32;
+		move_vec.y += keyboard_buttons.pressed(KeyCode::KeyE) as u32 as f32;
+		move_vec.y -= keyboard_buttons.pressed(KeyCode::KeyQ) as u32 as f32;
+
+		let move_vec = cam_local_transform.rotation * move_vec.normalize_or_zero();
+		cam_local_transform.translation += move_vec * time.delta_secs() * 3.0;
+
+		return;
+	}
+	let Some(ray) = window
+		.cursor_position()
+		.and_then(|pos| get_viewport_pos(pos, cam))
+		.and_then(|pos| cam.viewport_to_world(cam_transform, pos).ok())
+	else {
+		return;
+	};
+	pointer.update(
+		&connection,
+		&object_registry,
+		ray,
+		&mouse_buttons,
+		&keyboard_buttons,
+		scroll,
+		keyboard_input_events,
+	);
+}
+
+fn get_viewport_pos(logical_pos: Vec2, cam: &Camera) -> Option<Vec2> {
+	if let Some(viewport_rect) = cam.logical_viewport_rect() {
+		if !viewport_rect.contains(logical_pos) {
+			return None;
+		}
+		Some(logical_pos - viewport_rect.min)
+	} else {
+		Some(logical_pos)
+	}
+}
 
 #[derive(Debug, Deserialize, Serialize)]
 struct MouseEvent {
@@ -59,7 +160,7 @@ trait KeyboardHandler {
 	async fn reset(&self) -> zbus::Result<()>;
 }
 
-#[allow(unused)]
+#[derive(Resource)]
 pub struct MousePointer {
 	node: OwnedNode,
 	keymap: DefaultKey,
@@ -95,35 +196,51 @@ impl MousePointer {
 			keymap,
 		})
 	}
-	pub fn update(&mut self, dbus_connection: &Connection, object_registry: &ObjectRegistry) {
-		let mouse = Input::get_mouse();
+	pub fn update(
+		&mut self,
+		dbus_connection: &Connection,
+		object_registry: &ObjectRegistry,
+		ray: Ray3d,
+		mouse_buttons: &ButtonInput<MouseButton>,
+		keyboard_buttons: &ButtonInput<KeyCode>,
+		mut scroll: EventReader<MouseWheel>,
+		mut keyboard_input_events: EventReader<KeyboardInput>,
+	) {
+		let mut discrete = Vec2::ZERO;
+		let mut continuous = Vec2::ZERO;
+		for e in scroll.read() {
+			match e.unit {
+				bevy::input::mouse::MouseScrollUnit::Line => {
+					discrete.x += e.x;
+					discrete.y += e.y;
+				}
+				bevy::input::mouse::MouseScrollUnit::Pixel => {
+					continuous.x += e.x;
+					continuous.y += e.y;
+				}
+			}
+		}
 
-		let ray = mouse.get_ray();
 		self.spatial.set_local_transform(
-			Mat4::look_to_rh(
-				Vec3::from(ray.position),
-				Vec3::from(ray.direction),
-				vec3(0.0, 1.0, 0.0),
-			)
-			.inverse(),
+			Mat4::look_to_rh(ray.origin, Vec3::from(ray.direction), Vec3::Y).inverse(),
 		);
 		{
 			// Set pointer input datamap
 			self.mouse_datamap = MouseEvent {
-				select: Input::key(Key::MouseLeft).is_active() as u32 as f32,
-				middle: Input::key(Key::MouseCenter).is_active() as u32 as f32,
-				context: Input::key(Key::MouseRight).is_active() as u32 as f32,
-				grab: (Input::key(Key::MouseRight).is_active()
-					|| (Input::key(Key::Backtick).is_active()
-						&& Input::key(Key::Shift).is_active())) as u32 as f32, // Was Mouse 5
-				scroll_continuous: [0.0, mouse.scroll_change / 120.0].into(),
-				scroll_discrete: [0.0, mouse.scroll_change / 120.0].into(),
+				select: mouse_buttons.pressed(MouseButton::Left) as u32 as f32,
+				middle: mouse_buttons.pressed(MouseButton::Middle) as u32 as f32,
+				context: mouse_buttons.pressed(MouseButton::Right) as u32 as f32,
+				grab: (mouse_buttons.pressed(MouseButton::Right)
+					|| (keyboard_buttons.pressed(KeyCode::Backquote)
+						&& keyboard_buttons.pressed(KeyCode::ShiftLeft))) as u32 as f32, // Was Mouse 5
+				scroll_continuous: [0.0, continuous.y / 120.0].into(),
+				scroll_discrete: [0.0, discrete.y / 120.0].into(),
 				raw_input_events: vec![],
 			};
 			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).unwrap();
 		}
 		self.target_pointer_input();
-		self.send_keyboard_input(dbus_connection, object_registry);
+		self.send_keyboard_input(dbus_connection, object_registry, keyboard_input_events);
 	}
 	fn target_pointer_input(&mut self) {
 		let distance_calculator: DistanceCalculator = |space, data, field| {
@@ -164,9 +281,13 @@ impl MousePointer {
 		&mut self,
 		dbus_connection: &Connection,
 		object_registry: &ObjectRegistry,
+		mut keyboard_input_events: EventReader<KeyboardInput>,
 	) {
 		let keyboard_handlers = object_registry.get_objects("org.stardustxr.XKBv1");
-
+		let events = keyboard_input_events
+			.read()
+			.filter_map(|e| Some((map_key(e.key_code)?, e.state)))
+			.collect::<Vec<_>>();
 		// Spawn async task to handle keyboard input
 		tokio::spawn({
 			let keyboard_handlers = keyboard_handlers.clone();
@@ -237,81 +358,75 @@ impl MousePointer {
 				let _ = keyboard_handler.keymap(keymap_id).await;
 
 				// Send key states
-				for i in 8_u32..254 {
-					let key = unsafe { std::mem::transmute::<u32, stereokit_rust::system::Key>(i) };
-					let Some(mapped_key) = map_key(key) else {
-						continue;
-					};
-					let input_state = Input::key(key);
-					if input_state.is_just_active() {
-						let _ = keyboard_handler.key_state(mapped_key + 8, true).await;
-					} else if input_state.is_just_inactive() {
-						let _ = keyboard_handler.key_state(mapped_key + 8, false).await;
-					}
+				for (key, state) in events.iter() {
+					let pressed = matches!(state, ButtonState::Pressed);
+					let _ = keyboard_handler.key_state(key + 8, pressed).await;
 				}
 			}
 		});
 	}
 }
 
-fn map_key(key: Key) -> Option<u32> {
+fn map_key(key: KeyCode) -> Option<u32> {
+	use KeyCode as Key;
 	match key {
+		Key::Unidentified(NativeKeyCode::Xkb(code)) => Some(code),
 		Key::Backspace => Some(input_event_codes::KEY_BACKSPACE!()),
 		Key::Tab => Some(input_event_codes::KEY_TAB!()),
-		Key::Return => Some(input_event_codes::KEY_ENTER!()),
-		Key::Shift => Some(input_event_codes::KEY_LEFTSHIFT!()),
-		Key::Ctrl => Some(input_event_codes::KEY_LEFTCTRL!()),
-		Key::Alt => Some(input_event_codes::KEY_LEFTALT!()),
+		Key::Enter => Some(input_event_codes::KEY_ENTER!()),
+		Key::ShiftLeft => Some(input_event_codes::KEY_LEFTSHIFT!()),
+		Key::ControlLeft => Some(input_event_codes::KEY_LEFTCTRL!()),
+		Key::AltLeft => Some(input_event_codes::KEY_LEFTALT!()),
 		Key::CapsLock => Some(input_event_codes::KEY_CAPSLOCK!()),
-		Key::Esc => Some(input_event_codes::KEY_ESC!()),
+		Key::Escape => Some(input_event_codes::KEY_ESC!()),
 		Key::Space => Some(input_event_codes::KEY_SPACE!()),
 		Key::End => Some(input_event_codes::KEY_END!()),
 		Key::Home => Some(input_event_codes::KEY_HOME!()),
-		Key::Left => Some(input_event_codes::KEY_LEFT!()),
-		Key::Right => Some(input_event_codes::KEY_RIGHT!()),
-		Key::Up => Some(input_event_codes::KEY_UP!()),
-		Key::Down => Some(input_event_codes::KEY_DOWN!()),
+		Key::ArrowLeft => Some(input_event_codes::KEY_LEFT!()),
+		Key::ArrowRight => Some(input_event_codes::KEY_RIGHT!()),
+		Key::ArrowUp => Some(input_event_codes::KEY_UP!()),
+		Key::ArrowDown => Some(input_event_codes::KEY_DOWN!()),
 		Key::PageUp => Some(input_event_codes::KEY_PAGEUP!()),
 		Key::PageDown => Some(input_event_codes::KEY_PAGEDOWN!()),
 		Key::PrintScreen => Some(input_event_codes::KEY_PRINT!()),
-		Key::KeyInsert => Some(input_event_codes::KEY_INSERT!()),
-		Key::Del => Some(input_event_codes::KEY_DELETE!()),
-		Key::Key0 => Some(input_event_codes::KEY_0!()),
-		Key::Key1 => Some(input_event_codes::KEY_1!()),
-		Key::Key2 => Some(input_event_codes::KEY_2!()),
-		Key::Key3 => Some(input_event_codes::KEY_3!()),
-		Key::Key4 => Some(input_event_codes::KEY_4!()),
-		Key::Key5 => Some(input_event_codes::KEY_5!()),
-		Key::Key6 => Some(input_event_codes::KEY_6!()),
-		Key::Key7 => Some(input_event_codes::KEY_7!()),
-		Key::Key8 => Some(input_event_codes::KEY_8!()),
-		Key::Key9 => Some(input_event_codes::KEY_9!()),
-		Key::A => Some(input_event_codes::KEY_A!()),
-		Key::B => Some(input_event_codes::KEY_B!()),
-		Key::C => Some(input_event_codes::KEY_C!()),
-		Key::D => Some(input_event_codes::KEY_D!()),
-		Key::E => Some(input_event_codes::KEY_E!()),
-		Key::F => Some(input_event_codes::KEY_F!()),
-		Key::G => Some(input_event_codes::KEY_G!()),
-		Key::H => Some(input_event_codes::KEY_H!()),
-		Key::I => Some(input_event_codes::KEY_I!()),
-		Key::J => Some(input_event_codes::KEY_J!()),
-		Key::K => Some(input_event_codes::KEY_K!()),
-		Key::L => Some(input_event_codes::KEY_L!()),
-		Key::M => Some(input_event_codes::KEY_M!()),
-		Key::N => Some(input_event_codes::KEY_N!()),
-		Key::O => Some(input_event_codes::KEY_O!()),
-		Key::P => Some(input_event_codes::KEY_P!()),
-		Key::Q => Some(input_event_codes::KEY_Q!()),
-		Key::R => Some(input_event_codes::KEY_R!()),
-		Key::S => Some(input_event_codes::KEY_S!()),
-		Key::T => Some(input_event_codes::KEY_T!()),
-		Key::U => Some(input_event_codes::KEY_U!()),
-		Key::V => Some(input_event_codes::KEY_V!()),
-		Key::W => Some(input_event_codes::KEY_W!()),
-		Key::X => Some(input_event_codes::KEY_X!()),
-		Key::Y => Some(input_event_codes::KEY_Y!()),
-		Key::Z => Some(input_event_codes::KEY_Z!()),
+		Key::Insert => Some(input_event_codes::KEY_INSERT!()),
+		Key::Delete => Some(input_event_codes::KEY_DELETE!()),
+		Key::Digit0 => Some(input_event_codes::KEY_0!()),
+		Key::Digit1 => Some(input_event_codes::KEY_1!()),
+		Key::Digit2 => Some(input_event_codes::KEY_2!()),
+		Key::Digit3 => Some(input_event_codes::KEY_3!()),
+		Key::Digit4 => Some(input_event_codes::KEY_4!()),
+		Key::Digit5 => Some(input_event_codes::KEY_5!()),
+		Key::Digit6 => Some(input_event_codes::KEY_6!()),
+		Key::Digit7 => Some(input_event_codes::KEY_7!()),
+		Key::Digit8 => Some(input_event_codes::KEY_8!()),
+		Key::Digit9 => Some(input_event_codes::KEY_9!()),
+		Key::KeyA => Some(input_event_codes::KEY_A!()),
+		Key::KeyB => Some(input_event_codes::KEY_B!()),
+		Key::KeyC => Some(input_event_codes::KEY_C!()),
+		Key::KeyD => Some(input_event_codes::KEY_D!()),
+		Key::KeyE => Some(input_event_codes::KEY_E!()),
+		Key::KeyF => Some(input_event_codes::KEY_F!()),
+		Key::KeyG => Some(input_event_codes::KEY_G!()),
+		Key::KeyH => Some(input_event_codes::KEY_H!()),
+		Key::KeyI => Some(input_event_codes::KEY_I!()),
+		Key::KeyJ => Some(input_event_codes::KEY_J!()),
+		Key::KeyK => Some(input_event_codes::KEY_K!()),
+		Key::KeyL => Some(input_event_codes::KEY_L!()),
+		Key::KeyM => Some(input_event_codes::KEY_M!()),
+		Key::KeyN => Some(input_event_codes::KEY_N!()),
+		Key::KeyO => Some(input_event_codes::KEY_O!()),
+		Key::KeyP => Some(input_event_codes::KEY_P!()),
+		Key::KeyQ => Some(input_event_codes::KEY_Q!()),
+		Key::KeyR => Some(input_event_codes::KEY_R!()),
+		Key::KeyS => Some(input_event_codes::KEY_S!()),
+		Key::KeyT => Some(input_event_codes::KEY_T!()),
+		Key::KeyU => Some(input_event_codes::KEY_U!()),
+		Key::KeyV => Some(input_event_codes::KEY_V!()),
+		Key::KeyW => Some(input_event_codes::KEY_W!()),
+		Key::KeyX => Some(input_event_codes::KEY_X!()),
+		Key::KeyY => Some(input_event_codes::KEY_Y!()),
+		Key::KeyZ => Some(input_event_codes::KEY_Z!()),
 		Key::Numpad0 => Some(input_event_codes::KEY_NUMERIC_0!()),
 		Key::Numpad1 => Some(input_event_codes::KEY_NUMERIC_1!()),
 		Key::Numpad2 => Some(input_event_codes::KEY_NUMERIC_2!()),
@@ -336,22 +451,22 @@ fn map_key(key: Key) -> Option<u32> {
 		Key::F12 => Some(input_event_codes::KEY_F12!()),
 		Key::Comma => Some(input_event_codes::KEY_COMMA!()),
 		Key::Period => Some(input_event_codes::KEY_DOT!()),
-		Key::SlashFwd => Some(input_event_codes::KEY_SLASH!()),
-		Key::SlashBack => Some(input_event_codes::KEY_BACKSLASH!()),
+		Key::Slash => Some(input_event_codes::KEY_SLASH!()),
+		Key::Backslash => Some(input_event_codes::KEY_BACKSLASH!()),
 		Key::Semicolon => Some(input_event_codes::KEY_SEMICOLON!()),
-		Key::Apostrophe => Some(input_event_codes::KEY_APOSTROPHE!()),
-		Key::BracketOpen => Some(input_event_codes::KEY_LEFTBRACE!()),
-		Key::BracketClose => Some(input_event_codes::KEY_RIGHTBRACE!()),
+		Key::Quote => Some(input_event_codes::KEY_APOSTROPHE!()),
+		Key::BracketLeft => Some(input_event_codes::KEY_LEFTBRACE!()),
+		Key::BracketRight => Some(input_event_codes::KEY_RIGHTBRACE!()),
 		Key::Minus => Some(input_event_codes::KEY_MINUS!()),
-		Key::Equals => Some(input_event_codes::KEY_EQUAL!()),
-		Key::Backtick => Some(input_event_codes::KEY_GRAVE!()),
-		Key::LCmd => Some(input_event_codes::KEY_LEFTMETA!()),
-		Key::RCmd => Some(input_event_codes::KEY_RIGHTMETA!()),
-		Key::Multiply => Some(input_event_codes::KEY_NUMERIC_STAR!()),
-		Key::Add => Some(input_event_codes::KEY_KPPLUS!()),
-		Key::Subtract => Some(input_event_codes::KEY_MINUS!()),
-		Key::Decimal => Some(input_event_codes::KEY_DOT!()),
-		Key::Divide => Some(input_event_codes::KEY_SLASH!()),
+		Key::Equal => Some(input_event_codes::KEY_EQUAL!()),
+		Key::Backquote => Some(input_event_codes::KEY_GRAVE!()),
+		Key::SuperLeft => Some(input_event_codes::KEY_LEFTMETA!()),
+		Key::SuperRight => Some(input_event_codes::KEY_RIGHTMETA!()),
+		Key::NumpadMultiply => Some(input_event_codes::KEY_NUMERIC_STAR!()),
+		Key::NumpadAdd => Some(input_event_codes::KEY_KPPLUS!()),
+		Key::NumpadSubtract => Some(input_event_codes::KEY_MINUS!()),
+		Key::NumpadDecimal => Some(input_event_codes::KEY_DOT!()),
+		Key::NumpadDivide => Some(input_event_codes::KEY_SLASH!()),
 		_ => None,
 	}
 }

@@ -244,6 +244,18 @@ impl SkHand {
 			captured: false,
 		})
 	}
+	pub fn set_enabled(&self, enabled: bool) {
+		if let Some(node) = self.input.spatial.node() {
+			node.set_enabled(enabled);
+		}
+		tokio::spawn({
+			// this is suboptimal since it probably allocates a fresh string every frame
+			let handle = self.tracked.clone();
+			async move {
+				handle.set_tracked(enabled).await;
+			}
+		});
+	}
 	fn update(
 		&mut self,
 		joints: Option<&openxr::HandJointLocations>,
@@ -256,20 +268,14 @@ impl SkHand {
 			&& joints.is_some_and(|v| {
 				v.iter().all(|v| {
 					v.location_flags.contains(
-						SpaceLocationFlags::POSITION_VALID
-							| SpaceLocationFlags::POSITION_TRACKED
-							| SpaceLocationFlags::ORIENTATION_VALID
+						SpaceLocationFlags::POSITION_VALID | SpaceLocationFlags::POSITION_TRACKED,
+					) || v.location_flags.contains(
+						SpaceLocationFlags::ORIENTATION_VALID
 							| SpaceLocationFlags::ORIENTATION_TRACKED,
 					)
 				})
 			});
-		input_node.set_enabled(is_tracked);
-		tokio::task::spawn({
-			let handle = self.tracked.clone();
-			async move {
-				handle.set_tracked(is_tracked);
-			}
-		});
+		self.set_enabled(is_tracked);
 		if is_tracked {
 			// cannot ever crash, is_tracked is only true of joints is some
 			let joints = joints.unwrap();

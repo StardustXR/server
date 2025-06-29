@@ -8,11 +8,11 @@ mod wayland;
 
 use crate::core::destroy_queue;
 use crate::nodes::items::camera;
-use crate::nodes::{audio, drawable, input};
+use crate::nodes::{drawable, input};
 
 use bevy::MinimalPlugins;
 use bevy::a11y::AccessibilityPlugin;
-use bevy::app::{App, TerminalCtrlCHandlerPlugin};
+use bevy::app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
 use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
 use bevy::audio::AudioPlugin;
 use bevy::core_pipeline::CorePipelinePlugin;
@@ -27,6 +27,7 @@ use bevy::remote::http::RemoteHttpPlugin;
 use bevy::render::{RenderDebugFlags, RenderPlugin};
 use bevy::scene::ScenePlugin;
 use bevy::text::FontLoader;
+use bevy::winit::{WakeUp, WinitPlugin};
 use bevy_mod_openxr::action_set_attaching::OxrActionAttachingPlugin;
 use bevy_mod_openxr::action_set_syncing::OxrActionSyncingPlugin;
 use bevy_mod_openxr::add_xr_plugins;
@@ -42,16 +43,17 @@ use bevy_mod_xr::camera::XrProjection;
 use bevy_mod_xr::hand_debug_gizmos::HandGizmosPlugin;
 use bevy_mod_xr::session::{XrFirst, XrHandleEvents};
 use clap::Parser;
-use nodes::audio::AudioNodePlugin;
 use core::client::{Client, tick_internal_client};
 use core::entity_handle::EntityHandlePlugin;
 use core::task;
 use directories::ProjectDirs;
+use nodes::audio::AudioNodePlugin;
 use nodes::drawable::lines::LinesNodePlugin;
 use nodes::drawable::model::ModelNodePlugin;
 use nodes::drawable::text::TextNodePlugin;
 use nodes::spatial::SpatialNodePlugin;
 use objects::ServerObjects;
+use objects::input::mouse_pointer::FlatscreenInputPlugin;
 use objects::input::sk_controller::ControllerPlugin;
 use objects::input::sk_hand::HandPlugin;
 use objects::play_space::PlaySpacePlugin;
@@ -323,6 +325,17 @@ fn bevy_loop(
 		.async_compute
 		.on_thread_spawn = Some(enter_runtime_context.clone());
 	plugins = plugins.set(task_pool_plugin);
+	if args.flatscreen
+		|| std::env::var_os("DISPLAY").is_some()
+		|| std::env::var_os("WAYLAND_DISPLAY").is_some()
+	{
+		let mut plugin = WinitPlugin::<WakeUp>::default();
+		plugin.run_on_any_thread = true;
+		plugins = plugins
+			.add(plugin)
+			.disable::<ScheduleRunnerPlugin>()
+			.add(FlatscreenInputPlugin);
+	}
 	app.add_plugins(
 		add_xr_plugins(plugins.add(WindowPlugin::default()))
 			.set(OxrInitPlugin {

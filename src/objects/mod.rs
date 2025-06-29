@@ -182,17 +182,14 @@ impl ServerObjects {
 					eye_pointer.update();
 				}
 			}
-			Inputs::MousePointer(mouse_pointer) => {
-				mouse_pointer.update(dbus_connection, object_registry)
-			}
-			// Inputs::Controllers((left, right)) => {
-			// 	left.update(token);
-			// 	right.update(token);
-			// }
-			// Inputs::Hands { left, right } => {
-			// 	left.update(sk, token, &mut self.hand_materials[0]);
-			// 	right.update(sk, token, &mut self.hand_materials[1]);
-			// }
+			Inputs::MousePointer(mouse_pointer) => {} // Inputs::Controllers((left, right)) => {
+			                                          // 	left.update(token);
+			                                          // 	right.update(token);
+			                                          // }
+			                                          // Inputs::Hands { left, right } => {
+			                                          // 	left.update(sk, token, &mut self.hand_materials[0]);
+			                                          // 	right.update(sk, token, &mut self.hand_materials[1]);
+			                                          // }
 		}
 	}
 }
