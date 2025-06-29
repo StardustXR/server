@@ -9,17 +9,14 @@ use crate::{
 		resource::get_resource_file,
 	},
 	nodes::{
-		Node,
-		drawable::XAlign,
-		spatial::{Spatial, SpatialNode},
-	},
+		drawable::XAlign, spatial::{Spatial, SpatialNode}, Node
+	}, BevyMaterial,
 };
 use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_mesh_text_3d::{
 	Align, Attrs, MeshTextPlugin, Settings as FontSettings, generate_meshes,
 	text_glyphs::TextGlyphs,
 };
-use bevy_sk::vr_materials::PbrMaterial;
 use color_eyre::eyre::eyre;
 use core::f32;
 use cosmic_text::Metrics;
@@ -70,7 +67,7 @@ fn spawn_text(
 	mut cmds: Commands,
 	mut font_settings: ResMut<FontSettings>,
 	mut material_registry: ResMut<MaterialRegistry>,
-	mut materials: ResMut<Assets<PbrMaterial>>,
+	mut materials: ResMut<Assets<BevyMaterial>>,
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut font_registry: Local<FontDatabaseRegistry>,
 ) {
@@ -109,11 +106,11 @@ fn spawn_text(
 			bevy_mesh_text_3d::InputText::Simple {
 				text: text_string,
 				material: material_registry.get_handle(
-					PbrMaterial {
-						color: style.color.to_bevy(),
-						emission_factor: Color::WHITE,
+					BevyMaterial {
+						base_color: style.color.to_bevy(),
+						emissive: Color::WHITE.to_linear(),
 						metallic: 0.0,
-						roughness: 1.0,
+						perceptual_roughness: 1.0,
 						// If alpha is supported on text we need to change this
 						alpha_mode: AlphaMode::Opaque,
 						double_sided: false,

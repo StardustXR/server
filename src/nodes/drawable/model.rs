@@ -1,5 +1,4 @@
 use super::{MODEL_PART_ASPECT_ALIAS_INFO, MaterialParameter, ModelAspect, ModelPartAspect};
-use crate::bail;
 use crate::core::bevy_channel::{BevyChannel, BevyChannelReader};
 use crate::core::client::Client;
 use crate::core::color::ColorConvert as _;
@@ -10,9 +9,9 @@ use crate::core::resource::get_resource_file;
 use crate::nodes::Node;
 use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::{Spatial, SpatialNode};
+use crate::{BevyMaterial, bail};
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
-use bevy_sk::vr_materials::PbrMaterial;
 use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
@@ -79,10 +78,10 @@ fn load_models(
 }
 
 fn apply_materials(
-	mut query: Query<&mut MeshMaterial3d<PbrMaterial>>,
+	mut query: Query<&mut MeshMaterial3d<BevyMaterial>>,
 	mut material_registry: ResMut<MaterialRegistry>,
 	asset_server: Res<AssetServer>,
-	mut materials: ResMut<Assets<PbrMaterial>>,
+	mut materials: ResMut<Assets<BevyMaterial>>,
 ) -> bevy::prelude::Result {
 	for model_part in MODEL_REGISTRY
 		.get_valid_contents()
@@ -248,16 +247,16 @@ fn gen_path(
 #[derive(PartialEq, Deref, DerefMut, Clone, Copy, Eq, PartialOrd, Ord, Hash)]
 struct HashedPbrMaterial(u64);
 impl HashedPbrMaterial {
-	fn new(material: &PbrMaterial) -> Self {
+	fn new(material: &BevyMaterial) -> Self {
 		let mut hasher = FxHasher::default();
 		Self::hash_pbr_mat(material, &mut hasher);
 		Self(hasher.finish())
 	}
-	fn hash_pbr_mat<H: Hasher>(mat: &PbrMaterial, state: &mut H) {
-		hash_color(mat.color, state);
-		hash_color(mat.emission_factor, state);
+	fn hash_pbr_mat<H: Hasher>(mat: &BevyMaterial, state: &mut H) {
+		hash_color(mat.base_color, state);
+		hash_color(mat.emissive.into(), state);
 		state.write_u32(mat.metallic.to_bits());
-		state.write_u32(mat.roughness.to_bits());
+		state.write_u32(mat.perceptual_roughness.to_bits());
 		match mat.alpha_mode {
 			AlphaMode::Opaque => state.write_u8(0),
 			AlphaMode::Mask(v) => {
@@ -271,12 +270,12 @@ impl HashedPbrMaterial {
 			AlphaMode::Multiply => state.write_u8(6),
 		}
 		state.write_u8(mat.double_sided as u8);
-		mat.diffuse_texture.hash(state);
-		mat.emission_texture.hash(state);
-		mat.metal_texture.hash(state);
+		mat.base_color_texture.hash(state);
+		mat.emissive_texture.hash(state);
+		mat.metallic_roughness_texture.hash(state);
 		mat.occlusion_texture.hash(state);
 		// should always be the same, TODO: make the spherical harmonics buffer a per mesh instance thing
-		mat.spherical_harmonics.hash(state);
+		// mat.spherical_harmonics.hash(state);
 	}
 }
 fn hash_color<H: Hasher>(color: Color, state: &mut H) {
@@ -347,7 +346,7 @@ impl MaterialParameter {
 	fn apply_to_material(
 		&self,
 		client: &Client,
-		mat: &mut PbrMaterial,
+		mat: &mut BevyMaterial,
 		parameter_name: &str,
 		asset_server: &AssetServer,
 	) {
@@ -367,7 +366,7 @@ impl MaterialParameter {
 			MaterialParameter::Float(val) => {
 				match parameter_name {
 					"metallic" => mat.metallic = *val,
-					"roughness" => mat.roughness = *val,
+					"roughness" => mat.perceptual_roughness = *val,
 					// we probably don't want to expose tex_scale
 					// "tex_scale" => mat.tex_scale = *val,
 					v => {
@@ -382,8 +381,8 @@ impl MaterialParameter {
 				// nothing uses a Vec3
 			}
 			MaterialParameter::Color(color) => match parameter_name {
-				"color" => mat.color = color.to_bevy(),
-				"emission_factor" => mat.emission_factor = color.to_bevy(),
+				"color" => mat.base_color = color.to_bevy(),
+				"emission_factor" => mat.emissive = color.to_bevy().to_linear(),
 				v => {
 					error!("unknown param_name ({v}) for color")
 				}
@@ -396,16 +395,15 @@ impl MaterialParameter {
 				};
 				let handle = asset_server.load(texture_path);
 				match parameter_name {
-					"diffuse" => mat.diffuse_texture = Some(handle),
-					"emission" => mat.emission_texture = Some(handle),
-					"metal" => mat.metal_texture = Some(handle),
+					"diffuse" => mat.base_color_texture = Some(handle),
+					"emission" => mat.emissive_texture = Some(handle),
+					"metal" => mat.metallic_roughness_texture = Some(handle),
 					"occlusion" => mat.occlusion_texture = Some(handle),
 					v => {
 						error!("unknown param_name ({v}) for texture");
-						return;
 					}
 				}
-				mat.alpha_mode = AlphaMode::AlphaToCoverage;
+				// mat.alpha_mode = AlphaMode::Blend;
 			}
 		}
 	}
@@ -426,23 +424,23 @@ pub struct Material {
 }
 
 impl Material {
-	fn to_pbr_mat(&self, asset_server: &AssetServer) -> PbrMaterial {
-		PbrMaterial {
-			color: self.color,
-			emission_factor: self.emission_factor,
+	fn to_pbr_mat(&self, asset_server: &AssetServer) -> BevyMaterial {
+		BevyMaterial {
+			base_color: self.color,
+			emissive: self.emission_factor.to_linear(),
 			metallic: self.metallic,
-			roughness: self.roughness,
+			perceptual_roughness: self.roughness,
 			alpha_mode: self.alpha_mode,
 			double_sided: self.double_sided,
-			diffuse_texture: self
+			base_color_texture: self
 				.diffuse_texture
 				.as_ref()
 				.map(|p| asset_server.load(p.as_path())),
-			emission_texture: self
+			emissive_texture: self
 				.emission_texture
 				.as_ref()
 				.map(|p| asset_server.load(p.as_path())),
-			metal_texture: self
+			metallic_roughness_texture: self
 				.metal_texture
 				.as_ref()
 				.map(|p| asset_server.load(p.as_path())),
@@ -450,7 +448,8 @@ impl Material {
 				.occlusion_texture
 				.as_ref()
 				.map(|p| asset_server.load(p.as_path())),
-			spherical_harmonics: bevy_sk::skytext::SPHERICAL_HARMONICS_HANDLE,
+			..Default::default()
+			// spherical_harmonics: bevy_sk::skytext::SPHERICAL_HARMONICS_HANDLE,
 		}
 	}
 }
@@ -510,14 +509,14 @@ impl ModelPartAspect for ModelPart {
 	}
 }
 #[derive(Default, Resource)]
-pub struct MaterialRegistry(FxHashMap<HashedPbrMaterial, Handle<PbrMaterial>>);
+pub struct MaterialRegistry(FxHashMap<HashedPbrMaterial, Handle<BevyMaterial>>);
 impl MaterialRegistry {
 	/// returns strong handle for PbrMaterial elminitating duplications
 	pub fn get_handle(
 		&mut self,
-		material: PbrMaterial,
-		materials: &mut ResMut<Assets<PbrMaterial>>,
-	) -> Handle<PbrMaterial> {
+		material: BevyMaterial,
+		materials: &mut ResMut<Assets<BevyMaterial>>,
+	) -> Handle<BevyMaterial> {
 		let hash = HashedPbrMaterial::new(&material);
 		match self
 			.0

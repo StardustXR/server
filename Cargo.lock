@@ -1432,7 +1432,6 @@ dependencies = [
 [[package]]
 name = "bevy_sk"
 version = "0.1.0"
-source = "git+https://github.com/Schmarni-Dev/bevy_sk?branch=fix_mat_stuff#744e9bb442a690b1abc15f50ba2655228bd84eea"
 dependencies = [
  "bevy",
  "bevy_mod_xr",

@@ -5,9 +5,8 @@ use crate::{
 		registry::Registry,
 	},
 	nodes::{
-		Node,
-		spatial::{Spatial, SpatialNode},
-	},
+		spatial::{Spatial, SpatialNode}, Node
+	}, BevyMaterial,
 };
 use bevy::{
 	asset::RenderAssetUsages,
@@ -17,7 +16,6 @@ use bevy::{
 		primitives::Aabb,
 	},
 };
-use bevy_sk::vr_materials::PbrMaterial;
 use glam::Vec3;
 use parking_lot::Mutex;
 use std::sync::{
@@ -54,7 +52,7 @@ fn update_visibillity(mut cmds: Commands) {
 fn build_line_mesh(
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut cmds: Commands,
-	mut materials: ResMut<Assets<PbrMaterial>>,
+	mut materials: ResMut<Assets<BevyMaterial>>,
 ) {
 	for lines in LINES_REGISTRY
 		.get_valid_contents()
@@ -171,9 +169,9 @@ fn build_line_mesh(
 				let e = cmds.spawn((
 					Name::new("LinesNode"),
 					SpatialNode(Arc::downgrade(&lines.spatial)),
-					MeshMaterial3d(materials.add(PbrMaterial {
-						color: Color::WHITE,
-						roughness: 1.0,
+					MeshMaterial3d(materials.add(BevyMaterial {
+						base_color: Color::WHITE,
+						perceptual_roughness: 1.0,
 						alpha_mode: AlphaMode::Opaque,
 						..default()
 					})),
