@@ -83,8 +83,8 @@ bevy = { version = "0.16", features = ["wayland", "mp3", "wav"] }
 bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"
 # bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
-# bevy_sk = { git = "https://github.com/Schmarni-Dev/bevy_sk", branch = "fix_mat_stuff" }
-bevy_sk.path = "../bevy_sk"
+bevy_sk = { git = "https://github.com/Schmarni-Dev/bevy_sk", branch = "fix_mat_stuff" }
+# bevy_sk.path = "../bevy_sk"
 bevy-mesh-text-3d.git = "https://github.com/terhechte/bevy-mesh-text-3d"
 
 openxr = "0.19"
