@@ -82,11 +82,9 @@ tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
 bevy = { version = "0.16", features = ["wayland", "bevy_remote", "mp3", "wav"] }
 bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"
-# bevy_mod_meshtext.git = "https://github.com/Schmarni-Dev/bevy_mod_meshtext"
 # bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
-# bevy_sk = { git = "https://github.com/Schmarni-Dev/bevy_sk", branch = "fix_mat_stuff" }
+bevy_sk = { git = "https://github.com/Schmarni-Dev/bevy_sk", branch = "fix_mat_stuff" }
 bevy-mesh-text-3d.git = "https://github.com/terhechte/bevy-mesh-text-3d"
-bevy_sk.path = "../bevy_sk"
 
 openxr = "0.19"
 
