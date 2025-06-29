@@ -25,10 +25,6 @@ use openxr::{HandJointLocation, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr::values::Datamap;
 use std::sync::Arc;
-use stereokit_rust::material::Material;
-use stereokit_rust::sk::{DisplayMode, MainThreadToken, Sk};
-use stereokit_rust::system::{HandJoint, HandSource, Handed, Input, LinePoint, Lines};
-use stereokit_rust::util::Color128;
 use zbus::Connection;
 
 use super::{CaptureManager, get_sorted_handlers};
@@ -370,13 +366,5 @@ impl SkHand {
 		let sorted_handlers = get_sorted_handlers(&self.input, distance_calculator);
 		self.input
 			.set_handler_order(sorted_handlers.iter().map(|(handler, _)| handler));
-	}
-}
-
-fn joint_to_line_point(joint: &Joint, color: Color128) -> LinePoint {
-	LinePoint {
-		pt: Vec3::from(joint.position).into(),
-		thickness: joint.radius * 2.0,
-		color: color.into(),
 	}
 }

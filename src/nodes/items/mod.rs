@@ -133,6 +133,7 @@ impl Drop for Item {
 	}
 }
 
+#[cfg_attr(not(feature = "wayland"), allow(dead_code))]
 pub enum ItemType {
 	Camera(Arc<CameraItem>),
 	Panel(Arc<dyn PanelItemTrait>),

@@ -12,7 +12,6 @@ use bevy_mod_xr::{
 };
 use openxr::SpaceLocationFlags;
 use parking_lot::RwLock;
-use stereokit_rust::system::World;
 use zbus::{Connection, ObjectServer, interface};
 
 use crate::{DbusConnection, PreFrameWait, nodes::spatial::Spatial};

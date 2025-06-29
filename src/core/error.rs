@@ -8,7 +8,6 @@ use stardust_xr::{
 		flexbuffers::{DeserializationError, ReaderError},
 	},
 };
-use stereokit_rust::StereoKitError;
 use thiserror::Error;
 
 pub type Result<T, E = ServerError> = std::result::Result<T, E>;
@@ -29,8 +28,6 @@ pub enum ServerError {
 	DeserializationError(#[from] DeserializationError),
 	#[error("Reader error: {0}")]
 	ReaderError(#[from] ReaderError),
-	#[error("StereoKit error: {0}")]
-	StereoKitError(#[from] StereoKitError),
 	#[error("Aspect {} does not exist for node", 0.to_string())]
 	NoAspect(TypeId),
 	#[error("{0}")]
