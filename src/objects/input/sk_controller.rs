@@ -39,6 +39,7 @@ use std::{
 	str::FromStr,
 	sync::Arc,
 };
+use tracing::instrument;
 use zbus::Connection;
 pub struct ControllerPlugin;
 const CURSOR_MODEL_PATH: &str = "/tmp/stardust_server/models/cursor.glb";
@@ -152,9 +153,11 @@ fn update(
 		controllers.right.set_enabled(false);
 		return;
 	};
-	session
-		.sync_actions(&[ActiveActionSet::new(&actions.set)])
-		.unwrap();
+	debug_span!("sync actions").in_scope(|| {
+		session
+			.sync_actions(&[ActiveActionSet::new(&actions.set)])
+			.unwrap();
+	});
 	let time = state.predicted_display_time;
 	// stupid bevy gltf loading issue (rotated 180 degrees on the y axis)
 	controllers
@@ -299,6 +302,7 @@ impl SkController {
 			space: None,
 		})
 	}
+	#[instrument(level = "debug", skip(self))]
 	pub fn set_enabled(&self, enabled: bool) {
 		if let Some(node) = self.input.spatial.node() {
 			node.set_enabled(enabled);
@@ -321,6 +325,7 @@ impl SkController {
 		let Some(space) = self.space.as_ref() else {
 			return;
 		};
+		let _span = debug_span!("locate space").entered();
 		let Ok(location) = session
 			.locate_space(space, &ref_space, time)
 			.inspect_err(|err| error!("error while locating controller space: {err}"))
@@ -333,6 +338,7 @@ impl SkController {
 				| SpaceLocationFlags::ORIENTATION_VALID
 				| SpaceLocationFlags::ORIENTATION_TRACKED,
 		);
+		drop(_span);
 		self.set_enabled(enabled);
 		if enabled {
 			let world_transform = Mat4::from(Affine3A::from(location.pose.to_xr_pose()));
@@ -377,6 +383,7 @@ impl SkController {
 				.map(|v| v.current_state)
 				.unwrap_or_default()
 		}
+		let _span = debug_span!("apply datamap").entered();
 		self.datamap = ControllerDatamap {
 			select: get(session, path, &actions.trigger),
 			middle: get(session, path, &actions.stick_click) as u32 as f32,
@@ -385,6 +392,7 @@ impl SkController {
 			scroll: get(session, path, &actions.stick).to_vec2(),
 		};
 		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
+		drop(_span);
 
 		let distance_calculator = |space: &Arc<Spatial>, _data: &InputDataType, field: &Field| {
 			Some(field.distance(space, [0.0; 3].into()).abs())

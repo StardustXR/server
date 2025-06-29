@@ -27,7 +27,7 @@ pub struct LinesNodePlugin;
 
 impl Plugin for LinesNodePlugin {
 	fn build(&self, app: &mut App) {
-		app.add_systems(Update, (build_line_mesh, update_visibillity).chain());
+		app.add_systems(Update, (build_line_mesh/* , update_visibillity */).chain());
 	}
 }
 

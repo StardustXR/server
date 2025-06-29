@@ -21,8 +21,6 @@ use bevy::gizmos::GizmoPlugin;
 use bevy::gltf::GltfPlugin;
 use bevy::input::InputPlugin;
 use bevy::pbr::PbrPlugin;
-use bevy::remote::RemotePlugin;
-use bevy::remote::http::RemoteHttpPlugin;
 use bevy::render::{RenderDebugFlags, RenderPlugin};
 use bevy::scene::ScenePlugin;
 use bevy::text::FontLoader;
@@ -378,7 +376,10 @@ fn bevy_loop(
 	app.add_schedule(pre_frame_wait);
 	app.insert_resource(ClearColor(Color::BLACK.with_alpha(0.0)));
 	app.insert_resource(ObjectRegistryRes(object_registry));
-	app.add_plugins((RemotePlugin::default(), RemoteHttpPlugin::default()));
+	#[cfg(feature = "bevy_debugging")]
+	{
+		app.add_plugins((RemotePlugin::default(), RemoteHttpPlugin::default()));
+	}
 	// the Stardust server plugins
 	// infra plugins
 	app.add_plugins(EntityHandlePlugin);

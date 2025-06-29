@@ -6,6 +6,8 @@ mod method;
 mod pointer;
 mod tip;
 
+use bevy::tasks::ComputeTaskPool;
+use bevy::tasks::ParallelSlice;
 pub use handler::*;
 pub use method::*;
 use tracing::debug_span;
@@ -120,55 +122,60 @@ pub fn process_input() {
 			};
 			node.enabled()
 		});
-	for handler in INPUT_HANDLER_REGISTRY.get_valid_contents() {
-		let _span = debug_span!("handle input handler").entered();
-		for method_alias in handler.method_aliases.get_aliases() {
-			method_alias.set_enabled(false);
-		}
+	INPUT_HANDLER_REGISTRY
+		.get_valid_contents()
+		.into_iter()
+		.par_splat_map(ComputeTaskPool::get(), None, |_, handlers| {
+			for handler in handlers {
+				let _span = debug_span!("handle input handler").entered();
+				for method_alias in handler.method_aliases.get_aliases() {
+					method_alias.set_enabled(false);
+				}
 
-		let Some(handler_node) = handler.spatial.node() else {
-			continue;
-		};
-		if !handler_node.enabled() {
-			continue;
-		}
-		if let Some(handler_field_node) = handler.field.spatial.node() {
-			if !handler_field_node.enabled() {
-				continue;
+				let Some(handler_node) = handler.spatial.node() else {
+					continue;
+				};
+				if !handler_node.enabled() {
+					continue;
+				}
+				if let Some(handler_field_node) = handler.field.spatial.node() {
+					if !handler_field_node.enabled() {
+						continue;
+					}
+				};
+
+				let ser_span = debug_span!("serializing input").entered();
+				let (methods, datas) = methods
+					.clone()
+					// filter out methods without the handler in their handler order
+					.filter(|a| {
+						a.handler_order
+							.lock()
+							.iter()
+							.any(|h| h.ptr_eq(&Arc::downgrade(&handler)))
+					})
+					// filter out methods without the proper alias
+					.filter_map(|m| {
+						Some((
+							handler
+								.method_aliases
+								.get_from_original_node(m.spatial.node.clone())?,
+							m,
+						))
+					})
+					// make sure the input method alias is enabled
+					.inspect(|(a, _)| {
+						a.set_enabled(true);
+					})
+					// serialize the data
+					.map(|(a, m)| (a.clone(), m.serialize(a.get_id(), &handler)))
+					.unzip::<_, _, Vec<_>, Vec<_>>();
+				drop(ser_span);
+
+				let _span = debug_span!("client input").entered();
+				let _ = input_handler_client::input(&handler_node, &methods, &datas);
 			}
-		};
-
-		let ser_span = debug_span!("serializing input").entered();
-		let (methods, datas) = methods
-			.clone()
-			// filter out methods without the handler in their handler order
-			.filter(|a| {
-				a.handler_order
-					.lock()
-					.iter()
-					.any(|h| h.ptr_eq(&Arc::downgrade(&handler)))
-			})
-			// filter out methods without the proper alias
-			.filter_map(|m| {
-				Some((
-					handler
-						.method_aliases
-						.get_from_original_node(m.spatial.node.clone())?,
-					m,
-				))
-			})
-			// make sure the input method alias is enabled
-			.inspect(|(a, _)| {
-				a.set_enabled(true);
-			})
-			// serialize the data
-			.map(|(a, m)| (a.clone(), m.serialize(a.get_id(), &handler)))
-			.unzip::<_, _, Vec<_>, Vec<_>>();
-		drop(ser_span);
-
-		let _span = debug_span!("client input").entered();
-		let _ = input_handler_client::input(&handler_node, &methods, &datas);
-	}
+		});
 	for method in methods {
 		method.cull_capture_attempts();
 	}

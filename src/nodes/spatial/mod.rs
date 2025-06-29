@@ -18,6 +18,7 @@ use mint::Vector3;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::fmt::Debug;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, Weak};
 use std::{f32, ptr};
 
@@ -32,17 +33,42 @@ impl Plugin for SpatialNodePlugin {
 }
 
 fn update_spatial_nodes(
-	mut query: Query<(&mut BevyTransform, &SpatialNode, Option<&ChildOf>)>,
+	mut query: Query<(
+		&mut BevyTransform,
+		&SpatialNode,
+		Option<&ChildOf>,
+		&mut Visibility,
+	)>,
 	parent_query: Query<&GlobalTransform>,
 ) {
 	query
 		.par_iter_mut()
-		.for_each(|(mut transform, spatial_node, child_of)| {
+		.for_each(|(mut transform, spatial_node, child_of, mut vis)| {
+			let _span = debug_span!("updating spatial node").entered();
 			let Some(spatial) = spatial_node.0.upgrade() else {
-				// should we despawn the entity?
 				return;
 			};
-			let mat4 = spatial.global_transform();
+			if spatial
+				.node()
+				.is_some_and(|v| !v.enabled.load(Ordering::Relaxed))
+			{
+				if !matches!(*vis, Visibility::Hidden) {
+					*vis = Visibility::Hidden;
+				}
+				return;
+			}
+			let mat4 =
+				debug_span!("getting global transform").in_scope(|| spatial.global_transform());
+			let (scale, _, _) = mat4.to_scale_rotation_translation();
+			match (*vis, scale == Vec3::ZERO) {
+				(Visibility::Inherited | Visibility::Visible, true) => {
+					*vis = Visibility::Hidden;
+				}
+				(Visibility::Hidden, false) => {
+					*vis = Visibility::Inherited;
+				}
+				_ => {}
+			}
 			match child_of {
 				Some(child_of) => {
 					let Ok(parent) = parent_query.get(child_of.0) else {
@@ -60,7 +86,7 @@ fn update_spatial_nodes(
 }
 
 #[derive(Clone, Component, Debug)]
-#[require(BevyTransform)]
+#[require(BevyTransform, Visibility)]
 pub struct SpatialNode(pub Weak<Spatial>);
 
 stardust_xr_server_codegen::codegen_spatial_protocol!();
