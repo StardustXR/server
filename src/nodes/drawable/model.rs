@@ -181,9 +181,7 @@ fn gen_model_parts(
 								(spatial, model_part)
 							}
 							Some(part) => {
-								part.space
-									.set_spatial_parent(Some(&parent_spatial))
-									.unwrap();
+								part.space.set_spatial_parent(&parent_spatial).unwrap();
 								(part.space.clone(), part.clone())
 							}
 						};
