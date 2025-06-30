@@ -136,7 +136,7 @@ impl AliasList {
 			let Ok(aspect2) = node.get_aspect::<A>() else {
 				return false;
 			};
-			Arc::as_ptr(&aspect2) == (aspect as *const A)
+			std::ptr::eq(Arc::as_ptr(&aspect2), aspect)
 		})
 	}
 	pub fn get_aliases(&self) -> Vec<Arc<Node>> {
@@ -150,7 +150,7 @@ impl AliasList {
 			let Ok(aspect2) = original.get_aspect::<A>() else {
 				return false;
 			};
-			Arc::as_ptr(&aspect2) != (aspect as *const A)
+			!std::ptr::eq(Arc::as_ptr(&aspect2), aspect)
 		})
 	}
 }

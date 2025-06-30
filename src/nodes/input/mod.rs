@@ -152,7 +152,7 @@ pub fn process_input() {
 						a.handler_order
 							.lock()
 							.iter()
-							.any(|h| h.ptr_eq(&Arc::downgrade(&handler)))
+							.any(|h| h.ptr_eq(&Arc::downgrade(handler)))
 					})
 					// filter out methods without the proper alias
 					.filter_map(|m| {
@@ -168,7 +168,7 @@ pub fn process_input() {
 						a.set_enabled(true);
 					})
 					// serialize the data
-					.map(|(a, m)| (a.clone(), m.serialize(a.get_id(), &handler)))
+					.map(|(a, m)| (a.clone(), m.serialize(a.get_id(), handler)))
 					.unzip::<_, _, Vec<_>, Vec<_>>();
 				drop(ser_span);
 

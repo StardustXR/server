@@ -1,4 +1,6 @@
 #![allow(clippy::empty_docs)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::type_complexity)]
 mod core;
 mod nodes;
 mod objects;

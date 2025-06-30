@@ -329,9 +329,11 @@ impl SkHand {
 			*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 			let captured = self.capture_manager.capture.upgrade().is_some();
 			if captured && !self.captured {
-				materials.get_mut(&self.material).unwrap().base_color = Srgba::rgb(0., 1., 0.75).into();
+				materials.get_mut(&self.material).unwrap().base_color =
+					Srgba::rgb(0., 1., 0.75).into();
 			} else if self.captured && !captured {
-				materials.get_mut(&self.material).unwrap().base_color = Srgba::rgb(1., 1.0, 1.0).into();
+				materials.get_mut(&self.material).unwrap().base_color =
+					Srgba::rgb(1., 1.0, 1.0).into();
 			}
 			self.captured = captured;
 		}
