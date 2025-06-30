@@ -29,25 +29,7 @@ pub struct LinesNodePlugin;
 
 impl Plugin for LinesNodePlugin {
 	fn build(&self, app: &mut App) {
-		app.add_systems(Update, (build_line_mesh/* , update_visibillity */).chain());
-	}
-}
-
-fn update_visibillity(mut cmds: Commands) {
-	for lines in LINES_REGISTRY.get_valid_contents().into_iter() {
-		let Some(entity) = lines.entity.get().map(|e| **e) else {
-			continue;
-		};
-		match lines.spatial.node().map(|n| n.enabled()).unwrap_or(false) {
-			true => {
-				cmds.entity(entity)
-					.insert_recursive::<Children>(Visibility::Visible);
-			}
-			false => {
-				cmds.entity(entity)
-					.insert_recursive::<Children>(Visibility::Hidden);
-			}
-		}
+		app.add_systems(Update, build_line_mesh);
 	}
 }
 

@@ -33,7 +33,7 @@ impl Plugin for ModelNodePlugin {
 			PostUpdate,
 			(
 				gen_model_parts,
-				apply_materials, /* , update_visibillity */
+				apply_materials,
 			)
 				.chain(),
 		);
@@ -42,24 +42,6 @@ impl Plugin for ModelNodePlugin {
 
 #[derive(Component)]
 struct ModelNode(Weak<Model>);
-
-fn update_visibillity(mut cmds: Commands) {
-	for model in MODEL_REGISTRY.get_valid_contents().into_iter() {
-		let Some(entity) = model.bevy_scene_entity.get() else {
-			continue;
-		};
-		match model.spatial.node().map(|n| n.enabled()).unwrap_or(false) {
-			true => {
-				cmds.entity(entity.0)
-					.insert_recursive::<Children>(Visibility::Visible);
-			}
-			false => {
-				cmds.entity(entity.0)
-					.insert_recursive::<Children>(Visibility::Hidden);
-			}
-		}
-	}
-}
 
 fn load_models(
 	asset_server: Res<AssetServer>,

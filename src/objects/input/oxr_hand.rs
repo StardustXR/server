@@ -31,7 +31,7 @@ use super::{CaptureManager, get_sorted_handlers};
 pub struct HandPlugin;
 impl Plugin for HandPlugin {
 	fn build(&self, app: &mut App) {
-		app.add_systems(PreFrameWait, update_hands);
+		app.add_systems(PreFrameWait, update_hands.run_if(resource_exists::<Hands>));
 		app.add_systems(XrSessionCreated, create_trackers);
 		app.add_systems(XrPreDestroySession, destroy_trackers);
 		app.add_systems(PostUpdate, update_hand_material);

@@ -39,7 +39,7 @@ use bevy_mod_openxr::render::{OxrRenderPlugin, OxrWaitFrameSystem};
 use bevy_mod_openxr::resources::{OxrFrameState, OxrFrameWaiter, OxrSessionConfig};
 use bevy_mod_openxr::types::AppInfo;
 use bevy_mod_xr::camera::XrProjection;
-use bevy_mod_xr::session::{XrFirst, XrHandleEvents};
+use bevy_mod_xr::session::{XrFirst, XrHandleEvents, XrSessionPlugin};
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
 use core::entity_handle::EntityHandlePlugin;
@@ -271,7 +271,8 @@ fn bevy_loop(
 		.add(ScenePlugin)
 		.add(GltfPlugin::default())
 		.add(AudioPlugin::default())
-		.add(GizmoPlugin);
+		.add(GizmoPlugin)
+		.add(WindowPlugin::default());
 	let mut task_pool_plugin = TaskPoolPlugin::default();
 	// make tokio work
 	let handle = tokio::runtime::Handle::current();
@@ -298,8 +299,8 @@ fn bevy_loop(
 			.disable::<ScheduleRunnerPlugin>()
 			.add(FlatscreenInputPlugin);
 	}
-	app.add_plugins(
-		add_xr_plugins(plugins.add(WindowPlugin::default()))
+	app.add_plugins(if !args.flatscreen {
+		add_xr_plugins(plugins)
 			.set(OxrInitPlugin {
 				app_info: AppInfo {
 					name: "Stardust XR".into(),
@@ -328,8 +329,11 @@ fn bevy_loop(
 			.disable::<OxrPassthroughPlugin>()
 			// we don't do any action stuff that needs to integrate with the ecosystem
 			.disable::<OxrActionAttachingPlugin>()
-			.disable::<OxrActionSyncingPlugin>(),
-	);
+			.disable::<OxrActionSyncingPlugin>()
+	} else {
+		// enable a event
+		plugins.add(XrSessionPlugin { auto_handle: false })
+	});
 
 	app.add_plugins((
 		bevy_sk::hand::HandPlugin,
@@ -447,6 +451,4 @@ fn xr_step(world: &mut World) {
 	tick_internal_client();
 	#[cfg(feature = "wayland")]
 	wayland.update();
-	// drawable::draw(token);
-	// audio::update();
 }

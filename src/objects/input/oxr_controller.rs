@@ -60,7 +60,7 @@ impl Plugin for ControllerPlugin {
 		);
 		app.add_systems(XrPreDestroySession, destroy_spaces);
 		app.add_systems(Startup, setup.run_if(resource_exists::<OxrInstance>));
-		app.add_systems(PreFrameWait, update);
+		app.add_systems(PreFrameWait, update.run_if(resource_exists::<Controllers>));
 	}
 }
 
