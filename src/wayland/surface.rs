@@ -96,7 +96,11 @@ impl CoreSurface {
 
 		// Import all surface buffers into textures
 		if let Err(err) = import_surface_tree(renderer, &wl_surface) {
-			tracing::error!("Failed to import surface tree for surface {}: {}", wl_surface.id(), err);
+			tracing::error!(
+				"Failed to import surface tree for surface {}: {}",
+				wl_surface.id(),
+				err
+			);
 			return;
 		}
 

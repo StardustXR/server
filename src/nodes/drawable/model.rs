@@ -31,7 +31,11 @@ impl Plugin for ModelNodePlugin {
 		app.add_systems(Update, load_models);
 		app.add_systems(
 			PostUpdate,
-			(gen_model_parts, apply_materials/* , update_visibillity */).chain(),
+			(
+				gen_model_parts,
+				apply_materials, /* , update_visibillity */
+			)
+				.chain(),
 		);
 	}
 }
@@ -448,8 +452,7 @@ impl Material {
 				.occlusion_texture
 				.as_ref()
 				.map(|p| asset_server.load(p.as_path())),
-			..Default::default()
-			// spherical_harmonics: bevy_sk::skytext::SPHERICAL_HARMONICS_HANDLE,
+			..Default::default() // spherical_harmonics: bevy_sk::skytext::SPHERICAL_HARMONICS_HANDLE,
 		}
 	}
 }

@@ -1,12 +1,12 @@
+pub mod bevy_channel;
 pub mod client;
 pub mod client_state;
+pub mod color;
 pub mod delta;
 pub mod destroy_queue;
+pub mod entity_handle;
 pub mod error;
 pub mod registry;
 pub mod resource;
 pub mod scenegraph;
 pub mod task;
-pub mod color;
-pub mod entity_handle;
-pub mod bevy_channel;

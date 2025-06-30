@@ -1,12 +1,14 @@
 use super::{Line, LinesAspect};
 use crate::{
+	BevyMaterial,
 	core::{
 		client::Client, color::ColorConvert, entity_handle::EntityHandle, error::Result,
 		registry::Registry,
 	},
 	nodes::{
-		spatial::{Spatial, SpatialNode}, Node
-	}, BevyMaterial,
+		Node,
+		spatial::{Spatial, SpatialNode},
+	},
 };
 use bevy::{
 	asset::RenderAssetUsages,

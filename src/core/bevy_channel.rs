@@ -29,4 +29,3 @@ impl<T: Send + Sync + 'static> BevyChannelReader<T> {
 		}
 	}
 }
-
