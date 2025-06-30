@@ -51,8 +51,8 @@ use nodes::drawable::model::ModelNodePlugin;
 use nodes::drawable::text::TextNodePlugin;
 use nodes::spatial::SpatialNodePlugin;
 use objects::input::mouse_pointer::FlatscreenInputPlugin;
-use objects::input::sk_controller::ControllerPlugin;
-use objects::input::sk_hand::HandPlugin;
+use objects::input::oxr_controller::ControllerPlugin;
+use objects::input::oxr_hand::HandPlugin;
 use objects::play_space::PlaySpacePlugin;
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use session::{launch_start, save_session};
@@ -101,10 +101,6 @@ struct CliArgs {
 	/// Restore the session with the given ID (or `latest`), ignoring the startup script. Sessions are stored in directories at `~/.local/state/stardust/`.
 	#[clap(id = "SESSION_ID", long = "restore", action)]
 	restore: Option<String>,
-	/// this should fix nvidia issues, it'll only help on driver 565+
-	/// and only if running under wayland, probably
-	#[clap(long)]
-	nvidia: bool,
 }
 
 pub type BevyMaterial = StandardMaterial;
@@ -141,20 +137,6 @@ async fn main() -> Result<AppExit, JoinError> {
 	registry.with(log_layer).init();
 
 	let cli_args = CliArgs::parse();
-
-	if cli_args.nvidia && !cli_args.flatscreen {
-		// Only call this while singlethreaded since it can/will cause raceconditions with other
-		// functions reading or writing from the env
-		unsafe {
-			std::env::set_var("__GLX_VENDOR_LIBRARY_NAME", "mesa");
-			std::env::set_var(
-				"__EGL_VENDOR_LIBRARY_FILENAMES",
-				"/usr/share/glvnd/egl_vendor.d/50_mesa.json",
-			);
-			std::env::set_var("MESA_LOADER_DRIVER_OVERRIDE", "zink");
-			std::env::set_var("GALLIUM_DRIVER", "zink");
-		}
-	}
 
 	let socket_path =
 		server::get_free_socket_path().expect("Unable to find a free stardust socket path");

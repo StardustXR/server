@@ -229,8 +229,8 @@ fn setup(instance: Res<OxrInstance>, connection: Res<DbusConnection>, mut cmds: 
 		set,
 	};
 	let controllers = Controllers {
-		left: SkController::new(&connection, HandSide::Left).unwrap(),
-		right: SkController::new(&connection, HandSide::Right).unwrap(),
+		left: OxrControllerInput::new(&connection, HandSide::Left).unwrap(),
+		right: OxrControllerInput::new(&connection, HandSide::Right).unwrap(),
 	};
 	cmds.insert_resource(controllers);
 	cmds.insert_resource(actions);
@@ -256,11 +256,11 @@ struct Actions {
 }
 #[derive(Resource)]
 struct Controllers {
-	left: SkController,
-	right: SkController,
+	left: OxrControllerInput,
+	right: OxrControllerInput,
 }
 
-pub struct SkController {
+pub struct OxrControllerInput {
 	object_handle: ObjectHandle<SpatialRef>,
 	input: Arc<InputMethod>,
 	side: HandSide,
@@ -271,7 +271,7 @@ pub struct SkController {
 	tracked: ObjectHandle<Tracked>,
 	space: Option<XrSpace>,
 }
-impl SkController {
+impl OxrControllerInput {
 	fn new(connection: &Connection, side: HandSide) -> Result<Self> {
 		let path = "/org/stardustxr/Controller/".to_string()
 			+ match side {
@@ -290,7 +290,7 @@ impl SkController {
 			tip,
 			Datamap::from_typed(ControllerDatamap::default())?,
 		)?;
-		Ok(SkController {
+		Ok(OxrControllerInput {
 			object_handle,
 			input,
 			side,

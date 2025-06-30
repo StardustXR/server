@@ -1,7 +1,7 @@
 pub mod eye_pointer;
 pub mod mouse_pointer;
-pub mod sk_controller;
-pub mod sk_hand;
+pub mod oxr_controller;
+pub mod oxr_hand;
 
 use crate::nodes::{
 	fields::{Field, FieldTrait, Ray},

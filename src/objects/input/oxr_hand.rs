@@ -62,7 +62,7 @@ fn update_hands(
 		});
 		return;
 	};
-	let get_joints = |hand: &mut SkHand| -> Option<openxr::HandJointLocations> {
+	let get_joints = |hand: &mut OxrHandInput| -> Option<openxr::HandJointLocations> {
 		let Some(tracker) = hand.tracker.as_ref() else {
 			hand.input.spatial.node().unwrap().set_enabled(false);
 			let handle = hand.tracked.clone();
@@ -148,8 +148,8 @@ fn setup(
 		}
 	});
 	cmds.insert_resource(Hands {
-		left: SkHand::new(&connection, HandSide::Left, &mut materials).unwrap(),
-		right: SkHand::new(&connection, HandSide::Right, &mut materials).unwrap(),
+		left: OxrHandInput::new(&connection, HandSide::Left, &mut materials).unwrap(),
+		right: OxrHandInput::new(&connection, HandSide::Right, &mut materials).unwrap(),
 	});
 }
 
@@ -164,8 +164,8 @@ fn convert_joint(joint: HandJointLocation) -> Joint {
 
 #[derive(Resource)]
 struct Hands {
-	left: SkHand,
-	right: SkHand,
+	left: OxrHandInput,
+	right: OxrHandInput,
 }
 
 #[derive(Default, Deserialize, Serialize)]
@@ -174,7 +174,7 @@ struct HandDatamap {
 	grab_strength: f32,
 }
 
-pub struct SkHand {
+pub struct OxrHandInput {
 	_node: OwnedNode,
 	palm_spatial: Arc<Spatial>,
 	palm_object: ObjectHandle<SpatialRef>,
@@ -187,7 +187,7 @@ pub struct SkHand {
 	captured: bool,
 	material: Handle<BevyMaterial>,
 }
-impl SkHand {
+impl OxrHandInput {
 	pub fn new(
 		connection: &Connection,
 		side: HandSide,
@@ -225,7 +225,7 @@ impl SkHand {
 			perceptual_roughness: 1.0,
 			..default()
 		});
-		Ok(SkHand {
+		Ok(OxrHandInput {
 			_node: node,
 			palm_spatial,
 			palm_object,

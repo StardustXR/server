@@ -10,8 +10,8 @@ use crate::{
 };
 use glam::{Mat4, vec3};
 use input::{
-	eye_pointer::EyePointer, mouse_pointer::MousePointer, sk_controller::SkController,
-	sk_hand::SkHand,
+	eye_pointer::EyePointer, mouse_pointer::MousePointer, oxr_controller::OxrControllerInput,
+	oxr_hand::OxrHandInput,
 };
 use parking_lot::RwLock;
 use play_space::PlaySpaceBounds;
