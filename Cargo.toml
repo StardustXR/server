@@ -80,8 +80,6 @@ tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
 
 # bevy
 bevy = { version = "0.16", default-features = false, features = [
-	"animation",
-	"bevy_animation",
 	# default features
 	"bevy_asset",
 	"bevy_audio",
