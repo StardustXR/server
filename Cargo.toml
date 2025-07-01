@@ -79,13 +79,40 @@ mint = "0.5.9"
 tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
 
 # bevy
-bevy = { version = "0.16", features = ["wayland", "mp3", "wav", "animation", "qoi", "png", "hdr", "jpeg"] }
+bevy = { version = "0.16", default-features = false, features = [
+	"animation",
+	"bevy_animation",
+	# default features
+	"bevy_asset",
+	"bevy_audio",
+	"bevy_color",
+	"bevy_core_pipeline",
+	"bevy_gizmos",
+	"bevy_gltf",
+	"bevy_log",
+	"bevy_pbr",
+	"bevy_render",
+	"bevy_window",
+	"bevy_winit",
+	"std",
+	"x11",
+	# non default features we need
+	"wayland",
+	"mp3",
+	"wav",
+	"qoi",
+	"png",
+	"hdr",
+	"jpeg",
+] }
 bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"
 # bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
 bevy_sk = { git = "https://github.com/Schmarni-Dev/bevy_sk", branch = "fix_mat_stuff" }
-# bevy_sk.path = "../bevy_sk"
-bevy-mesh-text-3d.git = "https://github.com/terhechte/bevy-mesh-text-3d"
+
+# bevy-mesh-text-3d.git = "https://github.com/terhechte/bevy-mesh-text-3d"
+# use my fork until my pr to use minimal bevy features was merged
+bevy-mesh-text-3d.git = "https://github.com/Schmarni-Dev/bevy-mesh-text-3d"
 
 openxr = "0.19"
 

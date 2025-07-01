@@ -26,7 +26,6 @@ use bevy::pbr::PbrPlugin;
 use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 use bevy::render::{RenderDebugFlags, RenderPlugin};
 use bevy::scene::ScenePlugin;
-use bevy::text::FontLoader;
 use bevy::winit::{WakeUp, WinitPlugin};
 use bevy_mod_openxr::action_set_attaching::OxrActionAttachingPlugin;
 use bevy_mod_openxr::action_set_syncing::OxrActionSyncingPlugin;
@@ -351,7 +350,6 @@ fn bevy_loop(
 		// bevy_sk::skytext::SphericalHarmonicsPlugin,
 	));
 	// app.add_plugins(HandGizmosPlugin);
-	app.init_asset::<Font>().init_asset_loader::<FontLoader>();
 	app.world_mut().resource_mut::<AmbientLight>().brightness = 2000.0;
 	if let Some(priority) = args.overlay_priority {
 		app.insert_resource(OxrOverlaySettings {
