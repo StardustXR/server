@@ -23,6 +23,7 @@ use bevy::gizmos::GizmoPlugin;
 use bevy::gltf::GltfPlugin;
 use bevy::input::InputPlugin;
 use bevy::pbr::PbrPlugin;
+use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 use bevy::render::{RenderDebugFlags, RenderPlugin};
 use bevy::scene::ScenePlugin;
 use bevy::text::FontLoader;
@@ -255,7 +256,13 @@ fn bevy_loop(
 		.add(TerminalCtrlCHandlerPlugin)
 		// bevy_mod_openxr will replace this, TODO: figure out how to mix this with
 		// bevy-dmabuf
-		.add(RenderPlugin::default())
+		.add(RenderPlugin {
+			render_creation: RenderCreation::Automatic(WgpuSettings {
+				backends: Some(Backends::VULKAN),
+				..Default::default()
+			}),
+			..Default::default()
+		})
 		.add(ImagePlugin::default())
 		.add(CorePipelinePlugin)
 		// theoretically we shouldn't need this because of bevy_sk, but everything is tangled in
