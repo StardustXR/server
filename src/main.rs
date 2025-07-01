@@ -277,6 +277,7 @@ fn bevy_loop(
 		// required for gltf
 		.add(ScenePlugin)
 		.add(GltfPlugin::default())
+		.add(AnimationPlugin)
 		.add(AudioPlugin::default())
 		.add(GizmoPlugin)
 		.add(WindowPlugin::default());

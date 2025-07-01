@@ -79,7 +79,7 @@ mint = "0.5.9"
 tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
 
 # bevy
-bevy = { version = "0.16", features = ["wayland", "mp3", "wav"] }
+bevy = { version = "0.16", features = ["wayland", "mp3", "wav", "animation", "qoi", "png", "hdr", "jpeg"] }
 bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"
 # bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
