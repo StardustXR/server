@@ -344,10 +344,10 @@ fn bevy_loop(
 
 	app.add_plugins((
 		bevy_sk::hand::HandPlugin,
-		// bevy_sk::vr_materials::SkMaterialPlugin {
-		// 	replace_standard_material: false,
-		// },
-		// bevy_sk::skytext::SphericalHarmonicsPlugin,
+		bevy_sk::vr_materials::SkMaterialPlugin {
+			replace_standard_material: true,
+		},
+		bevy_sk::skytext::SphericalHarmonicsPlugin,
 	));
 	// app.add_plugins(HandGizmosPlugin);
 	app.world_mut().resource_mut::<AmbientLight>().brightness = 2000.0;

@@ -80,7 +80,6 @@ tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
 
 # bevy
 bevy = { version = "0.16", default-features = false, features = [
-	# default features
 	"bevy_asset",
 	"bevy_audio",
 	"bevy_color",
@@ -94,7 +93,6 @@ bevy = { version = "0.16", default-features = false, features = [
 	"bevy_winit",
 	"std",
 	"x11",
-	# non default features we need
 	"wayland",
 	"mp3",
 	"wav",
@@ -102,11 +100,12 @@ bevy = { version = "0.16", default-features = false, features = [
 	"png",
 	"hdr",
 	"jpeg",
+	"tonemapping_luts",
 ] }
 bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"
 # bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
-bevy_sk = { git = "https://github.com/Schmarni-Dev/bevy_sk", branch = "fix_mat_stuff" }
+bevy_sk = { git = "https://github.com/technobaboo/bevy_sk", branch = "stochastic" }
 
 # bevy-mesh-text-3d.git = "https://github.com/terhechte/bevy-mesh-text-3d"
 # use my fork until my pr to use minimal bevy features was merged

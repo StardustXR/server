@@ -1346,7 +1346,7 @@ dependencies = [
 [[package]]
 name = "bevy_sk"
 version = "0.1.0"
-source = "git+https://github.com/Schmarni-Dev/bevy_sk?branch=fix_mat_stuff#744e9bb442a690b1abc15f50ba2655228bd84eea"
+source = "git+https://github.com/technobaboo/bevy_sk?branch=stochastic#ff88e5be78a2cab3fffaa42f5d75abc9bb55df6d"
 dependencies = [
  "bevy",
  "bevy_mod_xr",
@@ -1598,7 +1598,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -1618,7 +1618,7 @@ dependencies = [
  "bitflags 2.9.1",
  "cexpr",
  "clang-sys",
- "itertools 0.13.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -3407,15 +3407,6 @@ name = "itertools"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1c173a5686ce8bfa551b3563d0c2170bf24ca44da99c7ca4bfdab5418c3fe57"
-dependencies = [
- "either",
-]
-
-[[package]]
-name = "itertools"
-version = "0.13.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "413ee7dfc52ee1a4949ceeb7dbc8a33f2d6c088194d9f922fb8318faf1f01186"
 dependencies = [
  "either",
 ]
