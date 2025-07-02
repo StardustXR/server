@@ -219,10 +219,10 @@ impl OxrHandInput {
 		let input = InputMethod::add_to(&node.0, hand, datamap)?;
 
 		let material = materials.add(BevyMaterial {
-			base_color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
+			color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
 			alpha_mode: AlphaMode::Blend,
-			base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
-			perceptual_roughness: 1.0,
+			diffuse_texture: Some(GRADIENT_TEXTURE_HANDLE),
+			roughness: 1.0,
 			..default()
 		});
 		Ok(OxrHandInput {
@@ -329,10 +329,10 @@ impl OxrHandInput {
 			*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 			let captured = self.capture_manager.capture.upgrade().is_some();
 			if captured && !self.captured {
-				materials.get_mut(&self.material).unwrap().base_color =
+				materials.get_mut(&self.material).unwrap().color =
 					Srgba::rgb(0., 1., 0.75).into();
 			} else if self.captured && !captured {
-				materials.get_mut(&self.material).unwrap().base_color =
+				materials.get_mut(&self.material).unwrap().color =
 					Srgba::rgb(1., 1.0, 1.0).into();
 			}
 			self.captured = captured;

@@ -92,10 +92,10 @@ fn spawn_text(
 				text: text_string,
 				material: material_registry.get_handle(
 					BevyMaterial {
-						base_color: style.color.to_bevy(),
-						emissive: Color::WHITE.to_linear(),
+						color: style.color.to_bevy(),
+						emission_factor: Color::WHITE,
 						metallic: 0.0,
-						perceptual_roughness: 1.0,
+						roughness: 1.0,
 						// If alpha is supported on text we need to change this
 						alpha_mode: AlphaMode::Opaque,
 						double_sided: false,

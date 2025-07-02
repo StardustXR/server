@@ -154,8 +154,8 @@ fn build_line_mesh(
 					Name::new("LinesNode"),
 					SpatialNode(Arc::downgrade(&lines.spatial)),
 					MeshMaterial3d(materials.add(BevyMaterial {
-						base_color: Color::WHITE,
-						perceptual_roughness: 1.0,
+						color: Color::WHITE,
+						roughness: 1.0,
 						alpha_mode: AlphaMode::Opaque,
 						..default()
 					})),
