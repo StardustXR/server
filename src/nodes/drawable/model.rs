@@ -10,8 +10,11 @@ use crate::nodes::Node;
 use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::{Spatial, SpatialNode};
 use crate::{BevyMaterial, bail};
+use bevy::asset::{load_internal_asset, weak_handle};
+use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
+use bevy::render::render_resource::{AsBindGroup, ShaderRef};
 use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
@@ -19,24 +22,48 @@ use stardust_xr::values::ResourceID;
 use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 
 static LOAD_MODEL: BevyChannel<(Arc<Model>, PathBuf)> = BevyChannel::new();
+
+type HoldoutMaterial = ExtendedMaterial<BevyMaterial, HoldoutExtension>;
+const HOLDOUT_SHADER_HANDLE: Handle<Shader> = weak_handle!("92b481b7-d3da-4188-b252-2335ec814ee2");
+const HOLDOUT_MATERIAL_HANDLE: Handle<HoldoutMaterial> =
+	weak_handle!("d56f1d62-9121-434b-a34f-9f0bbd6b3390");
 
 pub struct ModelNodePlugin;
 impl Plugin for ModelNodePlugin {
 	fn build(&self, app: &mut App) {
 		LOAD_MODEL.init(app);
+
+		load_internal_asset!(
+			app,
+			HOLDOUT_SHADER_HANDLE,
+			"holdout.wgsl",
+			Shader::from_wgsl
+		);
+		app.add_plugins(MaterialPlugin::<HoldoutMaterial>::default());
+		app.world_mut()
+			.resource_mut::<Assets<HoldoutMaterial>>()
+			.insert(&HOLDOUT_MATERIAL_HANDLE, HoldoutMaterial::default());
+
 		app.init_resource::<MaterialRegistry>();
 		app.add_systems(Update, load_models);
-		app.add_systems(
-			PostUpdate,
-			(
-				gen_model_parts,
-				apply_materials,
-			)
-				.chain(),
-		);
+		app.add_systems(PostUpdate, (gen_model_parts, apply_materials).chain());
+	}
+}
+
+// No extra data needed for a simple holdout
+#[derive(Default, Asset, AsBindGroup, TypePath, Debug, Clone)]
+pub struct HoldoutExtension {}
+impl MaterialExtension for HoldoutExtension {
+	fn fragment_shader() -> ShaderRef {
+		HOLDOUT_SHADER_HANDLE.into()
+	}
+
+	fn alpha_mode() -> Option<AlphaMode> {
+		Some(AlphaMode::Opaque)
 	}
 }
 
@@ -64,6 +91,7 @@ fn load_models(
 }
 
 fn apply_materials(
+	mut commands: Commands,
 	mut query: Query<&mut MeshMaterial3d<BevyMaterial>>,
 	mut material_registry: ResMut<MaterialRegistry>,
 	asset_server: Res<AssetServer>,
@@ -75,12 +103,21 @@ fn apply_materials(
 		.filter_map(|p| p.parts.get())
 		.flatten()
 	{
-		let Ok(mut mesh_mat) = query.get_mut(**model_part.mesh_entity.get().unwrap()) else {
+		let entity = **model_part.mesh_entity.get().unwrap();
+		let Ok(mut mesh_mat) = query.get_mut(entity) else {
 			continue;
 		};
-		if let Some(material) = model_part.pending_material_replacement.lock().take() {
-			let pbr_mat = material.to_pbr_mat(&asset_server);
-			let handle = material_registry.get_handle(pbr_mat, &mut materials);
+		if model_part.holdout.load(Ordering::Relaxed) {
+			commands
+				.entity(entity)
+				.remove::<MeshMaterial3d<BevyMaterial>>()
+				.insert(MeshMaterial3d(HOLDOUT_MATERIAL_HANDLE));
+			continue;
+		}
+		if let Some(material) = model_part.pending_material_replacement.lock().take()
+			&& let Some(material) = materials.get(&material)
+		{
+			let handle = material_registry.get_handle(material.clone(), &mut materials);
 			mesh_mat.0 = handle;
 		}
 		for (param_name, param) in model_part.pending_material_parameters.lock().drain() {
@@ -157,6 +194,7 @@ fn gen_model_parts(
 									_model: Arc::downgrade(&model),
 									pending_material_parameters: Mutex::default(),
 									pending_material_replacement: Mutex::default(),
+									holdout: AtomicBool::new(false),
 									aliases: AliasList::default(),
 									bounds: OnceLock::new(),
 								});
@@ -393,50 +431,6 @@ impl MaterialParameter {
 	}
 }
 
-pub struct Material {
-	pub color: Color,
-	pub emission_factor: Color,
-	pub metallic: f32,
-	pub roughness: f32,
-	pub alpha_mode: AlphaMode,
-	pub double_sided: bool,
-
-	pub diffuse_texture: Option<PathBuf>,
-	pub emission_texture: Option<PathBuf>,
-	pub metal_texture: Option<PathBuf>,
-	pub occlusion_texture: Option<PathBuf>,
-}
-
-impl Material {
-	fn to_pbr_mat(&self, asset_server: &AssetServer) -> BevyMaterial {
-		BevyMaterial {
-			color: self.color,
-			emission_factor: self.emission_factor,
-			metallic: self.metallic,
-			roughness: self.roughness,
-			alpha_mode: self.alpha_mode,
-			double_sided: self.double_sided,
-			diffuse_texture: self
-				.diffuse_texture
-				.as_ref()
-				.map(|p| asset_server.load(p.as_path())),
-			emission_texture: self
-				.emission_texture
-				.as_ref()
-				.map(|p| asset_server.load(p.as_path())),
-			metal_texture: self
-				.metal_texture
-				.as_ref()
-				.map(|p| asset_server.load(p.as_path())),
-			occlusion_texture: self
-				.occlusion_texture
-				.as_ref()
-				.map(|p| asset_server.load(p.as_path())),
-			..Default::default() // spherical_harmonics: bevy_sk::skytext::SPHERICAL_HARMONICS_HANDLE,
-		}
-	}
-}
-
 pub struct ModelPart {
 	entity: OnceLock<EntityHandle>,
 	mesh_entity: OnceLock<EntityHandle>,
@@ -444,12 +438,13 @@ pub struct ModelPart {
 	space: Arc<Spatial>,
 	_model: Weak<Model>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
-	pending_material_replacement: Mutex<Option<Material>>,
+	pending_material_replacement: Mutex<Option<Handle<BevyMaterial>>>,
+	holdout: AtomicBool,
 	aliases: AliasList,
 	bounds: OnceLock<Aabb>,
 }
 impl ModelPart {
-	pub fn replace_material(&self, replacement: Material) {
+	pub fn replace_material(&self, replacement: Handle<BevyMaterial>) {
 		self.pending_material_replacement
 			.lock()
 			.replace(replacement);
@@ -464,18 +459,7 @@ impl ModelPartAspect for ModelPart {
 	#[doc = "Set this model part's material to one that cuts a hole in the world. Often used for overlays/passthrough where you want to show the background through an object."]
 	fn apply_holdout_material(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
 		let model_part = node.get_aspect::<ModelPart>()?;
-		model_part.replace_material(Material {
-			color: Color::BLACK.with_alpha(0.0),
-			emission_factor: Color::BLACK,
-			metallic: 0.0,
-			roughness: 1.0,
-			alpha_mode: AlphaMode::Opaque,
-			double_sided: false,
-			diffuse_texture: None,
-			emission_texture: None,
-			metal_texture: None,
-			occlusion_texture: None,
-		});
+		model_part.holdout.store(true, Ordering::Relaxed);
 		Ok(())
 	}
 
@@ -584,6 +568,7 @@ impl Model {
 					_model: Arc::downgrade(self),
 					pending_material_parameters: Mutex::default(),
 					pending_material_replacement: Mutex::default(),
+					holdout: AtomicBool::new(false),
 					aliases: AliasList::default(),
 					bounds: OnceLock::new(),
 				});

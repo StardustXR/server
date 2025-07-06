@@ -1,4 +1,4 @@
-name: Build
+name: CI
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - "*"
 
 jobs:
-  build_and_package:
+  check:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,7 +19,9 @@ jobs:
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: stable
+          toolchain: 1.85.0
+          override: true
+          components: rustfmt, clippy
 
       - name: Build server
         run: cargo build --release

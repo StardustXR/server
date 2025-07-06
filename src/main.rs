@@ -44,6 +44,7 @@ use bevy_sk::vr_materials::PbrMaterial;
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
 use core::entity_handle::EntityHandlePlugin;
+use core::graphics_info::GraphicsInfo;
 use core::task;
 use directories::ProjectDirs;
 use nodes::audio::AudioNodePlugin;
@@ -68,6 +69,7 @@ use tokio::task::JoinError;
 use tracing::metadata::LevelFilter;
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use wayland::Wayland;
 use zbus::Connection;
 use zbus::fdo::ObjectManager;
 
@@ -187,6 +189,8 @@ async fn main() -> Result<AppExit, JoinError> {
 	let object_registry = ObjectRegistry::new(&dbus_connection).await.expect(
 		"Couldn't make the object registry to find all objects with given interfaces in d-bus",
 	);
+
+	let _wayland = Wayland::new(None).expect("Couldn't create Wayland instance");
 
 	let ready_notifier = Arc::new(Notify::new());
 	let io_loop = tokio::task::spawn_blocking({
@@ -422,7 +426,9 @@ fn update_cameras(mut camera: Query<&mut Projection, (With<Camera3d>,)>) {
 fn xr_step(world: &mut World) {
 	// camera::update(token);
 	#[cfg(feature = "wayland")]
-	wayland.frame_event();
+	Wayland::early_frame(&mut GraphicsInfo {
+		_images: world.resource_mut::<Assets<Image>>(),
+	});
 	destroy_queue::clear();
 
 	// update things like the Xr input methods
@@ -457,5 +463,7 @@ fn xr_step(world: &mut World) {
 
 	tick_internal_client();
 	#[cfg(feature = "wayland")]
-	wayland.update();
+	world.resource_scope::<Assets<BevyMaterial>, _>(|world, mut materials| {
+		Wayland::update_graphics(&mut materials, &mut world.resource_mut::<Assets<Image>>());
+	});
 }

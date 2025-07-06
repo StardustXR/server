@@ -1,6 +1,6 @@
 [package]
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.88"
 name = "stardust-xr-server"
 version = "0.45.0"
 authors = ["Nova King <technobaboo@proton.me>"]
@@ -21,8 +21,16 @@ name = "stardust-xr-server"
 path = "src/main.rs"
 
 [features]
-default = []
-wayland = ["dep:smithay", "dep:wayland-scanner", "dep:wayland-backend"]
+default = ["wayland"]
+wayland = [
+	"dep:cluFlock",
+	"dep:waynest",
+	"dep:tokio-stream",
+	"dep:memmap2",
+	"dep:drm-fourcc",
+	"dep:memfd",
+]
+dmabuf = []
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy", "bevy/trace_tracy", "bevy/trace"]
 bevy_debugging = ["bevy/bevy_remote", "bevy/track_location"]
@@ -63,7 +71,7 @@ dashmap = "6.1.0"
 color-eyre = { version = "0.6.3", default-features = false }
 clap = { version = "4.5.13", features = ["derive"] }
 console-subscriber = { version = "0.4.0", optional = true }
-thiserror = "2.0.9"
+thiserror = "2.0.11"
 tracing = { version = "0.1.40", features = ["release_max_level_warn"] }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 tracing-tracy = { version = "0.11.1", optional = true }
@@ -118,21 +126,25 @@ input-event-codes = "6.2.0"
 zbus = { version = "5.0.0", default-features = false, features = ["tokio"] }
 directories = "5.0.1"
 xkbcommon-rs = "0.1.0"
-
-# wayland
-wayland-backend = { version = "0.3.7", optional = true, default-features = false }
+rustix = "1.0.7"
 wayland-scanner = { version = "0.31.4", optional = true }
 cosmic-text = "0.14.2"
 
-
-[dependencies.smithay]
-git = "https://github.com/smithay/smithay.git"
-default-features = false
-features = ["desktop", "backend_drm", "renderer_gl", "wayland_frontend"]
-optional = true
+# Wayland
+cluFlock = { version = "1.2.7", optional = true } # for the lockfile checking
+waynest = { git = "https://github.com/verdiwm/waynest.git", features = [
+	"server",
+	"stable",
+	"tracing",
+], default-features = false, optional = true }
+tokio-stream = { version = "0.1.17", optional = true }
+memmap2 = { version = "0.9.5", optional = true }
+drm-fourcc = { version = "2.2.0", optional = true }
+memfd = { version = "0.6.4", optional = true }
+libc = "0.2.172"
+nix = "0.30.1"
 
 [dependencies.stardust-xr]
 workspace = true
-
 [dependencies.stardust-xr-server-codegen]
 path = "codegen"

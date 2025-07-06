@@ -303,7 +303,8 @@ impl MousePointer {
 					let handler = handler.clone();
 					let dbus_connection = dbus_connection.clone();
 					join_set.spawn(async move {
-						timeout(Duration::from_millis(1), async {
+						// TODO: refactor the whole thing so picking the keyboardhandler to send input to is separate from sending
+						timeout(Duration::from_millis(10), async {
 							let field_ref = handler
 								.to_typed_proxy::<FieldRefProxy>(&dbus_connection)
 								.await

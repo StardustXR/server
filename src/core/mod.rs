@@ -6,6 +6,7 @@ pub mod delta;
 pub mod destroy_queue;
 pub mod entity_handle;
 pub mod error;
+pub mod graphics_info;
 pub mod registry;
 pub mod resource;
 pub mod scenegraph;
