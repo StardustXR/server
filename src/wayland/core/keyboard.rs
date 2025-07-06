@@ -7,8 +7,9 @@ use memfd::MemfdOptions;
 use slotmap::{DefaultKey, KeyData};
 use std::{
 	collections::HashSet,
+	io::Write,
 	os::{
-		fd::{AsRawFd, IntoRawFd},
+		fd::IntoRawFd,
 		unix::io::{FromRawFd, OwnedFd},
 	},
 	sync::{Arc, Weak},
@@ -89,18 +90,13 @@ impl Keyboard {
 	}
 
 	async fn send_keymap(&self, client: &mut Client, keymap: &[u8]) -> Result<()> {
-		let file = MemfdOptions::default()
+		let mut file = MemfdOptions::default()
 			.create("stardust-keymap")
 			.map_err(|e| waynest::server::Error::Custom(e.to_string()))?
 			.into_file();
 		file.set_len(keymap.len() as u64)?;
-		// file.write_all(keymap)?;
-		// file.flush()?;
-
-		// let map = libc::mmap(addr, len, prot, flags, fd, offset)
-
-		let mut map = unsafe { memmap2::MmapMut::map_mut(file.as_raw_fd()) }?;
-		map.copy_from_slice(keymap);
+		file.write_all(keymap)?;
+		file.flush()?;
 
 		let fd = unsafe { OwnedFd::from_raw_fd(file.into_raw_fd()) };
 
@@ -131,7 +127,6 @@ impl Keyboard {
 			let mut old_keymap_id = self.current_keymap_id.lock().await;
 
 			if *old_keymap_id != keymap_id {
-				// println!("Updating keymap to {keymap_id}");
 				let keymap_key = DefaultKey::from(KeyData::from_ffi(keymap_id));
 
 				// Get keymap data and drop the lock immediately

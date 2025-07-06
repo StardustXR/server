@@ -3464,7 +3464,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.2",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -6016,7 +6016,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f9612d9503675b07b244922ea6f6f3cdd88c43add1b3498084613fc88cdf69d"
 dependencies = [
  "cc",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
@@ -6389,7 +6389,7 @@ dependencies = [
 [[package]]
 name = "waynest"
 version = "0.0.25"
-source = "git+https://github.com/verdiwm/waynest.git#418768890e3cda975caee6ce54d35284f6f6d627"
+source = "git+https://github.com/verdiwm/waynest.git#4d52d23690b19eb1ecc742b99377acca25765ad0"
 dependencies = [
  "async-trait",
  "bitflags 2.9.1",
@@ -6407,7 +6407,7 @@ dependencies = [
 [[package]]
 name = "waynest-macros"
 version = "0.0.25"
-source = "git+https://github.com/verdiwm/waynest.git#418768890e3cda975caee6ce54d35284f6f6d627"
+source = "git+https://github.com/verdiwm/waynest.git#4d52d23690b19eb1ecc742b99377acca25765ad0"
 dependencies = [
  "quote",
  "syn 2.0.104",
@@ -6565,7 +6565,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
