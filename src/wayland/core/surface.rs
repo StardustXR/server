@@ -141,7 +141,7 @@ impl Surface {
 			materials
 				.get_mut(material)
 				.unwrap()
-				.diffuse_texture
+				.base_color_texture
 				.replace(new_tex);
 
 			// For SHM buffers, we can release immediately after copying to GPU

@@ -40,7 +40,6 @@ use bevy_mod_openxr::resources::{OxrFrameState, OxrFrameWaiter, OxrSessionConfig
 use bevy_mod_openxr::types::AppInfo;
 use bevy_mod_xr::camera::XrProjection;
 use bevy_mod_xr::session::{XrFirst, XrHandleEvents, XrSessionPlugin};
-use bevy_sk::vr_materials::PbrMaterial;
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
 use core::entity_handle::EntityHandlePlugin;
@@ -106,7 +105,7 @@ struct CliArgs {
 	restore: Option<String>,
 }
 
-pub type BevyMaterial = PbrMaterial;
+pub type BevyMaterial = StandardMaterial;
 
 static STARDUST_INSTANCE: OnceLock<String> = OnceLock::new();
 

@@ -275,10 +275,10 @@ impl HashedPbrMaterial {
 		Self(hasher.finish())
 	}
 	fn hash_pbr_mat<H: Hasher>(mat: &BevyMaterial, state: &mut H) {
-		hash_color(mat.color, state);
-		hash_color(mat.emission_factor.into(), state);
+		hash_color(mat.base_color, state);
+		hash_color(mat.emissive.into(), state);
 		state.write_u32(mat.metallic.to_bits());
-		state.write_u32(mat.roughness.to_bits());
+		state.write_u32(mat.perceptual_roughness.to_bits());
 		match mat.alpha_mode {
 			AlphaMode::Opaque => state.write_u8(0),
 			AlphaMode::Mask(v) => {
@@ -292,9 +292,9 @@ impl HashedPbrMaterial {
 			AlphaMode::Multiply => state.write_u8(6),
 		}
 		state.write_u8(mat.double_sided as u8);
-		mat.diffuse_texture.hash(state);
-		mat.emission_texture.hash(state);
-		mat.metal_texture.hash(state);
+		mat.base_color_texture.hash(state);
+		mat.emissive_texture.hash(state);
+		mat.metallic_roughness_texture.hash(state);
 		mat.occlusion_texture.hash(state);
 		// should always be the same, TODO: make the spherical harmonics buffer a per mesh instance thing
 		// mat.spherical_harmonics.hash(state);
@@ -388,7 +388,7 @@ impl MaterialParameter {
 			MaterialParameter::Float(val) => {
 				match parameter_name {
 					"metallic" => mat.metallic = *val,
-					"roughness" => mat.roughness = *val,
+					"roughness" => mat.perceptual_roughness = *val,
 					// we probably don't want to expose tex_scale
 					// "tex_scale" => mat.tex_scale = *val,
 					v => {
@@ -403,8 +403,8 @@ impl MaterialParameter {
 				// nothing uses a Vec3
 			}
 			MaterialParameter::Color(color) => match parameter_name {
-				"color" => mat.color = color.to_bevy(),
-				"emission_factor" => mat.emission_factor = color.to_bevy(),
+				"color" => mat.base_color = color.to_bevy(),
+				"emission_factor" => mat.emissive = color.to_bevy().to_linear(),
 				v => {
 					error!("unknown param_name ({v}) for color")
 				}
@@ -417,9 +417,9 @@ impl MaterialParameter {
 				};
 				let handle = asset_server.load(texture_path);
 				match parameter_name {
-					"diffuse" => mat.diffuse_texture = Some(handle),
-					"emission" => mat.emission_texture = Some(handle),
-					"metal" => mat.metal_texture = Some(handle),
+					"diffuse" => mat.base_color_texture = Some(handle),
+					"emission" => mat.emissive_texture = Some(handle),
+					"metal" => mat.metallic_roughness_texture = Some(handle),
 					"occlusion" => mat.occlusion_texture = Some(handle),
 					v => {
 						error!("unknown param_name ({v}) for texture");
