@@ -65,7 +65,7 @@ impl ShmBufferBacking {
 		}
 
 		let dst_data = images.get_mut(image).unwrap().data.get_or_insert_with(|| {
-			let length = self.size.x as usize * self.size.y as usize * 4;
+			let length = self.size.x * self.size.y * 4;
 			vec![255; length]
 		});
 		let mut dst_cursor = 0;
