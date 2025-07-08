@@ -17,6 +17,7 @@ use bevy::app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
 use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
 use bevy::audio::AudioPlugin;
 use bevy::core_pipeline::CorePipelinePlugin;
+use bevy::core_pipeline::oit::OrderIndependentTransparencySettings;
 use bevy::diagnostic::DiagnosticsPlugin;
 use bevy::ecs::schedule::{ExecutorKind, ScheduleLabel};
 use bevy::gizmos::GizmoPlugin;
@@ -388,7 +389,7 @@ fn bevy_loop(
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
-	app.add_systems(Update, update_cameras);
+	app.add_systems(Update, (add_oit, update_cameras));
 	app.add_systems(
 		XrFirst,
 		xr_step
@@ -413,6 +414,27 @@ fn update_cameras(mut camera: Query<&mut Projection, (With<Camera3d>,)>) {
 				}
 			}
 		}
+	}
+}
+
+fn add_oit(
+	mut commands: Commands,
+	cameras: Query<
+		Entity,
+		(
+			With<Camera3d>,
+			Without<OrderIndependentTransparencySettings>,
+		),
+	>,
+) {
+	for entity in &cameras {
+		commands
+			.entity(entity)
+			.insert(OrderIndependentTransparencySettings {
+				layer_count: 4,
+				alpha_threshold: 0.00,
+			})
+			.insert(Msaa::Off);
 	}
 }
 
