@@ -346,13 +346,7 @@ fn bevy_loop(
 		plugins.add(XrSessionPlugin { auto_handle: false })
 	});
 
-	app.add_plugins((
-		bevy_sk::hand::HandPlugin,
-		bevy_sk::vr_materials::SkMaterialPlugin {
-			replace_standard_material: true,
-		},
-		bevy_sk::skytext::SphericalHarmonicsPlugin,
-	));
+	app.add_plugins(bevy_sk::hand::HandPlugin);
 	// app.add_plugins(HandGizmosPlugin);
 	app.world_mut().resource_mut::<AmbientLight>().brightness = 2000.0;
 	if let Some(priority) = args.overlay_priority {
