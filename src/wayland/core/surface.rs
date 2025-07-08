@@ -132,9 +132,10 @@ impl Surface {
 			// params.set_float("alpha_min", 0.0);
 			// params.set_float("alpha_max", 1.0);
 
-			let material = BevyMaterial::default();
-
-			materials.add(material)
+			materials.add(BevyMaterial {
+				unlit: true,
+				..Default::default()
+			})
 		});
 
 		if let Some(new_tex) = buffer.update_tex(images) {

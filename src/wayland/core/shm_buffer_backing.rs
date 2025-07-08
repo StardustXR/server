@@ -47,7 +47,7 @@ impl ShmBufferBacking {
 				},
 				TextureDimension::D2,
 				&[255, 0, 255, 255],
-				TextureFormat::Rgba8Unorm,
+				TextureFormat::Rgba8UnormSrgb,
 				RenderAssetUsages::all(),
 			);
 			images.add(image)
