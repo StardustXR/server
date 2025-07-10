@@ -69,7 +69,7 @@ use tokio::task::JoinError;
 use tracing::metadata::LevelFilter;
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
-use wayland::Wayland;
+use wayland::{Wayland, WaylandPlugin};
 use zbus::Connection;
 use zbus::fdo::ObjectManager;
 
@@ -290,7 +290,8 @@ fn bevy_loop(
 		.add(AudioPlugin::default())
 		.add(GizmoPlugin)
 		.add(WindowPlugin::default())
-		.add(DmabufImportPlugin);
+		.add(DmabufImportPlugin)
+		.add(WaylandPlugin);
 	let mut task_pool_plugin = TaskPoolPlugin::default();
 	// make tokio work
 	let handle = tokio::runtime::Handle::current();
