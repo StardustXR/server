@@ -24,6 +24,7 @@ use core::{
 #[cfg(feature = "dmabuf")]
 use dmabuf::buffer_params::BufferParams;
 use mint::Vector2;
+use std::sync::atomic::Ordering;
 use std::{
 	fs::{self, OpenOptions},
 	io::{self, ErrorKind},
@@ -285,6 +286,14 @@ impl Wayland {
 
 	pub fn early_frame(graphics_info: &mut GraphicsInfo) {
 		for buffer in BUFFER_REGISTRY.get_valid_contents() {
+			if buffer.can_release_after_update() {
+				if buffer.rendered.load(Ordering::Relaxed) {
+					let _ = buffer
+						.message_sink
+						.send(Message::ReleaseBuffer(buffer.clone()));
+				}
+				buffer.rendered.store(false, Ordering::Relaxed);
+			}
 			buffer.init_tex(graphics_info);
 		}
 		for surface in WL_SURFACE_REGISTRY.get_valid_contents() {

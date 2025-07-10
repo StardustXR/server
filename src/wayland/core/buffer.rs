@@ -1,10 +1,12 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicBool};
 
 #[cfg(feature = "dmabuf")]
 use crate::wayland::dmabuf::buffer_backing::DmabufBacking;
 use crate::{
 	core::registry::Registry,
-	wayland::{GraphicsInfo, core::shm_buffer_backing::ShmBufferBacking},
+	wayland::{
+		GraphicsInfo, MessageSink, core::shm_buffer_backing::ShmBufferBacking, util::ClientExt,
+	},
 };
 use bevy::{
 	asset::{Assets, Handle},
@@ -36,11 +38,21 @@ impl BufferBacking {
 pub struct Buffer {
 	pub id: ObjectId,
 	backing: BufferBacking,
+	pub message_sink: MessageSink,
+	pub rendered: AtomicBool,
 }
 
 impl Buffer {
 	pub fn new(client: &mut Client, id: ObjectId, backing: BufferBacking) -> Arc<Self> {
-		let buffer = client.insert(id, Self { id, backing });
+		let buffer = client.insert(
+			id,
+			Self {
+				id,
+				backing,
+				message_sink: client.message_sink(),
+				rendered: AtomicBool::new(false),
+			},
+		);
 		BUFFER_REGISTRY.add_raw(&buffer);
 		buffer
 	}
@@ -69,6 +81,14 @@ impl Buffer {
 
 	pub fn can_release_after_update(&self) -> bool {
 		self.backing.can_release_after_update()
+	}
+
+	pub fn is_transparent(&self) -> bool {
+		match &self.backing {
+			BufferBacking::Shm(backing) => backing.is_transparent(),
+			#[cfg(feature = "dmabuf")]
+			BufferBacking::Dmabuf(backing) => backing.is_transparent(),
+		}
 	}
 
 	pub fn size(&self) -> Vector2<usize> {

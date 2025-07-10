@@ -5,7 +5,8 @@ use bevy::{
 	render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use mint::Vector2;
-use std::sync::{Arc, OnceLock};
+use parking_lot::Mutex;
+use std::sync::Arc;
 use waynest::server::protocol::core::wayland::wl_shm::Format;
 
 /// Parameters for a shared memory buffer
@@ -16,7 +17,7 @@ pub struct ShmBufferBacking {
 	stride: usize,
 	size: Vector2<usize>,
 	format: Format,
-	image: OnceLock<Handle<Image>>,
+	image: Mutex<Handle<Image>>,
 }
 
 impl ShmBufferBacking {
@@ -33,25 +34,24 @@ impl ShmBufferBacking {
 			stride,
 			size,
 			format,
-			image: OnceLock::new(),
+			image: Mutex::new(Handle::default()),
 		}
 	}
 
 	pub fn update_tex(&self, images: &mut Assets<Image>) -> Option<Handle<Image>> {
-		let image = self.image.get_or_init(|| {
-			let image = Image::new_fill(
-				Extent3d {
-					width: self.size.x as u32,
-					height: self.size.y as u32,
-					depth_or_array_layers: 1,
-				},
-				TextureDimension::D2,
-				&[255, 0, 255, 255],
-				TextureFormat::Rgba8UnormSrgb,
-				RenderAssetUsages::all(),
-			);
-			images.add(image)
-		});
+		let mut image_handle = self.image.lock();
+		images.remove(image_handle.id());
+		let mut image = Image::new_fill(
+			Extent3d {
+				width: self.size.x as u32,
+				height: self.size.y as u32,
+				depth_or_array_layers: 1,
+			},
+			TextureDimension::D2,
+			&[255, 0, 255, 255],
+			TextureFormat::Rgba8UnormSrgb,
+			RenderAssetUsages::all(),
+		);
 
 		let src_data_lock = self.pool.data_lock();
 		let mut src_cursor = self.offset;
@@ -64,7 +64,7 @@ impl ShmBufferBacking {
 			return None;
 		}
 
-		let dst_data = images.get_mut(image).unwrap().data.get_or_insert_with(|| {
+		let dst_data = image.data.get_or_insert_with(|| {
 			let length = self.size.x * self.size.y * 4;
 			vec![255; length]
 		});
@@ -93,7 +93,16 @@ impl ShmBufferBacking {
 			src_cursor += self.stride - (self.size.x * 4);
 		}
 
-		Some(image.clone())
+		*image_handle = images.add(image);
+		Some(image_handle.clone())
+	}
+
+	pub fn is_transparent(&self) -> bool {
+		match self.format {
+			Format::Xrgb8888 => false,
+			Format::Argb8888 => true,
+			_ => true,
+		}
 	}
 
 	pub fn size(&self) -> Vector2<usize> {

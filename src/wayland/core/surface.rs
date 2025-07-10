@@ -12,10 +12,11 @@ use crate::{
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image,
+	render::alpha::AlphaMode,
 };
 use mint::Vector2;
 use parking_lot::Mutex;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, atomic::Ordering};
 use waynest::{
 	server::{
 		Client, Dispatcher, Result,
@@ -139,16 +140,14 @@ impl Surface {
 		});
 
 		if let Some(new_tex) = buffer.update_tex(images) {
-			materials
-				.get_mut(material)
-				.unwrap()
-				.base_color_texture
-				.replace(new_tex);
-
-			// For SHM buffers, we can release immediately after copying to GPU
-			if buffer.can_release_after_update() {
-				let _ = self.message_sink.send(Message::ReleaseBuffer(buffer));
-			}
+			buffer.rendered.store(true, Ordering::Relaxed);
+			let material = materials.get_mut(material).unwrap();
+			material.base_color_texture.replace(new_tex);
+			material.alpha_mode = if buffer.is_transparent() {
+				AlphaMode::Premultiplied
+			} else {
+				AlphaMode::Opaque
+			};
 		}
 
 		self.apply_surface_materials();
