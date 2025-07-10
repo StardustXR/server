@@ -230,11 +230,20 @@ impl MousePointer {
 				middle: mouse_buttons.pressed(MouseButton::Middle) as u32 as f32,
 				context: mouse_buttons.pressed(MouseButton::Right) as u32 as f32,
 				grab: (mouse_buttons.pressed(MouseButton::Right)
-					|| (keyboard_buttons.pressed(KeyCode::Backquote)
-						&& keyboard_buttons.pressed(KeyCode::ShiftLeft))) as u32 as f32, // Was Mouse 5
-				scroll_continuous: [0.0, continuous.y / 120.0].into(),
-				scroll_discrete: [0.0, discrete.y / 120.0].into(),
-				raw_input_events: vec![],
+					&& keyboard_buttons.pressed(KeyCode::ShiftLeft)) as u32 as f32, // Was Mouse 5
+				scroll_continuous: continuous.into(),
+				scroll_discrete: discrete.into(),
+				raw_input_events: mouse_buttons
+					.get_pressed()
+					.map(|button| match button {
+						MouseButton::Left => input_event_codes::BTN_LEFT!(),
+						MouseButton::Right => input_event_codes::BTN_RIGHT!(),
+						MouseButton::Middle => input_event_codes::BTN_MIDDLE!(),
+						MouseButton::Back => input_event_codes::BTN_BACK!(),
+						MouseButton::Forward => input_event_codes::BTN_FORWARD!(),
+						MouseButton::Other(b) => *b as u32,
+					})
+					.collect(),
 			};
 			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).unwrap();
 		}
