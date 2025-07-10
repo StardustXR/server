@@ -50,7 +50,14 @@ impl Plugin for ModelNodePlugin {
 
 		app.init_resource::<MaterialRegistry>();
 		app.add_systems(Update, load_models);
-		app.add_systems(PostUpdate, (gen_model_parts, apply_materials).chain());
+		app.add_systems(
+			PostUpdate,
+			(
+				gen_model_parts.after(TransformSystem::TransformPropagate),
+				apply_materials,
+			)
+				.chain(),
+		);
 	}
 }
 
@@ -142,6 +149,7 @@ fn gen_model_parts(
 	children_query: Query<&Children>,
 	part_query: Query<(&Name, Option<&Children>, &Transform), Without<Mesh3d>>,
 	part_mesh_query: Query<(&Transform, &Aabb), With<Mesh3d>>,
+	global_transform_query: Query<&GlobalTransform>,
 	has_mesh: Query<Has<Mesh3d>>,
 	mut cmds: Commands,
 ) {
@@ -224,6 +232,8 @@ fn gen_model_parts(
 							.and_then(|v| v.bounds.get().copied())
 							.unwrap_or_default()
 					});
+					spatial.set_local_transform(transform.compute_matrix());
+
 					cmds.entity(entity)
 						.insert(SpatialNode(Arc::downgrade(&spatial)));
 					let mesh_entity = children_query

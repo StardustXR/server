@@ -371,6 +371,7 @@ fn bevy_loop(
 	app.insert_resource(ObjectRegistryRes(object_registry));
 	#[cfg(feature = "bevy_debugging")]
 	{
+		use bevy::remote::{RemotePlugin, http::RemoteHttpPlugin};
 		app.add_plugins((RemotePlugin::default(), RemoteHttpPlugin::default()));
 	}
 	// the Stardust server plugins
