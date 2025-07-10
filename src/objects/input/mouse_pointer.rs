@@ -229,8 +229,7 @@ impl MousePointer {
 				select: mouse_buttons.pressed(MouseButton::Left) as u32 as f32,
 				middle: mouse_buttons.pressed(MouseButton::Middle) as u32 as f32,
 				context: mouse_buttons.pressed(MouseButton::Right) as u32 as f32,
-				grab: (mouse_buttons.pressed(MouseButton::Right)
-					&& keyboard_buttons.pressed(KeyCode::ShiftLeft)) as u32 as f32, // Was Mouse 5
+				grab: mouse_buttons.pressed(MouseButton::Right) as u32 as f32, // Was Mouse 5
 				scroll_continuous: continuous.into(),
 				scroll_discrete: discrete.into(),
 				raw_input_events: mouse_buttons
