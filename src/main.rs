@@ -28,12 +28,14 @@ use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 use bevy::render::{RenderDebugFlags, RenderPlugin};
 use bevy::scene::ScenePlugin;
 use bevy::winit::{WakeUp, WinitPlugin};
+use bevy_dmabuf::import::DmabufImportPlugin;
 use bevy_mod_openxr::action_set_attaching::OxrActionAttachingPlugin;
 use bevy_mod_openxr::action_set_syncing::OxrActionSyncingPlugin;
 use bevy_mod_openxr::add_xr_plugins;
 use bevy_mod_openxr::exts::OxrExtensions;
 use bevy_mod_openxr::features::overlay::OxrOverlaySettings;
 use bevy_mod_openxr::features::passthrough::OxrPassthroughPlugin;
+use bevy_mod_openxr::graphics::{GraphicsBackend, OxrManualGraphicsConfig};
 use bevy_mod_openxr::init::{OxrInitPlugin, should_run_frame_loop};
 use bevy_mod_openxr::reference_space::OxrReferenceSpacePlugin;
 use bevy_mod_openxr::render::{OxrRenderPlugin, OxrWaitFrameSystem};
@@ -245,6 +247,11 @@ fn bevy_loop(
 ) -> AppExit {
 	let mut app = App::new();
 	app.insert_resource(DbusConnection(dbus_connection));
+	app.insert_resource(OxrManualGraphicsConfig {
+		fallback_backend: GraphicsBackend::Vulkan(()),
+		vk_instance_exts: Vec::new(),
+		vk_device_exts: bevy_dmabuf::required_device_extensions(),
+	});
 	app.add_plugins(AssetPlugin {
 		meta_check: AssetMetaCheck::Never,
 		unapproved_path_mode: UnapprovedPathMode::Allow,
@@ -284,7 +291,8 @@ fn bevy_loop(
 		// .add(AnimationPlugin)
 		.add(AudioPlugin::default())
 		.add(GizmoPlugin)
-		.add(WindowPlugin::default());
+		.add(WindowPlugin::default())
+		.add(DmabufImportPlugin);
 	let mut task_pool_plugin = TaskPoolPlugin::default();
 	// make tokio work
 	let handle = tokio::runtime::Handle::current();
@@ -344,7 +352,8 @@ fn bevy_loop(
 			.disable::<OxrActionSyncingPlugin>()
 	} else {
 		// enable a event
-		plugins.add(XrSessionPlugin { auto_handle: false })
+		plugins = plugins.add(XrSessionPlugin { auto_handle: false });
+		bevy_dmabuf::wgpu_init::add_dmabuf_init_plugin(plugins)
 	});
 
 	app.add_plugins(bevy_sk::hand::HandPlugin);

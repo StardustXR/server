@@ -42,17 +42,9 @@ auto_link_exclude_list = ["libc*", "libdl*", "libpthread*", "ld-linux*"]
 [profile.dev.package."*"]
 opt-level = 3
 
-# [profile.release]
-# opt-level = 3
-# debug = "line-tables-only"
-# strip = true
-# debug-assertions = true
-# overflow-checks = false
-# lto = "thin"
-
 [patch.crates-io]
-bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "non_default_wait_frame_system" }
-bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "non_default_wait_frame_system" }
+bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "vk_exts" }
+bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "vk_exts" }
 bevy_gltf = { git = "https://github.com/Schmarni-Dev/bevy", branch = "gltf_backport" }
 
 [dependencies]
@@ -114,6 +106,7 @@ bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"
 # bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
 bevy_sk = { git = "https://github.com/technobaboo/bevy_sk", branch = "stochastic" }
+bevy-dmabuf = "0.1.0"
 
 # bevy-mesh-text-3d.git = "https://github.com/terhechte/bevy-mesh-text-3d"
 # use my fork until my pr to use minimal bevy features was merged

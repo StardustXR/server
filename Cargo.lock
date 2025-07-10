@@ -590,6 +590,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy-dmabuf"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "321fa0b7c6b02ac16d5f85f1703b9d4a9a50e2ad3f9adae3b52138868a2747e8"
+dependencies = [
+ "ash",
+ "bevy",
+ "color-eyre",
+ "drm-fourcc",
+ "serde",
+ "thiserror 2.0.12",
+ "tracing",
+ "wgpu",
+ "zbus",
+]
+
+[[package]]
 name = "bevy-mesh-text-3d"
 version = "0.1.0"
 source = "git+https://github.com/Schmarni-Dev/bevy-mesh-text-3d#1215d6195b153b1dcd5f0e5cab2fb6f8ae834aa4"
@@ -1092,7 +1109,7 @@ dependencies = [
 [[package]]
 name = "bevy_mod_openxr"
 version = "0.3.0"
-source = "git+https://github.com/Schmarni-Dev/bevy_openxr?branch=non_default_wait_frame_system#f0fd9a3086f1d898cf8d1a5338a3deae7ef66e2f"
+source = "git+https://github.com/Schmarni-Dev/bevy_openxr?branch=vk_exts#a60db3da6cfa48afb3345c3c370fa26578bda341"
 dependencies = [
  "android_system_properties",
  "ash",
@@ -1110,7 +1127,7 @@ dependencies = [
 [[package]]
 name = "bevy_mod_xr"
 version = "0.3.0"
-source = "git+https://github.com/Schmarni-Dev/bevy_openxr?branch=non_default_wait_frame_system#f0fd9a3086f1d898cf8d1a5338a3deae7ef66e2f"
+source = "git+https://github.com/Schmarni-Dev/bevy_openxr?branch=vk_exts#a60db3da6cfa48afb3345c3c370fa26578bda341"
 dependencies = [
  "bevy",
 ]
@@ -5350,6 +5367,7 @@ name = "stardust-xr-server"
 version = "0.45.0"
 dependencies = [
  "bevy",
+ "bevy-dmabuf",
  "bevy-mesh-text-3d",
  "bevy_mod_openxr",
  "bevy_mod_xr",
