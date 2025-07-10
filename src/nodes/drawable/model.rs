@@ -149,7 +149,6 @@ fn gen_model_parts(
 	children_query: Query<&Children>,
 	part_query: Query<(&Name, Option<&Children>, &Transform), Without<Mesh3d>>,
 	part_mesh_query: Query<(&Transform, &Aabb), With<Mesh3d>>,
-	global_transform_query: Query<&GlobalTransform>,
 	has_mesh: Query<Has<Mesh3d>>,
 	mut cmds: Commands,
 ) {
