@@ -1,6 +1,5 @@
 use super::{
 	client_state::{CLIENT_STATES, ClientStateParsed},
-	destroy_queue,
 	scenegraph::Scenegraph,
 };
 use crate::{
@@ -230,9 +229,6 @@ impl Client {
 		}
 		if let Some(flush_join_handle) = self.flush_join_handle.get() {
 			flush_join_handle.abort();
-		}
-		if let Some(client) = CLIENTS.remove(self) {
-			destroy_queue::add(client);
 		}
 	}
 }

@@ -14,6 +14,7 @@ use bevy::{
 	image::Image,
 	render::alpha::AlphaMode,
 };
+use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
 use parking_lot::Mutex;
 use std::sync::{Arc, OnceLock, atomic::Ordering};
@@ -111,6 +112,7 @@ impl Surface {
 
 	pub fn update_graphics(
 		&self,
+		dmatexes: &ImportedDmatexs,
 		materials: &mut Assets<BevyMaterial>,
 		images: &mut Assets<Image>,
 	) {
@@ -139,7 +141,7 @@ impl Surface {
 			})
 		});
 
-		if let Some(new_tex) = buffer.update_tex(images) {
+		if let Some(new_tex) = buffer.update_tex(dmatexes, images, buffer.clone()) {
 			buffer.rendered.store(true, Ordering::Relaxed);
 			let material = materials.get_mut(material).unwrap();
 			material.base_color_texture.replace(new_tex);

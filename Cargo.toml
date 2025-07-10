@@ -30,7 +30,6 @@ wayland = [
 	"dep:drm-fourcc",
 	"dep:memfd",
 ]
-dmabuf = []
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy", "bevy/trace_tracy", "bevy/trace"]
 bevy_debugging = ["bevy/bevy_remote", "bevy/track_location"]

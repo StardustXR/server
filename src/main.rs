@@ -8,7 +8,6 @@ mod session;
 #[cfg(feature = "wayland")]
 mod wayland;
 
-use crate::core::destroy_queue;
 use crate::nodes::input;
 
 use bevy::MinimalPlugins;
@@ -46,7 +45,6 @@ use bevy_mod_xr::session::{XrFirst, XrHandleEvents, XrSessionPlugin};
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
 use core::entity_handle::EntityHandlePlugin;
-use core::graphics_info::GraphicsInfo;
 use core::task;
 use directories::ProjectDirs;
 use nodes::audio::AudioNodePlugin;
@@ -449,13 +447,6 @@ fn add_oit(
 }
 
 fn xr_step(world: &mut World) {
-	// camera::update(token);
-	#[cfg(feature = "wayland")]
-	Wayland::early_frame(&mut GraphicsInfo {
-		_images: world.resource_mut::<Assets<Image>>(),
-	});
-	destroy_queue::clear();
-
 	// update things like the Xr input methods
 	world.run_schedule(PreFrameWait);
 	input::process_input();
@@ -487,8 +478,4 @@ fn xr_step(world: &mut World) {
 	}
 
 	tick_internal_client();
-	#[cfg(feature = "wayland")]
-	world.resource_scope::<Assets<BevyMaterial>, _>(|world, mut materials| {
-		Wayland::update_graphics(&mut materials, &mut world.resource_mut::<Assets<Image>>());
-	});
 }

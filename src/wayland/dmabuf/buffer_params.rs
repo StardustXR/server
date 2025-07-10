@@ -23,7 +23,7 @@ pub struct DmabufPlane {
 	pub fd: OwnedFd,
 	pub offset: u32,
 	pub stride: u32,
-	pub _modifier: u64,
+	pub modifier: u64,
 }
 
 /// Parameters for creating a DMA-BUF-based wl_buffer
@@ -34,7 +34,7 @@ pub struct DmabufPlane {
 #[derive(Debug, Dispatcher)]
 pub struct BufferParams {
 	pub id: ObjectId,
-	planes: Mutex<FxHashMap<u32, DmabufPlane>>,
+	pub(super) planes: Mutex<FxHashMap<u32, DmabufPlane>>,
 }
 
 impl BufferParams {
@@ -44,10 +44,6 @@ impl BufferParams {
 			id,
 			planes: Mutex::new(FxHashMap::default()),
 		}
-	}
-
-	pub fn lock_planes(&self) -> parking_lot::MutexGuard<'_, FxHashMap<u32, DmabufPlane>> {
-		self.planes.lock()
 	}
 }
 
@@ -93,7 +89,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 			fd,
 			offset,
 			stride,
-			_modifier: ((modifier_hi as u64) << 32) | (modifier_lo as u64),
+			modifier: ((modifier_hi as u64) << 32) | (modifier_lo as u64),
 		};
 
 		// Store the plane
@@ -112,7 +108,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 	) -> Result<()> {
 		tracing::info!("Creating buffer from BufferParams {:?}", self.id);
 		// Create the buffer with DMA-BUF backing using self as the backing
-		let size = [width as usize, height as usize].into();
+		let size = [width as u32, height as u32].into();
 		let backing = DmabufBacking::new(
 			client.get::<Self>(self.id).unwrap(),
 			Some(client.display().message_sink.clone()),
@@ -137,11 +133,10 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		flags: Flags,
 	) -> Result<()> {
 		// Create the buffer with DMA-BUF backing using self as the backing
-		let size = [width as usize, height as usize].into();
 		let backing = DmabufBacking::new(
 			client.get::<Self>(self.id).unwrap(),
 			None,
-			size,
+			[width as u32, height as u32].into(),
 			DrmFourcc::try_from(format).unwrap(),
 			flags,
 		);

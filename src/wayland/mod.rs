@@ -1,27 +1,28 @@
 pub mod core;
-#[cfg(feature = "dmabuf")]
 pub mod dmabuf;
 pub mod util;
 pub mod xdg;
 
+use crate::PreFrameWait;
 use crate::wayland::core::seat::SeatMessage;
 use crate::{
 	BevyMaterial,
 	core::{
 		error::{Result, ServerError},
-		graphics_info::GraphicsInfo,
 		task,
 	},
 };
+use bevy::app::{App, Plugin, Update};
+use bevy::ecs::system::{Res, ResMut};
 use bevy::{asset::Assets, ecs::resource::Resource, image::Image};
+use bevy_dmabuf::import::ImportedDmatexs;
 use cluFlock::ToFlock;
 use core::{
-	buffer::{BUFFER_REGISTRY, Buffer},
+	buffer::{Buffer, WL_BUFFER_REGISTRY},
 	callback::Callback,
 	display::Display,
 	surface::WL_SURFACE_REGISTRY,
 };
-#[cfg(feature = "dmabuf")]
 use dmabuf::buffer_params::BufferParams;
 use mint::Vector2;
 use std::sync::atomic::Ordering;
@@ -35,7 +36,6 @@ use std::{
 use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
 use tokio_stream::StreamExt;
 use tracing::{debug_span, instrument};
-#[cfg(feature = "dmabuf")]
 use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1;
 use waynest::{
 	server::{
@@ -104,9 +104,7 @@ pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
 pub enum Message {
 	Frame(Arc<Callback>),
 	ReleaseBuffer(Arc<Buffer>),
-	#[cfg(feature = "dmabuf")]
 	DmabufImportSuccess(Arc<BufferParams>, Arc<Buffer>),
-	#[cfg(feature = "dmabuf")]
 	DmabufImportFailure(Arc<BufferParams>),
 	CloseToplevel(Arc<Toplevel>),
 	ResizeToplevel {
@@ -209,11 +207,9 @@ impl WaylandClient {
 				client.remove(callback.0);
 				Ok(())
 			}
-			#[cfg(feature = "dmabuf")]
 			Message::DmabufImportSuccess(params, buffer) => {
 				params.created(client, params.id, buffer.id).await
 			}
-			#[cfg(feature = "dmabuf")]
 			Message::DmabufImportFailure(params) => {
 				client.remove(params.id);
 				params.failed(client, params.id).await
@@ -283,33 +279,42 @@ impl Wayland {
 		#[allow(unreachable_code)]
 		Ok(())
 	}
-
-	pub fn early_frame(graphics_info: &mut GraphicsInfo) {
-		for buffer in BUFFER_REGISTRY.get_valid_contents() {
-			if buffer.can_release_after_update() {
-				if buffer.rendered.load(Ordering::Relaxed) {
-					let _ = buffer
-						.message_sink
-						.send(Message::ReleaseBuffer(buffer.clone()));
-				}
-				buffer.rendered.store(false, Ordering::Relaxed);
-			}
-			buffer.init_tex(graphics_info);
-		}
-		for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
-			surface.frame_event();
-		}
-	}
-
-	#[instrument(level = "debug", name = "Wayland frame", skip_all)]
-	pub fn update_graphics(materials: &mut Assets<BevyMaterial>, images: &mut Assets<Image>) {
-		for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
-			surface.update_graphics(materials, images);
-		}
-	}
 }
 impl Drop for Wayland {
 	fn drop(&mut self) {
 		self.abort_handle.abort();
+	}
+}
+
+pub struct WaylandPlugin;
+impl Plugin for WaylandPlugin {
+	fn build(&self, app: &mut App) {
+		app.add_systems(PreFrameWait, early_frame);
+		app.add_systems(Update, update_graphics);
+	}
+}
+
+fn early_frame() {
+	for buffer in WL_BUFFER_REGISTRY.get_valid_contents() {
+		if buffer.rendered.load(Ordering::Relaxed) {
+			let _ = buffer
+				.message_sink
+				.send(Message::ReleaseBuffer(buffer.clone()));
+		}
+		buffer.rendered.store(false, Ordering::Relaxed);
+	}
+	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
+		surface.frame_event();
+	}
+}
+
+#[instrument(level = "debug", name = "Wayland frame", skip_all)]
+fn update_graphics(
+	dmatexes: Res<ImportedDmatexs>,
+	mut materials: ResMut<Assets<BevyMaterial>>,
+	mut images: ResMut<Assets<Image>>,
+) {
+	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
+		surface.update_graphics(&dmatexes, &mut materials, &mut images);
 	}
 }

@@ -1,17 +1,15 @@
 use std::sync::{Arc, atomic::AtomicBool};
 
-#[cfg(feature = "dmabuf")]
 use crate::wayland::dmabuf::buffer_backing::DmabufBacking;
 use crate::{
 	core::registry::Registry,
-	wayland::{
-		GraphicsInfo, MessageSink, core::shm_buffer_backing::ShmBufferBacking, util::ClientExt,
-	},
+	wayland::{MessageSink, core::shm_buffer_backing::ShmBufferBacking, util::ClientExt},
 };
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image,
 };
+use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
 pub use waynest::server::protocol::core::wayland::wl_buffer::*;
 use waynest::{
@@ -19,12 +17,11 @@ use waynest::{
 	wire::ObjectId,
 };
 
-pub static BUFFER_REGISTRY: Registry<Buffer> = Registry::new();
+pub static WL_BUFFER_REGISTRY: Registry<Buffer> = Registry::new();
 
 #[derive(Debug)]
 pub enum BufferBacking {
 	Shm(ShmBufferBacking),
-	#[cfg(feature = "dmabuf")]
 	Dmabuf(DmabufBacking),
 }
 impl BufferBacking {
@@ -53,29 +50,21 @@ impl Buffer {
 				rendered: AtomicBool::new(false),
 			},
 		);
-		BUFFER_REGISTRY.add_raw(&buffer);
+		WL_BUFFER_REGISTRY.add_raw(&buffer);
 		buffer
 	}
 
-	#[allow(unused)]
-	pub fn init_tex(self: Arc<Self>, graphics_info: &mut GraphicsInfo) {
-		match &self.backing {
-			BufferBacking::Shm(_) => (),
-			#[cfg(feature = "dmabuf")]
-			BufferBacking::Dmabuf(backing) => backing.init_tex(graphics_info, self.clone()),
-		}
-	}
-
 	/// Returns the tex if it was updated
-	pub fn update_tex(&self, images: &mut Assets<Image>) -> Option<Handle<Image>> {
+	pub fn update_tex(
+		&self,
+		dmatexes: &ImportedDmatexs,
+		images: &mut Assets<Image>,
+		buffer: Arc<Buffer>,
+	) -> Option<Handle<Image>> {
 		tracing::debug!("Updating texture for buffer {:?}", self.id);
 		match &self.backing {
 			BufferBacking::Shm(backing) => backing.update_tex(images),
-			#[cfg(feature = "dmabuf")]
-			BufferBacking::Dmabuf(backing) => backing
-				.get_tex()
-				.map(|tex| tex.get_id().to_string())
-				.and_then(|tex_id| Tex::find(tex_id).ok()),
+			BufferBacking::Dmabuf(backing) => backing.update_tex(dmatexes, images, buffer),
 		}
 	}
 
@@ -86,7 +75,6 @@ impl Buffer {
 	pub fn is_transparent(&self) -> bool {
 		match &self.backing {
 			BufferBacking::Shm(backing) => backing.is_transparent(),
-			#[cfg(feature = "dmabuf")]
 			BufferBacking::Dmabuf(backing) => backing.is_transparent(),
 		}
 	}
@@ -94,7 +82,6 @@ impl Buffer {
 	pub fn size(&self) -> Vector2<usize> {
 		match &self.backing {
 			BufferBacking::Shm(backing) => backing.size(),
-			#[cfg(feature = "dmabuf")]
 			BufferBacking::Dmabuf(backing) => backing.size(),
 		}
 	}
