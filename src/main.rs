@@ -290,8 +290,7 @@ fn bevy_loop(
 		.add(AudioPlugin::default())
 		.add(GizmoPlugin)
 		.add(WindowPlugin::default())
-		.add(DmabufImportPlugin)
-		.add(WaylandPlugin);
+		.add(DmabufImportPlugin);
 	let mut task_pool_plugin = TaskPoolPlugin::default();
 	// make tokio work
 	let handle = tokio::runtime::Handle::current();
@@ -395,6 +394,8 @@ fn bevy_loop(
 	));
 	// object plugins
 	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin));
+	// feature plugins
+	app.add_plugins(WaylandPlugin);
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
