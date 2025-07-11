@@ -128,7 +128,8 @@ impl WlRegistry for Registry {
 			}
 			RegistryGlobals::OUTPUT => {
 				tracing::info!("Binding output");
-				client.insert(new_id.object_id, Output);
+				let output = client.insert(new_id.object_id, Output(new_id.object_id));
+				output.advertise_outputs(client).await?;
 			}
 			RegistryGlobals::DMABUF => {
 				tracing::info!("Binding dmabuf");
