@@ -73,13 +73,7 @@ impl ShmBufferBacking {
 		for _y in 0..self.size.y {
 			for _x in 0..self.size.x {
 				match self.format {
-					Format::Xrgb8888 => {
-						dst_data[dst_cursor] = src_data_lock[src_cursor + 2]; // Red is byte 2
-						dst_data[dst_cursor + 1] = src_data_lock[src_cursor + 1]; // Green is byte 1
-						dst_data[dst_cursor + 2] = src_data_lock[src_cursor]; // Blue is byte 0
-						dst_data[dst_cursor + 3] = 255; // X means ignore alpha, treat as fully opaque
-					}
-					Format::Argb8888 => {
+					Format::Argb8888 | Format::Xrgb8888 => {
 						dst_data[dst_cursor] = src_data_lock[src_cursor + 2]; // Red is byte 2
 						dst_data[dst_cursor + 1] = src_data_lock[src_cursor + 1]; // Green is byte 1
 						dst_data[dst_cursor + 2] = src_data_lock[src_cursor]; // Blue is byte 0
@@ -99,7 +93,7 @@ impl ShmBufferBacking {
 
 	pub fn is_transparent(&self) -> bool {
 		match self.format {
-			Format::Xrgb8888 => false,
+			Format::Xrgb8888 => true,
 			Format::Argb8888 => true,
 			_ => true,
 		}
