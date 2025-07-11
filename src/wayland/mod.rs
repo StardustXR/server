@@ -38,7 +38,7 @@ use std::{
 };
 use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
 use tokio_stream::StreamExt;
-use tracing::{debug_span, info, instrument};
+use tracing::{debug_span, instrument};
 use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1;
 use waynest::{
 	server::{
@@ -308,7 +308,6 @@ fn init_render_device(dev: Res<RenderDevice>) {
 }
 
 fn early_frame() {
-	info!("test");
 	for buffer in WL_BUFFER_REGISTRY.get_valid_contents() {
 		if buffer.rendered.load(Ordering::Relaxed) {
 			let _ = buffer
