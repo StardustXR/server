@@ -13,7 +13,10 @@ use crate::{
 	},
 };
 use bevy::app::{App, Plugin, Update};
+use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Res, ResMut};
+use bevy::render::renderer::RenderDevice;
+use bevy::render::{Render, RenderApp};
 use bevy::{asset::Assets, ecs::resource::Resource, image::Image};
 use bevy_dmabuf::import::ImportedDmatexs;
 use cluFlock::ToFlock;
@@ -286,12 +289,22 @@ impl Drop for Wayland {
 	}
 }
 
+static RENDER_DEVICE: OnceLock<RenderDevice> = OnceLock::new();
+
 pub struct WaylandPlugin;
 impl Plugin for WaylandPlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(PreFrameWait, early_frame);
 		app.add_systems(Update, update_graphics);
+		app.sub_app_mut(RenderApp).add_systems(
+			Render,
+			init_render_device.run_if(|| RENDER_DEVICE.get().is_none()),
+		);
 	}
+}
+
+fn init_render_device(dev: Res<RenderDevice>) {
+	_ = RENDER_DEVICE.set(dev.clone());
 }
 
 fn early_frame() {

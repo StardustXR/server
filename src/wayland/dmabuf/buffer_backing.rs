@@ -6,15 +6,15 @@ use bevy::{
 };
 use bevy_dmabuf::{
 	dmatex::{Dmatex, DmatexPlane, Resolution},
-	import::ImportedDmatexs,
+	import::{ImportedDmatexs, ImportedTexture},
 };
 use drm_fourcc::DrmFourcc;
 use mint::Vector2;
+use parking_lot::Mutex;
 use std::sync::{Arc, OnceLock};
 use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::Flags;
 
 /// Parameters for a shared memory buffer
-#[derive(Debug)]
 pub struct DmabufBacking {
 	message_sink: Option<MessageSink>,
 	params: Arc<BufferParams>,
@@ -22,6 +22,20 @@ pub struct DmabufBacking {
 	format: DrmFourcc,
 	_flags: Flags,
 	tex: OnceLock<Handle<Image>>,
+	pending_imported_dmatex: Mutex<Option<ImportedTexture>>,
+}
+
+impl std::fmt::Debug for DmabufBacking {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("DmabufBacking")
+			.field("message_sink", &self.message_sink)
+			.field("params", &self.params)
+			.field("size", &self.size)
+			.field("format", &self.format)
+			.field("_flags", &self._flags)
+			.field("tex", &self.tex)
+			.finish()
+	}
 }
 
 impl DmabufBacking {
@@ -40,6 +54,7 @@ impl DmabufBacking {
 			format,
 			_flags: flags,
 			tex: OnceLock::new(),
+			pending_imported_dmatex: Mutex::new(None),
 		}
 	}
 
@@ -96,12 +111,16 @@ impl DmabufBacking {
 		images: &mut Assets<Image>,
 		buffer: Arc<Buffer>,
 	) -> Option<Handle<Image>> {
-		if self.tex.get().is_none()
-			&& let Some(dmatex) = self.import_dmabuf(dmatexes, images, buffer)
-		{
-			let _ = self.tex.set(dmatex);
-		}
-		self.tex.get().cloned()
+		self.pending_imported_dmatex
+			.lock()
+			.take()
+			.map(|tex| dmatexes.insert_imported_dmatex(images, tex))
+		// if self.tex.get().is_none()
+		// 	&& let Some(dmatex) = self.import_dmabuf(dmatexes, images, buffer)
+		// {
+		// 	let _ = self.tex.set(dmatex);
+		// }
+		// self.tex.get().cloned()
 	}
 
 	pub fn is_transparent(&self) -> bool {
