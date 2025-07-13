@@ -592,6 +592,7 @@ dependencies = [
 [[package]]
 name = "bevy-dmabuf"
 version = "0.2.0"
+source = "git+https://github.com/Schmarni-Dev/bevy-dmabuf#10a071f69300f283a1445666a7f537b8d5f9c7bf"
 dependencies = [
  "ash",
  "bevy",
@@ -6396,7 +6397,7 @@ dependencies = [
 [[package]]
 name = "waynest"
 version = "0.0.25"
-source = "git+https://github.com/verdiwm/waynest.git#4d52d23690b19eb1ecc742b99377acca25765ad0"
+source = "git+https://github.com/technobaboo/waynest.git?branch=fix%2Ffd_clear#0b2e3e5b5383c1f7011599849e2baf1c9afeb9bb"
 dependencies = [
  "async-trait",
  "bitflags 2.9.1",
@@ -6414,7 +6415,7 @@ dependencies = [
 [[package]]
 name = "waynest-macros"
 version = "0.0.25"
-source = "git+https://github.com/verdiwm/waynest.git#4d52d23690b19eb1ecc742b99377acca25765ad0"
+source = "git+https://github.com/technobaboo/waynest.git?branch=fix%2Ffd_clear#0b2e3e5b5383c1f7011599849e2baf1c9afeb9bb"
 dependencies = [
  "quote",
  "syn 2.0.104",
