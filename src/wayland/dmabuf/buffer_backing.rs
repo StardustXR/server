@@ -1,18 +1,20 @@
 use super::buffer_params::BufferParams;
-use crate::wayland::{Message, MessageSink, core::buffer::Buffer};
+use crate::wayland::{MessageSink, RENDER_DEVICE, core::buffer::Buffer};
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image,
 };
 use bevy_dmabuf::{
-	dmatex::{Dmatex, DmatexPlane, Resolution},
-	import::{ImportedDmatexs, ImportedTexture},
+	dmatex::{Dmatex, Resolution},
+	import::{DropCallback, ImportError, ImportedDmatexs, ImportedTexture, import_texture},
 };
 use drm_fourcc::DrmFourcc;
 use mint::Vector2;
 use parking_lot::Mutex;
 use std::sync::{Arc, OnceLock};
-use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::Flags;
+use waynest::server::{
+	Client, protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::Flags,
+};
 
 /// Parameters for a shared memory buffer
 pub struct DmabufBacking {
@@ -45,64 +47,33 @@ impl DmabufBacking {
 		size: Vector2<u32>,
 		format: DrmFourcc,
 		flags: Flags,
-	) -> Self {
-		tracing::info!("Creating new DmabufBacking",);
-		Self {
+	) -> Result<Self, ImportError> {
+		tracing::info!("Creating new DmabufBacking");
+		let mut planes = Vec::from_iter(std::mem::take(&mut *params.planes.lock()));
+		planes.sort_by_key(|(index, _)| *index);
+		let planes = planes.into_iter().map(|(_, tex)| tex).collect::<Vec<_>>();
+		let dmatex = Dmatex {
+			planes,
+			res: Resolution {
+				x: size.x,
+				y: size.y,
+			},
+			format: format as u32,
+			// TODO: impl this in bevy-dmabuf
+			flip_y: flags.contains(Flags::YInvert),
+		};
+		let dev = RENDER_DEVICE.wait();
+		let imported_tex = import_texture(dev, dmatex, DropCallback(None))?;
+
+		Ok(Self {
 			params,
 			message_sink,
 			size,
 			format,
 			_flags: flags,
 			tex: OnceLock::new(),
-			pending_imported_dmatex: Mutex::new(None),
-		}
-	}
-
-	fn import_dmabuf(
-		&self,
-		dmatexes: &ImportedDmatexs,
-		images: &mut Assets<Image>,
-		buffer: Arc<Buffer>,
-	) -> Option<Handle<Image>> {
-		let mut planes = std::mem::take(&mut *self.params.planes.lock());
-		// TODO: AAAAAA BAD HACK WHAT THE HELL FIX THIS
-		let key = *planes.keys().last().unwrap();
-		let plane = planes.remove(&key).unwrap();
-		let dmatex = Dmatex {
-			dmabuf_fd: plane.fd.into(),
-			planes: vec![DmatexPlane {
-				offset: plane.offset,
-				stride: plane.stride as i32,
-			}],
-			res: Resolution {
-				x: self.size.x,
-				y: self.size.y,
-			},
-			modifier: plane.modifier,
-			format: self.format as u32,
-			flip_y: self._flags.contains(Flags::YInvert),
-		};
-		let dmatex = dmatexes.set(images, dmatex, None);
-		match &dmatex {
-			Ok(_) => {
-				let _ = self
-					.message_sink
-					.as_ref()
-					.unwrap()
-					.send(Message::DmabufImportSuccess(self.params.clone(), buffer));
-			}
-			Err(e) => {
-				tracing::error!("Failed to import dmabuf because {e}");
-
-				let _ = self
-					.message_sink
-					.as_ref()
-					.unwrap()
-					.send(Message::DmabufImportFailure(self.params.clone()));
-			}
-		}
-
-		dmatex.ok()
+			pending_imported_dmatex: Mutex::new(Some(imported_tex)),
+		})
 	}
 
 	pub fn update_tex(
@@ -115,12 +86,9 @@ impl DmabufBacking {
 			.lock()
 			.take()
 			.map(|tex| dmatexes.insert_imported_dmatex(images, tex))
-		// if self.tex.get().is_none()
-		// 	&& let Some(dmatex) = self.import_dmabuf(dmatexes, images, buffer)
-		// {
-		// 	let _ = self.tex.set(dmatex);
-		// }
-		// self.tex.get().cloned()
+			.inspect(|handle| {
+				_ = self.tex.set(handle.clone());
+			})
 	}
 
 	pub fn is_transparent(&self) -> bool {

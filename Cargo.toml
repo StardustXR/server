@@ -105,7 +105,8 @@ bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"
 # bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
 bevy_sk = { git = "https://github.com/technobaboo/bevy_sk", branch = "stochastic" }
-bevy-dmabuf = "0.1.0"
+# bevy-dmabuf = "0.2.0"
+bevy-dmabuf.path = "../bevy-dmabuf"
 
 # bevy-mesh-text-3d.git = "https://github.com/terhechte/bevy-mesh-text-3d"
 # use my fork until my pr to use minimal bevy features was merged
