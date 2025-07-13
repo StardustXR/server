@@ -59,12 +59,11 @@ impl Buffer {
 		&self,
 		dmatexes: &ImportedDmatexs,
 		images: &mut Assets<Image>,
-		buffer: Arc<Buffer>,
 	) -> Option<Handle<Image>> {
 		tracing::debug!("Updating texture for buffer {:?}", self.id);
 		match &self.backing {
 			BufferBacking::Shm(backing) => backing.update_tex(images),
-			BufferBacking::Dmabuf(backing) => backing.update_tex(dmatexes, images, buffer),
+			BufferBacking::Dmabuf(backing) => backing.update_tex(dmatexes, images),
 		}
 	}
 

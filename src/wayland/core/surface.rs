@@ -141,7 +141,7 @@ impl Surface {
 			})
 		});
 
-		if let Some(new_tex) = buffer.update_tex(dmatexes, images, buffer.clone()) {
+		if let Some(new_tex) = buffer.update_tex(dmatexes, images) {
 			buffer.rendered.store(true, Ordering::Relaxed);
 			let material = materials.get_mut(material).unwrap();
 			material.base_color_texture.replace(new_tex);

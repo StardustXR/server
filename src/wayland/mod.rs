@@ -26,7 +26,6 @@ use core::{
 	display::Display,
 	surface::WL_SURFACE_REGISTRY,
 };
-use dmabuf::buffer_params::BufferParams;
 use mint::Vector2;
 use std::sync::atomic::Ordering;
 use std::{
@@ -39,7 +38,6 @@ use std::{
 use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
 use tokio_stream::StreamExt;
 use tracing::{debug_span, instrument};
-use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::ZwpLinuxBufferParamsV1;
 use waynest::{
 	server::{
 		self,
@@ -107,8 +105,6 @@ pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
 pub enum Message {
 	Frame(Arc<Callback>),
 	ReleaseBuffer(Arc<Buffer>),
-	DmabufImportSuccess(Arc<BufferParams>, Arc<Buffer>),
-	DmabufImportFailure(Arc<BufferParams>),
 	CloseToplevel(Arc<Toplevel>),
 	ResizeToplevel {
 		toplevel: Arc<Toplevel>,
@@ -209,13 +205,6 @@ impl WaylandClient {
 					.await?;
 				client.remove(callback.0);
 				Ok(())
-			}
-			Message::DmabufImportSuccess(params, buffer) => {
-				params.created(client, params.id, buffer.id).await
-			}
-			Message::DmabufImportFailure(params) => {
-				client.remove(params.id);
-				params.failed(client, params.id).await
 			}
 			Message::ReleaseBuffer(buffer) => buffer.release(client, buffer.id).await,
 			Message::CloseToplevel(toplevel) => toplevel.close(client, toplevel.id).await,

@@ -1,5 +1,5 @@
 use super::buffer_params::BufferParams;
-use crate::wayland::{MessageSink, RENDER_DEVICE, core::buffer::Buffer};
+use crate::wayland::{MessageSink, RENDER_DEVICE};
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image,
@@ -12,9 +12,7 @@ use drm_fourcc::DrmFourcc;
 use mint::Vector2;
 use parking_lot::Mutex;
 use std::sync::{Arc, OnceLock};
-use waynest::server::{
-	Client, protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::Flags,
-};
+use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::Flags;
 
 /// Parameters for a shared memory buffer
 pub struct DmabufBacking {
@@ -80,7 +78,6 @@ impl DmabufBacking {
 		&self,
 		dmatexes: &ImportedDmatexs,
 		images: &mut Assets<Image>,
-		buffer: Arc<Buffer>,
 	) -> Option<Handle<Image>> {
 		self.pending_imported_dmatex
 			.lock()
