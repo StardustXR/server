@@ -236,12 +236,12 @@ impl Drop for WaylandClient {
 
 #[derive(Debug, Resource)]
 pub struct Wayland {
-	lockfile: FlockLock<File>,
+	_lockfile: FlockLock<File>,
 	abort_handle: AbortHandle,
 }
 impl Wayland {
 	pub fn new() -> Result<Self> {
-		let (socket_path, lockfile) =
+		let (socket_path, _lockfile) =
 			get_free_wayland_socket_path().ok_or(ServerError::WaylandError(
 				waynest::server::Error::IoError(std::io::ErrorKind::AddrNotAvailable.into()),
 			))?;
@@ -255,7 +255,7 @@ impl Wayland {
 			task::new(|| "wayland loop", Self::handle_wayland_loop(listener))?.abort_handle();
 
 		Ok(Self {
-			lockfile,
+			_lockfile,
 			abort_handle,
 		})
 	}
