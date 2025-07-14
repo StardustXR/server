@@ -19,7 +19,7 @@ use bevy::render::renderer::RenderDevice;
 use bevy::render::{Render, RenderApp};
 use bevy::{asset::Assets, ecs::resource::Resource, image::Image};
 use bevy_dmabuf::import::ImportedDmatexs;
-use cluFlock::ToFlock;
+use cluFlock::{FlockLock, ToFlock};
 use core::{
 	buffer::{Buffer, WL_BUFFER_REGISTRY},
 	callback::Callback,
@@ -27,6 +27,7 @@ use core::{
 	surface::WL_SURFACE_REGISTRY,
 };
 use mint::Vector2;
+use std::fs::File;
 use std::sync::atomic::Ordering;
 use std::{
 	fs::{self, OpenOptions},
@@ -58,7 +59,7 @@ impl From<waynest::server::Error> for ServerError {
 	}
 }
 
-pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
+pub fn get_free_wayland_socket_path() -> Option<(PathBuf, FlockLock<File>)> {
 	// Use XDG runtime directory for secure, user-specific sockets
 	let base_dirs = directories::BaseDirs::new()?;
 	let runtime_dir = base_dirs.runtime_dir()?;
@@ -69,19 +70,21 @@ pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
 		let socket_lock_path = runtime_dir.join(format!("wayland-{display}.lock"));
 
 		// Open lock file without truncation to preserve existing locks
-		let mut _lock = OpenOptions::new()
+		let Ok(lock) = OpenOptions::new()
 			.create(true)
 			.truncate(false) // Prevent destroying other processes' locks
 			.read(true)
 			.write(true)
 			.mode(0o660) // Match Wayland-compositor permissions
 			.open(&socket_lock_path)
-			.ok()?;
+		else {
+			continue;
+		};
 
-		// Atomic mutual exclusion: fail if another process holds the lock
-		if _lock.try_exclusive_lock().is_err() {
+		// Atomic mutual exclusion: fail if another process holds the lock\
+		let Ok(lock) = lock.try_exclusive_lock() else {
 			continue; // Lock held by active compositor
-		}
+		};
 
 		// Check for zombie sockets (file exists but nothing listening)
 		if socket_path.exists() {
@@ -96,7 +99,7 @@ pub fn get_free_wayland_socket_path() -> Option<PathBuf> {
 		}
 
 		// Found viable candidate: lock held, socket cleared/available
-		return Some(socket_path);
+		return Some((socket_path, lock));
 	}
 
 	None // Exhausted all conventional display numbers
@@ -233,17 +236,15 @@ impl Drop for WaylandClient {
 
 #[derive(Debug, Resource)]
 pub struct Wayland {
+	lockfile: FlockLock<File>,
 	abort_handle: AbortHandle,
 }
 impl Wayland {
-	pub fn new(socket_path: Option<PathBuf>) -> Result<Self> {
-		let socket_path = if let Some(path) = socket_path {
-			path
-		} else {
+	pub fn new() -> Result<Self> {
+		let (socket_path, lockfile) =
 			get_free_wayland_socket_path().ok_or(ServerError::WaylandError(
 				waynest::server::Error::IoError(std::io::ErrorKind::AddrNotAvailable.into()),
-			))?
-		};
+			))?;
 
 		let _ = WAYLAND_DISPLAY.set(socket_path.clone());
 
@@ -253,7 +254,10 @@ impl Wayland {
 		let abort_handle =
 			task::new(|| "wayland loop", Self::handle_wayland_loop(listener))?.abort_handle();
 
-		Ok(Self { abort_handle })
+		Ok(Self {
+			lockfile,
+			abort_handle,
+		})
 	}
 	async fn handle_wayland_loop(mut listener: server::Listener) -> Result<()> {
 		let mut clients = Vec::new();

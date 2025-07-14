@@ -190,7 +190,7 @@ async fn main() -> Result<AppExit, JoinError> {
 		"Couldn't make the object registry to find all objects with given interfaces in d-bus",
 	);
 
-	let _wayland = Wayland::new(None).expect("Couldn't create Wayland instance");
+	let _wayland = Wayland::new().expect("Couldn't create Wayland instance");
 
 	let ready_notifier = Arc::new(Notify::new());
 	let io_loop = tokio::task::spawn_blocking({
