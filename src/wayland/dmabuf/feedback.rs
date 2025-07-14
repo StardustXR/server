@@ -108,6 +108,7 @@ impl DmabufFeedback {
 			let format = format as u32;
 			// Write the format+modifier pair
 			mfd.as_file().write_all(&format.to_ne_bytes())?;
+			mfd.as_file().write_all(&0_u32.to_ne_bytes())?;
 			mfd.as_file().write_all(&modifier.to_ne_bytes())?;
 		}
 
