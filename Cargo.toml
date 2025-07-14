@@ -29,6 +29,9 @@ wayland = [
 	"dep:memmap2",
 	"dep:drm-fourcc",
 	"dep:memfd",
+	"dep:vulkano",
+	"dep:wgpu-hal",
+	"dep:ash",
 ]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy", "bevy/trace_tracy", "bevy/trace"]
@@ -139,6 +142,9 @@ tokio-stream = { version = "0.1.17", optional = true }
 memmap2 = { version = "0.9.5", optional = true }
 drm-fourcc = { version = "2.2.0", optional = true }
 memfd = { version = "0.6.4", optional = true }
+vulkano = { version = "0.35.1", optional = true }
+wgpu-hal = { version = "24", optional = true, features = ["vulkan"] }
+ash = { version = "0.38.0", optional = true, default-features = false }
 
 [dependencies.stardust-xr]
 workspace = true

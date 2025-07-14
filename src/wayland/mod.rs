@@ -1,6 +1,7 @@
 pub mod core;
 pub mod dmabuf;
 pub mod util;
+pub mod vulkano_data;
 pub mod xdg;
 
 use crate::PreFrameWait;
@@ -39,6 +40,7 @@ use std::{
 use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
 use tokio_stream::StreamExt;
 use tracing::{debug_span, instrument};
+use vulkano_data::setup_vulkano_context;
 use waynest::{
 	server::{
 		self,
@@ -293,6 +295,10 @@ impl Plugin for WaylandPlugin {
 			Render,
 			init_render_device.run_if(|| RENDER_DEVICE.get().is_none()),
 		);
+	}
+	fn finish(&self, app: &mut App) {
+		app.sub_app_mut(RenderApp)
+			.add_systems(Render, setup_vulkano_context);
 	}
 }
 
