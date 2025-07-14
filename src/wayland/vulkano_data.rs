@@ -11,6 +11,7 @@ use vulkano::{
 		StandardCommandBufferAllocatorCreateInfo,
 	},
 	device::{DeviceCreateInfo, QueueCreateInfo},
+	format::Format,
 	instance::InstanceCreateFlags,
 	memory::allocator::{MemoryAllocator, StandardMemoryAllocator},
 };
@@ -140,3 +141,34 @@ unsafe impl vulkano::library::Loader for AshEntryVulkanoLoader {
 		unsafe { self.0.get_instance_proc_addr(instance, name) }
 	}
 }
+
+pub const DMA_CAPABLE_FORMATS: [Format; 28] = [
+	Format::A2B10G10R10_UNORM_PACK32,
+	Format::A2B10G10R10_SINT_PACK32,
+	Format::A2R10G10B10_UNORM_PACK32,
+	Format::A2R10G10B10_SINT_PACK32,
+	Format::B8G8R8_UNORM,
+	Format::B8G8R8_SINT,
+	Format::R8G8B8A8_UNORM,
+	Format::R8G8B8A8_SINT,
+	Format::R8G8B8_UNORM,
+	Format::R8G8B8_SINT,
+	Format::B8G8R8A8_UNORM,
+	Format::B8G8R8A8_SINT,
+	Format::R16_UNORM,
+	Format::R16_SINT,
+	Format::R8_UNORM,
+	Format::R8_SINT,
+	Format::R16G16_UNORM,
+	Format::R16G16_SINT,
+	Format::R8G8_UNORM,
+	Format::R8G8_SINT,
+	Format::A4B4G4R4_UNORM_PACK16,
+	Format::A1R5G5B5_UNORM_PACK16,
+	Format::B5G6R5_UNORM_PACK16,
+	Format::B4G4R4A4_UNORM_PACK16,
+	Format::B5G5R5A1_UNORM_PACK16,
+	Format::R5G6B5_UNORM_PACK16,
+	Format::R4G4B4A4_UNORM_PACK16,
+	Format::R5G5B5A1_UNORM_PACK16,
+];
