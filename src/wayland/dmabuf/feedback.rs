@@ -21,7 +21,7 @@ pub struct DmabufFeedback(pub Arc<Dmabuf>);
 impl DmabufFeedback {
 	#[tracing::instrument("debug", skip_all)]
 	pub async fn send_params(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
-		let num_formats = dbg!(self.0.formats.len());
+		let num_formats = self.0.formats.len();
 		// Send format table first
 		self.send_format_table(client, sender_id).await?;
 

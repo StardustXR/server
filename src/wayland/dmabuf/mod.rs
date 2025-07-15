@@ -66,8 +66,6 @@ impl Dmabuf {
 			.flat_map(|(f, mods)| mods.into_iter().map(move |modifier| (f, modifier)))
 			.collect();
 
-		dbg!(&formats);
-
 		let dmabuf = Self {
 			active_params: Registry::new(),
 			version,
