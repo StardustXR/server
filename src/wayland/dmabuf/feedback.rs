@@ -1,6 +1,5 @@
 use super::Dmabuf;
 use crate::wayland::vulkano_data::VULKANO_CONTEXT;
-use drm_fourcc::DrmFourcc;
 use memfd::MemfdOptions;
 use std::{
 	io::Write,
@@ -23,8 +22,7 @@ impl DmabufFeedback {
 	pub async fn send_params(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
 		let num_formats = self.0.formats.len();
 		// Send format table first
-		self.send_format_table(client, sender_id, &self.0.formats)
-			.await?;
+		self.send_format_table(client, sender_id).await?;
 
 		// Get the device information from Vulkan properties
 		let props = VULKANO_CONTEXT.get().unwrap().phys_dev.properties();
@@ -62,17 +60,12 @@ impl DmabufFeedback {
 		Ok(())
 	}
 
-	pub async fn send_format_table(
-		&self,
-		client: &mut Client,
-		sender_id: ObjectId,
-		formats: &[(DrmFourcc, u64)],
-	) -> Result<()> {
+	pub async fn send_format_table(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
 		// Format + modifier pair (16 bytes):
 		// - format: u32
 		// - padding: 4 bytes
 		// - modifier: u64
-		let size = formats.len() as u32 * 16u32;
+		let size = self.0.formats.len() as u32 * 16u32;
 		// Create a temporary file for the format table
 		let mfd = MemfdOptions::default()
 			.create("stardustxr-format-table")
@@ -80,7 +73,7 @@ impl DmabufFeedback {
 
 		mfd.as_file().set_len(size as u64)?;
 
-		for (format, modifier) in formats {
+		for (format, modifier) in self.0.formats.iter() {
 			let format = format.clone() as u32;
 			// Write the format+modifier pair
 			mfd.as_file().write_all(&format.to_ne_bytes())?;

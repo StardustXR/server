@@ -2,6 +2,11 @@ pub mod buffer_backing;
 pub mod buffer_params;
 pub mod feedback;
 
+use super::{
+	util::ClientExt,
+	vulkano_data::{DMA_CAPABLE_FORMATS, VULKANO_CONTEXT},
+};
+use crate::core::registry::Registry;
 use bevy_dmabuf::{
 	format_mapping::{drm_fourcc_to_vk_format, vk_format_to_drm_fourcc},
 	wgpu_init::vulkan_to_wgpu,
@@ -9,6 +14,7 @@ use bevy_dmabuf::{
 use buffer_params::BufferParams;
 use drm_fourcc::DrmFourcc;
 use feedback::DmabufFeedback;
+use rustc_hash::FxHashSet;
 use waynest::{
 	server::{
 		Client, Dispatcher, Error, Result,
@@ -18,13 +24,6 @@ use waynest::{
 		},
 	},
 	wire::ObjectId,
-};
-
-use crate::core::registry::Registry;
-
-use super::{
-	util::ClientExt,
-	vulkano_data::{DMA_CAPABLE_FORMATS, VULKANO_CONTEXT},
 };
 
 /// Main DMA-BUF interface implementation
@@ -46,14 +45,14 @@ pub struct Dmabuf {
 	// Track active buffer parameters objects by their ID
 	active_params: Registry<BufferParams>,
 	pub(self) version: u32,
-	pub(self) formats: Vec<(DrmFourcc, u64)>,
+	pub(self) formats: FxHashSet<(DrmFourcc, u64)>,
 }
 
 impl Dmabuf {
 	/// Create a new DMA-BUF interface instance
 	pub async fn new(client: &mut Client, id: ObjectId, version: u32) -> Result<Self> {
 		let vk = VULKANO_CONTEXT.wait();
-		let formats = DMA_CAPABLE_FORMATS
+		let formats: FxHashSet<(DrmFourcc, u64)> = DMA_CAPABLE_FORMATS
 			.iter()
 			.filter(|f| {
 				vk_format_to_drm_fourcc((**f).into())
@@ -76,6 +75,8 @@ impl Dmabuf {
 			.flat_map(|(f, mods)| mods.into_iter().map(move |modifier| (f, modifier)))
 			.collect();
 
+		dbg!(&formats);
+
 		let dmabuf = Self {
 			// formats: Mutex::new(formats),
 			active_params: Registry::new(),
@@ -83,7 +84,7 @@ impl Dmabuf {
 			formats,
 		};
 
-		if version > 3 {
+		if version < 3 {
 			for (format, _) in &dmabuf.formats {
 				dmabuf.format(client, id, *format as u32).await?;
 			}
