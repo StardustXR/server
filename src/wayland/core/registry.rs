@@ -133,8 +133,9 @@ impl WlRegistry for Registry {
 			}
 			RegistryGlobals::DMABUF => {
 				tracing::info!("Binding dmabuf");
-				let dmabuf = client.insert(new_id.object_id, Dmabuf::new());
-				dmabuf.send_modifiers(client, new_id.object_id).await?;
+
+				let dmabuf = Dmabuf::new(client, new_id.object_id, new_id.version).await?;
+				client.insert(new_id.object_id, dmabuf);
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");

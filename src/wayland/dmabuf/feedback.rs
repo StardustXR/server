@@ -1,12 +1,11 @@
-use bevy_dmabuf::{
-	format_mapping::{drm_fourcc_to_vk_format, vk_format_to_drm_fourcc},
-	wgpu_init::vulkan_to_wgpu,
-};
+use super::Dmabuf;
+use crate::wayland::vulkano_data::VULKANO_CONTEXT;
 use drm_fourcc::DrmFourcc;
 use memfd::MemfdOptions;
 use std::{
 	io::Write,
 	os::fd::{FromRawFd, IntoRawFd, OwnedFd},
+	sync::Arc,
 };
 use waynest::{
 	server::{
@@ -18,42 +17,17 @@ use waynest::{
 	wire::ObjectId,
 };
 
-use crate::wayland::vulkano_data::{DMA_CAPABLE_FORMATS, VULKANO_CONTEXT};
-
 #[derive(Debug, Dispatcher)]
-pub struct DmabufFeedback;
+pub struct DmabufFeedback(pub Arc<Dmabuf>);
 impl DmabufFeedback {
 	pub async fn send_params(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
-		let vk = VULKANO_CONTEXT.wait();
-		let formats = DMA_CAPABLE_FORMATS
-			.iter()
-			.filter(|f| {
-				vk_format_to_drm_fourcc((**f).into())
-					.and_then(drm_fourcc_to_vk_format)
-					.and_then(vulkan_to_wgpu)
-					.is_some()
-			})
-			.filter_map(|f| {
-				Some((
-					vk_format_to_drm_fourcc((*f).into())?,
-					vk.phys_dev
-						.format_properties(*f)
-						.ok()?
-						.drm_format_modifier_properties
-						.into_iter()
-						.map(|v| v.drm_format_modifier)
-						.collect::<Vec<_>>(),
-				))
-			})
-			.flat_map(|(f, mods)| mods.into_iter().map(move |modifier| (f, modifier)))
-			.collect::<Vec<_>>();
-
-		let num_formats = formats.len();
+		let num_formats = self.0.formats.len();
 		// Send format table first
-		self.send_format_table(client, sender_id, formats).await?;
+		self.send_format_table(client, sender_id, &self.0.formats)
+			.await?;
 
 		// Get the device information from Vulkan properties
-		let props = vk.phys_dev.properties();
+		let props = VULKANO_CONTEXT.get().unwrap().phys_dev.properties();
 
 		// Create dev_t from the primary node major/minor numbers
 		let primary_dev_id = {
@@ -92,7 +66,7 @@ impl DmabufFeedback {
 		&self,
 		client: &mut Client,
 		sender_id: ObjectId,
-		formats: Vec<(DrmFourcc, u64)>,
+		formats: &[(DrmFourcc, u64)],
 	) -> Result<()> {
 		// Format + modifier pair (16 bytes):
 		// - format: u32
@@ -107,7 +81,7 @@ impl DmabufFeedback {
 		mfd.as_file().set_len(size as u64)?;
 
 		for (format, modifier) in formats {
-			let format = format as u32;
+			let format = format.clone() as u32;
 			// Write the format+modifier pair
 			mfd.as_file().write_all(&format.to_ne_bytes())?;
 			mfd.as_file().write_all(&0_u32.to_ne_bytes())?;
