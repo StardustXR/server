@@ -4,7 +4,6 @@
 		"adapter": "CodeLLDB",
 		"program": "target/debug/stardust-xr-server",
 		"args": [],
-		"cwd": "${ZED_WORKTREE_ROOT}",
 		"env": {
 			"RUST_LOG": "debug"
 		},
@@ -23,7 +22,6 @@
 		"adapter": "CodeLLDB",
 		"program": "target/debug/stardust-xr-server",
 		"args": ["-o", "1"],
-		"cwd": "${ZED_WORKTREE_ROOT}",
 		"env": {
 			"RUST_LOG": "debug"
 		},
@@ -42,7 +40,6 @@
 		"adapter": "CodeLLDB",
 		"program": "target/debug/stardust-xr-server",
 		"args": [],
-		"cwd": "${ZED_WORKTREE_ROOT}",
 		"env": {
 			"RUST_LOG": "debug",
 			"DISPLAY": "",
@@ -63,7 +60,6 @@
 		"adapter": "CodeLLDB",
 		"program": "target/debug/stardust-xr-server",
 		"args": ["-f"],
-		"cwd": "${ZED_WORKTREE_ROOT}",
 		"env": {
 			"RUST_LOG": "debug"
 		},
@@ -82,7 +78,6 @@
 		"adapter": "CodeLLDB",
 		"program": "target/debug/stardust-xr-server",
 		"args": ["-f", "--restore", "latest"],
-		"cwd": "${ZED_WORKTREE_ROOT}",
 		"env": {
 			"RUST_LOG": "debug"
 		},
