@@ -64,7 +64,7 @@ impl Buffer {
 	) -> Option<Handle<Image>> {
 		tracing::debug!("Updating texture for buffer {:?}", self.id);
 		match &self.backing {
-			BufferBacking::Shm(backing) => backing.update_tex(images),
+			BufferBacking::Shm(backing) => backing.update_tex(dmatexes, images),
 			BufferBacking::Dmabuf(backing) => backing.update_tex(dmatexes, images),
 		}
 	}

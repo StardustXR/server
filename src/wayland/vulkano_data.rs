@@ -50,7 +50,9 @@ pub fn setup_vulkano_context(
 			ash_instance.handle(),
 			vulkano::instance::InstanceCreateInfo {
 				flags: InstanceCreateFlags::empty(),
-				max_api_version: Some(vulkano::Version::from(hal_instance.instance_api_version())),
+				// TODO: make vulkan init reasonable and remove this hardcoded value from
+				// bevy_mod_openxr
+				max_api_version: Some(vulkano::Version::V1_2),
 				enabled_extensions: vulkano::instance::InstanceExtensions::from_iter(
 					hal_instance
 						.extensions()
@@ -93,6 +95,7 @@ pub fn setup_vulkano_context(
 					),
 					// this is def wrong, lets hope it doesn't cause issues....
 					enabled_features: vulkano::device::DeviceFeatures::empty(),
+
 					..Default::default()
 				},
 			)

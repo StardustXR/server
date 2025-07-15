@@ -6284,8 +6284,7 @@ dependencies = [
 [[package]]
 name = "vulkano"
 version = "0.35.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08840c2b51759a6f88f26f5ea378bc8b5c199a5b4760ddda292304be087249c4"
+source = "git+https://github.com/Schmarni-Dev/vulkano?branch=0_35_dmabuf_fixes#1fd43557d3acb3ddd2721f61b6939ab636ecd17a"
 dependencies = [
  "ash",
  "bytemuck",
@@ -6316,8 +6315,7 @@ dependencies = [
 [[package]]
 name = "vulkano-macros"
 version = "0.35.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dc929c42c9336fd082079ac3ea30126e4a0dfe36fd2e2b3581303f7d140d20f"
+source = "git+https://github.com/Schmarni-Dev/vulkano?branch=0_35_dmabuf_fixes#1fd43557d3acb3ddd2721f61b6939ab636ecd17a"
 dependencies = [
  "proc-macro-crate 3.3.0",
  "proc-macro2",
