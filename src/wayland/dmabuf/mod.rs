@@ -2,15 +2,9 @@ pub mod buffer_backing;
 pub mod buffer_params;
 pub mod feedback;
 
-use super::{
-	util::ClientExt,
-	vulkano_data::{DMA_CAPABLE_FORMATS, VULKANO_CONTEXT},
-};
+use super::{util::ClientExt, vulkano_data::VULKANO_CONTEXT};
 use crate::core::registry::Registry;
-use bevy_dmabuf::{
-	format_mapping::{drm_fourcc_to_vk_format, vk_format_to_drm_fourcc},
-	wgpu_init::vulkan_to_wgpu,
-};
+use bevy_dmabuf::{format_mapping::drm_fourcc_to_vk_format, wgpu_init::vulkan_to_wgpu};
 use buffer_params::BufferParams;
 use drm_fourcc::DrmFourcc;
 use feedback::DmabufFeedback;
@@ -52,19 +46,16 @@ impl Dmabuf {
 	/// Create a new DMA-BUF interface instance
 	pub async fn new(client: &mut Client, id: ObjectId, version: u32) -> Result<Self> {
 		let vk = VULKANO_CONTEXT.wait();
-		let formats: FxHashSet<(DrmFourcc, u64)> = DMA_CAPABLE_FORMATS
+		let formats: FxHashSet<(DrmFourcc, u64)> = ALL_DRM_FOURCCS
 			.iter()
-			.filter(|f| {
-				vk_format_to_drm_fourcc((**f).into())
-					.and_then(drm_fourcc_to_vk_format)
-					.and_then(vulkan_to_wgpu)
-					.is_some()
-			})
-			.filter_map(|f| {
+			.copied()
+			.filter_map(|f| Some((f, drm_fourcc_to_vk_format(f)?)))
+			.filter(|(_, vk_format)| vulkan_to_wgpu(*vk_format).is_some())
+			.filter_map(|(f, vk_format)| {
 				Some((
-					vk_format_to_drm_fourcc((*f).into())?,
+					f,
 					vk.phys_dev
-						.format_properties(*f)
+						.format_properties(vk_format.try_into().unwrap())
 						.ok()?
 						.drm_format_modifier_properties
 						.into_iter()
@@ -78,7 +69,6 @@ impl Dmabuf {
 		dbg!(&formats);
 
 		let dmabuf = Self {
-			// formats: Mutex::new(formats),
 			active_params: Registry::new(),
 			version,
 			formats,
@@ -166,3 +156,111 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 		self.get_default_feedback(client, sender_id, id).await
 	}
 }
+
+pub const ALL_DRM_FOURCCS: [DrmFourcc; 105] = [
+	DrmFourcc::Abgr1555,
+	DrmFourcc::Abgr16161616f,
+	DrmFourcc::Abgr2101010,
+	DrmFourcc::Abgr4444,
+	DrmFourcc::Abgr8888,
+	DrmFourcc::Argb1555,
+	DrmFourcc::Argb16161616f,
+	DrmFourcc::Argb2101010,
+	DrmFourcc::Argb4444,
+	DrmFourcc::Argb8888,
+	DrmFourcc::Axbxgxrx106106106106,
+	DrmFourcc::Ayuv,
+	DrmFourcc::Bgr233,
+	DrmFourcc::Bgr565,
+	DrmFourcc::Bgr565_a8,
+	DrmFourcc::Bgr888,
+	DrmFourcc::Bgr888_a8,
+	DrmFourcc::Bgra1010102,
+	DrmFourcc::Bgra4444,
+	DrmFourcc::Bgra5551,
+	DrmFourcc::Bgra8888,
+	DrmFourcc::Bgrx1010102,
+	DrmFourcc::Bgrx4444,
+	DrmFourcc::Bgrx5551,
+	DrmFourcc::Bgrx8888,
+	DrmFourcc::Bgrx8888_a8,
+	DrmFourcc::Big_endian,
+	DrmFourcc::C8,
+	DrmFourcc::Gr1616,
+	DrmFourcc::Gr88,
+	DrmFourcc::Nv12,
+	DrmFourcc::Nv15,
+	DrmFourcc::Nv16,
+	DrmFourcc::Nv21,
+	DrmFourcc::Nv24,
+	DrmFourcc::Nv42,
+	DrmFourcc::Nv61,
+	DrmFourcc::P010,
+	DrmFourcc::P012,
+	DrmFourcc::P016,
+	DrmFourcc::P210,
+	DrmFourcc::Q401,
+	DrmFourcc::Q410,
+	DrmFourcc::R16,
+	DrmFourcc::R8,
+	DrmFourcc::Rg1616,
+	DrmFourcc::Rg88,
+	DrmFourcc::Rgb332,
+	DrmFourcc::Rgb565,
+	DrmFourcc::Rgb565_a8,
+	DrmFourcc::Rgb888,
+	DrmFourcc::Rgb888_a8,
+	DrmFourcc::Rgba1010102,
+	DrmFourcc::Rgba4444,
+	DrmFourcc::Rgba5551,
+	DrmFourcc::Rgba8888,
+	DrmFourcc::Rgbx1010102,
+	DrmFourcc::Rgbx4444,
+	DrmFourcc::Rgbx5551,
+	DrmFourcc::Rgbx8888,
+	DrmFourcc::Rgbx8888_a8,
+	DrmFourcc::Uyvy,
+	DrmFourcc::Vuy101010,
+	DrmFourcc::Vuy888,
+	DrmFourcc::Vyuy,
+	DrmFourcc::X0l0,
+	DrmFourcc::X0l2,
+	DrmFourcc::Xbgr1555,
+	DrmFourcc::Xbgr16161616f,
+	DrmFourcc::Xbgr2101010,
+	DrmFourcc::Xbgr4444,
+	DrmFourcc::Xbgr8888,
+	DrmFourcc::Xbgr8888_a8,
+	DrmFourcc::Xrgb1555,
+	DrmFourcc::Xrgb16161616f,
+	DrmFourcc::Xrgb2101010,
+	DrmFourcc::Xrgb4444,
+	DrmFourcc::Xrgb8888,
+	DrmFourcc::Xrgb8888_a8,
+	DrmFourcc::Xvyu12_16161616,
+	DrmFourcc::Xvyu16161616,
+	DrmFourcc::Xvyu2101010,
+	DrmFourcc::Xyuv8888,
+	DrmFourcc::Y0l0,
+	DrmFourcc::Y0l2,
+	DrmFourcc::Y210,
+	DrmFourcc::Y212,
+	DrmFourcc::Y216,
+	DrmFourcc::Y410,
+	DrmFourcc::Y412,
+	DrmFourcc::Y416,
+	DrmFourcc::Yuv410,
+	DrmFourcc::Yuv411,
+	DrmFourcc::Yuv420,
+	DrmFourcc::Yuv420_10bit,
+	DrmFourcc::Yuv420_8bit,
+	DrmFourcc::Yuv422,
+	DrmFourcc::Yuv444,
+	DrmFourcc::Yuyv,
+	DrmFourcc::Yvu410,
+	DrmFourcc::Yvu411,
+	DrmFourcc::Yvu420,
+	DrmFourcc::Yvu422,
+	DrmFourcc::Yvu444,
+	DrmFourcc::Yvyu,
+];

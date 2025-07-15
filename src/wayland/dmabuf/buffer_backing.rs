@@ -11,6 +11,7 @@ use bevy_dmabuf::{
 use drm_fourcc::DrmFourcc;
 use mint::Vector2;
 use parking_lot::Mutex;
+use tracing::info;
 use std::sync::{Arc, OnceLock};
 use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::Flags;
 
@@ -39,6 +40,7 @@ impl std::fmt::Debug for DmabufBacking {
 }
 
 impl DmabufBacking {
+	#[tracing::instrument("debug", skip_all)]
 	pub fn new(
 		params: Arc<BufferParams>,
 		message_sink: Option<MessageSink>,
@@ -74,11 +76,13 @@ impl DmabufBacking {
 		})
 	}
 
+	#[tracing::instrument("debug", skip_all)]
 	pub fn update_tex(
 		&self,
 		dmatexes: &ImportedDmatexs,
 		images: &mut Assets<Image>,
 	) -> Option<Handle<Image>> {
+		info!("updating dmabuf tex");
 		self.pending_imported_dmatex
 			.lock()
 			.take()

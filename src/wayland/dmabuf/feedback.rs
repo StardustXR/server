@@ -19,8 +19,9 @@ use waynest::{
 #[derive(Debug, Dispatcher)]
 pub struct DmabufFeedback(pub Arc<Dmabuf>);
 impl DmabufFeedback {
+	#[tracing::instrument("debug", skip_all)]
 	pub async fn send_params(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
-		let num_formats = self.0.formats.len();
+		let num_formats = dbg!(self.0.formats.len());
 		// Send format table first
 		self.send_format_table(client, sender_id).await?;
 
@@ -44,7 +45,6 @@ impl DmabufFeedback {
 		self.tranche_target_device(client, sender_id, dev_id)
 			.await?;
 
-		// We only have one format at index 0
 		let indices = (0..num_formats).flat_map(|i| i.to_ne_bytes()).collect();
 		self.tranche_formats(client, sender_id, indices).await?;
 
@@ -60,6 +60,7 @@ impl DmabufFeedback {
 		Ok(())
 	}
 
+	#[tracing::instrument("debug", skip_all)]
 	pub async fn send_format_table(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
 		// Format + modifier pair (16 bytes):
 		// - format: u32
@@ -74,7 +75,7 @@ impl DmabufFeedback {
 		mfd.as_file().set_len(size as u64)?;
 
 		for (format, modifier) in self.0.formats.iter() {
-			let format = format.clone() as u32;
+			let format = *format as u32;
 			// Write the format+modifier pair
 			mfd.as_file().write_all(&format.to_ne_bytes())?;
 			mfd.as_file().write_all(&0_u32.to_ne_bytes())?;

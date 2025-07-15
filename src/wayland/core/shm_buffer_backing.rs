@@ -38,6 +38,7 @@ impl ShmBufferBacking {
 		}
 	}
 
+	#[tracing::instrument("debug", skip_all)]
 	pub fn update_tex(&self, images: &mut Assets<Image>) -> Option<Handle<Image>> {
 		let mut image_handle = self.image.lock();
 		images.remove(image_handle.id());

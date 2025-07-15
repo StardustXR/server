@@ -40,6 +40,7 @@ pub struct Buffer {
 }
 
 impl Buffer {
+	#[tracing::instrument("debug", skip_all)]
 	pub fn new(client: &mut Client, id: ObjectId, backing: BufferBacking) -> Arc<Self> {
 		let buffer = client.insert(
 			id,
@@ -55,6 +56,7 @@ impl Buffer {
 	}
 
 	/// Returns the tex if it was updated
+	#[tracing::instrument("debug", skip_all)]
 	pub fn update_tex(
 		&self,
 		dmatexes: &ImportedDmatexs,

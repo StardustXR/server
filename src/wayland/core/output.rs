@@ -23,7 +23,7 @@ impl Output {
 		)
 		.await?;
 
-		self.mode(client, self.0, Mode::Current, 2048, 2048, 0)
+		self.mode(client, self.0, Mode::Current, 2048, 2048, i32::MAX)
 			.await?;
 
 		self.done(client, self.0).await
