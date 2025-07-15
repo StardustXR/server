@@ -83,14 +83,14 @@ pub fn setup_vulkano_context(
 						queue_family_index: dev.queue_family_index(),
 						..Default::default()
 					}],
-					enabled_extensions: dbg!(vulkano::device::DeviceExtensions::from_iter(
+					enabled_extensions: vulkano::device::DeviceExtensions::from_iter(
 						dev.enabled_device_extensions()
 							.iter()
 							// TODO: remove this hack by telling wgpu about the actual exts used in
 							// bevy_mod_openxr
 							.chain(bevy_dmabuf::required_device_extensions().iter())
 							.map(|v| v.to_str().unwrap()),
-					)),
+					),
 					// this is def wrong, lets hope it doesn't cause issues....
 					enabled_features: vulkano::device::DeviceFeatures::empty(),
 					..Default::default()
