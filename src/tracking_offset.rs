@@ -17,9 +17,9 @@ use bevy_mod_xr::{session::XrSessionCreated, spaces::XrPrimaryReferenceSpace};
 use glam::{Quat, Vec3};
 use openxr::ReferenceSpaceType;
 
-pub struct TrackingRootOffsetPlugin;
+pub struct TrackingOffsetPlugin;
 
-impl Plugin for TrackingRootOffsetPlugin {
+impl Plugin for TrackingOffsetPlugin {
 	fn build(&self, app: &mut bevy::app::App) {
 		app.add_oxr_event_handler(reset_offset);
 		app.add_systems(XrSessionCreated, |mut cmds: Commands| {
