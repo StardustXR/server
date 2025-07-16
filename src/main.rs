@@ -5,6 +5,7 @@ mod core;
 mod nodes;
 mod objects;
 mod session;
+pub mod tracking_offset;
 #[cfg(feature = "wayland")]
 mod wayland;
 
@@ -70,6 +71,7 @@ use tokio::task::JoinError;
 use tracing::metadata::LevelFilter;
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use tracking_offset::TrackingOffsetPlugin;
 use wayland::{Wayland, WaylandPlugin};
 use zbus::Connection;
 use zbus::fdo::ObjectManager;
@@ -398,7 +400,7 @@ fn bevy_loop(
 	// object plugins
 	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin, HmdPlugin));
 	// feature plugins
-	app.add_plugins(WaylandPlugin);
+	app.add_plugins((WaylandPlugin, TrackingOffsetPlugin));
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
