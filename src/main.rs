@@ -52,6 +52,7 @@ use nodes::drawable::lines::LinesNodePlugin;
 use nodes::drawable::model::ModelNodePlugin;
 use nodes::drawable::text::TextNodePlugin;
 use nodes::spatial::SpatialNodePlugin;
+use objects::hmd::HmdPlugin;
 use objects::input::mouse_pointer::FlatscreenInputPlugin;
 use objects::input::oxr_controller::ControllerPlugin;
 use objects::input::oxr_hand::HandPlugin;
@@ -173,6 +174,8 @@ async fn main() -> Result<AppExit, JoinError> {
 	let dbus_connection = Connection::session()
 		.await
 		.expect("Could not open dbus session");
+	// why is this requested here? should there be a specific server bus name that we check
+	// instead?
 	dbus_connection
 		.request_name("org.stardustxr.HMD")
 		.await
@@ -393,7 +396,7 @@ fn bevy_loop(
 		AudioNodePlugin,
 	));
 	// object plugins
-	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin));
+	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin, HmdPlugin));
 	// feature plugins
 	app.add_plugins(WaylandPlugin);
 	app.add_systems(PostStartup, move || {

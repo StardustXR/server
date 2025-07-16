@@ -46,7 +46,7 @@ impl Plugin for FlatscreenInputPlugin {
 
 #[derive(Component)]
 #[require(Camera3d)]
-struct FlatscreenCam;
+pub struct FlatscreenCam;
 
 fn setup(mut cmds: Commands) {
 	let Ok(pointer) =

@@ -24,6 +24,7 @@ use zbus::{Connection, interface, object_server::Interface, zvariant::OwnedObjec
 
 pub mod input;
 pub mod play_space;
+pub mod hmd;
 
 pub struct ObjectHandle<I: Interface>(Connection, OwnedObjectPath, PhantomData<I>);
 
