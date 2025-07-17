@@ -155,6 +155,7 @@ impl ShmBufferBacking {
 			},
 			format: vk_format_to_drm_fourcc(vk_format.into()).unwrap() as u32,
 			flip_y: false,
+			srgb: true,
 		};
 
 		let imported_texture = import_texture(bevy_render_dev, dmatex, DropCallback(None)).unwrap();

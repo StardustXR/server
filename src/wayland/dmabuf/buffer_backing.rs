@@ -60,6 +60,7 @@ impl DmabufBacking {
 			format: format as u32,
 			// TODO: impl this in bevy-dmabuf
 			flip_y: flags.contains(Flags::YInvert),
+			srgb: true,
 		};
 		let dev = RENDER_DEVICE.wait();
 		let imported_tex = import_texture(dev, dmatex, DropCallback(None))?;
