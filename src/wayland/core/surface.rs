@@ -85,7 +85,7 @@ impl std::fmt::Debug for Surface {
 	}
 }
 impl Surface {
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn new(client: &Client, id: ObjectId) -> Self {
 		Surface {
 			id,
@@ -99,12 +99,12 @@ impl Surface {
 		}
 	}
 
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn pending_state(&self) -> parking_lot::MutexGuard<'_, DoubleBuffer<SurfaceState>> {
 		self.state.lock()
 	}
 
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn add_commit_handler<F: Fn(&Surface, &SurfaceState) -> bool + Send + Sync + 'static>(
 		&self,
 		handler: F,
@@ -113,7 +113,7 @@ impl Surface {
 		handlers.push(Box::new(handler));
 	}
 
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn update_graphics(
 		&self,
 		dmatexes: &ImportedDmatexs,
@@ -160,13 +160,13 @@ impl Surface {
 		let _ = state_lock.current().clean_lock.set(());
 	}
 
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn apply_material(&self, model_part: &Arc<ModelPart>) {
 		// tracing::info!("uwu applying material");
 		self.pending_material_applications.add_raw(model_part)
 	}
 
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	fn apply_surface_materials(&self) {
 		let Some(mat) = self.material.get() else {
 			return;
@@ -177,15 +177,15 @@ impl Surface {
 		}
 		self.pending_material_applications.clear();
 	}
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	fn mark_dirty(&self) {
 		self.state.lock().pending.clean_lock = Default::default();
 	}
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn current_state(&self) -> SurfaceState {
 		self.state.lock().current().clone()
 	}
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn frame_event(&self) {
 		if let Some(callback_obj) = self.frame_callback_object.lock().take() {
 			let _ = self.message_sink.send(Message::Frame(callback_obj));
@@ -222,7 +222,7 @@ impl Surface {
 }
 impl WlSurface for Surface {
 	/// https://wayland.app/protocols/wayland#wl_surface:request:attach
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn attach(
 		&self,
 		client: &mut Client,
@@ -236,7 +236,7 @@ impl WlSurface for Surface {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:damage
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn damage(
 		&self,
 		_client: &mut Client,
@@ -252,7 +252,7 @@ impl WlSurface for Surface {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:frame
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn frame(
 		&self,
 		client: &mut Client,
@@ -265,7 +265,7 @@ impl WlSurface for Surface {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:set_opaque_region
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn set_opaque_region(
 		&self,
 		_client: &mut Client,
@@ -277,7 +277,7 @@ impl WlSurface for Surface {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:set_input_region
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn set_input_region(
 		&self,
 		_client: &mut Client,
@@ -289,7 +289,7 @@ impl WlSurface for Surface {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:commit
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn commit(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		{
 			let mut lock = self.state.lock();
@@ -324,7 +324,7 @@ impl WlSurface for Surface {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:set_buffer_transform
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn set_buffer_transform(
 		&self,
 		_client: &mut Client,
@@ -336,7 +336,7 @@ impl WlSurface for Surface {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:set_buffer_scale
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn set_buffer_scale(
 		&self,
 		_client: &mut Client,
@@ -348,7 +348,7 @@ impl WlSurface for Surface {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:damage_buffer
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn damage_buffer(
 		&self,
 		_client: &mut Client,
@@ -364,7 +364,7 @@ impl WlSurface for Surface {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:offset
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn offset(
 		&self,
 		_client: &mut Client,
@@ -376,7 +376,7 @@ impl WlSurface for Surface {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:destroy
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}

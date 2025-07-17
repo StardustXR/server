@@ -103,6 +103,7 @@ bevy = { version = "0.16", default-features = false, features = [
 	"hdr",
 	"jpeg",
 	"tonemapping_luts",
+	"multi_threaded",
 ] }
 bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"

@@ -19,7 +19,7 @@ use waynest::{
 #[derive(Debug, Dispatcher)]
 pub struct DmabufFeedback(pub Arc<Dmabuf>);
 impl DmabufFeedback {
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub async fn send_params(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
 		let num_formats = self.0.formats.len();
 		// Send format table first
@@ -60,7 +60,7 @@ impl DmabufFeedback {
 		Ok(())
 	}
 
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub async fn send_format_table(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
 		// Format + modifier pair (16 bytes):
 		// - format: u32

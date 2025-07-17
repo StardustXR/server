@@ -30,7 +30,7 @@ pub struct BufferParams {
 }
 
 impl BufferParams {
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn new(id: ObjectId) -> Self {
 		tracing::info!("Creating new BufferParams with id {:?}", id);
 		Self {
@@ -46,7 +46,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		Ok(())
 	}
 
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn add(
 		&self,
 		_client: &mut Client,
@@ -91,7 +91,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		Ok(())
 	}
 
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn create(
 		&self,
 		client: &mut Client,
@@ -126,7 +126,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		}
 	}
 
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn create_immed(
 		&self,
 		client: &mut Client,
@@ -154,7 +154,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 }
 
 impl Drop for BufferParams {
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	fn drop(&mut self) {
 		let planes = self.planes.get_mut();
 		tracing::info!("BufferParams being dropped with {} planes", planes.len());

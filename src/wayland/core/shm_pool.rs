@@ -18,7 +18,7 @@ pub struct ShmPool {
 }
 
 impl ShmPool {
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn new(fd: OwnedFd, size: i32) -> Result<Self> {
 		let map = unsafe {
 			MmapOptions::new()
@@ -31,7 +31,7 @@ impl ShmPool {
 		})
 	}
 
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn data_lock(&self) -> MappedMutexGuard<RawMutex, [u8]> {
 		MutexGuard::map(self.inner.lock(), |i| i.as_mut())
 	}
@@ -39,7 +39,7 @@ impl ShmPool {
 
 impl WlShmPool for ShmPool {
 	/// https://wayland.app/protocols/wayland#wl_shm_pool:request:create_buffer
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn create_buffer(
 		&self,
 		client: &mut Client,
@@ -64,7 +64,7 @@ impl WlShmPool for ShmPool {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_shm_pool:request:resize
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn resize(&self, _client: &mut Client, _sender_id: ObjectId, size: i32) -> Result<()> {
 		let mut inner = self.inner.lock();
 		unsafe { inner.remap(size as usize, RemapOptions::new().may_move(true))? };
@@ -72,7 +72,7 @@ impl WlShmPool for ShmPool {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_shm_pool:request:destroy
-	#[tracing::instrument("debug", skip_all)]
+	#[tracing::instrument(level = "debug", skip_all)]
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
 	}
