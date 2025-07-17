@@ -5,6 +5,7 @@ use crate::{
 	nodes::{drawable::model::ModelPart, items::panel::Geometry},
 	wayland::{
 		Message, MessageSink,
+		core::buffer::BufferUsage,
 		util::{ClientExt, DoubleBuffer},
 		xdg::{popup::Popup, toplevel::Toplevel},
 	},
@@ -17,7 +18,7 @@ use bevy::{
 use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
 use parking_lot::Mutex;
-use std::sync::{Arc, OnceLock, atomic::Ordering};
+use std::sync::{Arc, OnceLock};
 use waynest::{
 	server::{
 		Client, Dispatcher, Result,
@@ -35,8 +36,14 @@ pub enum SurfaceRole {
 }
 
 #[derive(Debug, Clone)]
+pub struct BufferState {
+	pub buffer: Arc<Buffer>,
+	pub usage: Arc<BufferUsage>,
+}
+
+#[derive(Debug, Clone)]
 pub struct SurfaceState {
-	pub buffer: Option<Arc<Buffer>>,
+	pub buffer: Option<BufferState>,
 	pub density: f32,
 	pub geometry: Option<Geometry>,
 	pub min_size: Option<Vector2<u32>>,
@@ -121,10 +128,6 @@ impl Surface {
 		images: &mut Assets<Image>,
 	) {
 		let state_lock = self.state.lock();
-		if state_lock.current().clean_lock.get().is_some() {
-			// then we don't need to reupload the texture
-			return;
-		}
 		let Some(buffer) = state_lock.current().buffer.clone() else {
 			return;
 		};
@@ -145,11 +148,10 @@ impl Surface {
 			})
 		});
 
-		if let Some(new_tex) = buffer.update_tex(dmatexes, images) {
-			buffer.rendered.store(true, Ordering::Relaxed);
+		if let Some(new_tex) = buffer.buffer.update_tex(dmatexes, images) {
 			let material = materials.get_mut(material).unwrap();
 			material.base_color_texture.replace(new_tex);
-			material.alpha_mode = if buffer.is_transparent() {
+			material.alpha_mode = if buffer.buffer.is_transparent() {
 				AlphaMode::Premultiplied
 			} else {
 				AlphaMode::Opaque
@@ -177,11 +179,7 @@ impl Surface {
 		}
 		self.pending_material_applications.clear();
 	}
-	#[tracing::instrument(level = "debug", skip_all)]
-	fn mark_dirty(&self) {
-		self.state.lock().pending.clean_lock = Default::default();
-	}
-	#[tracing::instrument(level = "debug", skip_all)]
+	#[tracing::instrument("debug", skip_all)]
 	pub fn current_state(&self) -> SurfaceState {
 		self.state.lock().current().clone()
 	}
@@ -231,7 +229,13 @@ impl WlSurface for Surface {
 		_x: i32,
 		_y: i32,
 	) -> Result<()> {
-		self.state.lock().pending.buffer = buffer.and_then(|b| client.get::<Buffer>(b));
+		self.state.lock().pending.buffer = buffer.and_then(|b| {
+			let buffer = client.get::<Buffer>(b)?;
+			Some(BufferState {
+				usage: BufferUsage::new(client, &buffer),
+				buffer,
+			})
+		});
 		Ok(())
 	}
 
@@ -246,8 +250,6 @@ impl WlSurface for Surface {
 		_width: i32,
 		_height: i32,
 	) -> Result<()> {
-		// should be more intelligent about this but for now just make it copy everything to gpu next frame again
-		self.mark_dirty();
 		Ok(())
 	}
 
@@ -291,32 +293,7 @@ impl WlSurface for Surface {
 	/// https://wayland.app/protocols/wayland#wl_surface:request:commit
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn commit(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
-		{
-			let mut lock = self.state.lock();
-
-			// If we're getting a new buffer and the current one is DMA-BUF, release it
-			if let Some(new_buffer) = &lock.pending.buffer {
-				if let Some(current_buffer) = &lock.current().buffer {
-					// Don't release if it's the same buffer being reused
-					if !Arc::ptr_eq(new_buffer, current_buffer)
-						&& !current_buffer.can_release_after_update()
-					{
-						let _ = self
-							.message_sink
-							.send(Message::ReleaseBuffer(current_buffer.clone()));
-					}
-				}
-			}
-
-			let dirty = lock.current().clean_lock.get().is_none()
-				|| lock.pending.clean_lock.take().is_none();
-			lock.apply();
-
-			if !dirty {
-				let _ = lock.current().clean_lock.set(());
-			}
-		}
-
+		self.state.lock().apply();
 		let current_state = self.current_state();
 		let mut handlers = self.on_commit_handlers.lock();
 		handlers.retain(|f| (f)(self, &current_state));
@@ -358,8 +335,6 @@ impl WlSurface for Surface {
 		_width: i32,
 		_height: i32,
 	) -> Result<()> {
-		// we should upload only chunks to the gpu and do subimage copy but that's a lot rn so we won't
-		self.mark_dirty();
 		Ok(())
 	}
 

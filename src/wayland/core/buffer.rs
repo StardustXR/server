@@ -1,58 +1,59 @@
-use std::sync::{Arc, atomic::AtomicBool};
-
+use crate::wayland::Message;
 use crate::wayland::dmabuf::buffer_backing::DmabufBacking;
-use crate::{
-	core::registry::Registry,
-	wayland::{MessageSink, core::shm_buffer_backing::ShmBufferBacking, util::ClientExt},
-};
+use crate::wayland::{MessageSink, core::shm_buffer_backing::ShmBufferBacking, util::ClientExt};
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image,
 };
 use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
+use std::sync::{Arc, Weak};
 pub use waynest::server::protocol::core::wayland::wl_buffer::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
 	wire::ObjectId,
 };
 
-pub static WL_BUFFER_REGISTRY: Registry<Buffer> = Registry::new();
+#[derive(Debug)]
+pub struct BufferUsage {
+	pub buffer: Weak<Buffer>,
+	message_sink: MessageSink,
+}
+impl BufferUsage {
+	pub fn new(client: &Client, buffer: &Arc<Buffer>) -> Arc<Self> {
+		Arc::new(Self {
+			buffer: Arc::downgrade(buffer),
+			message_sink: client.message_sink(),
+		})
+	}
+}
+impl Drop for BufferUsage {
+	fn drop(&mut self) {
+		if let Some(buffer) = self.buffer.upgrade() {
+			self.message_sink
+				.send(Message::ReleaseBuffer(buffer))
+				.unwrap();
+		}
+	}
+}
 
 #[derive(Debug)]
 pub enum BufferBacking {
 	Shm(ShmBufferBacking),
 	Dmabuf(DmabufBacking),
 }
-impl BufferBacking {
-	// Returns true if the buffer can be released immediately after texture update
-	pub fn can_release_after_update(&self) -> bool {
-		matches!(self, BufferBacking::Shm(_))
-	}
-}
+impl BufferBacking {}
 
 #[derive(Debug, Dispatcher)]
 pub struct Buffer {
 	pub id: ObjectId,
 	backing: BufferBacking,
-	pub message_sink: MessageSink,
-	pub rendered: AtomicBool,
 }
 
 impl Buffer {
 	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn new(client: &mut Client, id: ObjectId, backing: BufferBacking) -> Arc<Self> {
-		let buffer = client.insert(
-			id,
-			Self {
-				id,
-				backing,
-				message_sink: client.message_sink(),
-				rendered: AtomicBool::new(false),
-			},
-		);
-		WL_BUFFER_REGISTRY.add_raw(&buffer);
-		buffer
+		client.insert(id, Self { id, backing })
 	}
 
 	/// Returns the tex if it was updated
@@ -67,10 +68,6 @@ impl Buffer {
 			BufferBacking::Shm(backing) => backing.update_tex(dmatexes, images),
 			BufferBacking::Dmabuf(backing) => backing.update_tex(dmatexes, images),
 		}
-	}
-
-	pub fn can_release_after_update(&self) -> bool {
-		self.backing.can_release_after_update()
 	}
 
 	pub fn is_transparent(&self) -> bool {

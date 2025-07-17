@@ -46,7 +46,7 @@ impl Backend for XdgBackend {
 
 		let size = surface_state
 			.buffer
-			.map(|b| [b.size().x as u32, b.size().y as u32].into())
+			.map(|b| [b.buffer.size().x as u32, b.buffer.size().y as u32].into())
 			.unwrap_or([0; 2].into());
 		let toplevel = ToplevelInfo {
 			parent: self.toplevel().parent(),

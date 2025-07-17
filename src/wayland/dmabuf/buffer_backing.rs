@@ -1,5 +1,8 @@
 use super::buffer_params::BufferParams;
-use crate::wayland::{MessageSink, RENDER_DEVICE};
+use crate::{
+	core::registry::Registry,
+	wayland::{MessageSink, RENDER_DEVICE, core::buffer::BufferUsage},
+};
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image,
@@ -12,7 +15,11 @@ use drm_fourcc::DrmFourcc;
 use mint::Vector2;
 use parking_lot::Mutex;
 use std::sync::{Arc, OnceLock};
+use tracing::info;
 use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::Flags;
+
+// clear this out on end frame, add to it whenever a commit with the surface with the buffer is present
+const IN_USE_DMABUFS: Registry<BufferUsage> = Registry::new();
 
 /// Parameters for a shared memory buffer
 pub struct DmabufBacking {
@@ -81,7 +88,10 @@ impl DmabufBacking {
 		&self,
 		dmatexes: &ImportedDmatexs,
 		images: &mut Assets<Image>,
+		usage: Arc<BufferUsage>,
 	) -> Option<Handle<Image>> {
+		IN_USE_DMABUFS.add_raw(usage);
+		info!("updating dmabuf tex");
 		self.pending_imported_dmatex
 			.lock()
 			.take()

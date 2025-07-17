@@ -21,15 +21,9 @@ use bevy::render::{Render, RenderApp};
 use bevy::{asset::Assets, ecs::resource::Resource, image::Image};
 use bevy_dmabuf::import::ImportedDmatexs;
 use cluFlock::{FlockLock, ToFlock};
-use core::{
-	buffer::{Buffer, WL_BUFFER_REGISTRY},
-	callback::Callback,
-	display::Display,
-	surface::WL_SURFACE_REGISTRY,
-};
+use core::{buffer::Buffer, callback::Callback, display::Display, surface::WL_SURFACE_REGISTRY};
 use mint::Vector2;
 use std::fs::File;
-use std::sync::atomic::Ordering;
 use std::{
 	fs::{self, OpenOptions},
 	io::{self, ErrorKind},
@@ -307,14 +301,6 @@ fn init_render_device(dev: Res<RenderDevice>) {
 }
 
 fn early_frame() {
-	for buffer in WL_BUFFER_REGISTRY.get_valid_contents() {
-		if buffer.rendered.load(Ordering::Relaxed) {
-			let _ = buffer
-				.message_sink
-				.send(Message::ReleaseBuffer(buffer.clone()));
-		}
-		buffer.rendered.store(false, Ordering::Relaxed);
-	}
 	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
 		surface.frame_event();
 	}

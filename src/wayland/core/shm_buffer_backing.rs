@@ -1,6 +1,5 @@
-use crate::wayland::{RENDER_DEVICE, vulkano_data::VULKANO_CONTEXT};
-
 use super::shm_pool::ShmPool;
+use crate::wayland::{RENDER_DEVICE, vulkano_data::VULKANO_CONTEXT};
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image as BevyImage,
@@ -159,6 +158,7 @@ impl ShmBufferBacking {
 		};
 
 		let imported_texture = import_texture(bevy_render_dev, dmatex, DropCallback(None)).unwrap();
+
 		Self {
 			pool,
 			offset,

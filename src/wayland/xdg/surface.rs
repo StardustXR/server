@@ -93,7 +93,7 @@ impl XdgSurface for Surface {
 			let has_valid_buffer = state
 				.buffer
 				.as_ref()
-				.is_some_and(|b| b.size().x > 0 && b.size().y > 0);
+				.is_some_and(|b| b.buffer.size().x > 0 && b.buffer.size().y > 0);
 
 			let mut mapped_lock = toplevel.mapped.lock();
 			if mapped_lock.is_none()
@@ -161,7 +161,7 @@ impl XdgSurface for Surface {
 		// 	let has_valid_buffer = state
 		// 		.buffer
 		// 		.as_ref()
-		// 		.is_some_and(|b| b.size().x > 0 && b.size().y > 0);
+		// 		.is_some_and(|b| b.buffer.size().x > 0 && b.buffer.size().y > 0);
 
 		// 	let mut mapped_lock = popup.mapped.lock();
 		// 	if mapped_lock.is_none()
