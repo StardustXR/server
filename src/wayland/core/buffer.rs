@@ -16,24 +16,22 @@ use waynest::{
 
 #[derive(Debug)]
 pub struct BufferUsage {
-	pub buffer: Weak<Buffer>,
+	pub buffer: Arc<Buffer>,
 	message_sink: MessageSink,
 }
 impl BufferUsage {
 	pub fn new(client: &Client, buffer: &Arc<Buffer>) -> Arc<Self> {
 		Arc::new(Self {
-			buffer: Arc::downgrade(buffer),
+			buffer: buffer.clone(),
 			message_sink: client.message_sink(),
 		})
 	}
 }
 impl Drop for BufferUsage {
 	fn drop(&mut self) {
-		if let Some(buffer) = self.buffer.upgrade() {
-			self.message_sink
-				.send(Message::ReleaseBuffer(buffer))
-				.unwrap();
-		}
+		self.message_sink
+			.send(Message::ReleaseBuffer(self.buffer.clone()))
+			.unwrap();
 	}
 }
 
@@ -42,7 +40,6 @@ pub enum BufferBacking {
 	Shm(ShmBufferBacking),
 	Dmabuf(DmabufBacking),
 }
-impl BufferBacking {}
 
 #[derive(Debug, Dispatcher)]
 pub struct Buffer {
@@ -82,6 +79,9 @@ impl Buffer {
 			BufferBacking::Shm(backing) => backing.size(),
 			BufferBacking::Dmabuf(backing) => backing.size(),
 		}
+	}
+	pub fn uses_buffer_usage(&self) -> bool {
+		matches!(self.backing, BufferBacking::Dmabuf(_))
 	}
 }
 

@@ -38,7 +38,7 @@ pub enum SurfaceRole {
 #[derive(Debug, Clone)]
 pub struct BufferState {
 	pub buffer: Arc<Buffer>,
-	pub usage: Arc<BufferUsage>,
+	pub usage: Option<Arc<BufferUsage>>,
 }
 
 #[derive(Debug, Clone)]
@@ -232,7 +232,9 @@ impl WlSurface for Surface {
 		self.state.lock().pending.buffer = buffer.and_then(|b| {
 			let buffer = client.get::<Buffer>(b)?;
 			Some(BufferState {
-				usage: BufferUsage::new(client, &buffer),
+				usage: buffer
+					.uses_buffer_usage()
+					.then(|| BufferUsage::new(client, &buffer)),
 				buffer,
 			})
 		});

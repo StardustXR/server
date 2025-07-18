@@ -16,13 +16,17 @@ use crate::{
 use bevy::app::{App, Plugin, Update};
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Res, ResMut};
+use bevy::prelude::{Deref, DerefMut};
 use bevy::render::renderer::RenderDevice;
 use bevy::render::{Render, RenderApp};
 use bevy::{asset::Assets, ecs::resource::Resource, image::Image};
 use bevy_dmabuf::import::ImportedDmatexs;
+use bevy_mod_xr::session::XrRenderSet;
 use cluFlock::{FlockLock, ToFlock};
+use core::buffer::BufferUsage;
 use core::{buffer::Buffer, callback::Callback, display::Display, surface::WL_SURFACE_REGISTRY};
 use mint::Vector2;
+use rustc_hash::FxHashMap;
 use std::fs::File;
 use std::{
 	fs::{self, OpenOptions},
@@ -285,15 +289,39 @@ impl Plugin for WaylandPlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(PreFrameWait, early_frame);
 		app.add_systems(Update, update_graphics);
-		app.sub_app_mut(RenderApp).add_systems(
-			Render,
-			init_render_device.run_if(|| RENDER_DEVICE.get().is_none()),
-		);
+		app.sub_app_mut(RenderApp)
+			.init_resource::<UsedBuffers>()
+			.add_systems(
+				Render,
+				init_render_device.run_if(|| RENDER_DEVICE.get().is_none()),
+			);
 	}
 	fn finish(&self, app: &mut App) {
 		app.sub_app_mut(RenderApp)
-			.add_systems(Render, setup_vulkano_context);
+			.add_systems(Render, setup_vulkano_context)
+			.add_systems(Render, push_used_buffers.in_set(XrRenderSet::PreRender))
+			.add_systems(
+				Render,
+				release_unneeded_buffers.in_set(XrRenderSet::PostRender),
+			);
 	}
+}
+
+#[derive(Resource, Default, Deref, DerefMut)]
+struct UsedBuffers(FxHashMap<ObjectId, Arc<BufferUsage>>);
+
+fn push_used_buffers(mut buffers: ResMut<UsedBuffers>) {
+	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
+		if let Some(buffer) = surface.current_state().buffer.and_then(|b| b.usage).clone() {
+			buffers.insert(buffer.buffer.id, buffer);
+		}
+	}
+}
+
+fn release_unneeded_buffers(mut buffers: ResMut<UsedBuffers>) {
+	dbg!(buffers.len());
+	buffers.retain(|_, v| Arc::downgrade(v).strong_count() > 1);
+	dbg!(buffers.len());
 }
 
 fn init_render_device(dev: Res<RenderDevice>) {
