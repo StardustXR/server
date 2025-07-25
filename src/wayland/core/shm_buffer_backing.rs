@@ -165,7 +165,7 @@ impl ShmBufferBacking {
 		// TODO: this might cause a freeze?
 		let vulkano_context = VULKANO_CONTEXT.wait();
 		let bevy_render_dev = RENDER_DEVICE.wait();
-		let (image, dmatex) = create_vk_dmatex(vulkano_context, bevy_render_dev, size);
+		let (image, dmatex) = create_vk_dmatex(vulkano_context, bevy_render_dev, size).unwrap();
 
 		let imported_texture = import_texture(bevy_render_dev, dmatex, DropCallback(None)).unwrap();
 
