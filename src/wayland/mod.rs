@@ -319,9 +319,7 @@ fn push_used_buffers(mut buffers: ResMut<UsedBuffers>) {
 }
 
 fn release_unneeded_buffers(mut buffers: ResMut<UsedBuffers>) {
-	dbg!(buffers.len());
 	buffers.retain(|_, v| Arc::downgrade(v).strong_count() > 1);
-	dbg!(buffers.len());
 }
 
 fn init_render_device(dev: Res<RenderDevice>) {

@@ -1,8 +1,12 @@
 use super::shm_pool::ShmPool;
-use crate::wayland::{RENDER_DEVICE, vulkano_data::VULKANO_CONTEXT};
+use crate::wayland::{
+	RENDER_DEVICE,
+	vulkano_data::{VULKANO_CONTEXT, VulkanoContext},
+};
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image as BevyImage,
+	render::renderer::RenderDevice,
 };
 use bevy_dmabuf::{
 	dmatex::{Dmatex, DmatexPlane, Resolution},
@@ -17,6 +21,7 @@ use std::{
 };
 use tracing::debug_span;
 use vulkano::{
+	ValidationError,
 	buffer::{BufferCreateFlags, BufferCreateInfo, BufferUsage},
 	command_buffer::{AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo},
 	image::{
@@ -30,6 +35,112 @@ use vulkano::{
 	sync::{self, GpuFuture, Sharing},
 };
 use waynest::server::protocol::core::wayland::wl_shm::Format;
+
+fn create_vk_dmatex(
+	vulkano_context: &VulkanoContext,
+	bevy_render_dev: &RenderDevice,
+	size: Vector2<usize>,
+) -> Result<(Arc<Image>, Dmatex), Box<ValidationError>> {
+	let vk_format = vulkano::format::Format::R8G8B8A8_UNORM;
+
+	let modifiers = vulkano_context
+		.phys_dev
+		.format_properties(vk_format)?
+		.drm_format_modifier_properties
+		.into_iter()
+		.map(|v| v.drm_format_modifier)
+		.collect::<Vec<_>>();
+
+	let raw_image = RawImage::new(
+		vulkano_context.dev.clone(),
+		ImageCreateInfo {
+			flags: ImageCreateFlags::empty(),
+			image_type: vulkano::image::ImageType::Dim2d,
+			format: vk_format,
+			view_formats: Vec::new(),
+			extent: [size.x as u32, size.y as u32, 1],
+			tiling: ImageTiling::DrmFormatModifier,
+			usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::SAMPLED | ImageUsage::TRANSFER_DST,
+			initial_layout: ImageLayout::Undefined,
+			drm_format_modifiers: modifiers,
+			external_memory_handle_types: ExternalMemoryHandleTypes::DMA_BUF,
+			..Default::default()
+		},
+	)
+	.unwrap();
+	let (modifier, num_planes) = raw_image.drm_format_modifier().unwrap();
+	let mem_reqs = raw_image.memory_requirements()[0];
+	let index = vulkano_context
+		.phys_dev
+		.memory_properties()
+		.memory_types
+		.iter()
+		.enumerate()
+		.map(|(i, _v)| i as u32)
+		.find(|i| mem_reqs.memory_type_bits & (1 << i) != 0)
+		.expect("no valid memory type");
+	let mem = ResourceMemory::new_dedicated(
+		DeviceMemory::allocate(
+			vulkano_context.dev.clone(),
+			MemoryAllocateInfo {
+				allocation_size: mem_reqs.layout.size(),
+				memory_type_index: index,
+				dedicated_allocation: Some(DedicatedAllocation::Image(&raw_image)),
+				export_handle_types: ExternalMemoryHandleTypes::DMA_BUF,
+				..Default::default()
+			},
+		)
+		.unwrap(),
+	);
+
+	let image = Arc::new(match raw_image.bind_memory([mem]) {
+		Ok(v) => v,
+		Err(_) => panic!("unable to bind memory"),
+	});
+	let ImageMemory::Normal(mem) = image.memory() else {
+		unreachable!()
+	};
+	let [mem] = mem.as_slice() else {
+		unreachable!()
+	};
+	let fd = OwnedFd::from(
+		mem.device_memory()
+			.export_fd(ExternalMemoryHandleType::DmaBuf)
+			.unwrap(),
+	);
+	let planes = (0..num_planes)
+		.filter_map(|i| {
+			Some(match i {
+				0 => ImageAspect::MemoryPlane0,
+				1 => ImageAspect::MemoryPlane1,
+				2 => ImageAspect::MemoryPlane2,
+				3 => ImageAspect::MemoryPlane3,
+				_ => return None,
+			})
+		})
+		.map(|aspect| {
+			let plane_layout = image.subresource_layout(aspect, 0, 0).unwrap();
+
+			DmatexPlane {
+				dmabuf_fd: fd.try_clone().unwrap().into(),
+				modifier,
+				offset: plane_layout.offset as u32,
+				stride: plane_layout.row_pitch as i32,
+			}
+		})
+		.collect::<Vec<_>>();
+	let dmatex = Dmatex {
+		planes,
+		res: Resolution {
+			x: size.x as u32,
+			y: size.y as u32,
+		},
+		format: vk_format_to_drm_fourcc(vk_format.into()).unwrap() as u32,
+		flip_y: false,
+		srgb: true,
+	};
+	Ok((image, dmatex))
+}
 
 /// Parameters for a shared memory buffer
 pub struct ShmBufferBacking {
@@ -52,110 +163,9 @@ impl ShmBufferBacking {
 		format: Format,
 	) -> Self {
 		// TODO: this might cause a freeze?
-		let vk = VULKANO_CONTEXT.wait();
+		let vulkano_context = VULKANO_CONTEXT.wait();
 		let bevy_render_dev = RENDER_DEVICE.wait();
-
-		let vk_format = vulkano::format::Format::R8G8B8A8_UNORM;
-
-		let modifiers = vk
-			.phys_dev
-			.format_properties(vk_format)
-			.unwrap()
-			.drm_format_modifier_properties
-			.into_iter()
-			.map(|v| v.drm_format_modifier)
-			.collect::<Vec<_>>();
-
-		let raw_image = RawImage::new(
-			vk.dev.clone(),
-			ImageCreateInfo {
-				flags: ImageCreateFlags::empty(),
-				image_type: vulkano::image::ImageType::Dim2d,
-				format: vk_format,
-				view_formats: Vec::new(),
-				extent: [size.x as u32, size.y as u32, 1],
-				tiling: ImageTiling::DrmFormatModifier,
-				usage: ImageUsage::COLOR_ATTACHMENT
-					| ImageUsage::SAMPLED
-					| ImageUsage::TRANSFER_DST,
-				initial_layout: ImageLayout::Undefined,
-				drm_format_modifiers: modifiers,
-				external_memory_handle_types: ExternalMemoryHandleTypes::DMA_BUF,
-				..Default::default()
-			},
-		)
-		.unwrap();
-		let (modifier, num_planes) = raw_image.drm_format_modifier().unwrap();
-		let mem_reqs = raw_image.memory_requirements()[0];
-		let index = vk
-			.phys_dev
-			.memory_properties()
-			.memory_types
-			.iter()
-			.enumerate()
-			.map(|(i, _v)| i as u32)
-			.find(|i| mem_reqs.memory_type_bits & (1 << i) != 0)
-			.expect("no valid memory type");
-		let mem = ResourceMemory::new_dedicated(
-			DeviceMemory::allocate(
-				vk.dev.clone(),
-				MemoryAllocateInfo {
-					allocation_size: mem_reqs.layout.size(),
-					memory_type_index: index,
-					dedicated_allocation: Some(DedicatedAllocation::Image(&raw_image)),
-					export_handle_types: ExternalMemoryHandleTypes::DMA_BUF,
-					..Default::default()
-				},
-			)
-			.unwrap(),
-		);
-
-		let image = Arc::new(match raw_image.bind_memory([mem]) {
-			Ok(v) => v,
-			Err(_) => panic!("unable to bind memory"),
-		});
-		let ImageMemory::Normal(mem) = image.memory() else {
-			unreachable!()
-		};
-		let [mem] = mem.as_slice() else {
-			unreachable!()
-		};
-		let fd = OwnedFd::from(
-			mem.device_memory()
-				.export_fd(ExternalMemoryHandleType::DmaBuf)
-				.unwrap(),
-		);
-		let planes = (0..num_planes)
-			.filter_map(|i| {
-				Some(match i {
-					0 => ImageAspect::MemoryPlane0,
-					1 => ImageAspect::MemoryPlane1,
-					2 => ImageAspect::MemoryPlane2,
-					3 => ImageAspect::MemoryPlane3,
-					_ => return None,
-				})
-			})
-			.map(|aspect| {
-				let plane_layout = image.subresource_layout(aspect, 0, 0).unwrap();
-
-				DmatexPlane {
-					dmabuf_fd: fd.try_clone().unwrap().into(),
-					modifier,
-					offset: plane_layout.offset as u32,
-					stride: plane_layout.row_pitch as i32,
-				}
-			})
-			.collect::<Vec<_>>();
-		let dmatex = Dmatex {
-			planes,
-			res: Resolution {
-				x: size.x as u32,
-				y: size.y as u32,
-			},
-			format: vk_format_to_drm_fourcc(vk_format.into()).unwrap() as u32,
-			flip_y: false,
-			srgb: true,
-		};
+		let (image, dmatex) = create_vk_dmatex(vulkano_context, bevy_render_dev, size);
 
 		let imported_texture = import_texture(bevy_render_dev, dmatex, DropCallback(None)).unwrap();
 

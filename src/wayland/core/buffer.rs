@@ -7,7 +7,7 @@ use bevy::{
 };
 use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 pub use waynest::server::protocol::core::wayland::wl_buffer::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -29,9 +29,9 @@ impl BufferUsage {
 }
 impl Drop for BufferUsage {
 	fn drop(&mut self) {
-		self.message_sink
-			.send(Message::ReleaseBuffer(self.buffer.clone()))
-			.unwrap();
+		let _ = self
+			.message_sink
+			.send(Message::ReleaseBuffer(self.buffer.clone()));
 	}
 }
 
