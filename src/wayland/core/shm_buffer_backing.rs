@@ -38,7 +38,6 @@ use waynest::server::protocol::core::wayland::wl_shm::Format;
 
 fn create_vk_dmatex(
 	vulkano_context: &VulkanoContext,
-	bevy_render_dev: &RenderDevice,
 	size: Vector2<usize>,
 ) -> Result<(Arc<Image>, Dmatex), Box<ValidationError>> {
 	let vk_format = vulkano::format::Format::R8G8B8A8_UNORM;
@@ -165,7 +164,7 @@ impl ShmBufferBacking {
 		// TODO: this might cause a freeze?
 		let vulkano_context = VULKANO_CONTEXT.wait();
 		let bevy_render_dev = RENDER_DEVICE.wait();
-		let (image, dmatex) = create_vk_dmatex(vulkano_context, bevy_render_dev, size).unwrap();
+		let (image, dmatex) = create_vk_dmatex(vulkano_context, size).unwrap();
 
 		let imported_texture = import_texture(bevy_render_dev, dmatex, DropCallback(None)).unwrap();
 
