@@ -6,7 +6,6 @@ use crate::wayland::{
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image as BevyImage,
-	render::renderer::RenderDevice,
 };
 use bevy_dmabuf::{
 	dmatex::{Dmatex, DmatexPlane, Resolution},

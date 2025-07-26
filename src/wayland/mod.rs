@@ -4,7 +4,6 @@ pub mod util;
 pub mod vulkano_data;
 pub mod xdg;
 
-use crate::PreFrameWait;
 use crate::wayland::core::seat::SeatMessage;
 use crate::{
 	BevyMaterial,
