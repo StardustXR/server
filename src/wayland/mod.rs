@@ -287,7 +287,6 @@ static RENDER_DEVICE: OnceLock<RenderDevice> = OnceLock::new();
 pub struct WaylandPlugin;
 impl Plugin for WaylandPlugin {
 	fn build(&self, app: &mut App) {
-		app.add_systems(PreFrameWait, early_frame);
 		app.add_systems(Update, update_graphics);
 		app.sub_app_mut(RenderApp)
 			.init_resource::<UsedBuffers>()
@@ -300,10 +299,7 @@ impl Plugin for WaylandPlugin {
 		app.sub_app_mut(RenderApp)
 			.add_systems(Render, setup_vulkano_context)
 			.add_systems(Render, push_used_buffers.in_set(XrRenderSet::PreRender))
-			.add_systems(
-				Render,
-				release_unneeded_buffers.in_set(XrRenderSet::PostRender),
-			);
+			.add_systems(Render, after_render.in_set(XrRenderSet::PostRender));
 	}
 }
 
@@ -318,15 +314,12 @@ fn push_used_buffers(mut buffers: ResMut<UsedBuffers>) {
 	}
 }
 
-fn release_unneeded_buffers(mut buffers: ResMut<UsedBuffers>) {
-	buffers.retain(|_, v| Arc::downgrade(v).strong_count() > 1);
-}
-
 fn init_render_device(dev: Res<RenderDevice>) {
 	_ = RENDER_DEVICE.set(dev.clone());
 }
 
-fn early_frame() {
+fn after_render(mut buffers: ResMut<UsedBuffers>) {
+	buffers.retain(|_, v| Arc::downgrade(v).strong_count() > 1);
 	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
 		surface.frame_event();
 	}
