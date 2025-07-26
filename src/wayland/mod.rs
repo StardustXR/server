@@ -4,6 +4,7 @@ pub mod util;
 pub mod vulkano_data;
 pub mod xdg;
 
+use crate::core::registry::OwnedRegistry;
 use crate::wayland::core::seat::SeatMessage;
 use crate::{
 	BevyMaterial,
@@ -25,7 +26,6 @@ use cluFlock::{FlockLock, ToFlock};
 use core::buffer::BufferUsage;
 use core::{buffer::Buffer, callback::Callback, display::Display, surface::WL_SURFACE_REGISTRY};
 use mint::Vector2;
-use rustc_hash::FxHashMap;
 use std::fs::File;
 use std::{
 	fs::{self, OpenOptions},
@@ -287,6 +287,7 @@ pub struct WaylandPlugin;
 impl Plugin for WaylandPlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(Update, update_graphics);
+		app.init_resource::<UsedBuffers>();
 		app.sub_app_mut(RenderApp)
 			.init_resource::<UsedBuffers>()
 			.add_systems(
@@ -302,23 +303,31 @@ impl Plugin for WaylandPlugin {
 	}
 }
 
-#[derive(Resource, Default, Deref, DerefMut)]
-struct UsedBuffers(FxHashMap<ObjectId, Arc<BufferUsage>>);
-
-fn push_used_buffers(mut buffers: ResMut<UsedBuffers>) {
-	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
-		if let Some(buffer) = surface.current_state().buffer.and_then(|b| b.usage).clone() {
-			buffers.insert(buffer.buffer.id, buffer);
-		}
-	}
-}
-
 fn init_render_device(dev: Res<RenderDevice>) {
 	_ = RENDER_DEVICE.set(dev.clone());
 }
 
-fn after_render(mut buffers: ResMut<UsedBuffers>) {
-	buffers.retain(|_, v| Arc::downgrade(v).strong_count() > 1);
+#[derive(Resource, Deref, DerefMut)]
+struct UsedBuffers(OwnedRegistry<BufferUsage>);
+impl Default for UsedBuffers {
+	fn default() -> Self {
+		Self(OwnedRegistry::new())
+	}
+}
+
+fn push_used_buffers(buffers: Res<UsedBuffers>) {
+	for buf in WL_SURFACE_REGISTRY
+		.get_valid_contents()
+		.into_iter()
+		.filter_map(|surface| surface.current_state().buffer)
+		.filter_map(|buffer| buffer.usage)
+	{
+		buffers.add_raw(buf);
+	}
+}
+
+fn after_render(buffers: Res<UsedBuffers>) {
+	buffers.clear();
 	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
 		surface.frame_event();
 	}
