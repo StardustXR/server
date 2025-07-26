@@ -77,14 +77,14 @@ impl Registry {
 		)
 		.await?;
 
-		self.global(
-			client,
-			sender_id,
-			RegistryGlobals::DMABUF,
-			crate::wayland::dmabuf::Dmabuf::INTERFACE.to_string(),
-			Dmabuf::VERSION,
-		)
-		.await?;
+		// self.global(
+		// 	client,
+		// 	sender_id,
+		// 	RegistryGlobals::DMABUF,
+		// 	crate::wayland::dmabuf::Dmabuf::INTERFACE.to_string(),
+		// 	Dmabuf::VERSION,
+		// )
+		// .await?;
 
 		Ok(())
 	}
