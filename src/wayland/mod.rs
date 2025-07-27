@@ -5,6 +5,7 @@ pub mod vulkano_data;
 pub mod xdg;
 
 use crate::core::registry::OwnedRegistry;
+use crate::nodes::drawable::model::ModelNodeSystemSet;
 use crate::wayland::core::seat::SeatMessage;
 use crate::{
 	BevyMaterial,
@@ -286,7 +287,7 @@ static RENDER_DEVICE: OnceLock<RenderDevice> = OnceLock::new();
 pub struct WaylandPlugin;
 impl Plugin for WaylandPlugin {
 	fn build(&self, app: &mut App) {
-		app.add_systems(Update, update_graphics);
+		app.add_systems(Update, update_graphics.before(ModelNodeSystemSet));
 		app.init_resource::<UsedBuffers>();
 		app.sub_app_mut(RenderApp)
 			.init_resource::<UsedBuffers>()

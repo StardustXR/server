@@ -33,6 +33,8 @@ const HOLDOUT_MATERIAL_HANDLE: Handle<HoldoutMaterial> =
 	weak_handle!("d56f1d62-9121-434b-a34f-9f0bbd6b3390");
 
 pub struct ModelNodePlugin;
+#[derive(SystemSet, Hash, Debug, PartialEq, Eq, Clone, Copy)]
+pub struct ModelNodeSystemSet;
 impl Plugin for ModelNodePlugin {
 	fn build(&self, app: &mut App) {
 		LOAD_MODEL.init(app);
@@ -49,14 +51,15 @@ impl Plugin for ModelNodePlugin {
 			.insert(&HOLDOUT_MATERIAL_HANDLE, HoldoutMaterial::default());
 
 		app.init_resource::<MaterialRegistry>();
-		app.add_systems(Update, load_models);
 		app.add_systems(
-			PostUpdate,
+			Update,
 			(
+				load_models,
 				gen_model_parts.after(TransformSystem::TransformPropagate),
 				apply_materials,
 			)
-				.chain(),
+				.chain()
+				.in_set(ModelNodeSystemSet),
 		);
 	}
 }
