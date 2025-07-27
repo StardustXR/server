@@ -23,7 +23,7 @@ pub struct DmabufBacking {
 	format: DrmFourcc,
 	_flags: Flags,
 	tex: OnceLock<Handle<Image>>,
-	pending_imported_dmatex: Mutex<Option<ImportedTexture>>,
+	// pending_imported_dmatex: Mutex<Option<ImportedTexture>>,
 }
 
 impl std::fmt::Debug for DmabufBacking {
@@ -73,7 +73,7 @@ impl DmabufBacking {
 			format,
 			_flags: flags,
 			tex: OnceLock::new(),
-			pending_imported_dmatex: Mutex::new(Some(imported_tex)),
+			// pending_imported_dmatex: Mutex::new(Some(imported_tex)),
 		})
 	}
 
@@ -84,13 +84,14 @@ impl DmabufBacking {
 		images: &mut Assets<Image>,
 	) -> Option<Handle<Image>> {
 		info!("updating dmabuf tex");
-		self.pending_imported_dmatex
-			.lock()
-			.take()
-			.map(|tex| dmatexes.insert_imported_dmatex(images, tex))
-			.inspect(|handle| {
-				_ = self.tex.set(handle.clone());
-			})
+		// self.pending_imported_dmatex
+		// 	.lock()
+		// 	.take()
+		// 	.map(|tex| dmatexes.insert_imported_dmatex(images, tex))
+		// 	.inspect(|handle| {
+		// 		_ = self.tex.set(handle.clone());
+		// 	})
+		None
 	}
 
 	pub fn is_transparent(&self) -> bool {

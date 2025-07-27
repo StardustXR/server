@@ -231,10 +231,9 @@ impl WlSurface for Surface {
 	) -> Result<()> {
 		self.state.lock().pending.buffer = buffer.and_then(|b| {
 			let buffer = client.get::<Buffer>(b)?;
+			let mut usage = Some(BufferUsage::new(client, &buffer));
 			Some(BufferState {
-				usage: buffer
-					.uses_buffer_usage()
-					.then(|| BufferUsage::new(client, &buffer)),
+				usage: usage.take_if(|_| buffer.uses_buffer_usage()),
 				buffer,
 			})
 		});
