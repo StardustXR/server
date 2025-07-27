@@ -47,7 +47,7 @@ fn build_line_mesh(
 		let mut vertex_positions = Vec::<Vec3>::new();
 		let mut vertex_normals = Vec::<Vec3>::new();
 		let mut vertex_colors = Vec::<[f32; 4]>::new();
-		let mut vertex_indecies = Vec::<u32>::new();
+		let mut vertex_indices = Vec::<u32>::new();
 		let lines_data = lines.data.lock();
 		if lines_data.is_empty() {
 			*lines.bounds.lock() = Aabb::default();
@@ -66,9 +66,9 @@ fn build_line_mesh(
 			continue;
 		}
 
-		let mut indecies_set = 0;
+		let mut indices_set = 0;
 		for line in lines_data.iter() {
-			let start_set = indecies_set;
+			let start_set = indices_set;
 			let optional_points = {
 				let mut out = Vec::new();
 				let mut last = line.cyclic.then(|| line.points.last()).flatten();
@@ -124,22 +124,22 @@ fn build_line_mesh(
 				vertex_positions.extend(points);
 				vertex_colors.extend([curr.color.to_bevy().to_srgba().to_f32_array(); 8]);
 				if !end {
-					vertex_indecies.extend(indecies(indecies_set));
+					vertex_indices.extend(indices(indices_set));
 				}
-				indecies_set += 1;
+				indices_set += 1;
 			}
 			if line.cyclic {
-				vertex_indecies.extend(cyclic_indecies(start_set, indecies_set - 1));
+				vertex_indices.extend(cyclic_indices(start_set, indices_set - 1));
 			} else {
-				vertex_indecies.extend(cap_indecies(start_set, false));
-				vertex_indecies.extend(cap_indecies(indecies_set - 1, true));
+				vertex_indices.extend(cap_indices(start_set, false));
+				vertex_indices.extend(cap_indices(indices_set - 1, true));
 			}
 		}
 		let mut mesh = Mesh::new(
 			PrimitiveTopology::TriangleList,
 			RenderAssetUsages::RENDER_WORLD,
 		);
-		mesh.insert_indices(Indices::U32(vertex_indecies));
+		mesh.insert_indices(Indices::U32(vertex_indices));
 		mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vertex_colors);
 		mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vertex_normals);
 		mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertex_positions.clone());
@@ -168,9 +168,9 @@ fn build_line_mesh(
 	}
 }
 
-const END_CAP_INDECIES: [u32; 18] = [0, 1, 7, 7, 1, 2, 7, 2, 6, 6, 2, 3, 6, 3, 5, 5, 3, 4];
-fn cap_indecies(set: u32, flip: bool) -> [u32; END_CAP_INDECIES.len()] {
-	let mut out = END_CAP_INDECIES.map(|v| v + (set * 8));
+const END_CAP_INDICES: [u32; 18] = [0, 1, 7, 7, 1, 2, 7, 2, 6, 6, 2, 3, 6, 3, 5, 5, 3, 4];
+fn cap_indices(set: u32, flip: bool) -> [u32; END_CAP_INDICES.len()] {
+	let mut out = END_CAP_INDICES.map(|v| v + (set * 8));
 	if flip {
 		out.reverse();
 	}
@@ -178,15 +178,15 @@ fn cap_indecies(set: u32, flip: bool) -> [u32; END_CAP_INDECIES.len()] {
 }
 
 // const BASE: [u16; 6] = [0, 8, 1, 8, 9, 1];
-const INDECIES: [u32; 48] = [
+const INDICES: [u32; 48] = [
 	0, 8, 1, 8, 9, 1, 1, 9, 2, 9, 10, 2, 2, 10, 3, 10, 11, 3, 3, 11, 4, 11, 12, 4, 4, 12, 5, 12,
 	13, 5, 5, 13, 6, 13, 14, 6, 6, 14, 7, 14, 15, 7, 7, 15, 0, 15, 8, 0,
 ];
-fn indecies(set: u32) -> [u32; INDECIES.len()] {
-	INDECIES.map(|v| v + (set * 8))
+fn indices(set: u32) -> [u32; INDICES.len()] {
+	INDICES.map(|v| v + (set * 8))
 }
-fn cyclic_indecies(start_set: u32, end_set: u32) -> [u32; INDECIES.len()] {
-	let mut out = INDECIES.map(|v| {
+fn cyclic_indices(start_set: u32, end_set: u32) -> [u32; INDICES.len()] {
+	let mut out = INDICES.map(|v| {
 		if v < 8 {
 			v + ((start_set) * 8)
 		} else {
