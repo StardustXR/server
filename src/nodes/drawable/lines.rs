@@ -69,12 +69,17 @@ fn build_line_mesh(
 		let mut indices_set = 0;
 		for line in lines_data.iter() {
 			let start_set = indices_set;
+			// Create a sliding window of points to process each segment of the line
+			// For cyclic lines: wraps around by connecting last point back to first
+			// For non-cyclic lines: handles endpoints with None values
 			let optional_points = {
 				let mut out = Vec::new();
 				let mut last = line.cyclic.then(|| line.points.last()).flatten();
 				let mut peekable = line.points.iter().peekable();
 				while let Some(curr) = peekable.next() {
 					let mut end = false;
+					// Determine the next point - either the next in sequence or
+					// for cyclic lines, wrap back to first point at the end
 					let next = match peekable.peek() {
 						Some(v) => Some(*v),
 						None => {
@@ -123,11 +128,15 @@ fn build_line_mesh(
 				vertex_normals.extend(normals);
 				vertex_positions.extend(points);
 				vertex_colors.extend([curr.color.to_bevy().to_srgba().to_f32_array(); 8]);
+				// Only connect vertices between segments if this isn't the end point
 				if !end {
 					vertex_indices.extend(indices(indices_set));
 				}
 				indices_set += 1;
 			}
+			// Handle the connection between start and end points:
+			// - For cyclic lines: connect last segment back to first
+			// - For non-cyclic lines: add caps at both ends
 			if line.cyclic {
 				vertex_indices.extend(cyclic_indices(start_set, indices_set - 1));
 			} else {
@@ -178,6 +187,8 @@ fn cap_indices(set: u32, flip: bool) -> [u32; END_CAP_INDICES.len()] {
 }
 
 // const BASE: [u16; 6] = [0, 8, 1, 8, 9, 1];
+
+// Defines how vertices are connected between consecutive cross-sections to form the tube
 const INDICES: [u32; 48] = [
 	0, 8, 1, 8, 9, 1, 1, 9, 2, 9, 10, 2, 2, 10, 3, 10, 11, 3, 3, 11, 4, 11, 12, 4, 4, 12, 5, 12,
 	13, 5, 5, 13, 6, 13, 14, 6, 6, 14, 7, 14, 15, 7, 7, 15, 0, 15, 8, 0,
