@@ -72,7 +72,7 @@ fn build_line_mesh(
 			// Create a sliding window of points to process each segment of the line
 			// For cyclic lines: wraps around by connecting last point back to first
 			// For non-cyclic lines: handles endpoints with None values
-			let optional_points = {
+			let point_windows = {
 				let mut out = Vec::new();
 				let mut last = line.cyclic.then(|| line.points.last()).flatten();
 				let mut peekable = line.points.iter().peekable();
@@ -93,7 +93,7 @@ fn build_line_mesh(
 				}
 				out
 			};
-			for (last, curr, next, end) in optional_points {
+			for (last, curr, next, last_point) in point_windows {
 				let last_quat = last.map(|v| {
 					Quat::from_rotation_arc(
 						Vec3::Y,
@@ -129,7 +129,7 @@ fn build_line_mesh(
 				vertex_positions.extend(points);
 				vertex_colors.extend([curr.color.to_bevy().to_srgba().to_f32_array(); 8]);
 				// Only connect vertices between segments if this isn't the end point
-				if !end {
+				if !last_point {
 					vertex_indices.extend(indices(indices_set));
 				}
 				indices_set += 1;
