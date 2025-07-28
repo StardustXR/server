@@ -11,6 +11,7 @@ use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::{Spatial, SpatialNode};
 use crate::{BevyMaterial, bail};
 use bevy::asset::{load_internal_asset, weak_handle};
+use bevy::gltf::GltfLoaderSettings;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension};
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
@@ -87,7 +88,13 @@ fn load_models(
 ) {
 	while let Some((model, path)) = mpsc_receiver.read() {
 		// idk of the asset label is the correct approach here
-		let handle = asset_server.load(GltfAssetLabel::Scene(0).from_asset(path));
+		let handle = asset_server.load_with_settings(
+			GltfAssetLabel::Scene(0).from_asset(path),
+			|settings: &mut GltfLoaderSettings| {
+				settings.load_cameras = false;
+				settings.load_lights = false;
+			},
+		);
 		let entity = cmds
 			.spawn((
 				Name::new("ModelNode"),
