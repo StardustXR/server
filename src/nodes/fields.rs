@@ -76,14 +76,16 @@ fn draw_field_gizmos(mut gizmos: Gizmos) {
 			match f.shape.lock().clone() {
 				Shape::Box(size) => gizmos.cuboid(transform.with_scale(size.into()), color),
 				Shape::Cylinder(CylinderShape { length, radius }) => {
-					gizmos.primitive_3d(
-						&Cylinder {
-							radius,
-							half_height: length * 0.5,
-						},
-						transform.to_isometry(),
-						color,
-					);
+					gizmos
+						.primitive_3d(
+							&Cylinder {
+								radius,
+								half_height: length * 0.5,
+							},
+							transform.to_isometry(),
+							color,
+						)
+						.resolution(32);
 				}
 				Shape::Sphere(radius) => {
 					gizmos.sphere(transform.to_isometry(), radius, color);
@@ -98,14 +100,17 @@ fn draw_field_gizmos(mut gizmos: Gizmos) {
 						major_radius = radius_b;
 						minor_radius = radius_a;
 					}
-					gizmos.primitive_3d(
-						&Torus {
-							minor_radius,
-							major_radius,
-						},
-						transform.to_isometry(),
-						color,
-					);
+					gizmos
+						.primitive_3d(
+							&Torus {
+								minor_radius,
+								major_radius,
+							},
+							transform.to_isometry(),
+							color,
+						)
+						.minor_resolution(32)
+						.major_resolution(32);
 				}
 			}
 		});
