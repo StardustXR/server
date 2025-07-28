@@ -5,17 +5,28 @@ use super::spatial::{
 	Spatial,
 };
 use super::{Aspect, AspectIdentifier, Node};
+use crate::DbusConnection;
 use crate::core::client::Client;
 use crate::core::error::Result;
+use crate::core::registry::Registry;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::Transform;
+use bevy::app::{Plugin, Update};
+use bevy::color::Color;
+use bevy::ecs::resource::Resource;
+use bevy::ecs::schedule::IntoScheduleConfigs;
+use bevy::ecs::system::Res;
+use bevy::gizmos::gizmos::Gizmos;
+use bevy::gizmos::primitives::dim3::GizmoPrimitive3d;
+use bevy::math::primitives::{Cylinder, Torus};
 use color_eyre::eyre::OptionExt;
 use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use stardust_xr::values::Vector3;
 use std::sync::{Arc, LazyLock};
+use zbus::interface;
 
 // TODO: get SDFs working properly with non-uniform scale and so on, output distance relative to the spatial it's compared against
 
@@ -31,6 +42,90 @@ pub static FIELD_ALIAS_INFO: LazyLock<AliasInfo> = LazyLock::new(|| AliasInfo {
 	],
 	..Default::default()
 });
+
+pub struct FieldDebugGizmoPlugin;
+impl Plugin for FieldDebugGizmoPlugin {
+	fn build(&self, app: &mut bevy::app::App) {
+		let (tx, rx) = tokio::sync::watch::channel(false);
+		let conn = app.world().resource::<DbusConnection>().0.clone();
+		tokio::spawn(async move {
+			_ = conn
+				.object_server()
+				.at("/org/stardustxr/Server", FieldDebugGizmos { state: tx })
+				.await;
+		});
+		app.insert_resource(FieldDebugGizmosEnabled(rx));
+		app.add_systems(
+			Update,
+			draw_field_gizmos.run_if(|res: Res<FieldDebugGizmosEnabled>| *res.0.borrow()),
+		);
+	}
+}
+
+#[derive(Resource)]
+struct FieldDebugGizmosEnabled(tokio::sync::watch::Receiver<bool>);
+
+fn draw_field_gizmos(mut gizmos: Gizmos) {
+	FIELD_REGISTRY_DEBUG_GIZMOS
+		.get_valid_contents()
+		.iter()
+		.for_each(|f| {
+			let transform =
+				bevy::transform::components::Transform::from_matrix(f.spatial.global_transform());
+			let color = Color::srgb_u8(0x04, 0xFD, 0x4C);
+			match f.shape.lock().clone() {
+				Shape::Box(size) => gizmos.cuboid(transform.with_scale(size.into()), color),
+				Shape::Cylinder(CylinderShape { length, radius }) => {
+					gizmos.primitive_3d(
+						&Cylinder {
+							radius,
+							half_height: length * 0.5,
+						},
+						transform.to_isometry(),
+						color,
+					);
+				}
+				Shape::Sphere(radius) => {
+					gizmos.sphere(transform.to_isometry(), radius, color);
+				}
+				Shape::Torus(TorusShape { radius_a, radius_b }) => {
+					let minor_radius;
+					let major_radius;
+					if radius_a >= radius_b {
+						major_radius = radius_a;
+						minor_radius = radius_b;
+					} else {
+						major_radius = radius_b;
+						minor_radius = radius_a;
+					}
+					gizmos.primitive_3d(
+						&Torus {
+							minor_radius,
+							major_radius,
+						},
+						transform.to_isometry(),
+						color,
+					);
+				}
+			}
+		});
+}
+
+struct FieldDebugGizmos {
+	state: tokio::sync::watch::Sender<bool>,
+}
+
+#[interface(name = "org.stardustxr.debug.FieldDebugGizmos")]
+impl FieldDebugGizmos {
+	fn enable(&mut self) {
+		_ = self.state.send(true);
+	}
+	fn disable(&mut self) {
+		_ = self.state.send(false);
+	}
+}
+
+static FIELD_REGISTRY_DEBUG_GIZMOS: Registry<Field> = Registry::new();
 
 stardust_xr_server_codegen::codegen_field_protocol!();
 
@@ -145,8 +240,14 @@ impl Field {
 			shape: Mutex::new(shape),
 		};
 		let field = node.add_aspect(field);
+		FIELD_REGISTRY_DEBUG_GIZMOS.add_raw(&field);
 		node.add_aspect(FieldRef);
 		Ok(field)
+	}
+}
+impl Drop for Field {
+	fn drop(&mut self) {
+		FIELD_REGISTRY_DEBUG_GIZMOS.remove(self);
 	}
 }
 impl AspectIdentifier for Field {

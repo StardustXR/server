@@ -52,6 +52,7 @@ use nodes::audio::AudioNodePlugin;
 use nodes::drawable::lines::LinesNodePlugin;
 use nodes::drawable::model::ModelNodePlugin;
 use nodes::drawable::text::TextNodePlugin;
+use nodes::fields::FieldDebugGizmoPlugin;
 use nodes::spatial::SpatialNodePlugin;
 use objects::hmd::HmdPlugin;
 use objects::input::mouse_pointer::FlatscreenInputPlugin;
@@ -400,7 +401,7 @@ fn bevy_loop(
 	// object plugins
 	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin, HmdPlugin));
 	// feature plugins
-	app.add_plugins((WaylandPlugin, TrackingOffsetPlugin));
+	app.add_plugins((WaylandPlugin, TrackingOffsetPlugin, FieldDebugGizmoPlugin));
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
