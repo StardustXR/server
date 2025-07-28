@@ -27,8 +27,9 @@ use std::{
 use tokio::{net::UnixStream, sync::watch, task::JoinHandle};
 use tracing::info;
 
+pub static CLIENTS: OwnedRegistry<Client> = OwnedRegistry::new();
+
 lazy_static! {
-	pub static ref CLIENTS: OwnedRegistry<Client> = OwnedRegistry::new();
 	static ref INTERNAL_CLIENT_MESSAGE_TIMES: (watch::Sender<Instant>, watch::Receiver<Instant>) = watch::channel(Instant::now());
 	pub static ref INTERNAL_CLIENT: Arc<Client> = CLIENTS.add(Client {
 		pid: None,
@@ -230,6 +231,7 @@ impl Client {
 		if let Some(flush_join_handle) = self.flush_join_handle.get() {
 			flush_join_handle.abort();
 		}
+		CLIENTS.remove(self);
 	}
 }
 impl Debug for Client {
