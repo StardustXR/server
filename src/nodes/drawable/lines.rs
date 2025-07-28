@@ -152,28 +152,16 @@ fn build_line_mesh(
 			RenderAssetUsages::RENDER_WORLD,
 		);
 		if vertex_colors.iter().flatten().any(|v| !v.is_finite()) {
-			panic!(
-				"vertex colors contains non finite float: {:#?}",
-				vertex_colors
-			);
+			panic!("vertex colors contains non finite float: {vertex_colors:#?}",);
 		}
 		if vertex_normals.iter().any(|v| !v.is_finite()) {
-			panic!(
-				"normals contains non finite dir: {:#?}",
-				vertex_normals
-			);
+			panic!("normals contains non finite dir: {vertex_normals:#?}",);
 		}
 		if vertex_normals.iter().any(|v| !v.is_normalized()) {
-			panic!(
-				"normals contains non normalized dir: {:#?}",
-				vertex_normals
-			);
+			panic!("normals contains non normalized dir: {vertex_normals:#?}",);
 		}
 		if vertex_positions.iter().any(|v| !v.is_finite()) {
-			panic!(
-				"vertex positions contains non finite pos: {:#?}",
-				vertex_positions
-			);
+			panic!("vertex positions contains non finite pos: {vertex_positions:#?}",);
 		}
 		mesh.insert_indices(Indices::U32(vertex_indices));
 		mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vertex_colors);
