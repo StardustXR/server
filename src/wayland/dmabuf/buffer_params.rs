@@ -106,7 +106,6 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		let size = [width as u32, height as u32].into();
 		let buffer = DmabufBacking::new(
 			client.get::<Self>(self.id).unwrap(),
-			Some(client.display().message_sink.clone()),
 			size,
 			DrmFourcc::try_from(format).unwrap(),
 			flags,
@@ -141,7 +140,6 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		// Create the buffer with DMA-BUF backing using self as the backing
 		_ = DmabufBacking::new(
 			client.get::<Self>(self.id).unwrap(),
-			None,
 			[width as u32, height as u32].into(),
 			DrmFourcc::try_from(format).unwrap(),
 			flags,

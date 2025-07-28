@@ -1,5 +1,5 @@
 use super::buffer_params::BufferParams;
-use crate::wayland::{MessageSink, RENDER_DEVICE};
+use crate::wayland::RENDER_DEVICE;
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image,
@@ -17,19 +17,17 @@ use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_
 
 /// Parameters for a shared memory buffer
 pub struct DmabufBacking {
-	message_sink: Option<MessageSink>,
 	params: Arc<BufferParams>,
 	size: Vector2<u32>,
 	format: DrmFourcc,
 	_flags: Flags,
 	tex: OnceLock<Handle<Image>>,
-	// pending_imported_dmatex: Mutex<Option<ImportedTexture>>,
+	pending_imported_dmatex: Mutex<Option<ImportedTexture>>,
 }
 
 impl std::fmt::Debug for DmabufBacking {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("DmabufBacking")
-			.field("message_sink", &self.message_sink)
 			.field("params", &self.params)
 			.field("size", &self.size)
 			.field("format", &self.format)
@@ -43,7 +41,6 @@ impl DmabufBacking {
 	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn new(
 		params: Arc<BufferParams>,
-		message_sink: Option<MessageSink>,
 		size: Vector2<u32>,
 		format: DrmFourcc,
 		flags: Flags,
@@ -68,12 +65,11 @@ impl DmabufBacking {
 
 		Ok(Self {
 			params,
-			message_sink,
 			size,
 			format,
 			_flags: flags,
 			tex: OnceLock::new(),
-			// pending_imported_dmatex: Mutex::new(Some(imported_tex)),
+			pending_imported_dmatex: Mutex::new(Some(imported_tex)),
 		})
 	}
 
@@ -84,14 +80,13 @@ impl DmabufBacking {
 		images: &mut Assets<Image>,
 	) -> Option<Handle<Image>> {
 		info!("updating dmabuf tex");
-		// self.pending_imported_dmatex
-		// 	.lock()
-		// 	.take()
-		// 	.map(|tex| dmatexes.insert_imported_dmatex(images, tex))
-		// 	.inspect(|handle| {
-		// 		_ = self.tex.set(handle.clone());
-		// 	})
-		None
+		self.pending_imported_dmatex
+			.lock()
+			.take()
+			.map(|tex| dmatexes.insert_imported_dmatex(images, tex))
+			.inspect(|handle| {
+				_ = self.tex.set(handle.clone());
+			})
 	}
 
 	pub fn is_transparent(&self) -> bool {
