@@ -48,7 +48,6 @@ pub struct SurfaceState {
 	pub geometry: Option<Geometry>,
 	pub min_size: Option<Vector2<u32>>,
 	pub max_size: Option<Vector2<u32>>,
-	clean_lock: OnceLock<()>,
 }
 impl Default for SurfaceState {
 	fn default() -> Self {
@@ -58,7 +57,6 @@ impl Default for SurfaceState {
 			geometry: None,
 			min_size: None,
 			max_size: None,
-			clean_lock: Default::default(),
 		}
 	}
 }
@@ -127,8 +125,7 @@ impl Surface {
 		materials: &mut Assets<BevyMaterial>,
 		images: &mut Assets<Image>,
 	) {
-		let state_lock = self.state.lock();
-		let Some(buffer) = state_lock.current().buffer.clone() else {
+		let Some(buffer) = self.state.lock().current().buffer.clone() else {
 			return;
 		};
 
@@ -159,7 +156,6 @@ impl Surface {
 		}
 
 		self.apply_surface_materials();
-		let _ = state_lock.current().clean_lock.set(());
 	}
 
 	#[tracing::instrument(level = "debug", skip_all)]
