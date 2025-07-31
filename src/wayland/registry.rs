@@ -1,6 +1,7 @@
 use crate::wayland::{
 	core::{
 		compositor::{Compositor, WlCompositor},
+		data_device::DataDeviceManager,
 		output::{Output, WlOutput},
 		seat::{Seat, WlSeat},
 		shm::{Shm, WlShm},
@@ -14,7 +15,8 @@ use waynest::{
 	server::{
 		Client, Dispatcher, Error, Result,
 		protocol::{
-			core::wayland::wl_registry::*, external::drm::wl_drm::WlDrm,
+			core::wayland::{wl_data_device_manager::WlDataDeviceManager, wl_registry::*},
+			external::drm::wl_drm::WlDrm,
 			stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
 		},
 	},
@@ -27,9 +29,10 @@ impl RegistryGlobals {
 	pub const SHM: u32 = 1;
 	pub const WM_BASE: u32 = 2;
 	pub const SEAT: u32 = 3;
-	pub const OUTPUT: u32 = 4;
-	pub const DMABUF: u32 = 5;
-	pub const WL_DRM: u32 = 6;
+	pub const DATA_DEVICE_MANAGER: u32 = 4;
+	pub const OUTPUT: u32 = 5;
+	pub const DMABUF: u32 = 6;
+	pub const WL_DRM: u32 = 7;
 }
 
 #[derive(Debug, Dispatcher, Default)]
@@ -70,6 +73,15 @@ impl Registry {
 			RegistryGlobals::SEAT,
 			Seat::INTERFACE.to_string(),
 			Seat::VERSION,
+		)
+		.await?;
+
+		self.global(
+			client,
+			sender_id,
+			RegistryGlobals::DATA_DEVICE_MANAGER,
+			DataDeviceManager::INTERFACE.to_string(),
+			DataDeviceManager::VERSION,
 		)
 		.await?;
 
@@ -139,6 +151,10 @@ impl WlRegistry for Registry {
 				seat.advertise_capabilities(client, new_id.object_id)
 					.await?;
 				tracing::info!("Seat capabilities advertised");
+			}
+			RegistryGlobals::DATA_DEVICE_MANAGER => {
+				tracing::info!("Binding data device manager");
+				client.insert(new_id.object_id, DataDeviceManager);
 			}
 			RegistryGlobals::OUTPUT => {
 				tracing::info!("Binding output");
