@@ -104,7 +104,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		tracing::info!("Creating buffer from BufferParams {:?}", self.id);
 		// Create the buffer with DMA-BUF backing using self as the backing
 		let size = [width as u32, height as u32].into();
-		let buffer = DmabufBacking::new(
+		let buffer = DmabufBacking::from_params(
 			client.get::<Self>(self.id).unwrap(),
 			size,
 			DrmFourcc::try_from(format).unwrap(),
@@ -138,7 +138,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 	) -> Result<()> {
 		// TODO: terminate client on fail, or send a fail event or something
 		// Create the buffer with DMA-BUF backing using self as the backing
-		_ = DmabufBacking::new(
+		_ = DmabufBacking::from_params(
 			client.get::<Self>(self.id).unwrap(),
 			[width as u32, height as u32].into(),
 			DrmFourcc::try_from(format).unwrap(),

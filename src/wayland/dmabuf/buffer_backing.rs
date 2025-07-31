@@ -17,10 +17,8 @@ use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_
 
 /// Parameters for a shared memory buffer
 pub struct DmabufBacking {
-	params: Arc<BufferParams>,
 	size: Vector2<u32>,
 	format: DrmFourcc,
-	_flags: Flags,
 	tex: OnceLock<Handle<Image>>,
 	pending_imported_dmatex: Mutex<Option<ImportedTexture>>,
 }
@@ -28,10 +26,8 @@ pub struct DmabufBacking {
 impl std::fmt::Debug for DmabufBacking {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("DmabufBacking")
-			.field("params", &self.params)
 			.field("size", &self.size)
 			.field("format", &self.format)
-			.field("_flags", &self._flags)
 			.field("tex", &self.tex)
 			.finish()
 	}
@@ -39,7 +35,23 @@ impl std::fmt::Debug for DmabufBacking {
 
 impl DmabufBacking {
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn new(
+	pub fn new(dmatex: Dmatex) -> Result<Self, ImportError> {
+		let dev = RENDER_DEVICE.wait();
+
+		Ok(Self {
+			size: [dmatex.res.x, dmatex.res.y].into(),
+			format: DrmFourcc::try_from(dmatex.format).unwrap(),
+			tex: OnceLock::new(),
+			pending_imported_dmatex: Mutex::new(Some(import_texture(
+				dev,
+				dmatex,
+				DropCallback(None),
+			)?)),
+		})
+	}
+
+	#[tracing::instrument(level = "debug", skip_all)]
+	pub fn from_params(
 		params: Arc<BufferParams>,
 		size: Vector2<u32>,
 		format: DrmFourcc,
@@ -60,17 +72,8 @@ impl DmabufBacking {
 			flip_y: flags.contains(Flags::YInvert),
 			srgb: true,
 		};
-		let dev = RENDER_DEVICE.wait();
-		let imported_tex = import_texture(dev, dmatex, DropCallback(None))?;
 
-		Ok(Self {
-			params,
-			size,
-			format,
-			_flags: flags,
-			tex: OnceLock::new(),
-			pending_imported_dmatex: Mutex::new(Some(imported_tex)),
-		})
+		DmabufBacking::new(dmatex)
 	}
 
 	#[tracing::instrument(level = "debug", skip_all)]

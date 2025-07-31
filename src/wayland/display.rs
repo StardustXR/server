@@ -4,9 +4,9 @@ use crate::wayland::{
 	MessageSink,
 	core::{
 		callback::{Callback, WlCallback},
-		registry::Registry,
 		seat::Seat,
 	},
+	registry::Registry,
 };
 use global_counter::primitive::exact::CounterU32;
 use std::{

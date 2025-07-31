@@ -1,11 +1,9 @@
 pub mod buffer;
 pub mod callback;
 pub mod compositor;
-pub mod display;
 pub mod keyboard;
 pub mod output;
 pub mod pointer;
-pub mod registry;
 pub mod seat;
 pub mod shm;
 pub mod shm_buffer_backing;

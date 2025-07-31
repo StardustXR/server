@@ -1,19 +1,23 @@
 use crate::wayland::{
 	core::{
 		compositor::{Compositor, WlCompositor},
-		display::Display,
 		output::{Output, WlOutput},
 		seat::{Seat, WlSeat},
 		shm::{Shm, WlShm},
 	},
+	display::Display,
 	dmabuf::Dmabuf,
+	mesa_drm::MesaDrm,
 	xdg::wm_base::{WmBase, XdgWmBase},
 };
-pub use waynest::server::protocol::core::wayland::wl_registry::*;
-
-use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
 use waynest::{
-	server::{Client, Dispatcher, Error, Result},
+	server::{
+		Client, Dispatcher, Error, Result,
+		protocol::{
+			core::wayland::wl_registry::*, external::drm::wl_drm::WlDrm,
+			stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
+		},
+	},
 	wire::{NewId, ObjectId},
 };
 
@@ -25,6 +29,7 @@ impl RegistryGlobals {
 	pub const SEAT: u32 = 3;
 	pub const OUTPUT: u32 = 4;
 	pub const DMABUF: u32 = 5;
+	pub const WL_DRM: u32 = 6;
 }
 
 #[derive(Debug, Dispatcher, Default)]
@@ -86,6 +91,15 @@ impl Registry {
 		)
 		.await?;
 
+		self.global(
+			client,
+			sender_id,
+			RegistryGlobals::WL_DRM,
+			crate::wayland::mesa_drm::MesaDrm::INTERFACE.to_string(),
+			MesaDrm::VERSION,
+		)
+		.await?;
+
 		Ok(())
 	}
 }
@@ -136,6 +150,12 @@ impl WlRegistry for Registry {
 
 				let dmabuf = Dmabuf::new(client, new_id.object_id, new_id.version).await?;
 				client.insert(new_id.object_id, dmabuf);
+			}
+			RegistryGlobals::WL_DRM => {
+				tracing::info!("Binding wl_drm");
+
+				let drm = MesaDrm::new(client, new_id.object_id, new_id.version).await?;
+				client.insert(new_id.object_id, drm);
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");

@@ -2,6 +2,8 @@ pub mod buffer_backing;
 pub mod buffer_params;
 pub mod feedback;
 
+use std::sync::LazyLock;
+
 use super::{util::ClientExt, vulkano_data::VULKANO_CONTEXT};
 use crate::core::registry::Registry;
 use bevy_dmabuf::{format_mapping::drm_fourcc_to_vk_format, wgpu_init::vulkan_to_wgpu};
@@ -19,6 +21,30 @@ use waynest::{
 	},
 	wire::ObjectId,
 };
+
+pub static DMABUF_FORMATS: LazyLock<FxHashSet<(DrmFourcc, u64)>> = LazyLock::new(|| {
+	let vk = VULKANO_CONTEXT.wait();
+
+	ALL_DRM_FOURCCS
+		.iter()
+		.copied()
+		.filter_map(|f| Some((f, drm_fourcc_to_vk_format(f)?)))
+		.filter(|(_, vk_format)| vulkan_to_wgpu(*vk_format).is_some())
+		.filter_map(|(f, vk_format)| {
+			Some((
+				f,
+				vk.phys_dev
+					.format_properties(vk_format.try_into().unwrap())
+					.ok()?
+					.drm_format_modifier_properties
+					.into_iter()
+					.map(|v| v.drm_format_modifier)
+					.collect::<Vec<_>>(),
+			))
+		})
+		.flat_map(|(f, mods)| mods.into_iter().map(move |modifier| (f, modifier)))
+		.collect()
+});
 
 /// Main DMA-BUF interface implementation
 ///
@@ -45,31 +71,10 @@ pub struct Dmabuf {
 impl Dmabuf {
 	/// Create a new DMA-BUF interface instance
 	pub async fn new(client: &mut Client, id: ObjectId, version: u32) -> Result<Self> {
-		let vk = VULKANO_CONTEXT.wait();
-		let formats: FxHashSet<(DrmFourcc, u64)> = ALL_DRM_FOURCCS
-			.iter()
-			.copied()
-			.filter_map(|f| Some((f, drm_fourcc_to_vk_format(f)?)))
-			.filter(|(_, vk_format)| vulkan_to_wgpu(*vk_format).is_some())
-			.filter_map(|(f, vk_format)| {
-				Some((
-					f,
-					vk.phys_dev
-						.format_properties(vk_format.try_into().unwrap())
-						.ok()?
-						.drm_format_modifier_properties
-						.into_iter()
-						.map(|v| v.drm_format_modifier)
-						.collect::<Vec<_>>(),
-				))
-			})
-			.flat_map(|(f, mods)| mods.into_iter().map(move |modifier| (f, modifier)))
-			.collect();
-
 		let dmabuf = Self {
 			active_params: Registry::new(),
 			version,
-			formats,
+			formats: DMABUF_FORMATS.clone(),
 		};
 
 		if version < 3 {

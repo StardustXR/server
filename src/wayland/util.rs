@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use super::{MessageSink, core::display::Display};
+use super::{MessageSink, display::Display};
 use std::{fmt::Debug, sync::Arc};
 use waynest::{server::Client, wire::ObjectId};
 

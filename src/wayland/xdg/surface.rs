@@ -1,8 +1,5 @@
 use super::{popup::Popup, positioner::Positioner, toplevel::Mapped};
-use crate::wayland::{
-	core::{display::Display, surface::SurfaceRole},
-	xdg::toplevel::Toplevel,
-};
+use crate::wayland::{core::surface::SurfaceRole, display::Display, xdg::toplevel::Toplevel};
 use std::sync::Arc;
 use std::sync::Weak;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;

@@ -1,8 +1,11 @@
-pub mod core;
-pub mod dmabuf;
-pub mod util;
-pub mod vulkano_data;
-pub mod xdg;
+mod core;
+mod display;
+mod dmabuf;
+mod mesa_drm;
+mod registry;
+mod util;
+mod vulkano_data;
+mod xdg;
 
 use crate::core::registry::OwnedRegistry;
 use crate::nodes::drawable::model::ModelNodeSystemSet;
@@ -25,7 +28,8 @@ use bevy_dmabuf::import::ImportedDmatexs;
 use bevy_mod_xr::session::XrRenderSet;
 use cluFlock::{FlockLock, ToFlock};
 use core::buffer::BufferUsage;
-use core::{buffer::Buffer, callback::Callback, display::Display, surface::WL_SURFACE_REGISTRY};
+use core::{buffer::Buffer, callback::Callback, surface::WL_SURFACE_REGISTRY};
+use display::Display;
 use mint::Vector2;
 use std::fs::File;
 use std::{
