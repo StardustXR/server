@@ -148,6 +148,8 @@ impl WlRegistry for Registry {
 				} else {
 					tracing::warn!("No display found to set seat");
 				}
+				seat.name(client, new_id.object_id, "theonlyseat".into())
+					.await?;
 				seat.advertise_capabilities(client, new_id.object_id)
 					.await?;
 				tracing::info!("Seat capabilities advertised");
