@@ -45,7 +45,9 @@ impl DmabufFeedback {
 		self.tranche_target_device(client, sender_id, dev_id)
 			.await?;
 
-		let indices = (0..num_formats).flat_map(|i| i.to_ne_bytes()).collect();
+		let indices = (0..num_formats)
+			.flat_map(|i| (i as u16).to_ne_bytes())
+			.collect();
 		self.tranche_formats(client, sender_id, indices).await?;
 
 		// No special flags needed for simple EGL texture usage

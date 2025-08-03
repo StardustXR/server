@@ -11,6 +11,7 @@ use buffer_params::BufferParams;
 use drm_fourcc::DrmFourcc;
 use feedback::DmabufFeedback;
 use rustc_hash::FxHashSet;
+use vulkano::format::FormatFeatures;
 use waynest::{
 	server::{
 		Client, Dispatcher, Error, Result,
@@ -22,10 +23,10 @@ use waynest::{
 	wire::ObjectId,
 };
 
-pub static DMABUF_FORMATS: LazyLock<FxHashSet<(DrmFourcc, u64)>> = LazyLock::new(|| {
+pub static DMABUF_FORMATS: LazyLock<Vec<(DrmFourcc, u64)>> = LazyLock::new(|| {
 	let vk = VULKANO_CONTEXT.wait();
 
-	ALL_DRM_FOURCCS
+	let format_modifier_pairs = ALL_DRM_FOURCCS
 		.iter()
 		.copied()
 		.filter_map(|f| Some((f, drm_fourcc_to_vk_format(f)?)))
@@ -38,12 +39,28 @@ pub static DMABUF_FORMATS: LazyLock<FxHashSet<(DrmFourcc, u64)>> = LazyLock::new
 					.ok()?
 					.drm_format_modifier_properties
 					.into_iter()
+					.filter(|v| {
+						v.drm_format_modifier_tiling_features
+							.contains(FormatFeatures::SAMPLED_IMAGE)
+					})
 					.map(|v| v.drm_format_modifier)
 					.collect::<Vec<_>>(),
 			))
 		})
 		.flat_map(|(f, mods)| mods.into_iter().map(move |modifier| (f, modifier)))
-		.collect()
+		.collect::<FxHashSet<_>>();
+
+	let mut format_modifier_pairs = format_modifier_pairs.into_iter().collect::<Vec<_>>();
+	format_modifier_pairs.sort_by(|(f1, m1), (f2, m2)| {
+		// Prioritize LINEAR modifier
+		let linear1 = *m1 == 0;
+		let linear2 = *m2 == 0;
+		linear2
+			.cmp(&linear1) // true = 1, false = 0
+			.then_with(|| (*f1 as u32).cmp(&(*f2 as u32))) // Sort by format numerically
+			.then_with(|| m1.cmp(m2)) // Then by modifier
+	});
+	format_modifier_pairs
 });
 
 /// Main DMA-BUF interface implementation
@@ -65,7 +82,7 @@ pub struct Dmabuf {
 	// Track active buffer parameters objects by their ID
 	active_params: Registry<BufferParams>,
 	pub(self) version: u32,
-	pub(self) formats: FxHashSet<(DrmFourcc, u64)>,
+	pub(self) formats: Vec<(DrmFourcc, u64)>,
 }
 
 impl Dmabuf {
