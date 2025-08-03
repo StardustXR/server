@@ -76,8 +76,6 @@ impl XdgSurface for Surface {
 		}
 
 		toplevel.reconfigure(client).await?;
-		let serial = client.next_event_serial();
-		self.configure(client, sender_id, serial).await?;
 
 		let pid = client.get::<Display>(ObjectId::DISPLAY).unwrap().pid;
 		let configured = self.configured.clone();
