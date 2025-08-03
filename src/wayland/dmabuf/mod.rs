@@ -15,10 +15,7 @@ use vulkano::format::FormatFeatures;
 use waynest::{
 	server::{
 		Client, Dispatcher, Error, Result,
-		protocol::{
-			core::wayland::wl_display::WlDisplay,
-			stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
-		},
+		protocol::stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
 	},
 	wire::ObjectId,
 };
@@ -146,9 +143,7 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 	) -> Result<()> {
 		if self.version < 3 {
 			client
-				.display()
-				.error(
-					client,
+				.protocol_error(
 					sender_id,
 					id,
 					71,

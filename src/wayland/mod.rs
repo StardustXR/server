@@ -110,6 +110,7 @@ pub fn get_free_wayland_socket_path() -> Option<(PathBuf, FlockLock<File>)> {
 }
 
 pub enum Message {
+	Disconnect,
 	Frame(Arc<Callback>),
 	ReleaseBuffer(Arc<Buffer>),
 	CloseToplevel(Arc<Toplevel>),
@@ -200,8 +201,9 @@ impl WaylandClient {
 	async fn handle_render_message(
 		client: &mut server::Client,
 		message: Message,
-	) -> Result<(), waynest::server::Error> {
+	) -> Result<bool, waynest::server::Error> {
 		match message {
+			Message::Disconnect => return Ok(true),
 			Message::Frame(callback) => {
 				let serial = client.next_event_serial();
 				callback.done(client, callback.0, serial).await?;
@@ -211,25 +213,28 @@ impl WaylandClient {
 					.delete_id(client, ObjectId::DISPLAY, callback.0.as_raw())
 					.await?;
 				client.remove(callback.0);
-				Ok(())
 			}
-			Message::ReleaseBuffer(buffer) => buffer.release(client, buffer.id).await,
-			Message::CloseToplevel(toplevel) => toplevel.close(client, toplevel.id).await,
+			Message::ReleaseBuffer(buffer) => {
+				buffer.release(client, buffer.id).await?;
+			}
+			Message::CloseToplevel(toplevel) => {
+				toplevel.close(client, toplevel.id).await?;
+			}
 			Message::ResizeToplevel { toplevel, size } => {
 				toplevel.set_size(size);
-				toplevel.reconfigure(client).await
+				toplevel.reconfigure(client).await?;
 			}
 			Message::SetToplevelVisualActive { toplevel, active } => {
 				toplevel.set_activated(active);
-				toplevel.reconfigure(client).await
+				toplevel.reconfigure(client).await?;
 			}
 			Message::Seat(seat_message) => {
 				if let Some(seat) = client.get::<Display>(ObjectId::DISPLAY).unwrap().seat.get() {
 					seat.handle_message(client, seat_message).await?;
 				}
-				Ok(())
 			}
 		}
+		Ok(false)
 	}
 }
 impl Drop for WaylandClient {

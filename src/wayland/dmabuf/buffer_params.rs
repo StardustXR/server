@@ -12,7 +12,7 @@ use waynest::{
 	server::{
 		Client, Dispatcher, Result,
 		protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::{
-			Flags, ZwpLinuxBufferParamsV1,
+			Error, Flags, ZwpLinuxBufferParamsV1,
 		},
 	},
 	wire::ObjectId,
@@ -129,7 +129,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 	async fn create_immed(
 		&self,
 		client: &mut Client,
-		_sender_id: ObjectId,
+		sender_id: ObjectId,
 		buffer_id: ObjectId,
 		width: i32,
 		height: i32,
@@ -138,15 +138,27 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 	) -> Result<()> {
 		// TODO: terminate client on fail, or send a fail event or something
 		// Create the buffer with DMA-BUF backing using self as the backing
-		_ = DmabufBacking::from_params(
+		match DmabufBacking::from_params(
 			client.get::<Self>(self.id).unwrap(),
 			[width as u32, height as u32].into(),
 			DrmFourcc::try_from(format).unwrap(),
 			flags,
-		)
-		.inspect_err(|e| tracing::error!("Failed to import dmabuf because {e}"))
-		.map(|backing| Buffer::new(client, buffer_id, BufferBacking::Dmabuf(backing)));
-
+		) {
+			Ok(backing) => {
+				Buffer::new(client, buffer_id, BufferBacking::Dmabuf(backing));
+			}
+			Err(e) => {
+				client
+					.protocol_error(
+						sender_id,
+						buffer_id,
+						Error::Incomplete as u32,
+						format!("Failed to import dmabuf because {e}"),
+					)
+					.await?;
+				tracing::error!("Failed to import dmabuf because {e}");
+			}
+		}
 		Ok(())
 	}
 }
