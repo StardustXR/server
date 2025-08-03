@@ -23,7 +23,7 @@ impl MesaDrm {
 			// Get the device information from Vulkan properties
 			let props = VULKANO_CONTEXT.get().unwrap().phys_dev.properties();
 			let minor_version = props.render_minor.unwrap();
-			format!("/dev/dri/render{minor_version}")
+			format!("/dev/dri/renderD{minor_version}")
 		};
 		drm.device(client, id, path).await?;
 
