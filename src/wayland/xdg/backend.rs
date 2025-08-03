@@ -5,7 +5,7 @@ use crate::{
 		drawable::model::ModelPart,
 		items::panel::{Backend, Geometry, PanelItemInitData, SurfaceId, ToplevelInfo},
 	},
-	wayland::core::surface::Surface,
+	wayland::{Message, core::surface::Surface},
 };
 use mint::Vector2;
 use std::sync::Arc;
@@ -82,71 +82,63 @@ impl Backend for XdgBackend {
 	}
 
 	fn close_toplevel(&self) {
-		let _ =
-			self.toplevel()
-				.surface()
-				.message_sink
-				.send(crate::wayland::Message::CloseToplevel(
-					self.toplevel().clone(),
-				));
+		let _ = self
+			.toplevel()
+			.surface()
+			.message_sink
+			.send(Message::CloseToplevel(self.toplevel().clone()));
 	}
 
 	fn auto_size_toplevel(&self) {
-		let _ =
-			self.toplevel()
-				.surface()
-				.message_sink
-				.send(crate::wayland::Message::ResizeToplevel {
-					toplevel: self.toplevel().clone(),
-					size: None,
-				});
+		let _ = self
+			.toplevel()
+			.surface()
+			.message_sink
+			.send(Message::ResizeToplevel {
+				toplevel: self.toplevel().clone(),
+				size: None,
+			});
 	}
 
 	fn set_toplevel_size(&self, size: Vector2<u32>) {
-		let _ =
-			self.toplevel()
-				.surface()
-				.message_sink
-				.send(crate::wayland::Message::ResizeToplevel {
-					toplevel: self.toplevel().clone(),
-					size: Some(size),
-				});
+		let _ = self
+			.toplevel()
+			.surface()
+			.message_sink
+			.send(Message::ResizeToplevel {
+				toplevel: self.toplevel().clone(),
+				size: Some(size),
+			});
 	}
 
 	fn set_toplevel_focused_visuals(&self, focused: bool) {
-		let _ = self.toplevel().surface().message_sink.send(
-			crate::wayland::Message::SetToplevelVisualActive {
+		let _ = self
+			.toplevel()
+			.surface()
+			.message_sink
+			.send(Message::SetToplevelVisualActive {
 				toplevel: self.toplevel().clone(),
 				active: focused,
-			},
-		);
+			});
 	}
 
 	fn pointer_motion(&self, surface: &SurfaceId, position: Vector2<f32>) {
 		if let Some(surface) = self.surface_from_id(surface.clone()) {
-			let _ = self
-				.toplevel()
-				.surface()
-				.message_sink
-				.send(crate::wayland::Message::Seat(
-					crate::wayland::core::seat::SeatMessage::PointerMotion { surface, position },
-				));
+			let _ = self.toplevel().surface().message_sink.send(Message::Seat(
+				crate::wayland::core::seat::SeatMessage::PointerMotion { surface, position },
+			));
 		}
 	}
 
 	fn pointer_button(&self, surface: &SurfaceId, button: u32, pressed: bool) {
 		if let Some(surface) = self.surface_from_id(surface.clone()) {
-			let _ = self
-				.toplevel()
-				.surface()
-				.message_sink
-				.send(crate::wayland::Message::Seat(
-					crate::wayland::core::seat::SeatMessage::PointerButton {
-						surface,
-						button,
-						pressed,
-					},
-				));
+			let _ = self.toplevel().surface().message_sink.send(Message::Seat(
+				crate::wayland::core::seat::SeatMessage::PointerButton {
+					surface,
+					button,
+					pressed,
+				},
+			));
 		}
 	}
 
@@ -157,17 +149,13 @@ impl Backend for XdgBackend {
 		scroll_steps: Option<Vector2<f32>>,
 	) {
 		if let Some(surface) = self.surface_from_id(surface.clone()) {
-			let _ = self
-				.toplevel()
-				.surface()
-				.message_sink
-				.send(crate::wayland::Message::Seat(
-					crate::wayland::core::seat::SeatMessage::PointerScroll {
-						surface,
-						scroll_distance,
-						scroll_steps,
-					},
-				));
+			let _ = self.toplevel().surface().message_sink.send(Message::Seat(
+				crate::wayland::core::seat::SeatMessage::PointerScroll {
+					surface,
+					scroll_distance,
+					scroll_steps,
+				},
+			));
 		}
 	}
 
@@ -178,18 +166,14 @@ impl Backend for XdgBackend {
 			if pressed { "pressed" } else { "released" }
 		);
 		if let Some(surface) = self.surface_from_id(surface.clone()) {
-			let _ = self
-				.toplevel()
-				.surface()
-				.message_sink
-				.send(crate::wayland::Message::Seat(
-					crate::wayland::core::seat::SeatMessage::KeyboardKey {
-						surface,
-						keymap_id,
-						key,
-						pressed,
-					},
-				));
+			let _ = self.toplevel().surface().message_sink.send(Message::Seat(
+				crate::wayland::core::seat::SeatMessage::KeyboardKey {
+					surface,
+					keymap_id,
+					key,
+					pressed,
+				},
+			));
 		}
 	}
 
@@ -201,17 +185,13 @@ impl Backend for XdgBackend {
 			position.y
 		);
 		if let Some(surface) = self.surface_from_id(surface.clone()) {
-			let _ = self
-				.toplevel()
-				.surface()
-				.message_sink
-				.send(crate::wayland::Message::Seat(
-					crate::wayland::core::seat::SeatMessage::TouchDown {
-						surface,
-						id,
-						position,
-					},
-				));
+			let _ = self.toplevel().surface().message_sink.send(Message::Seat(
+				crate::wayland::core::seat::SeatMessage::TouchDown {
+					surface,
+					id,
+					position,
+				},
+			));
 		}
 	}
 
@@ -223,7 +203,7 @@ impl Backend for XdgBackend {
 			position.y
 		);
 		let surface = self.toplevel().surface();
-		let _ = surface.message_sink.send(crate::wayland::Message::Seat(
+		let _ = surface.message_sink.send(Message::Seat(
 			crate::wayland::core::seat::SeatMessage::TouchMove { id, position },
 		));
 	}
@@ -231,7 +211,7 @@ impl Backend for XdgBackend {
 	fn touch_up(&self, id: u32) {
 		tracing::debug!("Backend: Touch up {}", id);
 		let surface = self.toplevel().surface();
-		let _ = surface.message_sink.send(crate::wayland::Message::Seat(
+		let _ = surface.message_sink.send(Message::Seat(
 			crate::wayland::core::seat::SeatMessage::TouchUp { id },
 		));
 	}
@@ -239,7 +219,7 @@ impl Backend for XdgBackend {
 	fn reset_input(&self) {
 		tracing::debug!("Backend: Reset input");
 		let surface = self.toplevel().surface();
-		let _ = surface.message_sink.send(crate::wayland::Message::Seat(
+		let _ = surface.message_sink.send(Message::Seat(
 			crate::wayland::core::seat::SeatMessage::Reset,
 		));
 	}
