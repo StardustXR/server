@@ -83,9 +83,13 @@ fn update(
 		tokio::task::spawn({
 			let handle = play_space.tracked_handle.clone();
 			async move {
-				handle.set_tracked(false);
+				handle.set_tracked(false).await;
 			}
 		});
+
+		play_space
+			.spatial
+			.set_local_transform(Mat4::from_translation(vec3(0.0, -1.65, 0.0)));
 		return;
 	};
 	// this won't be correct with pipelined rendering
@@ -102,7 +106,7 @@ fn update(
 		tokio::task::spawn({
 			let handle = play_space.tracked_handle.clone();
 			async move {
-				handle.set_tracked(is_tracked);
+				handle.set_tracked(is_tracked).await;
 			}
 		});
 		if is_tracked {
