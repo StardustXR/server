@@ -313,8 +313,8 @@ fn bevy_loop(
 		.on_thread_spawn = Some(enter_runtime_context.clone());
 	plugins = plugins.set(task_pool_plugin);
 	if args.flatscreen
-		|| std::env::var_os("DISPLAY").is_some()
-		|| std::env::var_os("WAYLAND_DISPLAY").is_some()
+		|| std::env::var_os("DISPLAY").is_some_and(|s| !s.is_empty())
+		|| std::env::var_os("WAYLAND_DISPLAY").is_some_and(|s| !s.is_empty())
 	{
 		let mut plugin = WinitPlugin::<WakeUp>::default();
 		plugin.run_on_any_thread = true;
