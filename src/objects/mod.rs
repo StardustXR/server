@@ -22,9 +22,9 @@ use std::{
 };
 use zbus::{Connection, interface, object_server::Interface, zvariant::OwnedObjectPath};
 
+pub mod hmd;
 pub mod input;
 pub mod play_space;
-pub mod hmd;
 
 pub struct ObjectHandle<I: Interface>(Connection, OwnedObjectPath, PhantomData<I>);
 
@@ -49,7 +49,9 @@ impl SpatialRef {
 		let node = OwnedNode(Arc::new(Node::generate(&INTERNAL_CLIENT, false)));
 		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
 		let uid: u64 = rand::random();
-		EXPORTED_SPATIALS.lock().insert(uid, node.0.clone());
+		EXPORTED_SPATIALS
+			.lock()
+			.insert(uid, Arc::downgrade(&node.0));
 
 		tokio::task::spawn({
 			let connection = connection.clone();
@@ -137,7 +139,7 @@ impl FieldRef {
 		Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
 		let field = Field::add_to(&node.0, shape).unwrap();
 		let uid: u64 = rand::random();
-		EXPORTED_FIELDS.lock().insert(uid, node.0.clone());
+		EXPORTED_FIELDS.lock().insert(uid, Arc::downgrade(&node.0));
 
 		tokio::task::spawn({
 			let connection = connection.clone();

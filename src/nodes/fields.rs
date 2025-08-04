@@ -25,7 +25,7 @@ use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use stardust_xr::values::Vector3;
-use std::sync::{Arc, LazyLock};
+use std::sync::{Arc, LazyLock, Weak};
 use zbus::interface;
 
 // TODO: get SDFs working properly with non-uniform scale and so on, output distance relative to the spatial it's compared against
@@ -135,7 +135,7 @@ static FIELD_REGISTRY_DEBUG_GIZMOS: Registry<Field> = Registry::new();
 stardust_xr_server_codegen::codegen_field_protocol!();
 
 lazy_static::lazy_static! {
-	pub static ref EXPORTED_FIELDS: Mutex<FxHashMap<u64, Arc<Node>>> = Mutex::new(FxHashMap::default());
+	pub static ref EXPORTED_FIELDS: Mutex<FxHashMap<u64, Weak<Node>>> = Mutex::new(FxHashMap::default());
 }
 
 pub trait FieldTrait: Send + Sync + 'static {
@@ -270,7 +270,7 @@ impl FieldAspect for Field {
 
 	async fn export_field(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<u64> {
 		let id = rand::random();
-		EXPORTED_FIELDS.lock().insert(id, node);
+		EXPORTED_FIELDS.lock().insert(id, Arc::downgrade(&node));
 		Ok(id)
 	}
 }
@@ -371,16 +371,17 @@ impl InterfaceAspect for Interface {
 		Ok(EXPORTED_FIELDS
 			.lock()
 			.get(&uid)
+			.and_then(|s| s.upgrade())
 			.map(|s| {
 				Alias::create(
-					s,
+					&s,
 					&calling_client,
 					FIELD_REF_ASPECT_ALIAS_INFO.clone(),
 					None,
 				)
 				.unwrap()
 			})
-			.ok_or_eyre("Couldn't find spatial with that ID")?)
+			.ok_or_eyre("Couldn't import field with that ID")?)
 	}
 
 	fn create_field(

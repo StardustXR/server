@@ -116,7 +116,7 @@ impl Aspect for Zone {
 }
 
 lazy_static::lazy_static! {
-	pub static ref EXPORTED_SPATIALS: Mutex<FxHashMap<u64, Arc<Node>>> = Mutex::new(FxHashMap::default());
+	pub static ref EXPORTED_SPATIALS: Mutex<FxHashMap<u64, Weak<Node>>> = Mutex::new(FxHashMap::default());
 }
 
 static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
@@ -374,7 +374,7 @@ impl SpatialAspect for Spatial {
 	// legit gotta find a way to remove old ones, this just keeps the node alive
 	async fn export_spatial(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<u64> {
 		let id = rand::random();
-		EXPORTED_SPATIALS.lock().insert(id, node);
+		EXPORTED_SPATIALS.lock().insert(id, Arc::downgrade(&node));
 		Ok(id)
 	}
 }
@@ -521,9 +521,10 @@ impl InterfaceAspect for Interface {
 		Ok(EXPORTED_SPATIALS
 			.lock()
 			.get(&uid)
+			.and_then(|s| s.upgrade())
 			.map(|s| {
 				Alias::create(
-					s,
+					&s,
 					&calling_client,
 					SPATIAL_REF_ASPECT_ALIAS_INFO.clone(),
 					None,

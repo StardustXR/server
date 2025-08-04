@@ -327,7 +327,9 @@ impl MousePointer {
 				}
 				while let Some(Ok(Some((handler, field_ref_id)))) = join_set.join_next().await {
 					let exported_fields = EXPORTED_FIELDS.lock();
-					let Some(field_ref_node) = exported_fields.get(&field_ref_id) else {
+					let Some(field_ref_node) =
+						exported_fields.get(&field_ref_id).and_then(|f| f.upgrade())
+					else {
 						println!("didn't find a thing :(");
 						continue;
 					};
