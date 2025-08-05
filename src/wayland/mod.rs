@@ -308,7 +308,7 @@ impl Plugin for WaylandPlugin {
 	fn finish(&self, app: &mut App) {
 		app.sub_app_mut(RenderApp)
 			.add_systems(Render, setup_vulkano_context)
-			.add_systems(Render, push_used_buffers.in_set(XrRenderSet::PreRender))
+			.add_systems(Render, before_render.in_set(XrRenderSet::PreRender))
 			.add_systems(Render, after_render.in_set(XrRenderSet::PostRender));
 	}
 }
@@ -325,7 +325,7 @@ impl Default for UsedBuffers {
 	}
 }
 
-fn push_used_buffers(buffers: Res<UsedBuffers>) {
+fn before_render(buffers: Res<UsedBuffers>) {
 	for buf in WL_SURFACE_REGISTRY
 		.get_valid_contents()
 		.into_iter()
@@ -334,13 +334,13 @@ fn push_used_buffers(buffers: Res<UsedBuffers>) {
 	{
 		buffers.add_raw(buf);
 	}
+	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
+		surface.frame_event();
+	}
 }
 
 fn after_render(buffers: Res<UsedBuffers>) {
 	buffers.clear();
-	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
-		surface.frame_event();
-	}
 }
 
 #[instrument(level = "debug", name = "Wayland frame", skip_all)]
