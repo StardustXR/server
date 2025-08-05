@@ -48,7 +48,7 @@ pub struct SurfaceState {
 	pub geometry: Option<Geometry>,
 	pub min_size: Option<Vector2<u32>>,
 	pub max_size: Option<Vector2<u32>>,
-	frame_callbacks: Registry<Callback>,
+	frame_callbacks: Vec<Arc<Callback>>,
 }
 impl Default for SurfaceState {
 	fn default() -> Self {
@@ -58,7 +58,7 @@ impl Default for SurfaceState {
 			geometry: None,
 			min_size: None,
 			max_size: None,
-			frame_callbacks: Registry::new(),
+			frame_callbacks: Vec::new(),
 		}
 	}
 }
@@ -180,7 +180,7 @@ impl Surface {
 	}
 	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn frame_event(&self) {
-		for callback in self.current_state().frame_callbacks.take_valid_contents() {
+		for callback in self.state.lock().current.frame_callbacks.drain(..) {
 			let _ = self.message_sink.send(Message::Frame(callback));
 		}
 	}
@@ -258,7 +258,7 @@ impl WlSurface for Surface {
 		callback_id: ObjectId,
 	) -> Result<()> {
 		let callback = client.insert(callback_id, Callback(callback_id));
-		self.state.lock().pending.frame_callbacks.add_raw(&callback);
+		self.state.lock().pending.frame_callbacks.push(callback);
 		Ok(())
 	}
 

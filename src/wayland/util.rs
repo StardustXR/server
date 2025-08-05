@@ -48,7 +48,7 @@ impl ClientExt for Client {
 
 #[derive(Debug, Default)]
 pub struct DoubleBuffer<State: Debug + Clone> {
-	current: State,
+	pub current: State,
 	pub pending: State,
 }
 impl<State: Debug + Clone> DoubleBuffer<State> {
