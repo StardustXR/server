@@ -12,7 +12,7 @@ impl Plugin for EntityHandlePlugin {
 
 fn despawn(mut cmds: Commands, mut reader: ResMut<BevyChannelReader<Entity>>) {
 	while let Some(e) = reader.read() {
-		cmds.entity(e).despawn();
+		cmds.entity(e).try_despawn();
 	}
 }
 
