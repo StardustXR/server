@@ -4,6 +4,7 @@ use crate::wayland::{
 	MessageSink,
 	core::{
 		callback::{Callback, WlCallback},
+		output::Output,
 		seat::Seat,
 	},
 	registry::Registry,
@@ -24,6 +25,7 @@ pub struct Display {
 	pub message_sink: MessageSink,
 	pub pid: Option<i32>,
 	pub seat: OnceLock<Arc<Seat>>,
+	pub output: OnceLock<Arc<Output>>,
 	id_counter: CounterU32,
 	pub creation_time: Instant,
 }
@@ -33,6 +35,7 @@ impl Display {
 			message_sink,
 			pid,
 			seat: OnceLock::new(),
+			output: OnceLock::new(),
 			id_counter: CounterU32::new(0xff000000), // Start at 0xff000000 to avoid conflicts with client-generated IDs
 			creation_time: Instant::now(),
 		}

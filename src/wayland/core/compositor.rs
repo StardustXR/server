@@ -1,8 +1,11 @@
 use super::surface::WL_SURFACE_REGISTRY;
-use crate::wayland::core::surface::Surface;
+use crate::wayland::{core::surface::Surface, util::ClientExt};
 pub use waynest::server::protocol::core::wayland::wl_compositor::*;
 use waynest::{
-	server::{Client, Dispatcher, Result, protocol::core::wayland::wl_region::WlRegion},
+	server::{
+		Client, Dispatcher, Result,
+		protocol::core::wayland::{wl_region::WlRegion, wl_surface::WlSurface},
+	},
 	wire::ObjectId,
 };
 
@@ -17,6 +20,9 @@ impl WlCompositor for Compositor {
 		id: ObjectId,
 	) -> Result<()> {
 		let surface = client.insert(id, Surface::new(client, id));
+		if let Some(output) = client.display().output.get() {
+			surface.enter(client, id, output.0).await?;
+		}
 		WL_SURFACE_REGISTRY.add_raw(&surface);
 
 		Ok(())

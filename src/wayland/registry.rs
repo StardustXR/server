@@ -6,9 +6,9 @@ use crate::wayland::{
 		seat::{Seat, WlSeat},
 		shm::{Shm, WlShm},
 	},
-	display::Display,
 	dmabuf::Dmabuf,
 	mesa_drm::MesaDrm,
+	util::ClientExt,
 	xdg::wm_base::{WmBase, XdgWmBase},
 };
 use waynest::{
@@ -141,13 +141,7 @@ impl WlRegistry for Registry {
 			RegistryGlobals::SEAT => {
 				tracing::info!("Binding seat with id {}", new_id.object_id);
 				let seat = client.insert(new_id.object_id, Seat::new());
-				if let Some(display) = client.get::<Display>(ObjectId::DISPLAY) {
-					tracing::info!("Setting seat in display");
-					let _ = display.seat.set(seat.clone());
-					tracing::info!("Seat set successfully");
-				} else {
-					tracing::warn!("No display found to set seat");
-				}
+				let _ = client.display().seat.set(seat.clone());
 				seat.name(client, new_id.object_id, "theonlyseat".into())
 					.await?;
 				seat.advertise_capabilities(client, new_id.object_id)
@@ -161,6 +155,7 @@ impl WlRegistry for Registry {
 			RegistryGlobals::OUTPUT => {
 				tracing::info!("Binding output");
 				let output = client.insert(new_id.object_id, Output(new_id.object_id));
+				let _ = client.display().output.set(output.clone());
 				output.advertise_outputs(client).await?;
 			}
 			RegistryGlobals::DMABUF => {
