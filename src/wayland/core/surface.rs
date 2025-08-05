@@ -70,7 +70,7 @@ pub struct Surface {
 	state: Mutex<DoubleBuffer<SurfaceState>>,
 	pub message_sink: MessageSink,
 	pub role: Mutex<Option<SurfaceRole>>,
-	frame_callback_object: Mutex<Option<Arc<Callback>>>,
+	frame_callbacks: Registry<Callback>,
 	on_commit_handlers: Mutex<Vec<OnCommitCallback>>,
 	material: OnceLock<Handle<BevyMaterial>>,
 	pending_material_applications: Registry<ModelPart>,
@@ -81,7 +81,6 @@ impl std::fmt::Debug for Surface {
 			.field("state", &self.state)
 			.field("message_sink", &self.message_sink)
 			.field("role", &self.role)
-			.field("frame_callback_object", &self.frame_callback_object)
 			.field(
 				"on_commit_handlers",
 				&format!("<{} handlers>", self.on_commit_handlers.lock().len()),
@@ -97,7 +96,7 @@ impl Surface {
 			state: Default::default(),
 			message_sink: client.message_sink(),
 			role: Mutex::new(None),
-			frame_callback_object: Default::default(),
+			frame_callbacks: Registry::new(),
 			on_commit_handlers: Mutex::new(Vec::new()),
 			material: OnceLock::new(),
 			pending_material_applications: Registry::new(),
@@ -181,8 +180,8 @@ impl Surface {
 	}
 	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn frame_event(&self) {
-		if let Some(callback_obj) = self.frame_callback_object.lock().take() {
-			let _ = self.message_sink.send(Message::Frame(callback_obj));
+		for callback in self.frame_callbacks.take_valid_contents() {
+			let _ = self.message_sink.send(Message::Frame(callback));
 		}
 	}
 	// pub fn size(&self) -> Option<Vector2<u32>> {
@@ -259,7 +258,7 @@ impl WlSurface for Surface {
 		callback_id: ObjectId,
 	) -> Result<()> {
 		let callback = client.insert(callback_id, Callback(callback_id));
-		self.frame_callback_object.lock().replace(callback);
+		self.frame_callbacks.add_raw(&callback);
 		Ok(())
 	}
 
