@@ -32,6 +32,7 @@ use core::{buffer::Buffer, callback::Callback, surface::WL_SURFACE_REGISTRY};
 use display::Display;
 use mint::Vector2;
 use std::fs::File;
+use std::time::Duration;
 use std::{
 	fs::{self, OpenOptions},
 	io::{self, ErrorKind},
@@ -169,15 +170,13 @@ impl WaylandClient {
 						}
 						Err(e) => {
 							// wayland clients really aren't nice when disconnecting properly, are they? :p
-							if let server::Error::Decode(DecodeError::IoError(e)) = &e {
-								if e.kind() == io::ErrorKind::ConnectionReset {
+							if let server::Error::Decode(DecodeError::IoError(e)) = &e && e.kind() == io::ErrorKind::ConnectionReset {
 									if let Some(pid) = client.get::<Display>(ObjectId::DISPLAY).and_then(|d| d.pid) {
 										tracing::info!("Wayland: Client with pid: {pid} disconnected from server");
 									} else {
 										tracing::info!("Wayland: Unknown client disconnected from server");
 									}
 									break;
-								}
 							}
 							tracing::error!("Wayland: Error reading message: {:?}", e);
 							break;
@@ -205,8 +204,10 @@ impl WaylandClient {
 		match message {
 			Message::Disconnect => return Ok(true),
 			Message::Frame(callback) => {
-				let serial = client.next_event_serial();
-				callback.done(client, callback.0, serial).await?;
+				let now = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+				let now = Duration::new(now.tv_sec as u64, now.tv_nsec as u32);
+				let ms = (now.as_millis() % (u32::MAX as u128)) as u32;
+				callback.done(client, callback.0, ms).await?;
 				client
 					.get::<Display>(ObjectId::DISPLAY)
 					.unwrap()

@@ -5475,6 +5475,7 @@ dependencies = [
  "parking_lot 0.12.4",
  "rand",
  "rustc-hash 2.1.1",
+ "rustix 1.0.8",
  "serde",
  "serde_repr",
  "slotmap",

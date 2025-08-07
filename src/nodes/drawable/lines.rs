@@ -181,6 +181,7 @@ fn build_line_mesh(
 					MeshMaterial3d(materials.add(BevyMaterial {
 						base_color: Color::WHITE,
 						perceptual_roughness: 1.0,
+						// TODO: this should be Blend
 						alpha_mode: AlphaMode::Opaque,
 						..default()
 					})),
