@@ -5,20 +5,15 @@ use crate::wayland::{
 		output::{Output, WlOutput},
 		seat::{Seat, WlSeat},
 		shm::{Shm, WlShm},
-	},
-	dmabuf::Dmabuf,
-	mesa_drm::MesaDrm,
-	util::ClientExt,
-	xdg::wm_base::{WmBase, XdgWmBase},
+	}, dmabuf::Dmabuf, mesa_drm::MesaDrm, presentation::Presentation, util::ClientExt, xdg::wm_base::{WmBase, XdgWmBase}
 };
 use waynest::{
 	server::{
-		Client, Dispatcher, Error, Result,
 		protocol::{
 			core::wayland::{wl_data_device_manager::WlDataDeviceManager, wl_registry::*},
 			external::drm::wl_drm::WlDrm,
-			stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
-		},
+			stable::{linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, presentation_time::wp_presentation::WpPresentation},
+		}, Client, Dispatcher, Error, Result
 	},
 	wire::{NewId, ObjectId},
 };
@@ -33,6 +28,7 @@ impl RegistryGlobals {
 	pub const OUTPUT: u32 = 5;
 	pub const DMABUF: u32 = 6;
 	pub const WL_DRM: u32 = 7;
+	pub const PRESENTATION: u32 = 8;
 }
 
 #[derive(Debug, Dispatcher, Default)]
@@ -112,6 +108,15 @@ impl Registry {
 		)
 		.await?;
 
+		self.global(
+			client,
+			sender_id,
+			RegistryGlobals::PRESENTATION,
+			Presentation::INTERFACE.to_string(),
+			Presentation::VERSION,
+		)
+		.await?;
+
 		Ok(())
 	}
 }
@@ -169,6 +174,12 @@ impl WlRegistry for Registry {
 
 				let drm = MesaDrm::new(client, new_id.object_id, new_id.version).await?;
 				client.insert(new_id.object_id, drm);
+			}
+			RegistryGlobals::PRESENTATION => {
+				tracing::info!("Binding wp_presentation");
+
+				let presentation = Presentation::new(new_id.version);
+				client.insert(new_id.object_id, presentation);
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");

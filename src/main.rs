@@ -337,6 +337,7 @@ fn bevy_loop(
 					if args.overlay_priority.is_some() {
 						exts.enable_extx_overlay();
 					}
+					exts.khr_convert_timespec_time = true;
 					exts
 				},
 				..default()

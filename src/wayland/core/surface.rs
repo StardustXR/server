@@ -6,6 +6,7 @@ use crate::{
 	wayland::{
 		Message, MessageSink,
 		core::buffer::BufferUsage,
+		presentation::{MonotonicTimestamp, PresentationFeedback},
 		util::{ClientExt, DoubleBuffer},
 		xdg::{popup::Popup, toplevel::Toplevel},
 	},
@@ -22,7 +23,10 @@ use std::sync::{Arc, OnceLock};
 use waynest::{
 	server::{
 		Client, Dispatcher, Result,
-		protocol::core::wayland::{wl_output::Transform, wl_surface::*},
+		protocol::{
+			core::wayland::{wl_output::Transform, wl_surface::*},
+			stable::presentation_time::wp_presentation_feedback::{Kind, WpPresentationFeedback},
+		},
 	},
 	wire::ObjectId,
 };
@@ -71,10 +75,12 @@ pub struct Surface {
 	pub id: ObjectId,
 	state: Mutex<DoubleBuffer<SurfaceState>>,
 	pub message_sink: MessageSink,
+	// TODO: This should probably be a OnceLock? wayland doesn't support changing the surface role
 	pub role: Mutex<Option<SurfaceRole>>,
 	on_commit_handlers: Mutex<Vec<OnCommitCallback>>,
 	material: OnceLock<Handle<BevyMaterial>>,
 	pending_material_applications: Registry<ModelPart>,
+	presentation_feedback: Mutex<Vec<Arc<PresentationFeedback>>>,
 }
 impl std::fmt::Debug for Surface {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -100,6 +106,7 @@ impl Surface {
 			on_commit_handlers: Mutex::new(Vec::new()),
 			material: OnceLock::new(),
 			pending_material_applications: Registry::new(),
+			presentation_feedback: Mutex::default(),
 		}
 	}
 
@@ -212,6 +219,60 @@ impl Surface {
 
 	// 	Ok(())
 	// }
+
+	#[tracing::instrument(level = "debug", skip_all)]
+	pub fn add_presentation_feedback(&self, feedback: Arc<PresentationFeedback>) {
+		self.presentation_feedback.lock().push(feedback);
+	}
+
+	pub fn submit_presentation_feedback(
+		self: &Arc<Self>,
+		display_timestamp: MonotonicTimestamp,
+		refresh_cycle: u64,
+	) {
+		self.message_sink
+			.send(Message::SendPresentationFeedback {
+				surface: self.clone(),
+				display_timestamp,
+				refresh_cycle,
+			})
+			.unwrap();
+	}
+
+	#[tracing::instrument(level = "debug", skip_all)]
+	pub async fn send_presentation_feedback(
+		&self,
+		client: &mut Client,
+		display_timestamp: MonotonicTimestamp,
+		refresh_cycle: u64,
+	) -> Result<()> {
+		let feedbacks = self
+			.presentation_feedback
+			.lock()
+			.drain(..)
+			.collect::<Vec<_>>();
+		for feedback in feedbacks {
+			feedback
+				.sync_output(client, feedback.0, client.display().output.get().unwrap().0)
+				.await?;
+			let cycle_lo = refresh_cycle as u32;
+			let cycle_hi = (refresh_cycle >> 32) as u32;
+			feedback
+				.presented(
+					client,
+					feedback.0,
+					display_timestamp.secs_hi(),
+					display_timestamp.secs_lo(),
+					display_timestamp.subsec_nanos(),
+					0,
+					cycle_hi,
+					cycle_lo,
+					Kind::empty(),
+				)
+				.await?;
+		}
+		Ok(())
+	}
 }
 impl WlSurface for Surface {
 	/// https://wayland.app/protocols/wayland#wl_surface:request:attach

@@ -2,6 +2,7 @@ mod core;
 mod display;
 mod dmabuf;
 mod mesa_drm;
+mod presentation;
 mod registry;
 mod util;
 mod vulkano_data;
@@ -10,6 +11,8 @@ mod xdg;
 use crate::core::registry::OwnedRegistry;
 use crate::nodes::drawable::model::ModelNodeSystemSet;
 use crate::wayland::core::seat::SeatMessage;
+use crate::wayland::core::surface::Surface;
+use crate::wayland::presentation::MonotonicTimestamp;
 use crate::{
 	BevyMaterial,
 	core::{
@@ -18,13 +21,15 @@ use crate::{
 	},
 };
 use bevy::app::{App, Plugin, Update};
+use bevy::diagnostic::FrameCount;
 use bevy::ecs::schedule::IntoScheduleConfigs;
-use bevy::ecs::system::{Res, ResMut};
+use bevy::ecs::system::{Local, Res, ResMut};
 use bevy::prelude::{Deref, DerefMut};
 use bevy::render::renderer::RenderDevice;
 use bevy::render::{Render, RenderApp};
 use bevy::{asset::Assets, ecs::resource::Resource, image::Image};
 use bevy_dmabuf::import::ImportedDmatexs;
+use bevy_mod_openxr::render::end_frame;
 use bevy_mod_xr::session::XrRenderSet;
 use cluFlock::{FlockLock, ToFlock};
 use core::buffer::BufferUsage;
@@ -124,6 +129,11 @@ pub enum Message {
 		active: bool,
 	},
 	Seat(SeatMessage),
+	SendPresentationFeedback {
+		surface: Arc<Surface>,
+		display_timestamp: MonotonicTimestamp,
+		refresh_cycle: u64,
+	},
 }
 
 pub type MessageSink = mpsc::UnboundedSender<Message>;
@@ -234,6 +244,15 @@ impl WaylandClient {
 					seat.handle_message(client, seat_message).await?;
 				}
 			}
+			Message::SendPresentationFeedback {
+				surface,
+				display_timestamp,
+				refresh_cycle,
+			} => {
+				surface
+					.send_presentation_feedback(client, display_timestamp, refresh_cycle)
+					.await?;
+			}
 		}
 		Ok(false)
 	}
@@ -310,7 +329,13 @@ impl Plugin for WaylandPlugin {
 		app.sub_app_mut(RenderApp)
 			.add_systems(Render, setup_vulkano_context)
 			.add_systems(Render, before_render.in_set(XrRenderSet::PreRender))
-			.add_systems(Render, after_render.in_set(XrRenderSet::PostRender));
+			.add_systems(Render, after_render.in_set(XrRenderSet::PostRender))
+			.add_systems(
+				Render,
+				submit_frame_timings
+					.in_set(XrRenderSet::PostRender)
+					.after(end_frame),
+			);
 	}
 }
 
@@ -352,5 +377,15 @@ fn update_graphics(
 ) {
 	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
 		surface.update_graphics(&dmatexes, &mut materials, &mut images);
+	}
+}
+
+#[instrument(level = "debug", name = "Wayland frame", skip_all)]
+fn submit_frame_timings(mut frame_count: Local<u64>) {
+	*frame_count += 1;
+	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
+		let display_timestamp =
+			rustix::time::clock_gettime(rustix::time::ClockId::Monotonic).into();
+		surface.submit_presentation_feedback(display_timestamp, *frame_count);
 	}
 }
