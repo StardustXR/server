@@ -23,15 +23,15 @@ path = "src/main.rs"
 [features]
 default = ["wayland"]
 wayland = [
-    "dep:cluFlock",
-    "dep:waynest",
-    "dep:tokio-stream",
-    "dep:memmap2",
-    "dep:drm-fourcc",
-    "dep:memfd",
-    "dep:vulkano",
-    "dep:wgpu-hal",
-    "dep:ash",
+	"dep:cluFlock",
+	"dep:waynest",
+	"dep:tokio-stream",
+	"dep:memmap2",
+	"dep:drm-fourcc",
+	"dep:memfd",
+	"dep:vulkano",
+	"dep:wgpu-hal",
+	"dep:ash",
 ]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy", "bevy/trace_tracy", "bevy/trace"]
@@ -88,28 +88,28 @@ tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
 
 # bevy
 bevy = { version = "0.16", default-features = false, features = [
-    "bevy_asset",
-    "bevy_audio",
-    "bevy_color",
-    "bevy_core_pipeline",
-    "bevy_gizmos",
-    "bevy_gltf",
-    "bevy_log",
-    "bevy_pbr",
-    "bevy_render",
-    "bevy_window",
-    "bevy_winit",
-    "std",
-    "x11",
-    "wayland",
-    "mp3",
-    "wav",
-    "qoi",
-    "png",
-    "hdr",
-    "jpeg",
-    "tonemapping_luts",
-    "multi_threaded",
+	"bevy_asset",
+	"bevy_audio",
+	"bevy_color",
+	"bevy_core_pipeline",
+	"bevy_gizmos",
+	"bevy_gltf",
+	"bevy_log",
+	"bevy_pbr",
+	"bevy_render",
+	"bevy_window",
+	"bevy_winit",
+	"std",
+	"x11",
+	"wayland",
+	"mp3",
+	"wav",
+	"qoi",
+	"png",
+	"hdr",
+	"jpeg",
+	"tonemapping_luts",
+	"multi_threaded",
 ] }
 bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"
@@ -139,10 +139,10 @@ cluFlock = { version = "1.2.7", optional = true } # for the lockfile checking
 # 	"tracing",
 # ], default-features = false, optional = true }
 waynest = { git = "https://github.com/technobaboo/waynest.git", branch = "fix/wayland-drm", features = [
-    "server",
-    "stable",
-    "external",
-    "tracing",
+	"server",
+	"stable",
+	"external",
+	"tracing",
 ], default-features = false, optional = true }
 tokio-stream = { version = "0.1.17", optional = true }
 memmap2 = { version = "0.9.5", optional = true }
