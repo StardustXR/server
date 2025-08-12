@@ -54,6 +54,12 @@ opt-level = 3
 bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "vk_exts" }
 bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "vk_exts" }
 bevy_gltf = { git = "https://github.com/Schmarni-Dev/bevy", branch = "gltf_backport" }
+# TODO: figure out how to not need this horrifing patch
+wgpu = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
+wgpu-types = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
+wgpu-core = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
+naga = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
+wgpu-hal = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
 
 [dependencies]
 # small utility thingys
