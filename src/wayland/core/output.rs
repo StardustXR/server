@@ -6,12 +6,15 @@ use waynest::{
 pub use waynest::server::protocol::core::wayland::wl_output::*;
 
 #[derive(Debug, Dispatcher)]
-pub struct Output(pub ObjectId);
+pub struct Output {
+	pub id: ObjectId,
+	pub version: u32,
+}
 impl Output {
 	pub async fn advertise_outputs(&self, client: &mut Client) -> Result<()> {
 		self.geometry(
 			client,
-			self.0,
+			self.id,
 			2048,
 			2048,
 			0,
@@ -23,10 +26,13 @@ impl Output {
 		)
 		.await?;
 
-		self.mode(client, self.0, Mode::Current, 2048, 2048, i32::MAX)
+		self.mode(client, self.id, Mode::Current, 2048, 2048, i32::MAX)
 			.await?;
 
-		self.done(client, self.0).await
+		if self.version >= 2 {
+			self.done(client, self.id).await?;
+		}
+		Ok(())
 	}
 }
 impl WlOutput for Output {

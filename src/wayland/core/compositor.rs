@@ -21,7 +21,7 @@ impl WlCompositor for Compositor {
 	) -> Result<()> {
 		let surface = client.insert(id, Surface::new(client, id));
 		if let Some(output) = client.display().output.get() {
-			surface.enter(client, id, output.0).await?;
+			surface.enter(client, id, output.id).await?;
 		}
 		WL_SURFACE_REGISTRY.add_raw(&surface);
 

@@ -253,7 +253,11 @@ impl Surface {
 			.collect::<Vec<_>>();
 		for feedback in feedbacks {
 			feedback
-				.sync_output(client, feedback.0, client.display().output.get().unwrap().0)
+				.sync_output(
+					client,
+					feedback.0,
+					client.display().output.get().unwrap().id,
+				)
 				.await?;
 			let cycle_lo = refresh_cycle as u32;
 			let cycle_hi = (refresh_cycle >> 32) as u32;

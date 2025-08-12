@@ -5,15 +5,24 @@ use crate::wayland::{
 		output::{Output, WlOutput},
 		seat::{Seat, WlSeat},
 		shm::{Shm, WlShm},
-	}, dmabuf::Dmabuf, mesa_drm::MesaDrm, presentation::Presentation, util::ClientExt, xdg::wm_base::{WmBase, XdgWmBase}
+	},
+	dmabuf::Dmabuf,
+	mesa_drm::MesaDrm,
+	presentation::Presentation,
+	util::ClientExt,
+	xdg::wm_base::{WmBase, XdgWmBase},
 };
 use waynest::{
 	server::{
+		Client, Dispatcher, Error, Result,
 		protocol::{
 			core::wayland::{wl_data_device_manager::WlDataDeviceManager, wl_registry::*},
 			external::drm::wl_drm::WlDrm,
-			stable::{linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1, presentation_time::wp_presentation::WpPresentation},
-		}, Client, Dispatcher, Error, Result
+			stable::{
+				linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
+				presentation_time::wp_presentation::WpPresentation,
+			},
+		},
 	},
 	wire::{NewId, ObjectId},
 };
@@ -145,12 +154,10 @@ impl WlRegistry for Registry {
 			}
 			RegistryGlobals::SEAT => {
 				tracing::info!("Binding seat with id {}", new_id.object_id);
-				let seat = client.insert(new_id.object_id, Seat::new());
+				let seat = Seat::new(client, new_id.object_id, new_id.version).await?;
+				let seat = client.insert(new_id.object_id, seat);
 				let _ = client.display().seat.set(seat.clone());
-				seat.name(client, new_id.object_id, "theonlyseat".into())
-					.await?;
-				seat.advertise_capabilities(client, new_id.object_id)
-					.await?;
+
 				tracing::info!("Seat capabilities advertised");
 			}
 			RegistryGlobals::DATA_DEVICE_MANAGER => {
@@ -159,7 +166,13 @@ impl WlRegistry for Registry {
 			}
 			RegistryGlobals::OUTPUT => {
 				tracing::info!("Binding output");
-				let output = client.insert(new_id.object_id, Output(new_id.object_id));
+				let output = client.insert(
+					new_id.object_id,
+					Output {
+						id: new_id.object_id,
+						version: new_id.version,
+					},
+				);
 				let _ = client.display().output.set(output.clone());
 				output.advertise_outputs(client).await?;
 			}

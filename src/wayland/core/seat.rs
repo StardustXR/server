@@ -49,22 +49,31 @@ pub fn fixed_from_f32(f: f32) -> Fixed {
 
 #[derive(Default, Dispatcher)]
 pub struct Seat {
+	version: u32,
 	pointer: OnceLock<Arc<Pointer>>,
 	keyboard: OnceLock<Arc<Keyboard>>,
 	touch: OnceLock<Arc<Touch>>,
 }
 
 impl Seat {
-	pub fn new() -> Self {
-		Self::default()
-	}
+	pub async fn new(client: &mut Client, id: ObjectId, version: u32) -> Result<Self> {
+		let seat = Self {
+			version,
+			pointer: OnceLock::new(),
+			keyboard: OnceLock::new(),
+			touch: OnceLock::new(),
+		};
 
-	pub async fn advertise_capabilities(&self, client: &mut Client, id: ObjectId) -> Result<()> {
+		if version >= 2 {
+			seat.name(client, id, "theonlyseat".into()).await?;
+		}
+
 		tracing::debug!("Advertising seat capabilities with id {}", id);
 		let capabilities = Capability::Pointer | Capability::Keyboard | Capability::Touch;
-		WlSeat::capabilities(self, client, id, capabilities).await?;
+		WlSeat::capabilities(&seat, client, id, capabilities).await?;
 		tracing::debug!("Capabilities advertised: {:?}", capabilities);
-		Ok(())
+
+		Ok(seat)
 	}
 
 	pub async fn handle_message(&self, client: &mut Client, message: SeatMessage) -> Result<()> {
@@ -154,7 +163,7 @@ impl WlSeat for Seat {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> Result<()> {
-		let pointer = client.insert(id, Pointer::new(id));
+		let pointer = client.insert(id, Pointer::new(id, self.version));
 		let _ = self.pointer.set(pointer);
 		Ok(())
 	}

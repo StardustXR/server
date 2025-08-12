@@ -13,12 +13,14 @@ use waynest::{
 #[derive(Dispatcher)]
 pub struct Pointer {
 	pub id: ObjectId,
+	version: u32,
 	focused_surface: Mutex<Weak<Surface>>,
 }
 impl Pointer {
-	pub fn new(id: ObjectId) -> Self {
+	pub fn new(id: ObjectId, version: u32) -> Self {
 		Self {
 			id,
+			version,
 			focused_surface: Mutex::new(Weak::new()),
 		}
 	}
@@ -77,7 +79,9 @@ impl Pointer {
 			fixed_from_f32(position.y),
 		)
 		.await?;
-		self.frame(client, self.id).await?;
+		if self.version >= 5 {
+			self.frame(client, self.id).await?;
+		}
 
 		Ok(())
 	}
@@ -141,13 +145,16 @@ impl Pointer {
 			)
 			.await?;
 		}
-		if let Some(steps) = scroll_steps {
-			self.axis_discrete(client, self.id, Axis::HorizontalScroll, steps.x as i32)
-				.await?;
-			self.axis_discrete(client, self.id, Axis::VerticalScroll, steps.y as i32)
-				.await?;
+		if self.version >= 5 {
+			if let Some(steps) = scroll_steps {
+				self.axis_discrete(client, self.id, Axis::HorizontalScroll, steps.x as i32)
+					.await?;
+				self.axis_discrete(client, self.id, Axis::VerticalScroll, steps.y as i32)
+					.await?;
+			}
+			self.frame(client, self.id).await?;
 		}
-		self.frame(client, self.id).await
+		Ok(())
 	}
 
 	pub async fn reset(&self, client: &mut Client) -> Result<()> {
