@@ -150,7 +150,12 @@ impl WlRegistry for Registry {
 			}
 			RegistryGlobals::WM_BASE => {
 				tracing::info!("Binding WM_BASE");
-				client.insert(new_id.object_id, WmBase);
+				client.insert(
+					new_id.object_id,
+					WmBase {
+						version: new_id.version,
+					},
+				);
 			}
 			RegistryGlobals::SEAT => {
 				tracing::info!("Binding seat with id {}", new_id.object_id);

@@ -11,13 +11,19 @@ use waynest::{
 #[derive(Debug, Dispatcher)]
 pub struct Surface {
 	id: ObjectId,
+	version: u32,
 	wl_surface: Weak<crate::wayland::core::surface::Surface>,
 	configured: Arc<std::sync::atomic::AtomicBool>,
 }
 impl Surface {
-	pub fn new(id: ObjectId, wl_surface: Arc<crate::wayland::core::surface::Surface>) -> Self {
+	pub fn new(
+		id: ObjectId,
+		version: u32,
+		wl_surface: Arc<crate::wayland::core::surface::Surface>,
+	) -> Self {
 		Self {
 			id,
+			version,
 			wl_surface: Arc::downgrade(&wl_surface),
 			configured: Arc::new(std::sync::atomic::AtomicBool::new(false)),
 		}
@@ -127,7 +133,14 @@ impl XdgSurface for Surface {
 
 		let popup = client.insert(
 			popup_id,
-			Popup::new(popup_id, &parent, &panel_item, &surface, &positioner),
+			Popup::new(
+				popup_id,
+				self.version,
+				&parent,
+				&panel_item,
+				&surface,
+				&positioner,
+			),
 		);
 
 		{

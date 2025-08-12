@@ -17,6 +17,7 @@ use waynest::{
 #[derive(Debug, Dispatcher)]
 pub struct Popup {
 	id: ObjectId,
+	version: u32,
 	parent: Weak<Surface>,
 	surface: Weak<Surface>,
 	pub panel_item: Weak<PanelItem<XdgBackend>>,
@@ -27,6 +28,7 @@ pub struct Popup {
 impl Popup {
 	pub fn new(
 		id: ObjectId,
+		version: u32,
 		parent: &Arc<Surface>,
 		panel_item: &Arc<PanelItem<XdgBackend>>,
 		xdg_surface: &Arc<Surface>,
@@ -35,6 +37,7 @@ impl Popup {
 		let positioner_data = positioner.data();
 		Self {
 			id,
+			version,
 			parent: Arc::downgrade(parent),
 			surface: Arc::downgrade(xdg_surface),
 			panel_item: Arc::downgrade(panel_item),
@@ -67,7 +70,9 @@ impl XdgPopup for Popup {
 		let positioner = client.get::<Positioner>(positioner).unwrap();
 		let positioner_data = positioner.data();
 		*self.positioner_data.lock() = positioner_data;
-		self.repositioned(client, sender_id, token).await?;
+		if self.version >= 5 {
+			self.repositioned(client, sender_id, token).await?;
+		}
 		let geometry = positioner_data.infinite_geometry();
 		self.configure(
 			client,

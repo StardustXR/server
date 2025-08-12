@@ -8,7 +8,9 @@ use waynest::{
 use super::positioner::Positioner;
 
 #[derive(Debug, Dispatcher, Default)]
-pub struct WmBase;
+pub struct WmBase {
+	pub version: u32,
+}
 impl XdgWmBase for WmBase {
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
@@ -36,7 +38,7 @@ impl XdgWmBase for WmBase {
 			.ok_or(waynest::server::Error::Custom(
 				"can't get wayland surface id".to_string(),
 			))?;
-		let xdg_surface = Surface::new(xdg_surface_id, wl_surface);
+		let xdg_surface = Surface::new(xdg_surface_id, self.version, wl_surface);
 		client.insert(xdg_surface_id, xdg_surface);
 
 		Ok(())
