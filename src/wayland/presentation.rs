@@ -1,9 +1,7 @@
-use std::sync::{Arc, OnceLock};
-
 use rustix::fs::Timespec;
 use waynest::{
 	server::{
-		self, Client, Dispatcher, Result,
+		Client, Dispatcher, Result,
 		protocol::stable::presentation_time::{
 			wp_presentation::WpPresentation, wp_presentation_feedback::WpPresentationFeedback,
 		},
@@ -12,17 +10,6 @@ use waynest::{
 };
 
 use crate::wayland::core::surface::Surface;
-
-#[derive(Debug, Dispatcher)]
-pub struct Presentation {
-	version: u32,
-}
-
-impl Presentation {
-	pub fn new(version: u32) -> Presentation {
-		Self { version }
-	}
-}
 
 pub struct MonotonicTimestamp {
 	secs: u64,
@@ -50,7 +37,7 @@ impl From<Timespec> for MonotonicTimestamp {
 }
 
 #[derive(Debug, Dispatcher)]
-pub struct PresentationFeedback(pub ObjectId);
+pub struct Presentation;
 impl WpPresentation for Presentation {
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
@@ -73,4 +60,7 @@ impl WpPresentation for Presentation {
 		Ok(())
 	}
 }
+
+#[derive(Debug, Dispatcher)]
+pub struct PresentationFeedback(pub ObjectId);
 impl WpPresentationFeedback for PresentationFeedback {}

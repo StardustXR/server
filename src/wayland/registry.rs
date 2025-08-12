@@ -191,8 +191,7 @@ impl WlRegistry for Registry {
 			RegistryGlobals::PRESENTATION => {
 				tracing::info!("Binding wp_presentation");
 
-				let presentation = Presentation::new(new_id.version);
-				client.insert(new_id.object_id, presentation);
+				client.insert(new_id.object_id, Presentation);
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");
