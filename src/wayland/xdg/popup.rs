@@ -4,11 +4,15 @@ use super::{
 	surface::Surface,
 };
 use crate::{
-	nodes::items::panel::{Geometry, PanelItem},
+	nodes::items::panel::{Geometry, PanelItem, SurfaceId},
 	wayland::util::DoubleBuffer,
 };
 use parking_lot::Mutex;
-use std::sync::{Arc, Weak, atomic::AtomicBool};
+use rand::Rng;
+use std::{
+	sync::{Arc, Weak, atomic::AtomicBool},
+	u64,
+};
 use waynest::{
 	server::{Client, Dispatcher, Result, protocol::stable::xdg_shell::xdg_popup::XdgPopup},
 	wire::ObjectId,
@@ -18,7 +22,8 @@ use waynest::{
 pub struct Popup {
 	id: ObjectId,
 	version: u32,
-	parent: Weak<Surface>,
+	surface_id: SurfaceId,
+	parent: Arc<Surface>,
 	surface: Weak<Surface>,
 	pub panel_item: Weak<PanelItem<XdgBackend>>,
 	positioner_data: Mutex<PositionerData>,
@@ -29,7 +34,7 @@ impl Popup {
 	pub fn new(
 		id: ObjectId,
 		version: u32,
-		parent: &Arc<Surface>,
+		parent: Arc<Surface>,
 		panel_item: &Arc<PanelItem<XdgBackend>>,
 		xdg_surface: &Arc<Surface>,
 		positioner: &Positioner,
@@ -38,7 +43,8 @@ impl Popup {
 		Self {
 			id,
 			version,
-			parent: Arc::downgrade(parent),
+			surface_id: SurfaceId::Child(rand::thread_rng().gen_range(0..u64::MAX)),
+			parent,
 			surface: Arc::downgrade(xdg_surface),
 			panel_item: Arc::downgrade(panel_item),
 			positioner_data: Mutex::new(positioner_data),

@@ -136,7 +136,7 @@ impl XdgSurface for Surface {
 			Popup::new(
 				popup_id,
 				self.version,
-				&parent,
+				parent,
 				&panel_item,
 				&surface,
 				&positioner,
