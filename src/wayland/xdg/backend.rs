@@ -1,28 +1,30 @@
 use super::toplevel::Toplevel;
 use crate::{
-	core::error::Result,
-	nodes::{
-		drawable::model::ModelPart,
-		items::panel::{Backend, Geometry, PanelItemInitData, SurfaceId, ToplevelInfo},
-	},
-	wayland::{Message, core::surface::Surface},
+        core::error::Result,
+        nodes::{
+                drawable::model::ModelPart,
+                items::panel::{Backend, Geometry, PanelItemInitData, SurfaceId, ToplevelInfo},
+        },
+        wayland::{Message, core::surface::Surface},
 };
 use mint::Vector2;
-use std::sync::Arc;
-use std::sync::Weak;
+use parking_lot::Mutex;
+use std::{collections::HashMap, sync::{Arc, Weak}};
 use tracing;
 
 #[derive(Debug)]
 pub struct XdgBackend {
-	toplevel: Weak<Toplevel>,
+        toplevel: Weak<Toplevel>,
+        children: Mutex<HashMap<u64, Weak<Surface>>>,
 }
 
 impl XdgBackend {
-	pub fn new(toplevel: Arc<Toplevel>) -> Self {
-		Self {
-			toplevel: Arc::downgrade(&toplevel),
-		}
-	}
+        pub fn new(toplevel: Arc<Toplevel>) -> Self {
+                Self {
+                        toplevel: Arc::downgrade(&toplevel),
+                        children: Mutex::new(HashMap::new()),
+                }
+        }
 
 	// Since XdgBackend is created and owned by Mapped which is owned by Toplevel,
 	// we can safely assume the Toplevel reference will always be valid
@@ -32,12 +34,20 @@ impl XdgBackend {
 			.expect("Toplevel should always be valid while XdgBackend exists")
 	}
 
-	fn surface_from_id(&self, id: SurfaceId) -> Option<Arc<Surface>> {
-		match id {
-			SurfaceId::Toplevel(_) => Some(self.toplevel().surface()),
-			SurfaceId::Child(_) => None,
-		}
-	}
+        fn surface_from_id(&self, id: SurfaceId) -> Option<Arc<Surface>> {
+                match id {
+                        SurfaceId::Toplevel(_) => Some(self.toplevel().surface()),
+                        SurfaceId::Child(uid) => self.children.lock().get(&uid).and_then(Weak::upgrade),
+                }
+        }
+
+        pub fn register_child(&self, id: u64, surface: &Arc<Surface>) {
+                self.children.lock().insert(id, Arc::downgrade(surface));
+        }
+
+        pub fn unregister_child(&self, id: u64) {
+                self.children.lock().remove(&id);
+        }
 }
 
 impl Backend for XdgBackend {

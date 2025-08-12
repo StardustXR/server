@@ -1,5 +1,6 @@
 use super::{popup::Popup, positioner::Positioner, toplevel::Mapped};
 use crate::wayland::{core::surface::SurfaceRole, display::Display, xdg::toplevel::Toplevel};
+use waynest::server::protocol::stable::xdg_shell::xdg_popup::XdgPopup;
 use std::sync::Arc;
 use std::sync::Weak;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
@@ -119,29 +120,43 @@ impl XdgSurface for Surface {
 		parent: Option<ObjectId>,
 		positioner: ObjectId,
 	) -> Result<()> {
-		let parent = client.get::<Surface>(parent.unwrap()).unwrap();
-		let panel_item = match parent.wl_surface().role.lock().as_ref().unwrap() {
-			SurfaceRole::XdgToplevel(toplevel) => {
-				let toplevel_lock = toplevel.mapped.lock();
-				toplevel_lock.as_ref().unwrap()._panel_item.clone()
-			}
-			SurfaceRole::XDGPopup(popup) => popup.panel_item.upgrade().unwrap(),
-		};
-		let positioner = client.get::<Positioner>(positioner).unwrap();
+                let parent = client.get::<Surface>(parent.unwrap()).unwrap();
+                let panel_item = match parent.wl_surface().role.lock().as_ref().unwrap() {
+                        SurfaceRole::XdgToplevel(toplevel) => {
+                                let toplevel_lock = toplevel.mapped.lock();
+                                toplevel_lock.as_ref().unwrap()._panel_item.clone()
+                        }
+                        SurfaceRole::XDGPopup(popup) => popup.panel_item.upgrade().unwrap(),
+                };
+                let positioner = client.get::<Positioner>(positioner).unwrap();
 
-		let surface = client.get::<Surface>(self.id).unwrap();
+                let surface = client.get::<Surface>(self.id).unwrap();
+                let wl_surface = surface.wl_surface();
 
-		let popup = client.insert(
-			popup_id,
-			Popup::new(
-				popup_id,
-				self.version,
-				parent,
-				&panel_item,
-				&surface,
-				&positioner,
-			),
-		);
+                let popup = client.insert(
+                        popup_id,
+                        Popup::new(
+                                popup_id,
+                                self.version,
+                                parent,
+                                &panel_item,
+                                &surface,
+                                &positioner,
+                        ),
+                );
+
+                // Initial popup configure
+                let geometry = popup.current_geometry();
+                popup
+                        .configure(
+                                client,
+                                popup_id,
+                                geometry.origin.x,
+                                geometry.origin.y,
+                                geometry.size.x as i32,
+                                geometry.size.y as i32,
+                        )
+                        .await?;
 
 		{
 			let wl_surface = self.wl_surface();
@@ -155,8 +170,27 @@ impl XdgSurface for Surface {
 			}
 		}
 
-		let serial = client.next_event_serial();
-		self.configure(client, sender_id, serial).await?;
+                let serial = client.next_event_serial();
+                self.configure(client, sender_id, serial).await?;
+
+                let configured = self.configured.clone();
+                wl_surface.add_commit_handler(move |surface, state| {
+                        let Some(SurfaceRole::XDGPopup(popup)) = &*surface.role.lock() else {
+                                return true;
+                        };
+                        let has_valid_buffer = state
+                                .buffer
+                                .as_ref()
+                                .is_some_and(|b| b.buffer.size().x > 0 && b.buffer.size().y > 0);
+                        if !popup.is_mapped()
+                                && configured.load(std::sync::atomic::Ordering::SeqCst)
+                                && has_valid_buffer
+                        {
+                                popup.map();
+                                return false;
+                        }
+                        true
+                });
 
 		// let pid = client.get::<Display>(ObjectId::DISPLAY).unwrap().pid;
 		// let configured = self.configured.clone();
