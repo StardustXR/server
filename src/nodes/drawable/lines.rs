@@ -77,6 +77,14 @@ fn build_line_mesh(
 				let mut last = line.cyclic.then(|| line.points.last()).flatten();
 				let mut peekable = line.points.iter().peekable();
 				while let Some(curr) = peekable.next() {
+					// Skip this point if it has the same position as the previous point
+					if let Some(prev) = last {
+						if Vec3::from(prev.point) == Vec3::from(curr.point) {
+							last = Some(curr);
+							continue;
+						}
+					}
+
 					let mut end = false;
 					// Determine the next point - either the next in sequence or
 					// for cyclic lines, wrap back to first point at the end
@@ -93,6 +101,10 @@ fn build_line_mesh(
 				}
 				out
 			};
+			// if we can't make a full line, don't bother trying
+			if point_windows.len() < 2 {
+				continue;
+			}
 			for (last, curr, next, last_point) in point_windows {
 				let last_quat = last.map(|v| {
 					Quat::from_rotation_arc(
