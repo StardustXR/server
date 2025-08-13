@@ -19,9 +19,8 @@ jobs:
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: 1.85.0
+          toolchain: 1.88.0
           override: true
-          components: rustfmt, clippy
 
       - name: Build server
         run: cargo build --release
