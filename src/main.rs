@@ -370,7 +370,7 @@ fn bevy_loop(
 				composite_alpha_mode: if args.transparent_flatscreen {
 					CompositeAlphaMode::PreMultiplied
 				} else {
-					CompositeAlphaMode::Inherit
+					CompositeAlphaMode::Auto
 				},
 				title: "StardustXR server flatscreen mode".to_string(),
 				..default()
