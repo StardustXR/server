@@ -230,13 +230,11 @@ impl Surface {
 		display_timestamp: MonotonicTimestamp,
 		refresh_cycle: u64,
 	) {
-		self.message_sink
-			.send(Message::SendPresentationFeedback {
-				surface: self.clone(),
-				display_timestamp,
-				refresh_cycle,
-			})
-			.unwrap();
+		let _ = self.message_sink.send(Message::SendPresentationFeedback {
+			surface: self.clone(),
+			display_timestamp,
+			refresh_cycle,
+		});
 	}
 
 	#[tracing::instrument(level = "debug", skip_all)]
