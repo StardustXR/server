@@ -27,6 +27,7 @@ use bevy::pbr::PbrPlugin;
 use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 use bevy::render::{RenderDebugFlags, RenderPlugin};
 use bevy::scene::ScenePlugin;
+use bevy::window::{CompositeAlphaMode, PresentMode};
 use bevy::winit::{WakeUp, WinitPlugin};
 use bevy_dmabuf::import::DmabufImportPlugin;
 use bevy_mod_openxr::action_set_attaching::OxrActionAttachingPlugin;
@@ -34,7 +35,6 @@ use bevy_mod_openxr::action_set_syncing::OxrActionSyncingPlugin;
 use bevy_mod_openxr::add_xr_plugins;
 use bevy_mod_openxr::exts::OxrExtensions;
 use bevy_mod_openxr::features::overlay::OxrOverlaySettings;
-use bevy_mod_openxr::features::passthrough::OxrPassthroughPlugin;
 use bevy_mod_openxr::graphics::{GraphicsBackend, OxrManualGraphicsConfig};
 use bevy_mod_openxr::init::{OxrInitPlugin, should_run_frame_loop};
 use bevy_mod_openxr::reference_space::OxrReferenceSpacePlugin;
@@ -85,6 +85,10 @@ struct CliArgs {
 	/// Force flatscreen mode and use the mouse pointer as a 3D pointer
 	#[clap(short, long, action)]
 	flatscreen: bool,
+
+	/// Creates a transparent window fot the flatscreen mode
+	#[clap(short, long, action)]
+	transparent_flatscreen: bool,
 
 	/// If monado insists on emulating them, set this flag...we want the raw input
 	#[clap(long)]
@@ -323,47 +327,61 @@ fn bevy_loop(
 			.disable::<ScheduleRunnerPlugin>()
 			.add(FlatscreenInputPlugin);
 	}
-	app.add_plugins(if !args.flatscreen {
-		add_xr_plugins(plugins)
-			.set(OxrInitPlugin {
-				app_info: AppInfo {
-					name: "Stardust XR".into(),
-					version: bevy_mod_openxr::types::Version(0, 44, 1),
+	app.add_plugins(
+		if !args.flatscreen {
+			add_xr_plugins(plugins)
+				.set(OxrInitPlugin {
+					app_info: AppInfo {
+						name: "Stardust XR".into(),
+						version: bevy_mod_openxr::types::Version(0, 44, 1),
+					},
+					exts: {
+						// all OpenXR extensions can be requested here
+						let mut exts = OxrExtensions::default();
+						exts.enable_hand_tracking();
+						if args.overlay_priority.is_some() {
+							exts.enable_extx_overlay();
+						}
+						exts.khr_convert_timespec_time = true;
+						exts
+					},
+					..default()
+				})
+				.set(OxrRenderPlugin {
+					default_wait_frame: false,
+					..default()
+				})
+				.set(OxrReferenceSpacePlugin {
+					default_primary_ref_space: ReferenceSpaceType::LOCAL,
+				})
+				// Disable a bunch of unneeded plugins
+				// we don't do any action stuff that needs to integrate with the ecosystem
+				.disable::<OxrActionAttachingPlugin>()
+				.disable::<OxrActionSyncingPlugin>()
+		} else {
+			// enable a event
+			plugins = plugins.add(XrSessionPlugin { auto_handle: false });
+			bevy_dmabuf::wgpu_init::add_dmabuf_init_plugin(plugins)
+		}
+		.set(WindowPlugin {
+			primary_window: Some(Window {
+				transparent: args.transparent_flatscreen,
+				present_mode: PresentMode::AutoNoVsync,
+				composite_alpha_mode: if args.transparent_flatscreen {
+					CompositeAlphaMode::PreMultiplied
+				} else {
+					CompositeAlphaMode::Inherit
 				},
-				exts: {
-					// all OpenXR extensions can be requested here
-					let mut exts = OxrExtensions::default();
-					exts.enable_hand_tracking();
-					if args.overlay_priority.is_some() {
-						exts.enable_extx_overlay();
-					}
-					exts.khr_convert_timespec_time = true;
-					exts
-				},
+				title: "StardustXR server flatscreen mode".to_string(),
 				..default()
-			})
-			.set(OxrRenderPlugin {
-				default_wait_frame: false,
-				..default()
-			})
-			.set(OxrReferenceSpacePlugin {
-				default_primary_ref_space: ReferenceSpaceType::LOCAL,
-			})
-			// Disable a bunch of unneeded plugins
-			// this plugin uses the fb extention, blend mode still works
-			.disable::<OxrPassthroughPlugin>()
-			// we don't do any action stuff that needs to integrate with the ecosystem
-			.disable::<OxrActionAttachingPlugin>()
-			.disable::<OxrActionSyncingPlugin>()
-	} else {
-		// enable a event
-		plugins = plugins.add(XrSessionPlugin { auto_handle: false });
-		bevy_dmabuf::wgpu_init::add_dmabuf_init_plugin(plugins)
-	});
+			}),
+			..default()
+		}),
+	);
 
 	app.add_plugins(bevy_sk::hand::HandPlugin);
 	// app.add_plugins(HandGizmosPlugin);
-	app.world_mut().resource_mut::<AmbientLight>().brightness = 2000.0;
+	app.world_mut().resource_mut::<AmbientLight>().brightness = 1000.0;
 	if let Some(priority) = args.overlay_priority {
 		app.insert_resource(OxrOverlaySettings {
 			session_layer_placement: priority,
@@ -371,11 +389,11 @@ fn bevy_loop(
 		});
 	}
 	app.insert_resource(OxrSessionConfig {
-		blend_modes: Some(vec![
+		blend_mode_preference: vec![
 			EnvironmentBlendMode::ALPHA_BLEND,
 			EnvironmentBlendMode::ADDITIVE,
 			EnvironmentBlendMode::OPAQUE,
-		]),
+		],
 		..default()
 	});
 	let mut pre_frame_wait = Schedule::new(PreFrameWait);
@@ -406,7 +424,7 @@ fn bevy_loop(
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
-	app.add_systems(Update, (add_oit, update_cameras));
+	app.add_observer(cam_observer);
 	app.add_systems(
 		XrFirst,
 		xr_step
@@ -416,22 +434,27 @@ fn bevy_loop(
 
 	app.run()
 }
-fn update_cameras(mut camera: Query<&mut Projection, (With<Camera3d>,)>) {
-	for mut projection in &mut camera {
-		match projection.deref_mut() {
-			Projection::Perspective(perspective_projection) => perspective_projection.near = 0.003,
-			Projection::Orthographic(orthographic_projection) => {
-				orthographic_projection.near = 0.003
-			}
-			Projection::Custom(custom_projection) => {
-				if let Some(xr) = custom_projection.get_mut::<XrProjection>() {
-					xr.near = 0.003
-				} else {
-					error_once!("unknown custom camera projection");
-				}
+
+fn cam_observer(
+	trigger: Trigger<OnAdd, Camera3d>,
+	mut query: Query<(&mut Projection, &mut Msaa), With<Camera3d>>,
+) {
+	let Ok((mut projection, mut msaa)) = query.get_mut(trigger.target()) else {
+		return;
+	};
+	info!("modifying cam");
+	match projection.deref_mut() {
+		Projection::Perspective(perspective_projection) => perspective_projection.near = 0.003,
+		Projection::Orthographic(orthographic_projection) => orthographic_projection.near = 0.003,
+		Projection::Custom(custom_projection) => {
+			if let Some(xr) = custom_projection.get_mut::<XrProjection>() {
+				xr.near = 0.003
+			} else {
+				error_once!("unknown custom camera projection");
 			}
 		}
 	}
+	*msaa = Msaa::Off;
 }
 
 fn add_oit(
@@ -450,8 +473,7 @@ fn add_oit(
 			.insert(OrderIndependentTransparencySettings {
 				layer_count: 4,
 				alpha_threshold: 0.00,
-			})
-			.insert(Msaa::Off);
+			});
 	}
 }
 

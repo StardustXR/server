@@ -51,8 +51,8 @@ opt-level = 3
 opt-level = 3
 
 [patch.crates-io]
-bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "vk_exts" }
-bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "vk_exts" }
+bevy_mod_openxr = { git = "https://github.com/awtterpip/bevy_oxr" }
+bevy_mod_xr = { git = "https://github.com/awtterpip/bevy_oxr" }
 bevy_gltf = { git = "https://github.com/Schmarni-Dev/bevy", branch = "gltf_backport" }
 # TODO: figure out how to not need this horrifing patch
 wgpu = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
