@@ -17,7 +17,6 @@ use bevy::app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
 use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
 use bevy::audio::AudioPlugin;
 use bevy::core_pipeline::CorePipelinePlugin;
-use bevy::core_pipeline::oit::OrderIndependentTransparencySettings;
 use bevy::diagnostic::DiagnosticsPlugin;
 use bevy::ecs::schedule::{ExecutorKind, ScheduleLabel};
 use bevy::gizmos::GizmoPlugin;
@@ -455,26 +454,6 @@ fn cam_observer(
 		}
 	}
 	*msaa = Msaa::Off;
-}
-
-fn add_oit(
-	mut commands: Commands,
-	cameras: Query<
-		Entity,
-		(
-			With<Camera3d>,
-			Without<OrderIndependentTransparencySettings>,
-		),
-	>,
-) {
-	for entity in &cameras {
-		commands
-			.entity(entity)
-			.insert(OrderIndependentTransparencySettings {
-				layer_count: 4,
-				alpha_threshold: 0.00,
-			});
-	}
 }
 
 fn xr_step(world: &mut World) {
