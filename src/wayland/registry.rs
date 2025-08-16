@@ -9,6 +9,7 @@ use crate::wayland::{
 	dmabuf::Dmabuf,
 	mesa_drm::MesaDrm,
 	presentation::Presentation,
+	viewporter::Viewporter,
 	util::ClientExt,
 	xdg::wm_base::{WmBase, XdgWmBase},
 };
@@ -20,7 +21,7 @@ use waynest::{
 			external::drm::wl_drm::WlDrm,
 			stable::{
 				linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
-				presentation_time::wp_presentation::WpPresentation,
+				presentation_time::wp_presentation::WpPresentation, viewporter::wp_viewporter::WpViewporter,
 			},
 		},
 	},
@@ -38,6 +39,7 @@ impl RegistryGlobals {
 	pub const DMABUF: u32 = 6;
 	pub const WL_DRM: u32 = 7;
 	pub const PRESENTATION: u32 = 8;
+	pub const VIEWPORTER: u32 = 9;
 }
 
 #[derive(Debug, Dispatcher, Default)]
@@ -126,6 +128,15 @@ impl Registry {
 		)
 		.await?;
 
+		self.global(
+			client,
+			sender_id,
+			RegistryGlobals::VIEWPORTER,
+			Viewporter::INTERFACE.to_string(),
+			Viewporter::VERSION,
+		)
+		.await?;
+
 		Ok(())
 	}
 }
@@ -197,6 +208,11 @@ impl WlRegistry for Registry {
 				tracing::info!("Binding wp_presentation");
 
 				client.insert(new_id.object_id, Presentation);
+			}
+			RegistryGlobals::VIEWPORTER => {
+				tracing::info!("Binding wp_viewporter");
+
+				client.insert(new_id.object_id, Viewporter::default());
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");
