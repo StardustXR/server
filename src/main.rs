@@ -317,7 +317,7 @@ fn bevy_loop(
 	plugins = plugins.set(task_pool_plugin);
 	let flatscreenmode = args.flatscreen
 		|| std::env::var_os("DISPLAY").is_some_and(|s| !s.is_empty())
-		|| std::env::var_os("WAYLAND_DISPLAY").is_some_and(|s| !s.is_empty())
+		|| std::env::var_os("WAYLAND_DISPLAY").is_some_and(|s| !s.is_empty());
 	if flatscreenmode {
 		let mut plugin = WinitPlugin::<WakeUp>::default();
 		plugin.run_on_any_thread = true;
