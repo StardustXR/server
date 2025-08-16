@@ -6,6 +6,7 @@ mod presentation;
 mod registry;
 mod util;
 mod vulkano_data;
+mod viewporter;
 mod xdg;
 
 use crate::core::registry::OwnedRegistry;
