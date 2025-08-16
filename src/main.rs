@@ -27,7 +27,7 @@ use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 use bevy::render::{RenderDebugFlags, RenderPlugin};
 use bevy::scene::ScenePlugin;
 use bevy::window::{CompositeAlphaMode, PresentMode};
-use bevy::winit::{WakeUp, WinitPlugin};
+use bevy::winit::{WakeUp, WinitPlugin, WinitSettings, UpdateMode};
 use bevy_dmabuf::import::DmabufImportPlugin;
 use bevy_mod_openxr::action_set_attaching::OxrActionAttachingPlugin;
 use bevy_mod_openxr::action_set_syncing::OxrActionSyncingPlugin;
@@ -315,10 +315,10 @@ fn bevy_loop(
 		.async_compute
 		.on_thread_spawn = Some(enter_runtime_context.clone());
 	plugins = plugins.set(task_pool_plugin);
-	if args.flatscreen
+	let flatscreenmode = args.flatscreen
 		|| std::env::var_os("DISPLAY").is_some_and(|s| !s.is_empty())
 		|| std::env::var_os("WAYLAND_DISPLAY").is_some_and(|s| !s.is_empty())
-	{
+	if flatscreenmode {
 		let mut plugin = WinitPlugin::<WakeUp>::default();
 		plugin.run_on_any_thread = true;
 		plugins = plugins
@@ -377,6 +377,14 @@ fn bevy_loop(
 			..default()
 		}),
 	);
+
+	if flatscreenmode {
+			app.insert_resource(WinitSettings {
+			focused_mode: UpdateMode::Continuous,
+			unfocused_mode: UpdateMode::Continuous,
+			..Default::default()
+		});
+	}
 
 	app.add_plugins(bevy_sk::hand::HandPlugin);
 	// app.add_plugins(HandGizmosPlugin);
