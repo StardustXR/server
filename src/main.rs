@@ -379,10 +379,9 @@ fn bevy_loop(
 	);
 
 	if flatscreenmode {
-			app.insert_resource(WinitSettings {
+		app.insert_resource(WinitSettings {
 			focused_mode: UpdateMode::Continuous,
 			unfocused_mode: UpdateMode::Continuous,
-			..Default::default()
 		});
 	}
 
