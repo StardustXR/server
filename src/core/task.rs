@@ -17,6 +17,7 @@ pub fn new<
 	#[cfg(feature = "profile_tokio")]
 	let result = tokio::task::Builder::new()
 		.name(name_fn().as_ref())
-		.spawn(async_future).map_err(Into::into);
+		.spawn(async_future)
+		.map_err(Into::into);
 	result
 }
