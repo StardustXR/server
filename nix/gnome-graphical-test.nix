@@ -20,8 +20,8 @@
         # Set a nice desktop background that is pleasing to the eyes :3
         extraGSettingsOverrides = ''
           [org.gnome.desktop.background]
-          picture-uri='file://${pkgs.gnome.gnome-backgrounds}/share/backgrounds/gnome/blobs-l.svg'
-          picture-uri-dark='file://${pkgs.gnome.gnome-backgrounds}/share/backgrounds/gnome/blobs-l.svg'
+          picture-uri='file://${pkgs.gnome-backgrounds}/share/backgrounds/gnome/blobs-l.svg'
+          picture-uri-dark='file://${pkgs.gnome-backgrounds}/share/backgrounds/gnome/blobs-l.svg'
         '';
       };
       displayManager = {
@@ -100,7 +100,7 @@
             # Eval API is now internal so Shell needs to run in unsafe mode.
             # TODO: improve test driver so that it supports openqa-like manipulation
             # that would allow us to drop this mess.
-            "${pkgs.gnome.gnome-shell}/bin/gnome-shell --unsafe-mode"
+            "${pkgs.gnome-shell}/bin/gnome-shell --unsafe-mode"
           ];
         };
       };
