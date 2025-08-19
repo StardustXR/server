@@ -61,14 +61,11 @@
           };
           overlayAttrs = config.packages;
           packages =
-            let
-              sk_gpu = pkgs.callPackage ./nix/sk_gpu.nix { };
-            in
             {
               default = self'.packages.${name};
               gnome-graphical-test = self'.checks.gnome-graphical-test;
               "${name}" = pkgs.callPackage ./nix/stardust-xr-server.nix {
-                inherit name src sk_gpu;
+                inherit name src;
               };
             };
           apps.default = {
