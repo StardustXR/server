@@ -71,9 +71,6 @@ impl AspectIdentifier for Alias {
 	const ID: u64 = 0;
 }
 impl Aspect for Alias {
-	fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync + 'static> {
-		self
-	}
 	fn run_signal(
 		&self,
 		_calling_client: Arc<Client>,

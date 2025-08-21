@@ -281,9 +281,6 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 		}
 		macro_rules! #aspect_macro_name {
 			() => {
-				fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync + 'static> {
-					self
-				}
 				#[allow(clippy::all)]
 				fn run_signal(
 					&self,

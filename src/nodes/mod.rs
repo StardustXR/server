@@ -303,7 +303,6 @@ pub trait AspectIdentifier: Aspect {
 	const ID: u64;
 }
 pub trait Aspect: Any + Send + Sync + 'static {
-	fn as_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync + 'static>;
 	fn run_signal(
 		&self,
 		calling_client: Arc<Client>,
@@ -337,7 +336,6 @@ impl Aspects {
 			.get(&A::ID)
 			// .cloned doesn't work for some reason
 			.map(|v| v.clone())
-			.map(|a| a.as_any())
 			.and_then(|a| Arc::downcast(a).ok())
 			.ok_or(ServerError::NoAspect(TypeId::of::<A>()))
 	}
