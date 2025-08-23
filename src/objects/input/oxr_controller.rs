@@ -366,13 +366,13 @@ impl OxrControllerInput {
 				HandSide::Right => "/user/hand/right",
 			})
 			.unwrap();
-		if let Ok(path) = session.current_interaction_profile(path) {
-			if session.instance().path_to_string(path).unwrap()
-				== "/interaction_profiles/khr/simple_controller"
-			{
-				self.set_enabled(false);
-			}
+		if let Ok(path) = session.current_interaction_profile(path)
+			&& let Ok(path) = session.instance().path_to_string(path)
+			&& path == "/interaction_profiles/khr/simple_controller"
+		{
+			self.set_enabled(false);
 		}
+
 		fn get<T: openxr::ActionInput + Default>(
 			session: &OxrSession,
 			path: openxr::Path,
