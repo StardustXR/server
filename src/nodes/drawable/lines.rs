@@ -179,12 +179,8 @@ fn build_line_mesh(
 		mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vertex_colors);
 		mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vertex_normals);
 		mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertex_positions.clone());
-		if let Some(aabb) = mesh.compute_aabb() {
-			info!(?aabb);
-			*lines.bounds.lock() = aabb;
-		}
 
-		match lines.entity.get() {
+		let mut entity = match lines.entity.get() {
 			Some(e) => cmds.entity(**e),
 			None => {
 				let e = cmds.spawn((
@@ -202,8 +198,13 @@ fn build_line_mesh(
 				_ = lines.entity.set(e.id().into());
 				e
 			}
+		};
+		if let Some(aabb) = mesh.compute_aabb() {
+			info!(?aabb);
+			*lines.bounds.lock() = aabb;
+			entity.insert(aabb);
 		}
-		.insert(Mesh3d(meshes.add(mesh)));
+		entity.insert(Mesh3d(meshes.add(mesh)));
 	}
 }
 
