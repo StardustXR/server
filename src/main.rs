@@ -382,7 +382,7 @@ fn bevy_loop(
 	app.add_plugins(bevy_sk::hand::HandPlugin);
 	app.add_plugins(bevy_equirect::EquirectangularPlugin);
 	// app.add_plugins(HandGizmosPlugin);
-	app.world_mut().resource_mut::<AmbientLight>().brightness = 1000.0;
+	// app.world_mut().resource_mut::<AmbientLight>().brightness = 1000.0;
 	if let Some(priority) = args.overlay_priority {
 		app.insert_resource(OxrOverlaySettings {
 			session_layer_placement: priority,

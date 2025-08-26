@@ -607,9 +607,9 @@ dependencies = [
 
 [[package]]
 name = "bevy-equirect"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0a4903e9341281cc79e69f5e9706a1800bfeb1a41b01a4d1c8b50cd2fe21d97"
+checksum = "e487dd34daffb090aa0b32581664d760bd907db60a426b195f63b5cfa9ef6bcf"
 dependencies = [
  "bevy_app",
  "bevy_asset",

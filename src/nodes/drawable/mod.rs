@@ -14,7 +14,6 @@ use color_eyre::eyre::eyre;
 use model::ModelPart;
 use parking_lot::Mutex;
 use stardust_xr::values::ResourceID;
-use tracing::info;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
 
 static QUEUED_SKYLIGHT: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
@@ -53,7 +52,6 @@ impl InterfaceAspect for Interface {
 		calling_client: Arc<Client>,
 		tex: Option<ResourceID>,
 	) -> Result<()> {
-		info!("setting sky tex");
 		let resource_path = tex
 			.map(|tex| {
 				get_resource_file(&tex, &calling_client, &[OsStr::new("hdr")])
@@ -69,7 +67,6 @@ impl InterfaceAspect for Interface {
 		calling_client: Arc<Client>,
 		light: Option<ResourceID>,
 	) -> Result<()> {
-		info!("setting sky light");
 		let resource_path = light
 			.map(|light| {
 				get_resource_file(&light, &calling_client, &[OsStr::new("hdr")])
