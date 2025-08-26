@@ -78,11 +78,11 @@ fn build_line_mesh(
 				let mut peekable = line.points.iter().peekable();
 				while let Some(curr) = peekable.next() {
 					// Skip this point if it has the same position as the previous point
-					if let Some(prev) = last {
-						if Vec3::from(prev.point) == Vec3::from(curr.point) {
-							last = Some(curr);
-							continue;
-						}
+					if let Some(prev) = last
+						&& Vec3::from(prev.point) == Vec3::from(curr.point)
+					{
+						last = Some(curr);
+						continue;
 					}
 
 					let mut end = false;
@@ -127,6 +127,9 @@ fn build_line_mesh(
 					(Some(last), None) => last,
 					(Some(last), Some(next)) => last.lerp(next, 0.5),
 				};
+				if !quat.is_finite() {
+					panic!("non finite quat: next: {next:?}, last: {last:?}, curr: {curr:?},");
+				}
 				let normals = [
 					Vec3::X,
 					Vec3::new(1., 0., 1.).normalize(),

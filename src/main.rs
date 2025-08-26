@@ -9,6 +9,7 @@ pub mod tracking_offset;
 #[cfg(feature = "wayland")]
 mod wayland;
 
+use crate::nodes::drawable::sky::SkyPlugin;
 use crate::nodes::input;
 
 use bevy::MinimalPlugins;
@@ -379,6 +380,7 @@ fn bevy_loop(
 	);
 
 	app.add_plugins(bevy_sk::hand::HandPlugin);
+	app.add_plugins(bevy_equirect::EquirectangularPlugin);
 	// app.add_plugins(HandGizmosPlugin);
 	app.world_mut().resource_mut::<AmbientLight>().brightness = 1000.0;
 	if let Some(priority) = args.overlay_priority {
@@ -415,6 +417,8 @@ fn bevy_loop(
 		TextNodePlugin,
 		LinesNodePlugin,
 		AudioNodePlugin,
+		// not really a node ig? at least for now
+		SkyPlugin,
 	));
 	// object plugins
 	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin, HmdPlugin));
