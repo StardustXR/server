@@ -1,12 +1,13 @@
 use bevy::{
 	app::{Plugin, Update},
+	color::Color,
 	core_pipeline::{Skybox, core_3d::Camera3d},
 	ecs::{
 		entity::Entity,
 		query::With,
 		system::{Commands, Query, ResMut},
 	},
-	pbr::environment_map::EnvironmentMapLight,
+	pbr::{AmbientLight, environment_map::EnvironmentMapLight},
 };
 use bevy_equirect::EquirectManager;
 use glam::Quat;
@@ -45,18 +46,26 @@ fn apply_sky(
 		if let Some(path) = light {
 			let image_handle = equirect.load_equirect_as_cubemap(path, 1024);
 			for cam in cameras {
-				cmds.entity(cam).insert(EnvironmentMapLight {
-					diffuse_map: image_handle.clone(),
-					// we might want to use the SkyTex for this?
-					specular_map: image_handle.clone(),
-					intensity: 1000.0,
-					rotation: Quat::IDENTITY,
-					affects_lightmapped_mesh_diffuse: false,
-				});
+				cmds.entity(cam)
+					.insert(EnvironmentMapLight {
+						diffuse_map: image_handle.clone(),
+						// we might want to use the SkyTex for this?
+						specular_map: image_handle.clone(),
+						intensity: 1000.0,
+						rotation: Quat::IDENTITY,
+						affects_lightmapped_mesh_diffuse: false,
+					})
+					.remove::<AmbientLight>();
 			}
 		} else {
 			for cam in cameras {
-				cmds.entity(cam).remove::<EnvironmentMapLight>();
+				cmds.entity(cam)
+					.insert(AmbientLight {
+						color: Color::WHITE,
+						brightness: 1000.0,
+						affects_lightmapped_meshes: true,
+					})
+					.remove::<EnvironmentMapLight>();
 			}
 		}
 	}
