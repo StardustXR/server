@@ -9,10 +9,7 @@ use crate::{
 };
 use parking_lot::Mutex;
 use rand::Rng;
-use std::{
-	sync::{Arc, Weak, atomic::AtomicBool},
-	u64,
-};
+use std::sync::{Arc, Weak, atomic::AtomicBool};
 use waynest::{
 	server::{Client, Dispatcher, Result, protocol::stable::xdg_shell::xdg_popup::XdgPopup},
 	wire::ObjectId,
