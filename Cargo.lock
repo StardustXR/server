@@ -5400,12 +5400,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "split-iter"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f2b15926089e5526bb2dd738a2eb0e59034356e06eb71e1cd912358c0e62c4d"
-
-[[package]]
 name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5515,10 +5509,8 @@ name = "stardust-xr-server-codegen"
 version = "0.1.0"
 dependencies = [
  "convert_case",
- "mint",
  "proc-macro2",
  "quote",
- "split-iter",
  "stardust-xr",
 ]
 

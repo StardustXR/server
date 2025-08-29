@@ -1,7 +1,6 @@
 use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
-use split_iter::Splittable;
 use stardust_xr::schemas::protocol::*;
 
 fn fold_tokens(a: TokenStream, b: TokenStream) -> TokenStream {
@@ -183,14 +182,18 @@ fn generate_custom_struct(custom_struct: &CustomStruct) -> TokenStream {
 
 fn generate_aspect(aspect: &Aspect) -> TokenStream {
 	let description = &aspect.description;
-	let (client_members, server_members) = aspect.members.iter().split(|m| m.side == Side::Server);
+	let (client_members, server_members) = aspect
+		.members
+		.iter()
+		.partition::<Vec<_>, _>(|m| m.side == Side::Client);
 
 	let client_mod_name = Ident::new(
 		&format!("{}_client", &aspect.name.to_case(Case::Snake)),
 		Span::call_site(),
 	);
 	let client_side_members = client_members
-		.map(|m| generate_member(aspect.id, &aspect.name.to_case(Case::Snake), m))
+		.into_iter()
+		.map(|m| generate_member(aspect.id, &aspect.name.to_case(Case::Pascal), m))
 		.reduce(fold_tokens)
 		.map(|t| {
 			// TODO: properly import all dependencies
@@ -228,6 +231,7 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 	let alias_info = generate_alias_info(aspect);
 
 	let server_side_members = server_members
+		.into_iter()
 		.map(|m| generate_member(aspect.id, &aspect.name.to_case(Case::Pascal), m))
 		.reduce(fold_tokens)
 		.unwrap_or_default();
@@ -378,6 +382,18 @@ fn generate_member(aspect_id: u64, aspect_name: &str, member: &Member) -> TokenS
 		}
 		Side::Client => quote!(_node: &crate::nodes::Node),
 	};
+
+	let arguments = member
+		.arguments
+		.iter()
+		.map(|a| Ident::new(&a.name.to_case(Case::Snake), Span::call_site()));
+	let argument_debug = member
+		.arguments
+		.iter()
+		.map(|a| Ident::new(&a.name.to_case(Case::Snake), Span::call_site()))
+		.map(|n| quote!(?#n))
+		.reduce(|a, b| quote!(#a, #b))
+		.map(|args| quote!(#args,));
 	let argument_decls = member
 		.arguments
 		.iter()
@@ -402,12 +418,13 @@ fn generate_member(aspect_id: u64, aspect_name: &str, member: &Member) -> TokenS
 			quote! {
 				#[doc = #description]
 				pub fn #name(#argument_decls) -> crate::core::error::Result<()> {
+					let arguments = (#argument_uses);
+					let (#(#arguments),*) = &arguments;
+						::tracing::trace!(#argument_debug "sent signal to client: {}::{}", #aspect_name, #name_str);
+					let result = stardust_xr::schemas::flex::serialize(&arguments).map_err(|e|e.into()).and_then(|serialized|_node.send_remote_signal(#aspect_id, #opcode, serialized));
 
-					let result = stardust_xr::schemas::flex::serialize((#argument_uses)).map_err(|e|e.into()).and_then(|serialized|_node.send_remote_signal(#aspect_id, #opcode, serialized));
 					if let Err(err) = result.as_ref() {
-						::tracing::warn!("failed to send remote signal: {}::{}, error: {}",#aspect_name,#name_str,err);
-					} else {
-						::tracing::trace!("sent remote signal: {}::{}",#aspect_name,#name_str);
+						::tracing::warn!(#argument_debug "failed to send signal to client : {}::{}, error: {}",#aspect_name,#name_str,err);
 					}
 					result
 				}
@@ -417,11 +434,18 @@ fn generate_member(aspect_id: u64, aspect_name: &str, member: &Member) -> TokenS
 			quote! {
 				#[doc = #description]
 				pub async fn #name(#argument_decls) -> crate::core::error::Result<(#return_type, Vec<std::os::fd::OwnedFd>)> {
-					let result = _node.execute_remote_method_typed(#aspect_id, #opcode, &(#argument_uses), vec![]).await;
-					if let Err(err) = result.as_ref() {
-						::tracing::warn!("failed to call remote method: {}::{}, error: {}",#aspect_name,#name_str,err);
-					} else {
-						::tracing::trace!("called remote method: {}::{}",#aspect_name,#name_str);
+					let arguments = (#argument_uses);
+					let (#(#arguments),*) = &arguments;
+					::tracing::trace!(#argument_debug "called client method: {}::{}",#aspect_name,#name_str);
+					let result = _node.execute_remote_method_typed(#aspect_id, #opcode, &arguments, vec![]).await;
+
+					match result.as_ref() {
+						Ok(value) => {
+							::tracing::trace!(?value, "client method returned value: {}::{}",#aspect_name,#name_str);
+						},
+						Err(err) => {
+							::tracing::warn!(#argument_debug "client method returned error: {}::{}, error: {}",#aspect_name,#name_str,err);
+						}
 					}
 					result
 				}
@@ -444,6 +468,8 @@ fn generate_member(aspect_id: u64, aspect_name: &str, member: &Member) -> TokenS
 fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) -> TokenStream {
 	let opcode = member.opcode;
 	let member_name_ident = Ident::new(&member.name, Span::call_site());
+	let member_name = member_name_ident.to_string();
+	let aspect_name_str = aspect_name.to_string();
 
 	let argument_names = member
 		.arguments
@@ -458,6 +484,13 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 			generate_argument_type(&_type, a.optional, true)
 		})
 		.reduce(|a, b| quote!(#a, #b));
+	let argument_debug = member
+		.arguments
+		.iter()
+		.map(|a| Ident::new(&a.name.to_case(Case::Snake), Span::call_site()))
+		.map(|n| quote!(?#n))
+		.reduce(|a, b| quote!(#a, #b))
+		.map(|args| quote!(#args,));
 	// dbg!(&argument_types);
 	let deserialize = argument_names
 		.clone()
@@ -480,33 +513,30 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 		.map(|a| generate_argument_deserialize(&a.name, &a._type, a.optional))
 		.reduce(|a, b| quote!(#a, #b))
 		.unwrap_or_default();
-	let member_name = member_name_ident.to_string();
-	let aspect_name_str = aspect_name.to_string();
 	match _type {
 		MemberType::Signal => quote! {
-			#opcode => { let result = (move || {
+			#opcode => (move || {
 				#deserialize
+				::tracing::trace!(#argument_debug "received local signal: {}::{}",#aspect_name_str,#member_name);
 				<Self as #aspect_name>::#member_name_ident(_node, _calling_client.clone(), #argument_uses)
-			})().map_err(|e: crate::core::error::ServerError| stardust_xr::scenegraph::ScenegraphError::MemberError { error: e.to_string() });
-				if let Err(err) = result.as_ref() {
-					::tracing::warn!("failed to receive local signal: {}::{}, error: {}",#aspect_name_str,#member_name,err);
-				} else {
-					::tracing::trace!("received local signal: {}::{}",#aspect_name_str,#member_name);
-				}
-				result
-			},
+			})().map_err(|e: crate::core::error::ServerError| stardust_xr::scenegraph::ScenegraphError::MemberError { error: e.to_string() }),
 		},
 		MemberType::Method => quote! {
 			#opcode => _method_response.wrap_async(async move {
-					#deserialize
-					let result = <Self as #aspect_name>::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await;
-					if let Err(err) = result.as_ref() {
-						::tracing::warn!("failed to call local method: {}::{}, error: {}",#aspect_name_str,#member_name,err);
-					} else {
-						::tracing::trace!("called local method: {}::{}",#aspect_name_str,#member_name);
-					};
-					let result = result?;
-					 Ok((#serialize, Vec::<std::os::fd::OwnedFd>::new()))
+				#deserialize
+				::tracing::trace!(#argument_debug "called local method: {}::{}",#aspect_name_str,#member_name);
+				let result = <Self as #aspect_name>::#member_name_ident(_node, _calling_client.clone(), #argument_uses).await;
+
+				match result.as_ref() {
+					Ok(value) => {
+						::tracing::trace!(?value, "client method returned value: {}::{}",#aspect_name_str,#member_name);
+					},
+					Err(err) => {
+						::tracing::warn!("client method returned error: {}::{}, error: {}",#aspect_name_str,#member_name,err);
+					}
+				}
+				let result = result?;
+				Ok((#serialize, Vec::<std::os::fd::OwnedFd>::new()))
 			}),
 		},
 	}
