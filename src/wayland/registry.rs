@@ -9,8 +9,8 @@ use crate::wayland::{
 	dmabuf::Dmabuf,
 	mesa_drm::MesaDrm,
 	presentation::Presentation,
-	viewporter::Viewporter,
 	util::ClientExt,
+	viewporter::Viewporter,
 	xdg::wm_base::{WmBase, XdgWmBase},
 };
 use waynest::{
@@ -21,7 +21,8 @@ use waynest::{
 			external::drm::wl_drm::WlDrm,
 			stable::{
 				linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
-				presentation_time::wp_presentation::WpPresentation, viewporter::wp_viewporter::WpViewporter,
+				presentation_time::wp_presentation::WpPresentation,
+				viewporter::wp_viewporter::WpViewporter,
 			},
 		},
 	},
@@ -212,7 +213,7 @@ impl WlRegistry for Registry {
 			RegistryGlobals::VIEWPORTER => {
 				tracing::info!("Binding wp_viewporter");
 
-				client.insert(new_id.object_id, Viewporter::default());
+				client.insert(new_id.object_id, Viewporter);
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");
