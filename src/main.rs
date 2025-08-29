@@ -18,6 +18,7 @@ use bevy::app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
 use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
 use bevy::audio::AudioPlugin;
 use bevy::core_pipeline::CorePipelinePlugin;
+use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::diagnostic::DiagnosticsPlugin;
 use bevy::ecs::schedule::{ExecutorKind, ScheduleLabel};
 use bevy::gizmos::GizmoPlugin;
@@ -382,7 +383,7 @@ fn bevy_loop(
 	app.add_plugins(bevy_sk::hand::HandPlugin);
 	app.add_plugins(bevy_equirect::EquirectangularPlugin);
 	// app.add_plugins(HandGizmosPlugin);
-	// app.world_mut().resource_mut::<AmbientLight>().brightness = 1000.0;
+	app.world_mut().resource_mut::<AmbientLight>().brightness = 1000.0;
 	if let Some(priority) = args.overlay_priority {
 		app.insert_resource(OxrOverlaySettings {
 			session_layer_placement: priority,
@@ -427,7 +428,7 @@ fn bevy_loop(
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
-	app.add_observer(cam_observer);
+	app.add_observer(cam_settings);
 	app.add_systems(
 		XrFirst,
 		xr_step
@@ -438,11 +439,11 @@ fn bevy_loop(
 	app.run()
 }
 
-fn cam_observer(
+fn cam_settings(
 	trigger: Trigger<OnAdd, Camera3d>,
-	mut query: Query<(&mut Projection, &mut Msaa), With<Camera3d>>,
+	mut query: Query<(&mut Projection, &mut Msaa, &mut Tonemapping), With<Camera3d>>,
 ) {
-	let Ok((mut projection, mut msaa)) = query.get_mut(trigger.target()) else {
+	let Ok((mut projection, mut msaa, mut tonemapping)) = query.get_mut(trigger.target()) else {
 		return;
 	};
 	info!("modifying cam");
@@ -458,6 +459,7 @@ fn cam_observer(
 		}
 	}
 	*msaa = Msaa::Off;
+	*tonemapping = Tonemapping::None;
 }
 
 fn xr_step(world: &mut World) {
