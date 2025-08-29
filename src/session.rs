@@ -5,6 +5,7 @@ use crate::wayland::WAYLAND_DISPLAY;
 use crate::{CliArgs, STARDUST_INSTANCE};
 use directories::ProjectDirs;
 use rustc_hash::FxHashMap;
+use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -58,6 +59,7 @@ pub fn restore_session(session_dir: &Path, debug_launched_clients: bool) -> Vec<
 	};
 	clients
 		.filter_map(Result::ok)
+		.filter(|c| c.path().extension() == Some(OsStr::new("toml")))
 		.filter_map(|c| ClientStateParsed::from_file(&c.path()))
 		.filter_map(ClientStateParsed::launch_command)
 		.filter_map(|c| run_client(c, debug_launched_clients))

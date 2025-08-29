@@ -194,7 +194,7 @@ fn build_line_mesh(
 						perceptual_roughness: 1.0,
 						// TODO: this should be Blend
 						alpha_mode: AlphaMode::Opaque,
-						unlit: true,
+						emissive: Color::srgba_u8(128, 128, 128, 255).into(),
 						..default()
 					})),
 				));

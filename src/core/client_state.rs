@@ -33,7 +33,8 @@ impl LaunchInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ClientStateParsed {
 	pub launch_info: Option<LaunchInfo>,
-	pub data: Vec<u8>,
+	#[serde(skip)]
+	pub data: Option<Vec<u8>>,
 	pub root: Mat4,
 	pub spatial_anchors: FxHashMap<String, Mat4>,
 }
@@ -41,7 +42,7 @@ impl ClientStateParsed {
 	pub fn from_deserialized(client: &Client, state: ClientState) -> Self {
 		ClientStateParsed {
 			launch_info: LaunchInfo::from_client(client),
-			data: state.data.unwrap_or_default(),
+			data: state.data,
 			root: Self::spatial_transform(client, state.root).unwrap_or_default(),
 			spatial_anchors: state
 				.spatial_anchors
@@ -63,7 +64,9 @@ impl ClientStateParsed {
 	}
 	pub fn from_file(file: &Path) -> Option<Self> {
 		let file_string = std::fs::read_to_string(file).ok()?;
-		toml::from_str(&file_string).ok()
+		let mut client_state: Self = toml::from_str(&file_string).ok()?;
+		client_state.data = std::fs::read(file.with_extension("bin")).ok();
+		Some(client_state)
 	}
 	pub fn to_file(&self, directory: &Path) {
 		let app_name = self
@@ -71,11 +74,14 @@ impl ClientStateParsed {
 			.as_ref()
 			.map(|l| l.cmdline.first().unwrap().split('/').next_back().unwrap())
 			.unwrap_or("unknown");
-		let state_file_path = directory
-			.join(format!("{app_name}-{}", nanoid::nanoid!()))
-			.with_extension("toml");
+		let state_file_prefix = directory.join(format!("{app_name}-{}", nanoid::nanoid!()));
+		let state_metadata_path = state_file_prefix.with_extension("toml");
+		let state_data_path = state_file_prefix.with_extension("bin");
 
-		std::fs::write(state_file_path, toml::to_string(&self).unwrap()).unwrap();
+		std::fs::write(state_metadata_path, toml::to_string(&self).unwrap()).unwrap();
+		if let Some(data) = self.data.as_deref() {
+			std::fs::write(state_data_path, data).unwrap();
+		}
 	}
 
 	pub fn apply_to(&self, client: &Arc<Client>) -> ClientState {
@@ -83,7 +89,7 @@ impl ClientStateParsed {
 			root.set_transform(self.root)
 		}
 		ClientState {
-			data: Some(self.data.clone()),
+			data: self.data.clone(),
 			root: 0,
 			spatial_anchors: self
 				.spatial_anchors
@@ -111,7 +117,7 @@ impl Default for ClientStateParsed {
 	fn default() -> Self {
 		Self {
 			launch_info: None,
-			data: Default::default(),
+			data: None,
 			root: Mat4::IDENTITY,
 			spatial_anchors: Default::default(),
 		}
