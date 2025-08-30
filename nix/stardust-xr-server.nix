@@ -1,25 +1,27 @@
-{ rustPlatform
-, src
-, name
-, libGL
-, mesa
-, xorg
-, fontconfig
-, libxkbcommon
-, libclang
+{
+  rustPlatform,
+  src,
+  name,
+  vulkan-loader,
+  vulkan-headers,
+  mesa,
+  xorg,
+  fontconfig,
+  libxkbcommon,
+  libclang,
 
-, cmake
-, pkg-config
-, llvmPackages
-, fetchFromGitHub
-, libXau
+  cmake,
+  pkg-config,
+  llvmPackages,
+  fetchFromGitHub,
+  libXau,
 
-, libXdmcp
-, stdenv
-, lib
-, openxr-loader
-, wayland
-, alsa-lib
+  libXdmcp,
+  stdenv,
+  lib,
+  openxr-loader,
+  wayland,
+  alsa-lib,
 }:
 
 rustPlatform.buildRustPackage rec {
@@ -35,9 +37,20 @@ rustPlatform.buildRustPackage rec {
       --replace-fail 'workspace = true' ""
   '';
 
-  nativeBuildInputs = [ cmake pkg-config llvmPackages.libcxxClang ];
+  postFixup = ''
+    patchelf $out/bin/stardust-xr-server --add-rpath ${vulkan-loader}/lib
+    patchelf $out/bin/stardust-xr-server --add-rpath ${openxr-loader}/lib
+    patchelf $out/bin/stardust-xr-server --add-rpath ${libxkbcommon}/lib
+  '';
+
+  nativeBuildInputs = [
+    cmake
+    pkg-config
+    llvmPackages.libcxxClang
+  ];
   buildInputs = [
-    libGL
+    vulkan-loader
+    vulkan-headers
     mesa
     xorg.libX11.dev
     xorg.libXft
@@ -50,5 +63,6 @@ rustPlatform.buildRustPackage rec {
     wayland
     alsa-lib
   ];
+
   LIBCLANG_PATH = "${libclang.lib}/lib";
 }
