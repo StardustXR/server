@@ -66,12 +66,14 @@ use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
 use stardust_xr::server;
 use std::ops::DerefMut as _;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, OnceLock};
 use tokio::net::UnixListener;
 use tokio::sync::Notify;
 use tokio::task::JoinError;
 use tracing::metadata::LevelFilter;
 use tracing::{error, info};
+use tracing_subscriber::filter::Directive;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use tracking_offset::TrackingOffsetPlugin;
 use wayland::{Wayland, WaylandPlugin};
@@ -144,7 +146,8 @@ async fn main() -> Result<AppExit, JoinError> {
 		.with_filter(
 			EnvFilter::builder()
 				.with_default_directive(LevelFilter::WARN.into())
-				.from_env_lossy(),
+				.from_env_lossy()
+				.add_directive(Directive::from_str("bevy_mesh_text_3d::text_glyphs=off").unwrap()),
 		);
 	registry.with(log_layer).init();
 
