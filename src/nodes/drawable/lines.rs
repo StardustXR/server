@@ -242,6 +242,7 @@ fn build_line_mesh(
 						extension: LineExtension { unused: 0 },
 					})),
 				));
+				lines.spatial.set_entity(e.id());
 				_ = lines.entity.set(e.id().into());
 				e
 			}

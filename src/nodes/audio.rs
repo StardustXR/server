@@ -57,27 +57,24 @@ fn update_sound_event(
 	for sound in SOUND_REGISTRY.get_valid_contents() {
 		if sound.entity.get().is_none() {
 			let handle = asset_server.load(sound.pending_audio_path.as_path());
-			sound
-				.entity
-				.set(
-					cmds.spawn((
-						Name::new("Audio Node"),
-						SpatialNode(Arc::downgrade(&sound.spatial)),
-						AudioPlayer::new(handle),
-						PlaybackSettings {
-							mode: PlaybackMode::Once,
-							volume: Volume::Linear(sound.volume),
-							speed: 1.0,
-							paused: true,
-							muted: false,
-							spatial: true,
-							spatial_scale: None,
-						},
-					))
-					.id()
-					.into(),
-				)
-				.unwrap();
+			let entity = cmds
+				.spawn((
+					Name::new("Audio Node"),
+					SpatialNode(Arc::downgrade(&sound.spatial)),
+					AudioPlayer::new(handle),
+					PlaybackSettings {
+						mode: PlaybackMode::Once,
+						volume: Volume::Linear(sound.volume),
+						speed: 1.0,
+						paused: true,
+						muted: false,
+						spatial: true,
+						spatial_scale: None,
+					},
+				))
+				.id();
+			sound.spatial.set_entity(entity);
+			sound.entity.set(entity.into()).unwrap();
 		}
 		if let Some(sink) = sound.entity.get().and_then(|e| sinks.get(e.0).ok()) {
 			if sound.play.lock().take().is_some() {

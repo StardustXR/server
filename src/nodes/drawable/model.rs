@@ -243,6 +243,7 @@ fn gen_model_parts(
 					});
 					spatial.set_local_transform(transform.compute_matrix());
 
+					spatial.set_entity(entity);
 					cmds.entity(entity)
 						.insert(SpatialNode(Arc::downgrade(&spatial)));
 					let mesh_entity = children_query
@@ -570,7 +571,6 @@ impl Model {
 				);
 			}
 			None => {
-				// TODO: this could be a denail of service vector
 				let client = self.spatial.node().unwrap().get_client().unwrap();
 				let part_node = client.scenegraph.add_node(Node::generate(&client, false));
 				let spatial = Spatial::add_to(

@@ -168,6 +168,7 @@ fn spawn_text(
 			.add_children(&letters)
 			.id();
 		text.entity.lock().replace(EntityHandle(entity));
+		text.spatial.set_entity(entity);
 	}
 }
 

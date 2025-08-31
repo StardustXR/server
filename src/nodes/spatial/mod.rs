@@ -6,6 +6,7 @@ use super::fields::{Field, FieldTrait};
 use super::{Aspect, AspectIdentifier};
 use crate::bail;
 use crate::core::client::Client;
+use crate::core::entity_handle::EntityHandle;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
@@ -27,8 +28,49 @@ impl Plugin for SpatialNodePlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(
 			PostUpdate,
-			update_spatial_nodes.before(TransformSystem::TransformPropagate),
+			(
+				spawn_spatial_nodes,
+				update_spatial_node_parenting,
+				update_spatial_nodes,
+			)
+				.chain()
+				.before(TransformSystem::TransformPropagate),
 		);
+	}
+}
+
+fn spawn_spatial_nodes(mut cmds: Commands) {
+	for spatial in SPATIAL_REGISTRY
+		.get_valid_contents()
+		.into_iter()
+		.filter(|v| v.entity.lock().is_none())
+	{
+		let entity = cmds
+			.spawn((SpatialNode(Arc::downgrade(&spatial)), Name::new("Spatial")))
+			.id();
+		_ = spatial.set_entity(entity);
+	}
+}
+
+fn update_spatial_node_parenting(
+	query: Query<(Entity, Option<&ChildOf>, &SpatialNode)>,
+	mut cmds: Commands,
+) {
+	for (entity, parent, spatial) in &query {
+		let Some(spatial) = spatial.0.upgrade() else {
+			continue;
+		};
+		let parent_entity = spatial
+			.get_parent()
+			.and_then(|v| v.entity.lock().as_ref().map(|v| v.0));
+		// no changes needed, early exit
+		if parent.map(|v| v.0) == parent_entity {
+			continue;
+		}
+		match parent_entity {
+			Some(e) => cmds.entity(entity).insert(ChildOf(e)),
+			None => cmds.entity(entity).remove::<ChildOf>(),
+		};
 	}
 }
 
@@ -69,21 +111,24 @@ fn update_spatial_nodes(
 				}
 				_ => {}
 			}
-			match child_of {
-				Some(child_of) => {
-					let Ok(parent) = parent_query.get(child_of.0) else {
-						warn!("SpatialNode bevy Parent doesn't have global transform");
-						return;
-					};
-					*transform =
-						BevyTransform::from_matrix(parent.compute_matrix().inverse() * mat4);
-				}
-				None => {
-					*transform = BevyTransform::from_matrix(mat4);
-				}
-			}
+			*transform = BevyTransform::from_matrix(spatial.local_transform());
+			// match child_of {
+			// 	Some(child_of) => {
+			// 		let Ok(parent) = parent_query.get(child_of.0) else {
+			// 			warn!("SpatialNode bevy Parent doesn't have global transform");
+			// 			return;
+			// 		};
+			// 		*transform =
+			// 			BevyTransform::from_matrix(parent.compute_matrix().inverse() * mat4);
+			// 	}
+			// 	None => {
+			// 		*transform = BevyTransform::from_matrix(mat4);
+			// 	}
+			// }
 		});
 }
+
+static SPATIAL_REGISTRY: Registry<Spatial> = Registry::new();
 
 #[derive(Clone, Component, Debug)]
 #[require(BevyTransform, Visibility)]
@@ -123,6 +168,7 @@ static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
 pub struct Spatial {
 	pub node: Weak<Node>,
+	entity: Mutex<Option<EntityHandle>>,
 	parent: Mutex<Option<Arc<Spatial>>>,
 	old_parent: Mutex<Option<Arc<Spatial>>>,
 	transform: Mutex<Mat4>,
@@ -133,8 +179,9 @@ pub struct Spatial {
 
 impl Spatial {
 	pub fn new(node: Weak<Node>, parent: Option<Arc<Spatial>>, transform: Mat4) -> Arc<Self> {
-		Arc::new(Spatial {
+		SPATIAL_REGISTRY.add(Spatial {
 			node,
+			entity: Mutex::new(None),
 			parent: Mutex::new(parent),
 			old_parent: Mutex::new(None),
 			transform: Mutex::new(transform),
@@ -142,6 +189,9 @@ impl Spatial {
 			children: Registry::new(),
 			bounding_box_calc: OnceLock::default(),
 		})
+	}
+	pub fn set_entity(&self, entity: Entity) {
+		self.entity.lock().replace(entity.into());
 	}
 	pub fn add_to(
 		node: &Arc<Node>,
@@ -396,6 +446,7 @@ impl Drop for Spatial {
 	fn drop(&mut self) {
 		zone::release(self);
 		ZONEABLE_REGISTRY.remove(self);
+		SPATIAL_REGISTRY.remove(self);
 	}
 }
 
