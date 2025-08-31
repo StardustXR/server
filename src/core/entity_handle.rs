@@ -21,9 +21,7 @@ static DESTROY: BevyChannel<Entity> = BevyChannel::new();
 pub struct EntityHandle(pub Entity);
 impl Drop for EntityHandle {
 	fn drop(&mut self) {
-		if DESTROY.send(self.0).is_none() {
-			error!("Entity Destroy channel not open");
-		}
+		DESTROY.send(self.0);
 	}
 }
 impl From<Entity> for EntityHandle {
