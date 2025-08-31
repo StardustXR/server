@@ -20,15 +20,20 @@ use bevy::{
 	window::PrimaryWindow,
 };
 use color_eyre::eyre::Result;
+use dashmap::DashMap;
 use glam::{Mat4, Vec3, vec3};
 use mint::Vector2;
+use rustc_hash::{FxHashMap, FxHasher};
 use serde::{Deserialize, Serialize};
 use slotmap::{DefaultKey, Key as SlotKey};
 use stardust_xr::{
-	schemas::dbus::{interfaces::FieldRefProxy, object_registry::ObjectRegistry},
+	schemas::dbus::{
+		interfaces::FieldRefProxy,
+		object_registry::{ObjectInfo, ObjectRegistry},
+	},
 	values::Datamap,
 };
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use tokio::task::JoinSet;
 use tokio::time::{Duration, timeout};
 use xkbcommon_rs::{Context, Keymap, KeymapFormat, xkb_keymap::CompileFlags};
@@ -167,6 +172,7 @@ pub struct MousePointer {
 	pointer: Arc<InputMethod>,
 	capture_manager: CaptureManager,
 	mouse_datamap: MouseEvent,
+	keyboard_cache: Arc<DashMap<ObjectInfo, Weak<Field>>>,
 }
 impl MousePointer {
 	pub fn new() -> Result<Self> {
@@ -193,6 +199,7 @@ impl MousePointer {
 			capture_manager: CaptureManager::default(),
 			mouse_datamap: Default::default(),
 			keymap,
+			keyboard_cache: Arc::new(DashMap::default()),
 		})
 	}
 	pub fn update(
@@ -247,7 +254,12 @@ impl MousePointer {
 			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).unwrap();
 		}
 		self.target_pointer_input();
-		self.send_keyboard_input(dbus_connection, object_registry, keyboard_input_events);
+		self.send_keyboard_input(
+			dbus_connection,
+			object_registry,
+			keyboard_input_events,
+			self.keyboard_cache.clone(),
+		);
 	}
 	fn target_pointer_input(&mut self) {
 		let distance_calculator: DistanceCalculator = |space, data, field| {
@@ -289,6 +301,7 @@ impl MousePointer {
 		dbus_connection: &Connection,
 		object_registry: &ObjectRegistry,
 		mut keyboard_input_events: EventReader<KeyboardInput>,
+		keyboard_handler_cache: Arc<DashMap<ObjectInfo, Weak<Field>>>,
 	) {
 		let keyboard_handlers = object_registry.get_objects("org.stardustxr.XKBv1");
 		let events = keyboard_input_events
@@ -308,6 +321,9 @@ impl MousePointer {
 
 				let mut join_set = JoinSet::new();
 				for handler in &keyboard_handlers {
+					if keyboard_handler_cache.contains_key(handler) {
+						continue;
+					}
 					let handler = handler.clone();
 					let dbus_connection = dbus_connection.clone();
 					join_set.spawn(async move {
@@ -338,6 +354,18 @@ impl MousePointer {
 						continue;
 					};
 					drop(exported_fields);
+					keyboard_handler_cache.insert(handler.clone(), Arc::downgrade(&field_ref));
+				}
+				keyboard_handler_cache.retain(|k, v| v.upgrade().is_some());
+				if events.is_empty() {
+					return;
+				}
+
+				for entry in &*keyboard_handler_cache {
+					let (handler, field_ref) = entry.pair();
+					let Some(field_ref) = field_ref.clone().upgrade() else {
+						continue;
+					};
 
 					let result = field_ref.ray_march(Ray {
 						origin: vec3(0.0, 0.0, 0.0),
@@ -350,7 +378,7 @@ impl MousePointer {
 						&& result.deepest_point_distance < closest_distance
 					{
 						closest_distance = result.deepest_point_distance;
-						closest_handler = Some(handler);
+						closest_handler = Some(handler.clone());
 					}
 				}
 
