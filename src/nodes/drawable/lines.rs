@@ -169,7 +169,8 @@ fn build_line_mesh(
 					(Some(last), Some(next)) => last.lerp(next, 0.5),
 				};
 				if !quat.is_finite() {
-					panic!("non finite quat: next: {next:?}, last: {last:?}, curr: {curr:?},");
+					error!("non finite quat: next: {next:?}, last: {last:?}, curr: {curr:?},");
+					break;
 				}
 				let normals = [
 					Vec3::X,
@@ -182,7 +183,7 @@ fn build_line_mesh(
 					Vec3::new(1., 0., -1.).normalize(),
 				]
 				.map(Vec3::normalize)
-				.map(|v| (quat * v));
+				.map(|v| quat * v);
 				let points = normals.map(|v| (v * curr.thickness) + Vec3::from(curr.point));
 				vertex_normals.extend(normals);
 				vertex_positions.extend(points);
@@ -207,18 +208,6 @@ fn build_line_mesh(
 			PrimitiveTopology::TriangleList,
 			RenderAssetUsages::RENDER_WORLD,
 		);
-		if vertex_colors.iter().flatten().any(|v| !v.is_finite()) {
-			panic!("vertex colors contains non finite float: {vertex_colors:#?}",);
-		}
-		if vertex_normals.iter().any(|v| !v.is_finite()) {
-			panic!("normals contains non finite dir: {vertex_normals:#?}",);
-		}
-		if vertex_normals.iter().any(|v| !v.is_normalized()) {
-			panic!("normals contains non normalized dir: {vertex_normals:#?}",);
-		}
-		if vertex_positions.iter().any(|v| !v.is_finite()) {
-			panic!("vertex positions contains non finite pos: {vertex_positions:#?}",);
-		}
 		mesh.insert_indices(Indices::U32(vertex_indices));
 		mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertex_positions.clone());
 		mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vertex_normals);
