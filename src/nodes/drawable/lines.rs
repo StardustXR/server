@@ -194,14 +194,16 @@ fn build_line_mesh(
 				}
 				indices_set += 1;
 			}
-			// Handle the connection between start and end points:
-			// - For cyclic lines: connect last segment back to first
-			// - For non-cyclic lines: add caps at both ends
-			if line.cyclic {
-				vertex_indices.extend(cyclic_indices(start_set, indices_set - 1));
-			} else {
-				vertex_indices.extend(cap_indices(start_set, false));
-				vertex_indices.extend(cap_indices(indices_set - 1, true));
+			if indices_set > 0 {
+				// Handle the connection between start and end points:
+				// - For cyclic lines: connect last segment back to first
+				// - For non-cyclic lines: add caps at both ends
+				if line.cyclic {
+					vertex_indices.extend(cyclic_indices(start_set, indices_set - 1));
+				} else {
+					vertex_indices.extend(cap_indices(start_set, false));
+					vertex_indices.extend(cap_indices(indices_set - 1, true));
+				}
 			}
 		}
 		let mut mesh = Mesh::new(
