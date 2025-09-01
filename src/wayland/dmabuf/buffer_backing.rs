@@ -82,7 +82,6 @@ impl DmabufBacking {
 		dmatexes: &ImportedDmatexs,
 		images: &mut Assets<Image>,
 	) -> Option<Handle<Image>> {
-		info!("updating dmabuf tex");
 		self.pending_imported_dmatex
 			.lock()
 			.take()

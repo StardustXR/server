@@ -11,11 +11,13 @@ use crate::{
 	},
 };
 use bevy::{
-	asset::RenderAssetUsages,
+	asset::{RenderAssetUsages, weak_handle},
+	pbr::{ExtendedMaterial, MaterialExtension},
 	prelude::*,
 	render::{
 		mesh::{Indices, MeshAabb, PrimitiveTopology},
 		primitives::Aabb,
+		render_resource::{AsBindGroup, ShaderRef},
 	},
 };
 use glam::Vec3;
@@ -25,18 +27,74 @@ use std::sync::{
 	atomic::{AtomicBool, Ordering},
 };
 
-pub struct LinesNodePlugin;
+type LineMaterial = ExtendedMaterial<BevyMaterial, LineExtension>;
+const LINE_SHADER_HANDLE: Handle<Shader> = weak_handle!("7d28aa5a-3abd-43bb-b0e9-0de8b81b650d");
+// No extra data needed for a simple holdout
+#[derive(Default, Asset, AsBindGroup, TypePath, Debug, Clone)]
+pub struct LineExtension {
+	#[uniform(100)]
+	unused: u32,
+}
+impl MaterialExtension for LineExtension {
+	fn fragment_shader() -> ShaderRef {
+		LINE_SHADER_HANDLE.into()
+	}
 
-impl Plugin for LinesNodePlugin {
-	fn build(&self, app: &mut App) {
-		app.add_systems(Update, build_line_mesh);
+	fn prepass_fragment_shader() -> ShaderRef {
+		LINE_SHADER_HANDLE.into()
+	}
+
+	fn alpha_mode() -> Option<AlphaMode> {
+		Some(AlphaMode::Opaque)
 	}
 }
 
-fn build_line_mesh(
-	mut meshes: ResMut<Assets<Mesh>>,
+pub struct LinesNodePlugin;
+impl Plugin for LinesNodePlugin {
+	fn build(&self, app: &mut App) {
+		app.add_systems(Startup, test_cube);
+		app.add_systems(Update, build_line_mesh);
+		app.world_mut().resource_mut::<Assets<Shader>>().insert(
+			LINE_SHADER_HANDLE.id(),
+			Shader::from_wgsl(
+				include_str!("line.wgsl"),
+				std::path::Path::new(file!())
+					.parent()
+					.unwrap()
+					.join("line.wgsl")
+					.to_string_lossy(),
+			),
+		);
+		app.add_plugins(MaterialPlugin::<LineMaterial>::default());
+	}
+}
+
+fn test_cube(
 	mut cmds: Commands,
-	mut materials: ResMut<Assets<BevyMaterial>>,
+	mut meshes: ResMut<Assets<Mesh>>,
+	mut materials: ResMut<Assets<LineMaterial>>,
+) {
+	cmds.spawn((
+		Transform::from_xyz(0.0, 0.5, 0.0),
+		Mesh3d(meshes.add(Cuboid::default())),
+		MeshMaterial3d(materials.add(ExtendedMaterial {
+			base: BevyMaterial {
+				base_color: Color::WHITE,
+				perceptual_roughness: 1.0,
+				// TODO: this should be Blend
+				alpha_mode: AlphaMode::Opaque,
+				// emissive: Color::srgba_u8(128, 128, 128, 255).into(),
+				..default()
+			},
+			extension: LineExtension { unused: 0 },
+		})),
+	));
+}
+
+fn build_line_mesh(
+	mut cmds: Commands,
+	mut meshes: ResMut<Assets<Mesh>>,
+	mut materials: ResMut<Assets<LineMaterial>>,
 ) {
 	for lines in LINES_REGISTRY
 		.get_valid_contents()
@@ -189,13 +247,16 @@ fn build_line_mesh(
 				let e = cmds.spawn((
 					Name::new("LinesNode"),
 					SpatialNode(Arc::downgrade(&lines.spatial)),
-					MeshMaterial3d(materials.add(BevyMaterial {
-						base_color: Color::WHITE,
-						perceptual_roughness: 1.0,
-						// TODO: this should be Blend
-						alpha_mode: AlphaMode::Opaque,
-						emissive: Color::srgba_u8(128, 128, 128, 255).into(),
-						..default()
+					MeshMaterial3d(materials.add(ExtendedMaterial {
+						base: BevyMaterial {
+							base_color: Color::WHITE,
+							perceptual_roughness: 1.0,
+							// TODO: this should be Blend
+							alpha_mode: AlphaMode::Opaque,
+							// emissive: Color::srgba_u8(128, 128, 128, 255).into(),
+							..default()
+						},
+						extension: LineExtension { unused: 0 },
 					})),
 				));
 				_ = lines.entity.set(e.id().into());
@@ -203,7 +264,6 @@ fn build_line_mesh(
 			}
 		};
 		if let Some(aabb) = mesh.compute_aabb() {
-			info!(?aabb);
 			*lines.bounds.lock() = aabb;
 			entity.insert(aabb);
 		}
