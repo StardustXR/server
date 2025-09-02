@@ -44,6 +44,10 @@ impl MaterialExtension for LineExtension {
 		LINE_SHADER_HANDLE.into()
 	}
 
+	fn deferred_fragment_shader() -> ShaderRef {
+		LINE_SHADER_HANDLE.into()
+	}
+
 	fn alpha_mode() -> Option<AlphaMode> {
 		Some(AlphaMode::Opaque)
 	}
@@ -112,6 +116,8 @@ fn build_line_mesh(
 			match lines.entity.get() {
 				Some(e) => cmds.entity(**e),
 				None => {
+					// if we couldn't get the lines entity then we need to gen the mesh later
+					lines.gen_mesh.store(true, Ordering::Relaxed);
 					let e = cmds.spawn((
 						Name::new("LinesNode"),
 						SpatialNode(Arc::downgrade(&lines.spatial)),
@@ -237,9 +243,9 @@ fn build_line_mesh(
 			panic!("vertex positions contains non finite pos: {vertex_positions:#?}",);
 		}
 		mesh.insert_indices(Indices::U32(vertex_indices));
-		mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vertex_colors);
-		mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vertex_normals);
 		mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertex_positions.clone());
+		mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vertex_normals);
+		mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vertex_colors);
 
 		let mut entity = match lines.entity.get() {
 			Some(e) => cmds.entity(**e),

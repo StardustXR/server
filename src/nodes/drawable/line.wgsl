@@ -15,12 +15,12 @@
 }
 #endif
 
-struct MyExtendedMaterial {
-    quantize_steps: u32,
+struct LineMaterial {
+    unused: u32,
 }
 
 @group(2) @binding(100)
-var<uniform> my_extended_material: MyExtendedMaterial;
+var<uniform> line_mat: LineMaterial;
 
 @fragment
 fn fragment(
@@ -43,7 +43,7 @@ fn fragment(
 #endif
 
     // alpha discard
-    pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
+    // pbr_input.material.base_color = alpha_discard(pbr_input.material, pbr_input.material.base_color);
 
 #ifdef PREPASS_PIPELINE
     // in deferred mode we can't modify anything after that, as lighting is run in a separate fullscreen shader.
