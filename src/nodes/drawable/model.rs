@@ -261,6 +261,7 @@ fn gen_model_parts(
 			);
 		}
 		_ = model.parts.set(parts);
+		model.spatial.set_entity(model.bevy_scene_entity.get().unwrap().0);
 	}
 }
 

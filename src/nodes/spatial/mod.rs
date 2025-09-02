@@ -30,8 +30,8 @@ impl Plugin for SpatialNodePlugin {
 			PostUpdate,
 			(
 				spawn_spatial_nodes,
-				despawn_unneeded_spatial_nodes,
 				update_spatial_node_parenting,
+				despawn_unneeded_spatial_nodes,
 				update_spatial_nodes,
 			)
 				.chain()
@@ -72,7 +72,6 @@ fn update_spatial_node_parenting(
 		if parent.map(|v| v.0) == parent_entity {
 			continue;
 		}
-		info!("changing bevy parent: {:?} to {:?}", parent.map(|v| v.0), parent_entity);
 		match parent_entity {
 			Some(e) => cmds.entity(entity).insert(ChildOf(e)),
 			None => cmds.entity(entity).remove::<ChildOf>(),
@@ -83,7 +82,6 @@ fn update_spatial_node_parenting(
 fn despawn_unneeded_spatial_nodes(query: Query<(Entity, &SpatialNode)>, cmds: ParallelCommands) {
 	query.par_iter().for_each(|(entity, spatial_node)| {
 		if spatial_node.0.upgrade().is_none() {
-			info!("despawn {entity}");
 			cmds.command_scope(|mut cmds| cmds.entity(entity).despawn());
 		}
 	});
@@ -93,14 +91,12 @@ fn update_spatial_nodes(
 	mut query: Query<(
 		&mut BevyTransform,
 		&SpatialNode,
-		Option<&ChildOf>,
 		&mut Visibility,
 	)>,
-	parent_query: Query<&GlobalTransform>,
 ) {
 	query
 		.par_iter_mut()
-		.for_each(|(mut transform, spatial_node, child_of, mut vis)| {
+		.for_each(|(mut transform, spatial_node, mut vis)| {
 			let _span = debug_span!("updating spatial node").entered();
 			let Some(spatial) = spatial_node.0.upgrade() else {
 				return;
@@ -127,19 +123,6 @@ fn update_spatial_nodes(
 				_ => {}
 			}
 			*transform = BevyTransform::from_matrix(spatial.local_transform());
-			// match child_of {
-			// 	Some(child_of) => {
-			// 		let Ok(parent) = parent_query.get(child_of.0) else {
-			// 			warn!("SpatialNode bevy Parent doesn't have global transform");
-			// 			return;
-			// 		};
-			// 		*transform =
-			// 			BevyTransform::from_matrix(parent.compute_matrix().inverse() * mat4);
-			// 	}
-			// 	None => {
-			// 		*transform = BevyTransform::from_matrix(mat4);
-			// 	}
-			// }
 		});
 }
 
@@ -336,7 +319,6 @@ impl Spatial {
 		self.parent.lock().clone()
 	}
 	fn set_parent(self: &Arc<Self>, new_parent: &Arc<Spatial>) {
-		info!("setting parent for {:?}", self.node().map(|v| v.id));
 		if let Some(parent) = self.get_parent() {
 			parent.children.remove(self);
 		}
