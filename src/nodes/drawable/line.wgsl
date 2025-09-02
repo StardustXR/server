@@ -27,19 +27,12 @@ fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
 ) -> FragmentOutput {
-#ifdef VERTEX_COLORS
-    var out: FragmentOutput;
-    // apply lighting
-    out.color = in.color;
-    return out;
-#endif
-
     // generate a PbrInput struct from the StandardMaterial bindings
     var pbr_input = pbr_input_from_standard_material(in, is_front);
 
 #ifdef VERTEX_COLORS
     // Multiply emissive color by vertex color
-    pbr_input.material.emissive.rgb *= in.color.rgb;
+    pbr_input.material.emissive *= vec4(in.color.rgb, 1.0);
 #endif
 
     // alpha discard

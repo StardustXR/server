@@ -56,7 +56,6 @@ impl MaterialExtension for LineExtension {
 pub struct LinesNodePlugin;
 impl Plugin for LinesNodePlugin {
 	fn build(&self, app: &mut App) {
-		app.add_systems(Startup, test_cube);
 		app.add_systems(Update, build_line_mesh);
 		app.world_mut().resource_mut::<Assets<Shader>>().insert(
 			LINE_SHADER_HANDLE.id(),
@@ -71,28 +70,6 @@ impl Plugin for LinesNodePlugin {
 		);
 		app.add_plugins(MaterialPlugin::<LineMaterial>::default());
 	}
-}
-
-fn test_cube(
-	mut cmds: Commands,
-	mut meshes: ResMut<Assets<Mesh>>,
-	mut materials: ResMut<Assets<LineMaterial>>,
-) {
-	cmds.spawn((
-		Transform::from_xyz(0.0, 0.5, 0.0),
-		Mesh3d(meshes.add(Cuboid::default())),
-		MeshMaterial3d(materials.add(ExtendedMaterial {
-			base: BevyMaterial {
-				base_color: Color::WHITE,
-				perceptual_roughness: 1.0,
-				// TODO: this should be Blend
-				alpha_mode: AlphaMode::Opaque,
-				// emissive: Color::srgba_u8(128, 128, 128, 255).into(),
-				..default()
-			},
-			extension: LineExtension { unused: 0 },
-		})),
-	));
 }
 
 fn build_line_mesh(
@@ -259,7 +236,7 @@ fn build_line_mesh(
 							perceptual_roughness: 1.0,
 							// TODO: this should be Blend
 							alpha_mode: AlphaMode::Opaque,
-							// emissive: Color::srgba_u8(128, 128, 128, 255).into(),
+							emissive: Color::srgba_u8(128/4, 128/4, 128/4, 255).into(),
 							..default()
 						},
 						extension: LineExtension { unused: 0 },
