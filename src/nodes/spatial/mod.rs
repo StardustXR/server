@@ -30,6 +30,7 @@ impl Plugin for SpatialNodePlugin {
 			PostUpdate,
 			(
 				spawn_spatial_nodes,
+				despawn_unneeded_spatial_nodes,
 				update_spatial_node_parenting,
 				update_spatial_nodes,
 			)
@@ -48,7 +49,7 @@ fn spawn_spatial_nodes(mut cmds: Commands) {
 		let entity = cmds
 			.spawn((SpatialNode(Arc::downgrade(&spatial)), Name::new("Spatial")))
 			.id();
-		_ = spatial.set_entity(entity);
+		spatial.set_entity(entity);
 	}
 }
 
@@ -60,18 +61,32 @@ fn update_spatial_node_parenting(
 		let Some(spatial) = spatial.0.upgrade() else {
 			continue;
 		};
-		let parent_entity = spatial
+
+		let Some(parent_entity) = spatial
 			.get_parent()
-			.and_then(|v| v.entity.lock().as_ref().map(|v| v.0));
+			.map(|v| v.entity.lock().as_ref().map(|v| v.0))
+		else {
+			continue;
+		};
 		// no changes needed, early exit
 		if parent.map(|v| v.0) == parent_entity {
 			continue;
 		}
+		info!("changing bevy parent: {:?} to {:?}", parent.map(|v| v.0), parent_entity);
 		match parent_entity {
 			Some(e) => cmds.entity(entity).insert(ChildOf(e)),
 			None => cmds.entity(entity).remove::<ChildOf>(),
 		};
 	}
+}
+
+fn despawn_unneeded_spatial_nodes(query: Query<(Entity, &SpatialNode)>, cmds: ParallelCommands) {
+	query.par_iter().for_each(|(entity, spatial_node)| {
+		if spatial_node.0.upgrade().is_none() {
+			info!("despawn {entity}");
+			cmds.command_scope(|mut cmds| cmds.entity(entity).despawn());
+		}
+	});
 }
 
 fn update_spatial_nodes(
@@ -321,6 +336,7 @@ impl Spatial {
 		self.parent.lock().clone()
 	}
 	fn set_parent(self: &Arc<Self>, new_parent: &Arc<Spatial>) {
+		info!("setting parent for {:?}", self.node().map(|v| v.id));
 		if let Some(parent) = self.get_parent() {
 			parent.children.remove(self);
 		}

@@ -199,7 +199,7 @@ fn gen_model_parts(
 									client.scenegraph.add_node(Node::generate(&client, false));
 								let spatial = Spatial::add_to(
 									&node,
-									Some(parent_spatial),
+									Some(parent_spatial.clone()),
 									transform.compute_matrix(),
 									false,
 								);
@@ -241,6 +241,7 @@ fn gen_model_parts(
 							.and_then(|v| v.bounds.get().copied())
 							.unwrap_or_default()
 					});
+					spatial.set_spatial_parent(&parent_spatial);
 					spatial.set_local_transform(transform.compute_matrix());
 
 					spatial.set_entity(entity);
