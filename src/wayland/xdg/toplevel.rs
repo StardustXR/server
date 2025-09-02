@@ -148,11 +148,10 @@ impl Toplevel {
 				.collect(),
 		)
 		.await?;
-		self.xdg_surface
-			.upgrade()
-			.unwrap()
-			.reconfigure(client)
-			.await
+		if let Some(xdg_surface) = self.xdg_surface.upgrade() {
+			xdg_surface.reconfigure(client).await?;
+		}
+		Ok(())
 	}
 }
 impl XdgToplevel for Toplevel {
