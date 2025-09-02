@@ -241,7 +241,7 @@ fn gen_model_parts(
 							.and_then(|v| v.bounds.get().copied())
 							.unwrap_or_default()
 					});
-					spatial.set_spatial_parent(&parent_spatial);
+					let _ = spatial.set_spatial_parent(&parent_spatial);
 					spatial.set_local_transform(transform.compute_matrix());
 
 					spatial.set_entity(entity);
@@ -261,7 +261,9 @@ fn gen_model_parts(
 			);
 		}
 		_ = model.parts.set(parts);
-		model.spatial.set_entity(model.bevy_scene_entity.get().unwrap().0);
+		model
+			.spatial
+			.set_entity(model.bevy_scene_entity.get().unwrap().0);
 	}
 }
 

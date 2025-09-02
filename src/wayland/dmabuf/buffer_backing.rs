@@ -12,7 +12,6 @@ use drm_fourcc::DrmFourcc;
 use mint::Vector2;
 use parking_lot::Mutex;
 use std::sync::{Arc, OnceLock};
-use tracing::info;
 use waynest::server::protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::Flags;
 
 /// Parameters for a shared memory buffer
