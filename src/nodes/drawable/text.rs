@@ -85,7 +85,7 @@ fn spawn_text(
 		);
 		let max_width = style.bounds.as_ref().map(|v| v.bounds.x);
 		let max_height = style.bounds.as_ref().map(|v| v.bounds.x);
-		let (width, _height) =
+		let (width, height) =
 			text_glyphs.measure(max_width, max_height, &mut font_settings.font_system);
 		let char_meshes = generate_meshes(
 			bevy_mesh_text_3d::InputText::Simple {
@@ -124,18 +124,6 @@ fn spawn_text(
 		else {
 			continue;
 		};
-		let dist = char_meshes.iter().fold(f32::MAX, |dist, v| {
-			dist.min(
-				v.transform.translation.x
-					- meshes
-						.get(&v.mesh)
-						.unwrap()
-						.compute_aabb()
-						.unwrap_or_default()
-						.half_extents
-						.x,
-			)
-		});
 		// TODO: text align
 		let letters = char_meshes
 			.into_iter()
@@ -143,19 +131,20 @@ fn spawn_text(
 				cmds.spawn((
 					Mesh3d(v.mesh),
 					MeshMaterial3d(v.material),
-					// rotation is sus, might be related to the gltf coordinate system
-					Transform::from_rotation(Quat::from_rotation_y(f32::consts::PI))
-						* Transform::from_xyz(
-							-dist
-								+ match style.bounds.as_ref().map(|v| v.anchor_align_x) {
-									Some(XAlign::Center) => width * -0.5,
-									Some(XAlign::Right) => -width,
-									Some(XAlign::Left) => 0.0,
-									None => 0.0,
-								},
-							0.0,
-							0.0,
-						) * v.transform,
+					Transform::from_xyz(
+						// -dist +
+						match style.text_align_x {
+							XAlign::Left => 0.0,
+							XAlign::Center => width * -0.5,
+							XAlign::Right => -width,
+						},
+						match style.text_align_y {
+							YAlign::Top => height,
+							YAlign::Center => height * 0.5,
+							YAlign::Bottom => 0.0,
+						},
+						0.0,
+					) * v.transform,
 				))
 				.id()
 			})
@@ -186,7 +175,7 @@ impl FontDatabaseRegistry {
 	}
 }
 
-use super::{TextAspect, TextStyle, model::MaterialRegistry};
+use super::{TextAspect, TextStyle, YAlign, model::MaterialRegistry};
 
 static TEXT_REGISTRY: Registry<Text> = Registry::new();
 
