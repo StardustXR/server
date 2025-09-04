@@ -87,7 +87,8 @@ impl DmabufBacking {
 			.map(|tex| dmatexes.insert_imported_dmatex(images, tex))
 			.inspect(|handle| {
 				_ = self.tex.set(handle.clone());
-			})
+			});
+		self.tex.get().cloned()
 	}
 
 	pub fn is_transparent(&self) -> bool {
