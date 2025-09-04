@@ -227,7 +227,7 @@ fn build_line_mesh(
 							perceptual_roughness: 1.0,
 							// TODO: this should be Blend
 							alpha_mode: AlphaMode::Opaque,
-							emissive: Color::srgba_u8(128/4, 128/4, 128/4, 255).into(),
+							emissive: Color::srgba_u8(128 / 4, 128 / 4, 128 / 4, 255).into(),
 							..default()
 						},
 						extension: LineExtension { unused: 0 },

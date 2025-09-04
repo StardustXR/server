@@ -5,8 +5,8 @@ mod mesa_drm;
 mod presentation;
 mod registry;
 mod util;
-mod vulkano_data;
 mod viewporter;
+mod vulkano_data;
 mod xdg;
 
 use crate::core::registry::OwnedRegistry;

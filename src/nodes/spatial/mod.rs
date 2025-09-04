@@ -87,13 +87,7 @@ fn despawn_unneeded_spatial_nodes(query: Query<(Entity, &SpatialNode)>, cmds: Pa
 	});
 }
 
-fn update_spatial_nodes(
-	mut query: Query<(
-		&mut BevyTransform,
-		&SpatialNode,
-		&mut Visibility,
-	)>,
-) {
+fn update_spatial_nodes(mut query: Query<(&mut BevyTransform, &SpatialNode, &mut Visibility)>) {
 	query
 		.par_iter_mut()
 		.for_each(|(mut transform, spatial_node, mut vis)| {
