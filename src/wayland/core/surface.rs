@@ -8,7 +8,7 @@ use crate::{
 		core::buffer::BufferUsage,
 		presentation::{MonotonicTimestamp, PresentationFeedback},
 		util::{ClientExt, DoubleBuffer},
-		xdg::{popup::Popup, toplevel::Toplevel},
+		xdg::wm_base::XdgSurfaceRole,
 	},
 };
 use bevy::{
@@ -35,8 +35,9 @@ pub static WL_SURFACE_REGISTRY: Registry<Surface> = Registry::new();
 
 #[derive(Debug, Clone)]
 pub enum SurfaceRole {
-	XdgToplevel(Arc<Toplevel>),
-	XDGPopup(Arc<Popup>),
+	Cursor,
+	Subsurface,
+	Xdg(OnceLock<XdgSurfaceRole>),
 }
 
 #[derive(Debug, Clone)]
@@ -75,8 +76,7 @@ pub struct Surface {
 	pub id: ObjectId,
 	state: Mutex<DoubleBuffer<SurfaceState>>,
 	pub message_sink: MessageSink,
-	// TODO: This should probably be a OnceLock? wayland doesn't support changing the surface role
-	pub role: Mutex<Option<SurfaceRole>>,
+	pub role: OnceLock<SurfaceRole>,
 	on_commit_handlers: Mutex<Vec<OnCommitCallback>>,
 	material: OnceLock<Handle<BevyMaterial>>,
 	pending_material_applications: Registry<ModelPart>,
@@ -102,7 +102,7 @@ impl Surface {
 			id,
 			state: Default::default(),
 			message_sink: client.message_sink(),
-			role: Mutex::new(None),
+			role: OnceLock::new(),
 			on_commit_handlers: Mutex::new(Vec::new()),
 			material: OnceLock::new(),
 			pending_material_applications: Registry::new(),
@@ -416,9 +416,8 @@ impl WlSurface for Surface {
 		Ok(())
 	}
 }
-
 impl Drop for Surface {
 	fn drop(&mut self) {
-		self.role.lock().take();
+		self.role.take();
 	}
 }

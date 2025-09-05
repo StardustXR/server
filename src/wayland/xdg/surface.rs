@@ -1,6 +1,12 @@
 use super::{popup::Popup, positioner::Positioner, toplevel::Mapped};
-use crate::wayland::{core::surface::SurfaceRole, display::Display, xdg::toplevel::Toplevel};
+use crate::wayland::util::ClientExt;
+use crate::wayland::{
+	core::surface::SurfaceRole,
+	display::Display,
+	xdg::{toplevel::Toplevel, wm_base::XdgSurfaceRole},
+};
 use std::sync::Arc;
+use std::sync::OnceLock;
 use std::sync::Weak;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
 use waynest::{
@@ -64,21 +70,60 @@ impl XdgSurface for Surface {
 				client.get::<Self>(sender_id).unwrap(),
 			),
 		);
+		// Set up the XDG role if not already done
+		if surface.role.get().is_none() {
+			let xdg_role = SurfaceRole::Xdg(OnceLock::new());
 
-		{
-			let mut surface_role = surface.role.lock();
-
-			// A surface must not have any existing role when assigning a new one
-			// "A surface must not have more than one role, and a role must not be assigned to more than one
-			// surface at a time. However, wl_surface role-specific interfaces may reassign the role, allow
-			// a role to be destroyed, or allow multiple role-specific interfaces to share the same role."
-			// - xdg_surface protocol doc
-			if surface_role.is_some() {
-				// We should send "role" error here as per xdg_wm_base.error enum
-				// But we'll ignore for now
-			} else {
-				surface_role.replace(SurfaceRole::XdgToplevel(toplevel.clone()));
+			if surface.role.set(xdg_role).is_err() {
+				return client
+					.protocol_error(
+						sender_id,
+						toplevel_id,
+						1, // XDG_WM_BASE_ERROR_ROLE
+						"Failed to set surface role (race condition)".to_string(),
+					)
+					.await;
 			}
+		}
+
+		// Check if the surface already has an XDG role
+		let surface_role = surface.role.get().unwrap();
+
+		// Now check if this is an XDG surface and set the sub-role
+		if let SurfaceRole::Xdg(role) = surface_role {
+			if role.get().is_some() {
+				return client
+					.protocol_error(
+						sender_id,
+						toplevel_id,
+						1, // XDG_WM_BASE_ERROR_ROLE
+						"XDG surface already has a sub-role".to_string(),
+					)
+					.await;
+			}
+
+			if role
+				.set(XdgSurfaceRole::Toplevel(toplevel.clone()))
+				.is_err()
+			{
+				return client
+					.protocol_error(
+						sender_id,
+						toplevel_id,
+						1, // XDG_WM_BASE_ERROR_ROLE
+						"Failed to set XDG sub-role (race condition)".to_string(),
+					)
+					.await;
+			}
+		} else {
+			return client
+				.protocol_error(
+					sender_id,
+					toplevel_id,
+					1, // XDG_WM_BASE_ERROR_ROLE
+					"Surface has a non-XDG role".to_string(),
+				)
+				.await;
 		}
 
 		toplevel.reconfigure(client).await?;
@@ -86,7 +131,15 @@ impl XdgSurface for Surface {
 		let pid = client.get::<Display>(ObjectId::DISPLAY).unwrap().pid;
 		let configured = self.configured.clone();
 		surface.add_commit_handler(move |surface, state| {
-			let Some(SurfaceRole::XdgToplevel(toplevel)) = &mut *surface.role.lock() else {
+			let Some(role_ref) = surface.role.get() else {
+				return true;
+			};
+
+			let SurfaceRole::Xdg(role) = role_ref else {
+				return true;
+			};
+
+			let Some(XdgSurfaceRole::Toplevel(toplevel)) = role.get() else {
 				return true;
 			};
 
@@ -119,13 +172,35 @@ impl XdgSurface for Surface {
 		parent: Option<ObjectId>,
 		positioner: ObjectId,
 	) -> Result<()> {
-		let parent = client.get::<Surface>(parent.unwrap()).unwrap();
-		let panel_item = match parent.wl_surface().role.lock().as_ref().unwrap() {
-			SurfaceRole::XdgToplevel(toplevel) => {
-				let toplevel_lock = toplevel.mapped.lock();
-				toplevel_lock.as_ref().unwrap()._panel_item.clone()
+		let Some(parent) = parent else {
+			return client
+				.protocol_error(
+					sender_id,
+					popup_id,
+					3, // INVALID_POPUP_PARENT
+					"Parent surface does not have an XDG role".to_string(),
+				)
+				.await;
+		};
+		let parent = client.get::<Surface>(parent).unwrap();
+		let panel_item = match parent.wl_surface().role.get().unwrap() {
+			SurfaceRole::Xdg(role) => match role.get().unwrap() {
+				XdgSurfaceRole::Toplevel(toplevel) => {
+					let toplevel_lock = toplevel.mapped.lock();
+					toplevel_lock.as_ref().unwrap()._panel_item.clone()
+				}
+				XdgSurfaceRole::Popup(popup) => popup.panel_item.upgrade().unwrap(),
+			},
+			_ => {
+				return client
+					.protocol_error(
+						sender_id,
+						popup_id,
+						1, // XDG_WM_BASE_ERROR_ROLE
+						"Parent surface does not have an XDG role".to_string(),
+					)
+					.await;
 			}
-			SurfaceRole::XDGPopup(popup) => popup.panel_item.upgrade().unwrap(),
 		};
 		let positioner = client.get::<Positioner>(positioner).unwrap();
 
@@ -143,15 +218,57 @@ impl XdgSurface for Surface {
 			),
 		);
 
-		{
-			let wl_surface = self.wl_surface();
-			let mut surface_role = wl_surface.role.lock();
+		// Set up the XDG role if not already done
+		let wl_surface = self.wl_surface();
+		if wl_surface.role.get().is_none() {
+			let xdg_role = SurfaceRole::Xdg(OnceLock::new());
 
-			if surface_role.is_some() {
-				// We should send "role" error here as per xdg_wm_base.error enum
-				// But we'll ignore for now
-			} else {
-				surface_role.replace(SurfaceRole::XDGPopup(popup.clone()));
+			if wl_surface.role.set(xdg_role).is_err() {
+				return client
+					.protocol_error(
+						sender_id,
+						popup_id,
+						1, // XDG_WM_BASE_ERROR_ROLE
+						"Failed to set surface role (race condition)".to_string(),
+					)
+					.await;
+			}
+		}
+
+		// Now check if this is an XDG surface and set the sub-role
+		match wl_surface.role.get().unwrap() {
+			SurfaceRole::Xdg(role) => {
+				if role.get().is_some() {
+					return client
+						.protocol_error(
+							sender_id,
+							popup_id,
+							1, // XDG_WM_BASE_ERROR_ROLE
+							"XDG surface already has a sub-role".to_string(),
+						)
+						.await;
+				}
+
+				if role.set(XdgSurfaceRole::Popup(popup.clone())).is_err() {
+					return client
+						.protocol_error(
+							sender_id,
+							popup_id,
+							1, // XDG_WM_BASE_ERROR_ROLE
+							"Failed to set XDG sub-role (race condition)".to_string(),
+						)
+						.await;
+				}
+			}
+			_ => {
+				return client
+					.protocol_error(
+						sender_id,
+						popup_id,
+						1, // XDG_WM_BASE_ERROR_ROLE
+						"Surface has a non-XDG role".to_string(),
+					)
+					.await;
 			}
 		}
 

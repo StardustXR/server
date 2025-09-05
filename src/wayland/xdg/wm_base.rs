@@ -1,11 +1,19 @@
+use super::popup::Popup;
+use super::positioner::Positioner;
+use super::toplevel::Toplevel;
 use crate::wayland::xdg::surface::Surface;
+use std::sync::Arc;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_wm_base::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
 	wire::ObjectId,
 };
 
-use super::positioner::Positioner;
+#[derive(Debug, Clone)]
+pub enum XdgSurfaceRole {
+	Toplevel(Arc<Toplevel>),
+	Popup(Arc<Popup>),
+}
 
 #[derive(Debug, Dispatcher, Default)]
 pub struct WmBase {
