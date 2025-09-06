@@ -20,7 +20,7 @@ pub struct Popup {
 	id: ObjectId,
 	version: u32,
 	parent: Arc<Surface>,
-	surface: Weak<Surface>,
+	surface: Arc<Surface>,
 	pub panel_item: Weak<PanelItem<XdgBackend>>,
 	positioner_data: Mutex<PositionerData>,
 	geometry: DoubleBuffer<Geometry>,
@@ -32,11 +32,11 @@ impl Popup {
 		version: u32,
 		parent: Arc<Surface>,
 		panel_item: &Arc<PanelItem<XdgBackend>>,
-		xdg_surface: &Arc<Surface>,
+		surface: Arc<Surface>,
 		positioner: &Positioner,
 	) -> Self {
-		let _ = xdg_surface
-			.wl_surface()
+		let _ = surface
+			.wl_surface
 			.surface_id
 			.set(SurfaceId::Child(rand::thread_rng().gen_range(0..u64::MAX)));
 
@@ -45,7 +45,7 @@ impl Popup {
 			id,
 			version,
 			parent,
-			surface: Arc::downgrade(xdg_surface),
+			surface,
 			panel_item: Arc::downgrade(panel_item),
 			positioner_data: Mutex::new(positioner_data),
 			geometry: DoubleBuffer::new(positioner_data.infinite_geometry()),
@@ -89,7 +89,7 @@ impl XdgPopup for Popup {
 			geometry.size.y as i32,
 		)
 		.await?;
-		self.surface.upgrade().unwrap().reconfigure(client).await?;
+		self.surface.reconfigure(client).await?;
 		Ok(())
 	}
 

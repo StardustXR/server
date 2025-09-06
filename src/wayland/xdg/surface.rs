@@ -5,7 +5,7 @@ use crate::wayland::{
 	display::Display,
 	xdg::{toplevel::Toplevel, wm_base::XdgSurfaceRole},
 };
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, OnceLock};
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -16,7 +16,7 @@ use waynest::{
 pub struct Surface {
 	id: ObjectId,
 	version: u32,
-	wl_surface: Weak<crate::wayland::core::surface::Surface>,
+	pub wl_surface: Arc<crate::wayland::core::surface::Surface>,
 	configured: Arc<std::sync::atomic::AtomicBool>,
 }
 impl Surface {
@@ -28,16 +28,9 @@ impl Surface {
 		Self {
 			id,
 			version,
-			wl_surface: Arc::downgrade(&wl_surface),
+			wl_surface,
 			configured: Arc::new(std::sync::atomic::AtomicBool::new(false)),
 		}
-	}
-
-	pub fn wl_surface(&self) -> Arc<crate::wayland::core::surface::Surface> {
-		// We can safely unwrap as the surface must exist for the lifetime of the xdg_surface
-		self.wl_surface
-			.upgrade()
-			.expect("Surface was dropped before xdg_surface")
 	}
 
 	pub async fn reconfigure(&self, client: &mut Client) -> Result<()> {
@@ -59,33 +52,17 @@ impl XdgSurface for Surface {
 		sender_id: ObjectId,
 		toplevel_id: ObjectId,
 	) -> Result<()> {
-		let surface = self.wl_surface();
 		let toplevel = client.insert(
 			toplevel_id,
 			Toplevel::new(
 				toplevel_id,
-				surface.clone(),
+				self.wl_surface.clone(),
 				client.get::<Self>(sender_id).unwrap(),
 			),
 		);
-		// Set up the XDG role if not already done
-		if surface.role.get().is_none() {
-			let xdg_role = SurfaceRole::Xdg(OnceLock::new());
-
-			if surface.role.set(xdg_role).is_err() {
-				return client
-					.protocol_error(
-						sender_id,
-						toplevel_id,
-						1, // XDG_WM_BASE_ERROR_ROLE
-						"Failed to set surface role (race condition)".to_string(),
-					)
-					.await;
-			}
-		}
 
 		// Check if the surface already has an XDG role
-		let surface_role = surface.role.get().unwrap();
+		let surface_role = self.wl_surface.role.get().unwrap();
 
 		// Now check if this is an XDG surface and set the sub-role
 		if let SurfaceRole::Xdg(role) = surface_role {
@@ -128,7 +105,7 @@ impl XdgSurface for Surface {
 
 		let pid = client.get::<Display>(ObjectId::DISPLAY).unwrap().pid;
 		let configured = self.configured.clone();
-		surface.add_commit_handler(move |surface, state| {
+		self.wl_surface.add_commit_handler(move |surface, state| {
 			let Some(role_ref) = surface.role.get() else {
 				return true;
 			};
@@ -184,7 +161,7 @@ impl XdgSurface for Surface {
 				.await;
 		};
 		let parent = client.get::<Surface>(parent).unwrap();
-		let panel_item = match parent.wl_surface().role.get().unwrap() {
+		let panel_item = match parent.wl_surface.role.get().unwrap() {
 			SurfaceRole::Xdg(role) => match role.get().unwrap() {
 				XdgSurfaceRole::Toplevel(toplevel) => {
 					if let Some(toplevel) = toplevel.upgrade() {
@@ -238,17 +215,16 @@ impl XdgSurface for Surface {
 				self.version,
 				parent,
 				&panel_item,
-				&surface,
+				surface,
 				&positioner,
 			),
 		);
 
 		// Set up the XDG role if not already done
-		let wl_surface = self.wl_surface();
-		if wl_surface.role.get().is_none() {
+		if self.wl_surface.role.get().is_none() {
 			let xdg_role = SurfaceRole::Xdg(OnceLock::new());
 
-			if wl_surface.role.set(xdg_role).is_err() {
+			if self.wl_surface.role.set(xdg_role).is_err() {
 				return client
 					.protocol_error(
 						sender_id,
@@ -261,7 +237,7 @@ impl XdgSurface for Surface {
 		}
 
 		// Now check if this is an XDG surface and set the sub-role
-		match wl_surface.role.get().unwrap() {
+		match self.wl_surface.role.get().unwrap() {
 			SurfaceRole::Xdg(role) => {
 				if role.get().is_some() {
 					return client

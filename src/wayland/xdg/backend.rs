@@ -34,7 +34,7 @@ impl XdgBackend {
 
 	fn surface_from_id(&self, id: SurfaceId) -> Option<Arc<Surface>> {
 		match id {
-			SurfaceId::Toplevel(_) => Some(self.toplevel().wl_surface()),
+			SurfaceId::Toplevel(_) => Some(self.toplevel().wl_surface().clone()),
 			SurfaceId::Child(_) => None,
 		}
 	}
@@ -222,24 +222,24 @@ impl Backend for XdgBackend {
 			position.x,
 			position.y
 		);
-		let surface = self.toplevel().wl_surface();
-		let _ = surface.message_sink.send(Message::Seat(
+		let toplevel = self.toplevel();
+		let _ = toplevel.wl_surface().message_sink.send(Message::Seat(
 			crate::wayland::core::seat::SeatMessage::TouchMove { id, position },
 		));
 	}
 
 	fn touch_up(&self, id: u32) {
 		tracing::debug!("Backend: Touch up {}", id);
-		let surface = self.toplevel().wl_surface();
-		let _ = surface.message_sink.send(Message::Seat(
+		let toplevel = self.toplevel();
+		let _ = toplevel.wl_surface().message_sink.send(Message::Seat(
 			crate::wayland::core::seat::SeatMessage::TouchUp { id },
 		));
 	}
 
 	fn reset_input(&self) {
 		tracing::debug!("Backend: Reset input");
-		let surface = self.toplevel().wl_surface();
-		let _ = surface.message_sink.send(Message::Seat(
+		let toplevel = self.toplevel();
+		let _ = toplevel.wl_surface().message_sink.send(Message::Seat(
 			crate::wayland::core::seat::SeatMessage::Reset,
 		));
 	}

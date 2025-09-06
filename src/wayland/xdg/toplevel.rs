@@ -9,7 +9,6 @@ use crate::{
 use mint::Vector2;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use std::sync::Weak;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_toplevel::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -58,8 +57,7 @@ impl Default for ToplevelData {
 #[derive(Debug, Dispatcher)]
 pub struct Toplevel {
 	pub id: ObjectId,
-	wl_surface: Weak<Surface>,
-	xdg_surface: Weak<super::surface::Surface>,
+	xdg_surface: Arc<super::surface::Surface>,
 	pub mapped: Mutex<Option<MappedInner>>,
 	data: Mutex<ToplevelData>,
 }
@@ -73,18 +71,14 @@ impl Toplevel {
 
 		Toplevel {
 			id: object_id,
-			wl_surface: Arc::downgrade(&wl_surface),
-			xdg_surface: Arc::downgrade(&xdg_surface),
+			xdg_surface,
 			mapped: Mutex::new(None),
 			data: Mutex::new(ToplevelData::default()),
 		}
 	}
 
-	pub fn wl_surface(&self) -> Arc<Surface> {
-		// We can safely unwrap as the surface must exist for the lifetime of the toplevel
-		self.wl_surface
-			.upgrade()
-			.expect("Surface was dropped before toplevel")
+	pub fn wl_surface(&self) -> &Arc<Surface> {
+		&self.xdg_surface.wl_surface
 	}
 
 	pub fn title(&self) -> Option<String> {
@@ -153,9 +147,7 @@ impl Toplevel {
 				.collect(),
 		)
 		.await?;
-		if let Some(xdg_surface) = self.xdg_surface.upgrade() {
-			xdg_surface.reconfigure(client).await?;
-		}
+		self.xdg_surface.reconfigure(client).await?;
 		Ok(())
 	}
 }
@@ -269,7 +261,8 @@ impl XdgToplevel for Toplevel {
 		width: i32,
 		height: i32,
 	) -> Result<()> {
-		self.wl_surface().pending_state().pending.min_size = if width == 0 && height == 0 {
+		self.xdg_surface.wl_surface.pending_state().pending.min_size = if width == 0 && height == 0
+		{
 			None
 		} else {
 			Some([width as u32, height as u32].into())

@@ -1,8 +1,8 @@
 use super::popup::Popup;
 use super::positioner::Positioner;
 use super::toplevel::Toplevel;
-use crate::wayland::xdg::surface::Surface;
-use std::sync::Weak;
+use crate::wayland::{core::surface::SurfaceRole, xdg::surface::Surface};
+use std::sync::{OnceLock, Weak};
 pub use waynest::server::protocol::stable::xdg_shell::xdg_wm_base::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -46,6 +46,7 @@ impl XdgWmBase for WmBase {
 			.ok_or(waynest::server::Error::Custom(
 				"can't get wayland surface id".to_string(),
 			))?;
+		let _ = wl_surface.role.set(SurfaceRole::Xdg(OnceLock::new()));
 		let xdg_surface = Surface::new(xdg_surface_id, self.version, wl_surface);
 		client.insert(xdg_surface_id, xdg_surface);
 
