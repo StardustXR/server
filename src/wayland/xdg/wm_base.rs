@@ -2,7 +2,7 @@ use super::popup::Popup;
 use super::positioner::Positioner;
 use super::toplevel::Toplevel;
 use crate::wayland::xdg::surface::Surface;
-use std::sync::Arc;
+use std::sync::Weak;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_wm_base::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -11,8 +11,8 @@ use waynest::{
 
 #[derive(Debug, Clone)]
 pub enum XdgSurfaceRole {
-	Toplevel(Arc<Toplevel>),
-	Popup(Arc<Popup>),
+	Toplevel(Weak<Toplevel>),
+	Popup(Weak<Popup>),
 }
 
 #[derive(Debug, Dispatcher, Default)]

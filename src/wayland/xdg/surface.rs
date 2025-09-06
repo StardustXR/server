@@ -101,7 +101,7 @@ impl XdgSurface for Surface {
 			}
 
 			if role
-				.set(XdgSurfaceRole::Toplevel(toplevel.clone()))
+				.set(XdgSurfaceRole::Toplevel(Arc::downgrade(&toplevel)))
 				.is_err()
 			{
 				return client
@@ -138,6 +138,9 @@ impl XdgSurface for Surface {
 			};
 
 			let Some(XdgSurfaceRole::Toplevel(toplevel)) = role.get() else {
+				return true;
+			};
+			let Some(toplevel) = toplevel.upgrade() else {
 				return true;
 			};
 
@@ -184,10 +187,34 @@ impl XdgSurface for Surface {
 		let panel_item = match parent.wl_surface().role.get().unwrap() {
 			SurfaceRole::Xdg(role) => match role.get().unwrap() {
 				XdgSurfaceRole::Toplevel(toplevel) => {
-					let toplevel_lock = toplevel.mapped.lock();
-					toplevel_lock.as_ref().unwrap()._panel_item.clone()
+					if let Some(toplevel) = toplevel.upgrade() {
+						let toplevel_lock = toplevel.mapped.lock();
+						toplevel_lock.as_ref().unwrap()._panel_item.clone()
+					} else {
+						return client
+							.protocol_error(
+								sender_id,
+								popup_id,
+								3, // INVALID_POPUP_PARENT
+								"Parent surface does not have an XDG role".to_string(),
+							)
+							.await;
+					}
 				}
-				XdgSurfaceRole::Popup(popup) => popup.panel_item.upgrade().unwrap(),
+				XdgSurfaceRole::Popup(popup) => {
+					if let Some(popup) = popup.upgrade() {
+						popup.panel_item.upgrade().unwrap()
+					} else {
+						return client
+							.protocol_error(
+								sender_id,
+								popup_id,
+								3, // INVALID_POPUP_PARENT
+								"Parent surface does not have an XDG role".to_string(),
+							)
+							.await;
+					}
+				}
 			},
 			_ => {
 				return client
@@ -247,7 +274,10 @@ impl XdgSurface for Surface {
 						.await;
 				}
 
-				if role.set(XdgSurfaceRole::Popup(popup.clone())).is_err() {
+				if role
+					.set(XdgSurfaceRole::Popup(Arc::downgrade(&popup)))
+					.is_err()
+				{
 					return client
 						.protocol_error(
 							sender_id,
