@@ -1,6 +1,9 @@
 use super::backend::XdgBackend;
 use crate::{
-	nodes::{Node, items::panel::PanelItem},
+	nodes::{
+		Node,
+		items::panel::{PanelItem, SurfaceId},
+	},
 	wayland::core::surface::Surface,
 };
 use mint::Vector2;
@@ -66,6 +69,8 @@ impl Toplevel {
 		wl_surface: Arc<Surface>,
 		xdg_surface: Arc<super::surface::Surface>,
 	) -> Self {
+		let _ = wl_surface.surface_id.set(SurfaceId::Toplevel(()));
+
 		Toplevel {
 			id: object_id,
 			wl_surface: Arc::downgrade(&wl_surface),

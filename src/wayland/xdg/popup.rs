@@ -35,7 +35,7 @@ impl Popup {
 		xdg_surface: &Arc<Surface>,
 		positioner: &Positioner,
 	) -> Self {
-		xdg_surface
+		let _ = xdg_surface
 			.wl_surface()
 			.surface_id
 			.set(SurfaceId::Child(rand::thread_rng().gen_range(0..u64::MAX)));
