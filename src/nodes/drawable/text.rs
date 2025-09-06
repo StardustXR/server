@@ -15,7 +15,7 @@ use crate::{
 		spatial::{Spatial, SpatialNode},
 	},
 };
-use bevy::{platform::collections::HashMap, prelude::*, render::mesh::MeshAabb};
+use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_mesh_text_3d::{
 	Align, Attrs, MeshTextPlugin, Settings as FontSettings, generate_meshes,
 	text_glyphs::TextGlyphs,
