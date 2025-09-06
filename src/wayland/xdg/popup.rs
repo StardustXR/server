@@ -19,7 +19,6 @@ use waynest::{
 pub struct Popup {
 	id: ObjectId,
 	version: u32,
-	surface_id: SurfaceId,
 	parent: Arc<Surface>,
 	surface: Weak<Surface>,
 	pub panel_item: Weak<PanelItem<XdgBackend>>,
@@ -36,11 +35,15 @@ impl Popup {
 		xdg_surface: &Arc<Surface>,
 		positioner: &Positioner,
 	) -> Self {
+		xdg_surface
+			.wl_surface()
+			.surface_id
+			.set(SurfaceId::Child(rand::thread_rng().gen_range(0..u64::MAX)));
+
 		let positioner_data = positioner.data();
 		Self {
 			id,
 			version,
-			surface_id: SurfaceId::Child(rand::thread_rng().gen_range(0..u64::MAX)),
 			parent,
 			surface: Arc::downgrade(xdg_surface),
 			panel_item: Arc::downgrade(panel_item),

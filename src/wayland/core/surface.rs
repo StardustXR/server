@@ -2,7 +2,10 @@ use super::{buffer::Buffer, callback::Callback};
 use crate::{
 	BevyMaterial,
 	core::registry::Registry,
-	nodes::{drawable::model::ModelPart, items::panel::Geometry},
+	nodes::{
+		drawable::model::ModelPart,
+		items::panel::{Geometry, SurfaceId},
+	},
 	wayland::{
 		Message, MessageSink,
 		core::buffer::BufferUsage,
@@ -70,10 +73,10 @@ impl Default for SurfaceState {
 
 // if returning false, don't run this callback again... just remove it
 pub type OnCommitCallback = Box<dyn Fn(&Surface, &SurfaceState) -> bool + Send + Sync>;
-
 #[derive(Dispatcher)]
 pub struct Surface {
 	pub id: ObjectId,
+	pub surface_id: OnceLock<SurfaceId>,
 	state: Mutex<DoubleBuffer<SurfaceState>>,
 	pub message_sink: MessageSink,
 	pub role: OnceLock<SurfaceRole>,
@@ -85,6 +88,8 @@ pub struct Surface {
 impl std::fmt::Debug for Surface {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Surface")
+			.field("id", &self.id)
+			.field("surface_id", &self.surface_id)
 			.field("state", &self.state)
 			.field("message_sink", &self.message_sink)
 			.field("role", &self.role)
@@ -92,6 +97,8 @@ impl std::fmt::Debug for Surface {
 				"on_commit_handlers",
 				&format!("<{} handlers>", self.on_commit_handlers.lock().len()),
 			)
+			.field("material", &self.material)
+			.field("presentation_feedback", &self.presentation_feedback)
 			.finish()
 	}
 }
@@ -100,6 +107,7 @@ impl Surface {
 	pub fn new(client: &Client, id: ObjectId) -> Self {
 		Surface {
 			id,
+			surface_id: OnceLock::new(),
 			state: Default::default(),
 			message_sink: client.message_sink(),
 			role: OnceLock::new(),

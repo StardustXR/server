@@ -5,9 +5,7 @@ use crate::wayland::{
 	display::Display,
 	xdg::{toplevel::Toplevel, wm_base::XdgSurfaceRole},
 };
-use std::sync::Arc;
-use std::sync::OnceLock;
-use std::sync::Weak;
+use std::sync::{Arc, OnceLock, Weak};
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
