@@ -17,11 +17,11 @@ use waynest::{
 };
 
 #[derive(Debug)]
-pub struct Mapped {
+pub struct MappedInner {
 	pub panel_item_node: Arc<Node>,
 	pub _panel_item: Arc<PanelItem<XdgBackend>>,
 }
-impl Mapped {
+impl MappedInner {
 	pub fn create(toplevel: Arc<Toplevel>, pid: Option<i32>) -> Self {
 		let (panel_item_node, _panel_item) =
 			PanelItem::create(Box::new(XdgBackend::new(toplevel)), pid);
@@ -60,7 +60,7 @@ pub struct Toplevel {
 	pub id: ObjectId,
 	wl_surface: Weak<Surface>,
 	xdg_surface: Weak<super::surface::Surface>,
-	pub mapped: Mutex<Option<Mapped>>,
+	pub mapped: Mutex<Option<MappedInner>>,
 	data: Mutex<ToplevelData>,
 }
 impl Toplevel {
@@ -80,7 +80,7 @@ impl Toplevel {
 		}
 	}
 
-	pub fn surface(&self) -> Arc<Surface> {
+	pub fn wl_surface(&self) -> Arc<Surface> {
 		// We can safely unwrap as the surface must exist for the lifetime of the toplevel
 		self.wl_surface
 			.upgrade()
@@ -107,7 +107,7 @@ impl Toplevel {
 
 	// Helper to clamp size against constraints
 	fn clamp_size(&self, size: Vector2<u32>) -> Vector2<u32> {
-		let state = self.surface().current_state();
+		let state = self.wl_surface().current_state();
 		let mut clamped = size;
 
 		if let Some(min_size) = state.min_size {
@@ -254,7 +254,7 @@ impl XdgToplevel for Toplevel {
 		width: i32,
 		height: i32,
 	) -> Result<()> {
-		self.surface().pending_state().pending.max_size = if width == 0 && height == 0 {
+		self.wl_surface().pending_state().pending.max_size = if width == 0 && height == 0 {
 			None
 		} else {
 			Some([width as u32, height as u32].into())
@@ -269,7 +269,7 @@ impl XdgToplevel for Toplevel {
 		width: i32,
 		height: i32,
 	) -> Result<()> {
-		self.surface().pending_state().pending.min_size = if width == 0 && height == 0 {
+		self.wl_surface().pending_state().pending.min_size = if width == 0 && height == 0 {
 			None
 		} else {
 			Some([width as u32, height as u32].into())

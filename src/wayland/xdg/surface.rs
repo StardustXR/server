@@ -1,4 +1,4 @@
-use super::{popup::Popup, positioner::Positioner, toplevel::Mapped};
+use super::{popup::Popup, positioner::Positioner, toplevel::MappedInner};
 use crate::wayland::util::ClientExt;
 use crate::wayland::{
 	core::surface::SurfaceRole,
@@ -152,7 +152,7 @@ impl XdgSurface for Surface {
 				&& configured.load(std::sync::atomic::Ordering::SeqCst)
 				&& has_valid_buffer
 			{
-				mapped_lock.replace(Mapped::create(toplevel.clone(), pid));
+				mapped_lock.replace(MappedInner::create(toplevel.clone(), pid));
 				return false;
 			}
 			true
