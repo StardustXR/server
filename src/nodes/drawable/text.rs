@@ -11,18 +11,17 @@ use crate::{
 	},
 	nodes::{
 		Node,
-		drawable::XAlign,
+		drawable::{TextFit, XAlign},
 		spatial::{Spatial, SpatialNode},
 	},
 };
 use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_mesh_text_3d::{
-	Align, Attrs, MeshTextPlugin, Settings as FontSettings, generate_meshes,
-	text_glyphs::TextGlyphs,
+	Align, Attrs, HorizontalAnchorPoint, MeshTextPlugin, Settings as FontSettings, VerticalAlign,
+	VerticalAnchorPoint, generate_meshes,
 };
 use color_eyre::eyre::eyre;
 use core::f32;
-use cosmic_text::Metrics;
 use parking_lot::Mutex;
 use std::{ffi::OsStr, mem, path::PathBuf, sync::Arc};
 
@@ -34,7 +33,7 @@ impl Plugin for TextNodePlugin {
 	fn build(&self, app: &mut App) {
 		// Text init stuff
 		// 1.0 for font size in meters
-		app.add_plugins(MeshTextPlugin::new(1.0));
+		app.add_plugins(MeshTextPlugin);
 		app.world_mut()
 			.resource_mut::<FontSettings>()
 			.font_system
@@ -72,21 +71,33 @@ fn spawn_text(
 			super::XAlign::Center => Align::Center,
 			super::XAlign::Right => Align::Left,
 		});
+		let vertical_alignment = Some(match style.text_align_y {
+			super::YAlign::Top => VerticalAlign::Top,
+			super::YAlign::Center => VerticalAlign::Middle,
+			super::YAlign::Bottom => VerticalAlign::Bottom,
+		});
 		let text_string = text.text.lock().clone();
-		let mut text_glyphs = TextGlyphs::new(
-			Metrics {
-				font_size: style.character_height,
-				line_height: style.character_height,
-			},
-			[(text_string.as_str(), attrs.clone())],
-			&attrs,
-			&mut font_settings.font_system,
-			alignment,
-		);
 		let max_width = style.bounds.as_ref().map(|v| v.bounds.x);
-		let max_height = style.bounds.as_ref().map(|v| v.bounds.x);
-		let (width, height) =
-			text_glyphs.measure(max_width, max_height, &mut font_settings.font_system);
+		let max_height = style.bounds.as_ref().map(|v| v.bounds.y);
+		let horizontal_anchor_point = style
+			.bounds
+			.as_ref()
+			.map(|v| match v.anchor_align_x {
+				XAlign::Left => HorizontalAnchorPoint::Left,
+				XAlign::Center => HorizontalAnchorPoint::Middle,
+				XAlign::Right => HorizontalAnchorPoint::Right,
+			})
+			.unwrap_or(HorizontalAnchorPoint::Middle);
+		let vertical_anchor_point = style
+			.bounds
+			.as_ref()
+			.map(|v| match v.anchor_align_y {
+				YAlign::Top => VerticalAnchorPoint::Top,
+				YAlign::Center => VerticalAnchorPoint::Middle,
+				YAlign::Bottom => VerticalAnchorPoint::Bottom,
+			})
+			.unwrap_or(VerticalAnchorPoint::Middle);
+		let wrap = matches!(style.bounds.as_ref().map(|v| v.fit), Some(TextFit::Wrap));
 		let char_meshes = generate_meshes(
 			bevy_mesh_text_3d::InputText::Simple {
 				text: text_string,
@@ -109,44 +120,30 @@ fn spawn_text(
 			bevy_mesh_text_3d::Parameters {
 				extrusion_depth: 0.0,
 				font_size: style.character_height,
-				line_height: style.character_height,
+				line_height: style.character_height * 1.1,
 				alignment,
-				max_width,
-				max_height,
+				max_width: wrap.then_some(0).and(max_width),
+				max_height: wrap.then_some(0).and(max_height),
+				vertical_alignment,
+				horizontal_anchor_point,
+				vertical_anchor_point,
 			},
 			&mut meshes,
 		);
 		if let Some(db) = old_db {
 			mem::swap(font_settings.font_system.db_mut(), db);
 		}
-		let Ok(char_meshes) =
+		let Ok((char_meshes, _text_size)) =
 			char_meshes.inspect_err(|err| error!("unable to create text meshes: {err}"))
 		else {
 			continue;
 		};
-		// TODO: text align
+
 		let letters = char_meshes
 			.into_iter()
 			.map(|v| {
-				cmds.spawn((
-					Mesh3d(v.mesh),
-					MeshMaterial3d(v.material),
-					Transform::from_xyz(
-						// -dist +
-						match style.text_align_x {
-							XAlign::Left => 0.0,
-							XAlign::Center => width * -0.5,
-							XAlign::Right => -width,
-						},
-						match style.text_align_y {
-							YAlign::Top => height,
-							YAlign::Center => height * 0.5,
-							YAlign::Bottom => 0.0,
-						},
-						0.0,
-					) * v.transform,
-				))
-				.id()
+				cmds.spawn((Mesh3d(v.mesh), MeshMaterial3d(v.material), v.transform))
+					.id()
 			})
 			.collect::<Vec<_>>();
 		let entity = cmds
