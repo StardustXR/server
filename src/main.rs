@@ -5,12 +5,14 @@ mod core;
 mod nodes;
 mod objects;
 mod session;
+mod spectator_cam;
 pub mod tracking_offset;
 #[cfg(feature = "wayland")]
 mod wayland;
 
 use crate::nodes::drawable::sky::SkyPlugin;
 use crate::nodes::input;
+use crate::spectator_cam::SpectatorCameraPlugin;
 
 use bevy::MinimalPlugins;
 use bevy::a11y::AccessibilityPlugin;
@@ -88,6 +90,10 @@ struct CliArgs {
 	/// Force flatscreen mode and use the mouse pointer as a 3D pointer
 	#[clap(short, long, action)]
 	flatscreen: bool,
+
+	/// Replaces the flatscreen mode with a first person spectator camera
+	#[clap(short, long, action)]
+	spectator: bool,
 
 	/// Creates a transparent window fot the flatscreen mode
 	#[clap(short, long, action)]
@@ -326,10 +332,11 @@ fn bevy_loop(
 	{
 		let mut plugin = WinitPlugin::<WakeUp>::default();
 		plugin.run_on_any_thread = true;
-		plugins = plugins
-			.add(plugin)
-			.disable::<ScheduleRunnerPlugin>()
-			.add(FlatscreenInputPlugin);
+		plugins = plugins.add(plugin).disable::<ScheduleRunnerPlugin>();
+		plugins = match args.spectator {
+			true => plugins.add(SpectatorCameraPlugin),
+			false => plugins.add(FlatscreenInputPlugin),
+		};
 	}
 	app.add_plugins(
 		if !args.flatscreen {
