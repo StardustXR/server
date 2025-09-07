@@ -4,14 +4,14 @@ use crate::{
 	core::registry::Registry,
 	nodes::{
 		drawable::model::ModelPart,
-		items::panel::{Geometry, SurfaceId},
+		items::panel::{Geometry, PanelItem, SurfaceId},
 	},
 	wayland::{
 		Message, MessageSink,
 		core::buffer::BufferUsage,
 		presentation::{MonotonicTimestamp, PresentationFeedback},
 		util::{ClientExt, DoubleBuffer},
-		xdg::wm_base::XdgSurfaceRole,
+		xdg::backend::XdgBackend,
 	},
 };
 use bevy::{
@@ -22,7 +22,7 @@ use bevy::{
 use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
 use parking_lot::Mutex;
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock, Weak};
 use waynest::{
 	server::{
 		Client, Dispatcher, Result,
@@ -40,7 +40,8 @@ pub static WL_SURFACE_REGISTRY: Registry<Surface> = Registry::new();
 pub enum SurfaceRole {
 	Cursor,
 	Subsurface,
-	Xdg(OnceLock<XdgSurfaceRole>),
+	XdgToplevel,
+	XdgPopup,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +81,7 @@ pub struct Surface {
 	state: Mutex<DoubleBuffer<SurfaceState>>,
 	pub message_sink: MessageSink,
 	pub role: OnceLock<SurfaceRole>,
+	pub panel_item: Mutex<Weak<PanelItem<XdgBackend>>>,
 	on_commit_handlers: Mutex<Vec<OnCommitCallback>>,
 	material: OnceLock<Handle<BevyMaterial>>,
 	pending_material_applications: Registry<ModelPart>,
@@ -111,6 +113,7 @@ impl Surface {
 			state: Default::default(),
 			message_sink: client.message_sink(),
 			role: OnceLock::new(),
+			panel_item: Mutex::new(Weak::default()),
 			on_commit_handlers: Mutex::new(Vec::new()),
 			material: OnceLock::new(),
 			pending_material_applications: Registry::new(),
