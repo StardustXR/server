@@ -1,15 +1,17 @@
 use super::{
-	backend::XdgBackend,
 	positioner::{Positioner, PositionerData},
 	surface::Surface,
 };
 use crate::{
-	nodes::items::panel::{Geometry, PanelItem, SurfaceId},
+	nodes::items::panel::{Geometry, SurfaceId},
 	wayland::util::DoubleBuffer,
 };
 use parking_lot::Mutex;
 use rand::Rng;
-use std::sync::{Arc, Weak, atomic::AtomicBool};
+use std::sync::{
+	Arc,
+	atomic::{AtomicBool, Ordering},
+};
 use waynest::{
 	server::{Client, Dispatcher, Result, protocol::stable::xdg_shell::xdg_popup::XdgPopup},
 	wire::ObjectId,
@@ -20,8 +22,7 @@ pub struct Popup {
 	id: ObjectId,
 	version: u32,
 	parent: Arc<Surface>,
-	surface: Arc<Surface>,
-	pub panel_item: Weak<PanelItem<XdgBackend>>,
+	pub surface: Arc<Surface>,
 	positioner_data: Mutex<PositionerData>,
 	geometry: DoubleBuffer<Geometry>,
 	mapped: AtomicBool,
@@ -31,7 +32,6 @@ impl Popup {
 		id: ObjectId,
 		version: u32,
 		parent: Arc<Surface>,
-		panel_item: &Arc<PanelItem<XdgBackend>>,
 		surface: Arc<Surface>,
 		positioner: &Positioner,
 	) -> Self {
@@ -46,7 +46,6 @@ impl Popup {
 			version,
 			parent,
 			surface,
-			panel_item: Arc::downgrade(panel_item),
 			positioner_data: Mutex::new(positioner_data),
 			geometry: DoubleBuffer::new(positioner_data.infinite_geometry()),
 			mapped: AtomicBool::new(false),
@@ -90,11 +89,29 @@ impl XdgPopup for Popup {
 		)
 		.await?;
 		self.surface.reconfigure(client).await?;
+
+		let Some(panel_item) = self.surface.wl_surface.panel_item.lock().upgrade() else {
+			return Ok(());
+		};
+		panel_item
+			.backend
+			.reposition_child(&self.surface.wl_surface, geometry);
 		Ok(())
 	}
 
 	/// https://wayland.app/protocols/xdg-shell#xdg_popup:request:destroy
 	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
 		Ok(())
+	}
+}
+impl Drop for Popup {
+	fn drop(&mut self) {
+		if !self.mapped.load(Ordering::Relaxed) {
+			return;
+		}
+		let Some(panel_item) = self.surface.wl_surface.panel_item.lock().upgrade() else {
+			return;
+		};
+		panel_item.backend.remove_child(&self.surface.wl_surface);
 	}
 }

@@ -1,8 +1,8 @@
 use super::{popup::Popup, positioner::Positioner, toplevel::MappedInner};
+use crate::nodes::items::panel::{ChildInfo, SurfaceId};
 use crate::wayland::util::ClientExt;
 use crate::wayland::{core::surface::SurfaceRole, display::Display, xdg::toplevel::Toplevel};
 use std::sync::Arc;
-use waynest::server;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -81,23 +81,19 @@ impl XdgSurface for Surface {
 		let toplevel_weak = Arc::downgrade(&toplevel);
 		let pid = client.get::<Display>(ObjectId::DISPLAY).unwrap().pid;
 		let configured = self.configured.clone();
-		self.wl_surface.add_commit_handler(move |_surface, state| {
+		self.wl_surface.add_commit_handler(move |surface, state| {
 			let Some(toplevel) = toplevel_weak.upgrade() else {
 				return true;
 			};
 
-			// Only proceed if configured and has valid buffer
-			let has_valid_buffer = state
-				.buffer
-				.as_ref()
-				.is_some_and(|b| b.buffer.size().x > 0 && b.buffer.size().y > 0);
-
 			let mut mapped_lock = toplevel.mapped.lock();
 			if mapped_lock.is_none()
 				&& configured.load(std::sync::atomic::Ordering::SeqCst)
-				&& has_valid_buffer
+				&& state.has_valid_buffer()
 			{
-				mapped_lock.replace(MappedInner::create(toplevel.clone(), pid));
+				let mapped_inner = MappedInner::create(toplevel.clone(), pid);
+				*surface.panel_item.lock() = Arc::downgrade(&mapped_inner.panel_item);
+				mapped_lock.replace(mapped_inner);
 				return false;
 			}
 			true
@@ -152,53 +148,52 @@ impl XdgSurface for Surface {
 				)
 				.await;
 		};
-		let Some(panel_item) = parent.wl_surface.panel_item.lock().upgrade() else {
-			return Err(server::Error::Custom(
-				"Parent surface does not have a panel item".to_string(),
-			));
-		};
+		*self.wl_surface.panel_item.lock() = parent.wl_surface.panel_item.lock().clone();
 		let positioner = client.get::<Positioner>(positioner).unwrap();
 
 		let surface = client.get::<Surface>(self.id).unwrap();
 
 		let popup = client.insert(
 			popup_id,
-			Popup::new(
-				popup_id,
-				self.version,
-				parent,
-				&panel_item,
-				surface,
-				&positioner,
-			),
+			Popup::new(popup_id, self.version, parent.clone(), surface, &positioner),
 		);
 
 		let serial = client.next_event_serial();
 		self.configure(client, sender_id, serial).await?;
 
-		// let pid = client.get::<Display>(ObjectId::DISPLAY).unwrap().pid;
-		// let configured = self.configured.clone();
-		// surface.add_commit_handler(move |surface, state| {
-		// 	let Some(SurfaceRole::XDGPopup(popup)) = &mut *surface.role.lock() else {
-		// 		return true;
-		// 	};
+		let Some(SurfaceId::Child(id)) = self.wl_surface.surface_id.get() else {
+			return Ok(());
+		};
+		let Some(parent_id) = parent.wl_surface.surface_id.get() else {
+			return Ok(());
+		};
 
-		// 	// Only proceed if configured and has valid buffer
-		// 	let has_valid_buffer = state
-		// 		.buffer
-		// 		.as_ref()
-		// 		.is_some_and(|b| b.buffer.size().x > 0 && b.buffer.size().y > 0);
+		let child_info = ChildInfo {
+			id: *id,
+			parent: parent_id.clone(),
+			geometry: positioner.data().infinite_geometry(),
+			z_order: 1,
+			receives_input: true,
+		};
 
-		// 	let mut mapped_lock = popup.mapped.lock();
-		// 	if mapped_lock.is_none()
-		// 		&& configured.load(std::sync::atomic::Ordering::SeqCst)
-		// 		&& has_valid_buffer
-		// 	{
-		// 		mapped_lock.replace(Mapped::create(popup.clone(), pid));
-		// 		return false;
-		// 	}
-		// 	true
-		// });
+		let popup_weak = Arc::downgrade(&popup);
+		let configured = self.configured.clone();
+		self.wl_surface.add_commit_handler(move |surface, state| {
+			let Some(popup) = popup_weak.upgrade() else {
+				return true;
+			};
+			let Some(panel_item) = surface.panel_item.lock().upgrade() else {
+				return true;
+			};
+
+			if configured.load(std::sync::atomic::Ordering::SeqCst) && state.has_valid_buffer() {
+				panel_item
+					.backend
+					.add_child(&popup.surface.wl_surface, child_info.clone());
+				return false;
+			}
+			true
+		});
 
 		Ok(())
 	}

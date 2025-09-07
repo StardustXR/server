@@ -3,10 +3,16 @@ use crate::{
 	core::error::Result,
 	nodes::{
 		drawable::model::ModelPart,
-		items::panel::{Backend, Geometry, PanelItemInitData, SurfaceId, ToplevelInfo},
+		items::panel::{
+			Backend, ChildInfo, Geometry, PanelItem, PanelItemInitData, SurfaceId, ToplevelInfo,
+		},
 	},
-	wayland::{Message, core::surface::Surface},
+	wayland::{
+		Message,
+		core::{seat::SeatMessage, surface::Surface},
+	},
 };
+use dashmap::DashMap;
 use mint::Vector2;
 use std::sync::Arc;
 use std::sync::Weak;
@@ -15,12 +21,14 @@ use tracing;
 #[derive(Debug)]
 pub struct XdgBackend {
 	toplevel: Weak<Toplevel>,
+	children: DashMap<u64, (Weak<Surface>, ChildInfo)>,
 }
 
 impl XdgBackend {
 	pub fn new(toplevel: Arc<Toplevel>) -> Self {
 		Self {
 			toplevel: Arc::downgrade(&toplevel),
+			children: DashMap::new(),
 		}
 	}
 
@@ -32,14 +40,59 @@ impl XdgBackend {
 			.expect("Toplevel should always be valid while XdgBackend exists")
 	}
 
-	fn surface_from_id(&self, id: SurfaceId) -> Option<Arc<Surface>> {
+	pub fn panel_item(&self) -> Option<Arc<PanelItem<XdgBackend>>> {
+		self.toplevel().wl_surface().panel_item.lock().upgrade()
+	}
+
+	fn surface_from_id(&self, id: &SurfaceId) -> Option<Arc<Surface>> {
 		match id {
 			SurfaceId::Toplevel(_) => Some(self.toplevel().wl_surface().clone()),
-			SurfaceId::Child(_) => None,
+			SurfaceId::Child(id) => self.children.get(id).as_deref().and_then(|c| c.0.upgrade()),
 		}
 	}
-}
 
+	pub fn add_child(&self, surface: &Arc<Surface>, info: ChildInfo) {
+		let Some(SurfaceId::Child(id)) = surface.surface_id.get().cloned() else {
+			return;
+		};
+		self.children
+			.insert(id, (Arc::downgrade(surface), info.clone()));
+
+		let Some(panel_item) = self.panel_item() else {
+			tracing::error!("Couldn't find panel item in add_child");
+			return;
+		};
+		panel_item.create_child(id, &info);
+	}
+
+	pub fn reposition_child(&self, surface: &Arc<Surface>, geometry: Geometry) {
+		let Some(SurfaceId::Child(id)) = surface.surface_id.get() else {
+			return;
+		};
+
+		if let Some(mut child) = self.children.get_mut(&id) {
+			child.1.geometry = geometry;
+		}
+		let Some(panel_item) = self.panel_item() else {
+			tracing::error!("Couldn't find panel item in reposition_child");
+			return;
+		};
+		panel_item.reposition_child(*id, &geometry);
+	}
+
+	pub fn remove_child(&self, surface: &Surface) {
+		let Some(SurfaceId::Child(id)) = surface.surface_id.get() else {
+			return;
+		};
+		self.children.remove(id);
+
+		let Some(panel_item) = self.panel_item() else {
+			tracing::error!("Couldn't find panel item in remove_child");
+			return;
+		};
+		panel_item.destroy_child(*id);
+	}
+}
 impl Backend for XdgBackend {
 	fn start_data(&self) -> Result<PanelItemInitData> {
 		let surface_state = self.toplevel().wl_surface().current_state();
@@ -76,7 +129,7 @@ impl Backend for XdgBackend {
 
 	fn apply_cursor_material(&self, _model_part: &Arc<ModelPart>) {}
 	fn apply_surface_material(&self, surface: SurfaceId, model_part: &Arc<ModelPart>) {
-		if let Some(surface) = self.surface_from_id(surface) {
+		if let Some(surface) = self.surface_from_id(&surface) {
 			surface.apply_material(model_part);
 		}
 	}
@@ -123,30 +176,29 @@ impl Backend for XdgBackend {
 	}
 
 	fn pointer_motion(&self, surface: &SurfaceId, position: Vector2<f32>) {
-		if let Some(surface) = self.surface_from_id(surface.clone()) {
+		if let Some(surface) = self.surface_from_id(surface) {
 			let _ = self
 				.toplevel()
 				.wl_surface()
 				.message_sink
-				.send(Message::Seat(
-					crate::wayland::core::seat::SeatMessage::PointerMotion { surface, position },
-				));
+				.send(Message::Seat(SeatMessage::PointerMotion {
+					surface,
+					position,
+				}));
 		}
 	}
 
 	fn pointer_button(&self, surface: &SurfaceId, button: u32, pressed: bool) {
-		if let Some(surface) = self.surface_from_id(surface.clone()) {
+		if let Some(surface) = self.surface_from_id(surface) {
 			let _ = self
 				.toplevel()
 				.wl_surface()
 				.message_sink
-				.send(Message::Seat(
-					crate::wayland::core::seat::SeatMessage::PointerButton {
-						surface,
-						button,
-						pressed,
-					},
-				));
+				.send(Message::Seat(SeatMessage::PointerButton {
+					surface,
+					button,
+					pressed,
+				}));
 		}
 	}
 
@@ -156,18 +208,16 @@ impl Backend for XdgBackend {
 		scroll_distance: Option<Vector2<f32>>,
 		scroll_steps: Option<Vector2<f32>>,
 	) {
-		if let Some(surface) = self.surface_from_id(surface.clone()) {
+		if let Some(surface) = self.surface_from_id(surface) {
 			let _ = self
 				.toplevel()
 				.wl_surface()
 				.message_sink
-				.send(Message::Seat(
-					crate::wayland::core::seat::SeatMessage::PointerScroll {
-						surface,
-						scroll_distance,
-						scroll_steps,
-					},
-				));
+				.send(Message::Seat(SeatMessage::PointerScroll {
+					surface,
+					scroll_distance,
+					scroll_steps,
+				}));
 		}
 	}
 
@@ -177,19 +227,17 @@ impl Backend for XdgBackend {
 			key,
 			if pressed { "pressed" } else { "released" }
 		);
-		if let Some(surface) = self.surface_from_id(surface.clone()) {
+		if let Some(surface) = self.surface_from_id(surface) {
 			let _ = self
 				.toplevel()
 				.wl_surface()
 				.message_sink
-				.send(Message::Seat(
-					crate::wayland::core::seat::SeatMessage::KeyboardKey {
-						surface,
-						keymap_id,
-						key,
-						pressed,
-					},
-				));
+				.send(Message::Seat(SeatMessage::KeyboardKey {
+					surface,
+					keymap_id,
+					key,
+					pressed,
+				}));
 		}
 	}
 
@@ -200,18 +248,16 @@ impl Backend for XdgBackend {
 			position.x,
 			position.y
 		);
-		if let Some(surface) = self.surface_from_id(surface.clone()) {
+		if let Some(surface) = self.surface_from_id(surface) {
 			let _ = self
 				.toplevel()
 				.wl_surface()
 				.message_sink
-				.send(Message::Seat(
-					crate::wayland::core::seat::SeatMessage::TouchDown {
-						surface,
-						id,
-						position,
-					},
-				));
+				.send(Message::Seat(SeatMessage::TouchDown {
+					surface,
+					id,
+					position,
+				}));
 		}
 	}
 
@@ -223,24 +269,27 @@ impl Backend for XdgBackend {
 			position.y
 		);
 		let toplevel = self.toplevel();
-		let _ = toplevel.wl_surface().message_sink.send(Message::Seat(
-			crate::wayland::core::seat::SeatMessage::TouchMove { id, position },
-		));
+		let _ = toplevel
+			.wl_surface()
+			.message_sink
+			.send(Message::Seat(SeatMessage::TouchMove { id, position }));
 	}
 
 	fn touch_up(&self, id: u32) {
 		tracing::debug!("Backend: Touch up {}", id);
 		let toplevel = self.toplevel();
-		let _ = toplevel.wl_surface().message_sink.send(Message::Seat(
-			crate::wayland::core::seat::SeatMessage::TouchUp { id },
-		));
+		let _ = toplevel
+			.wl_surface()
+			.message_sink
+			.send(Message::Seat(SeatMessage::TouchUp { id }));
 	}
 
 	fn reset_input(&self) {
 		tracing::debug!("Backend: Reset input");
 		let toplevel = self.toplevel();
-		let _ = toplevel.wl_surface().message_sink.send(Message::Seat(
-			crate::wayland::core::seat::SeatMessage::Reset,
-		));
+		let _ = toplevel
+			.wl_surface()
+			.message_sink
+			.send(Message::Seat(SeatMessage::Reset));
 	}
 }

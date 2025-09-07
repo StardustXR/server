@@ -71,6 +71,13 @@ impl Default for SurfaceState {
 		}
 	}
 }
+impl SurfaceState {
+	pub fn has_valid_buffer(&self) -> bool {
+		self.buffer
+			.as_ref()
+			.is_some_and(|b| b.buffer.size().x > 0 && b.buffer.size().y > 0)
+	}
+}
 
 // if returning false, don't run this callback again... just remove it
 pub type OnCommitCallback = Box<dyn Fn(&Surface, &SurfaceState) -> bool + Send + Sync>;

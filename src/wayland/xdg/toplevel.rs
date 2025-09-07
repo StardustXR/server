@@ -18,16 +18,16 @@ use waynest::{
 #[derive(Debug)]
 pub struct MappedInner {
 	pub panel_item_node: Arc<Node>,
-	pub _panel_item: Arc<PanelItem<XdgBackend>>,
+	pub panel_item: Arc<PanelItem<XdgBackend>>,
 }
 impl MappedInner {
 	pub fn create(toplevel: Arc<Toplevel>, pid: Option<i32>) -> Self {
-		let (panel_item_node, _panel_item) =
+		let (panel_item_node, panel_item) =
 			PanelItem::create(Box::new(XdgBackend::new(toplevel)), pid);
 
 		Self {
 			panel_item_node,
-			_panel_item,
+			panel_item,
 		}
 	}
 }
