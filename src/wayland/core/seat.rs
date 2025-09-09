@@ -154,6 +154,13 @@ impl Seat {
 		}
 		Ok(())
 	}
+
+	pub async fn cursor_surface(&self) -> Option<Arc<Surface>> {
+		let Some(pointer) = self.pointer.get() else {
+			return None;
+		};
+		pointer.cursor_surface().await
+	}
 }
 impl WlSeat for Seat {
 	/// https://wayland.app/protocols/wayland#wl_seat:request:get_pointer

@@ -4,7 +4,7 @@ use crate::{
 		Node,
 		items::panel::{PanelItem, SurfaceId},
 	},
-	wayland::core::surface::Surface,
+	wayland::core::{seat::Seat, surface::Surface},
 };
 use mint::Vector2;
 use parking_lot::Mutex;
@@ -21,9 +21,9 @@ pub struct MappedInner {
 	pub panel_item: Arc<PanelItem<XdgBackend>>,
 }
 impl MappedInner {
-	pub fn create(toplevel: Arc<Toplevel>, pid: Option<i32>) -> Self {
+	pub fn create(seat: &Arc<Seat>, toplevel: &Arc<Toplevel>, pid: Option<i32>) -> Self {
 		let (panel_item_node, panel_item) =
-			PanelItem::create(Box::new(XdgBackend::new(toplevel)), pid);
+			PanelItem::create(Box::new(XdgBackend::new(seat, toplevel)), pid);
 
 		Self {
 			panel_item_node,

@@ -80,7 +80,9 @@ impl XdgSurface for Surface {
 		toplevel.reconfigure(client).await?;
 
 		let toplevel_weak = Arc::downgrade(&toplevel);
-		let pid = client.get::<Display>(ObjectId::DISPLAY).unwrap().pid;
+		let display = client.get::<Display>(ObjectId::DISPLAY).unwrap();
+		let seat = Arc::downgrade(display.seat.get().unwrap());
+		let pid = display.pid;
 		let configured = self.configured.clone();
 		self.wl_surface.add_commit_handler(move |surface, state| {
 			let Some(toplevel) = toplevel_weak.upgrade() else {
@@ -92,7 +94,7 @@ impl XdgSurface for Surface {
 				&& configured.load(std::sync::atomic::Ordering::SeqCst)
 				&& state.has_valid_buffer()
 			{
-				let mapped_inner = MappedInner::create(toplevel.clone(), pid);
+				let mapped_inner = MappedInner::create(&seat.upgrade().unwrap(), &toplevel, pid);
 				*surface.panel_item.lock() = Arc::downgrade(&mapped_inner.panel_item);
 				mapped_lock.replace(mapped_inner);
 				return false;

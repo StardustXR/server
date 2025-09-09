@@ -1,3 +1,4 @@
+use crate::nodes::items::panel::Geometry;
 use crate::wayland::core::{seat::fixed_from_f32, surface::Surface};
 use mint::Vector2;
 use std::sync::Arc;
@@ -15,6 +16,7 @@ pub struct Pointer {
 	pub id: ObjectId,
 	version: u32,
 	focused_surface: Mutex<Weak<Surface>>,
+	cursor_surface: Mutex<Option<Arc<Surface>>>,
 }
 impl Pointer {
 	pub fn new(id: ObjectId, version: u32) -> Self {
@@ -22,6 +24,7 @@ impl Pointer {
 			id,
 			version,
 			focused_surface: Mutex::new(Weak::new()),
+			cursor_surface: Mutex::new(None),
 		}
 	}
 
@@ -167,19 +170,45 @@ impl Pointer {
 		*focused = Weak::new();
 		Ok(())
 	}
+
+	pub async fn cursor_surface(&self) -> Option<Arc<Surface>> {
+		self.cursor_surface.lock().await.clone()
+	}
 }
 
 impl WlPointer for Pointer {
 	/// https://wayland.app/protocols/wayland#wl_pointer:request:set_cursor
 	async fn set_cursor(
 		&self,
-		_client: &mut Client,
+		client: &mut Client,
 		_sender_id: ObjectId,
 		_serial: u32,
-		_surface: Option<ObjectId>,
-		_hotspot_x: i32,
-		_hotspot_y: i32,
+		surface: Option<ObjectId>,
+		hotspot_x: i32,
+		hotspot_y: i32,
 	) -> Result<()> {
+		if let Some(focused_surface) = self.focused_surface.lock().await.upgrade()
+			&& let Some(panel_item) = focused_surface.panel_item.lock().upgrade()
+		{
+			panel_item.set_cursor(surface.and_then(|s| client.get::<Surface>(s)).map(|s| {
+				let size = s
+					.current_state()
+					.buffer
+					.map(|b| b.buffer.size())
+					.unwrap_or([16; 2].into());
+				Geometry {
+					origin: [-hotspot_x, -hotspot_y].into(),
+					size: [size.x as u32, size.y as u32].into(),
+				}
+			}));
+		}
+		let Some(surface) = surface else {
+			return Ok(());
+		};
+		let Some(surface) = client.get::<Surface>(surface) else {
+			return Ok(());
+		};
+		self.cursor_surface.lock().await.replace(surface);
 		Ok(())
 	}
 

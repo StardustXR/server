@@ -1,6 +1,6 @@
 use super::toplevel::Toplevel;
 use crate::{
-	core::error::Result,
+	core::{error::Result, task},
 	nodes::{
 		drawable::model::ModelPart,
 		items::panel::{
@@ -9,7 +9,10 @@ use crate::{
 	},
 	wayland::{
 		Message,
-		core::{seat::SeatMessage, surface::Surface},
+		core::{
+			seat::{Seat, SeatMessage},
+			surface::Surface,
+		},
 	},
 };
 use dashmap::DashMap;
@@ -20,14 +23,16 @@ use tracing;
 
 #[derive(Debug)]
 pub struct XdgBackend {
+	seat: Weak<Seat>,
 	toplevel: Weak<Toplevel>,
 	children: DashMap<u64, (Weak<Surface>, ChildInfo)>,
 }
 
 impl XdgBackend {
-	pub fn new(toplevel: Arc<Toplevel>) -> Self {
+	pub fn new(seat: &Arc<Seat>, toplevel: &Arc<Toplevel>) -> Self {
 		Self {
-			toplevel: Arc::downgrade(&toplevel),
+			seat: Arc::downgrade(seat),
+			toplevel: Arc::downgrade(toplevel),
 			children: DashMap::new(),
 		}
 	}
@@ -127,7 +132,18 @@ impl Backend for XdgBackend {
 		})
 	}
 
-	fn apply_cursor_material(&self, _model_part: &Arc<ModelPart>) {}
+	fn apply_cursor_material(&self, model_part: &Arc<ModelPart>) {
+		let model_part = model_part.clone();
+		let Some(seat) = self.seat.upgrade() else {
+			return;
+		};
+		let _ = task::new(|| "apply cursor material", async move {
+			let Some(cursor) = seat.cursor_surface().await else {
+				return;
+			};
+			cursor.apply_material(&model_part);
+		});
+	}
 	fn apply_surface_material(&self, surface: SurfaceId, model_part: &Arc<ModelPart>) {
 		if let Some(surface) = self.surface_from_id(&surface) {
 			surface.apply_material(model_part);
