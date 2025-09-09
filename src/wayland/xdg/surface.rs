@@ -3,6 +3,7 @@ use crate::nodes::items::panel::{ChildInfo, SurfaceId};
 use crate::wayland::util::ClientExt;
 use crate::wayland::{core::surface::SurfaceRole, display::Display, xdg::toplevel::Toplevel};
 use std::sync::Arc;
+use waynest::server::protocol::stable::xdg_shell::xdg_popup::XdgPopup;
 pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
 use waynest::{
 	server::{Client, Dispatcher, Result},
@@ -158,6 +159,7 @@ impl XdgSurface for Surface {
 			Popup::new(popup_id, self.version, parent.clone(), surface, &positioner),
 		);
 
+		popup.configure(client, popup_id, 0, 0, 0, 0).await?;
 		let serial = client.next_event_serial();
 		self.configure(client, sender_id, serial).await?;
 
