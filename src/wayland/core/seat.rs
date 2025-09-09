@@ -156,10 +156,7 @@ impl Seat {
 	}
 
 	pub async fn cursor_surface(&self) -> Option<Arc<Surface>> {
-		let Some(pointer) = self.pointer.get() else {
-			return None;
-		};
-		pointer.cursor_surface().await
+		self.pointer.get()?.cursor_surface().await
 	}
 }
 impl WlSeat for Seat {

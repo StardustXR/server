@@ -197,7 +197,7 @@ impl WlPointer for Pointer {
 					.map(|b| b.buffer.size())
 					.unwrap_or([16; 2].into());
 				Geometry {
-					origin: [-hotspot_x, -hotspot_y].into(),
+					origin: [hotspot_x, hotspot_y].into(),
 					size: [size.x as u32, size.y as u32].into(),
 				}
 			}));
