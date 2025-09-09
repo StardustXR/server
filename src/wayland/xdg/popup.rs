@@ -8,10 +8,7 @@ use crate::{
 };
 use parking_lot::Mutex;
 use rand::Rng;
-use std::sync::{
-	Arc,
-	atomic::{AtomicBool, Ordering},
-};
+use std::sync::Arc;
 use waynest::{
 	server::{Client, Dispatcher, Result, protocol::stable::xdg_shell::xdg_popup::XdgPopup},
 	wire::ObjectId,
@@ -25,7 +22,6 @@ pub struct Popup {
 	pub surface: Arc<Surface>,
 	positioner_data: Mutex<PositionerData>,
 	geometry: DoubleBuffer<Geometry>,
-	mapped: AtomicBool,
 }
 impl Popup {
 	pub fn new(
@@ -48,7 +44,6 @@ impl Popup {
 			surface,
 			positioner_data: Mutex::new(positioner_data),
 			geometry: DoubleBuffer::new(positioner_data.infinite_geometry()),
-			mapped: AtomicBool::new(false),
 		}
 	}
 }
@@ -106,9 +101,6 @@ impl XdgPopup for Popup {
 }
 impl Drop for Popup {
 	fn drop(&mut self) {
-		if !self.mapped.load(Ordering::Relaxed) {
-			return;
-		}
 		let Some(panel_item) = self.surface.wl_surface.panel_item.lock().upgrade() else {
 			return;
 		};

@@ -70,7 +70,7 @@ impl XdgBackend {
 			return;
 		};
 
-		if let Some(mut child) = self.children.get_mut(&id) {
+		if let Some(mut child) = self.children.get_mut(id) {
 			child.1.geometry = geometry;
 		}
 		let Some(panel_item) = self.panel_item() else {
