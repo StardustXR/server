@@ -156,10 +156,7 @@ impl XdgSurface for Surface {
 
 		let surface = client.get::<Surface>(self.id).unwrap();
 
-		let popup = client.insert(
-			popup_id,
-			Popup::new(popup_id, self.version, parent.clone(), surface, &positioner),
-		);
+		let popup = client.insert(popup_id, Popup::new(self.version, surface, &positioner));
 
 		popup.configure(client, popup_id, 0, 0, 0, 0).await?;
 		let serial = client.next_event_serial();

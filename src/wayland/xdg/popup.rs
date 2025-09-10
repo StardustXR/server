@@ -2,10 +2,7 @@ use super::{
 	positioner::{Positioner, PositionerData},
 	surface::Surface,
 };
-use crate::{
-	nodes::items::panel::{Geometry, SurfaceId},
-	wayland::util::DoubleBuffer,
-};
+use crate::nodes::items::panel::SurfaceId;
 use parking_lot::Mutex;
 use rand::Rng;
 use std::sync::Arc;
@@ -16,21 +13,12 @@ use waynest::{
 
 #[derive(Debug, Dispatcher)]
 pub struct Popup {
-	id: ObjectId,
 	version: u32,
-	parent: Arc<Surface>,
 	pub surface: Arc<Surface>,
 	positioner_data: Mutex<PositionerData>,
-	geometry: DoubleBuffer<Geometry>,
 }
 impl Popup {
-	pub fn new(
-		id: ObjectId,
-		version: u32,
-		parent: Arc<Surface>,
-		surface: Arc<Surface>,
-		positioner: &Positioner,
-	) -> Self {
+	pub fn new(version: u32, surface: Arc<Surface>, positioner: &Positioner) -> Self {
 		let _ = surface
 			.wl_surface
 			.surface_id
@@ -38,12 +26,9 @@ impl Popup {
 
 		let positioner_data = positioner.data();
 		Self {
-			id,
 			version,
-			parent,
 			surface,
 			positioner_data: Mutex::new(positioner_data),
-			geometry: DoubleBuffer::new(positioner_data.infinite_geometry()),
 		}
 	}
 }
