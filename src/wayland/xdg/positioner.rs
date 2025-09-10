@@ -17,11 +17,37 @@ pub struct PositionerData {
 	pub anchor_rect: Geometry,
 	pub offset: Vector2<i32>,
 	pub anchor: Anchor,
+	pub gravity: Gravity,
 	pub constraint_adjustment: ConstraintAdjustment,
 	pub reactive: bool,
 	pub parent_size: Vector2<u32>,
 }
 impl PositionerData {
+	fn gravity_has_edge(&self, edge: Gravity) -> bool {
+		match edge {
+			Gravity::Top => {
+				self.gravity == Gravity::Top
+					|| self.gravity == Gravity::TopLeft
+					|| self.gravity == Gravity::TopRight
+			}
+			Gravity::Bottom => {
+				self.gravity == Gravity::Bottom
+					|| self.gravity == Gravity::BottomLeft
+					|| self.gravity == Gravity::BottomRight
+			}
+			Gravity::Left => {
+				self.gravity == Gravity::Left
+					|| self.gravity == Gravity::TopLeft
+					|| self.gravity == Gravity::BottomLeft
+			}
+			Gravity::Right => {
+				self.gravity == Gravity::Right
+					|| self.gravity == Gravity::TopRight
+					|| self.gravity == Gravity::BottomRight
+			}
+			_ => unreachable!(),
+		}
+	}
 	pub fn infinite_geometry(&self) -> Geometry {
 		let anchor_point = match self.anchor {
 			Anchor::TopLeft => self.anchor_rect.origin,
@@ -67,30 +93,29 @@ impl PositionerData {
 			.into(),
 		};
 
-		let mut position = anchor_point;
-
-		// Apply gravity
-		if self
-			.constraint_adjustment
-			.contains(ConstraintAdjustment::FlipX)
-		{
-			position.x -= self.size.x as i32;
-		}
-		if self
-			.constraint_adjustment
-			.contains(ConstraintAdjustment::FlipY)
-		{
-			position.y -= self.size.y as i32;
-		}
-
-		// Apply offset
-		position.x += self.offset.x;
-		position.y += self.offset.y;
-
-		Geometry {
-			origin: position,
+		let mut geometry = Geometry {
+			origin: [
+				anchor_point.x + self.offset.x,
+				anchor_point.y + self.offset.y,
+			]
+			.into(),
 			size: self.size,
+		};
+
+		// apply gravity
+		if self.gravity_has_edge(Gravity::Top) {
+			geometry.origin.y -= geometry.size.y as i32;
+		} else if !self.gravity_has_edge(Gravity::Bottom) {
+			geometry.origin.y -= (geometry.size.y / 2) as i32;
 		}
+
+		if self.gravity_has_edge(Gravity::Left) {
+			geometry.origin.x -= geometry.size.x as i32;
+		} else if !self.gravity_has_edge(Gravity::Right) {
+			geometry.origin.x -= (geometry.size.x / 2) as i32;
+		}
+
+		geometry
 	}
 }
 impl Default for PositionerData {
@@ -100,6 +125,7 @@ impl Default for PositionerData {
 			anchor_rect: Default::default(),
 			offset: [0, 0].into(),
 			anchor: Anchor::TopLeft,
+			gravity: Gravity::TopLeft,
 			constraint_adjustment: ConstraintAdjustment::empty(),
 			reactive: false,
 			parent_size: [0; 2].into(),
@@ -168,8 +194,10 @@ impl XdgPositioner for Positioner {
 		&self,
 		_client: &mut Client,
 		_sender_id: ObjectId,
-		_gravity: Gravity,
+		gravity: Gravity,
 	) -> Result<()> {
+		let mut data = self.data.lock();
+		data.gravity = gravity;
 		Ok(())
 	}
 
