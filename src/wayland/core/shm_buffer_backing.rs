@@ -47,7 +47,7 @@ impl ShmBufferBacking {
 			return None;
 		}
 		let data_len = self.size.x * self.size.y * 4;
-		if src_data_lock.len() != data_len {
+		if src_data_lock.len() < data_len {
 			return None;
 		}
 		let mut dst_cursor = 0;
