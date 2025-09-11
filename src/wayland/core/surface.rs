@@ -142,9 +142,10 @@ impl Surface {
 							"Surface has an incomparible role".to_string(),
 						)
 						.await?;
-					Err(server::Error::Custom(
-						"Surface has an incompatible role".to_string(),
-					))
+					Err(server::Error::Custom(format!(
+						"Surface {} has role {current_role:?} but tried to set to {role:?}",
+						self.id
+					)))
 				}
 			}
 			None => {
