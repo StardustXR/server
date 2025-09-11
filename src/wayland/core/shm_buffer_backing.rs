@@ -1,14 +1,13 @@
 use crate::wayland::{RENDER_DEVICE, vulkano_data::VULKANO_CONTEXT};
 
 use super::shm_pool::ShmPool;
+use bevy::asset::RenderAssetUsages;
 use bevy::{
-	asset::{Assets, Handle, RenderAssetUsages},
+	asset::{Assets, Handle},
 	image::Image,
-	render::render_resource::{Extent3d, TextureDimension, TextureFormat},
 };
 use bevy_dmabuf::{
 	dmatex::{Dmatex, DmatexPlane, Resolution},
-	format_mapping::{drm_fourcc_to_vk_format, vk_format_to_drm_fourcc},
 	import::{DropCallback, ImportedDmatexs, ImportedTexture, import_texture},
 };
 use drm_fourcc::DrmFourcc;
@@ -20,7 +19,7 @@ use std::{
 };
 use tracing::debug_span;
 use vulkano::{
-	buffer::{BufferCreateFlags, BufferUsage},
+	buffer::BufferUsage,
 	command_buffer::{
 		AutoCommandBufferBuilder, CommandBufferUsage, CopyBufferToImageInfo,
 		PrimaryCommandBufferAbstract,
@@ -31,7 +30,7 @@ use vulkano::{
 	},
 	memory::{
 		DedicatedAllocation, DeviceMemory, ExternalMemoryHandleType, MemoryAllocateInfo,
-		MemoryPropertyFlags, ResourceMemory,
+		ResourceMemory,
 		allocator::{AllocationCreateInfo, MemoryTypeFilter},
 	},
 	sync::GpuFuture,
