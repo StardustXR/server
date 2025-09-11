@@ -23,6 +23,7 @@ use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
 use parking_lot::Mutex;
 use std::sync::{Arc, OnceLock, Weak};
+use tokio::task::LocalSet;
 use waynest::{
 	server::{
 		Client, Dispatcher, Result,
@@ -370,6 +371,19 @@ impl WlSurface for Surface {
 	/// https://wayland.app/protocols/wayland#wl_surface:request:commit
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn commit(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+		// we want the upload to complete before we give the image to bevy
+		let buffer_option = self
+			.state
+			.lock()
+			.pending
+			.buffer
+			.as_ref()
+			.map(|b| b.buffer.clone());
+		if let Some(buffer) = buffer_option {
+			tokio::task::spawn_blocking(move || buffer.on_commit())
+				.await
+				.unwrap();
+		}
 		self.state.lock().apply();
 		self.state.lock().pending.frame_callbacks.clear();
 		let current_state = self.current_state();
