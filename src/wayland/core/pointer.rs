@@ -11,6 +11,8 @@ use waynest::{
 	wire::ObjectId,
 };
 
+use super::surface::SurfaceRole;
+
 #[derive(Dispatcher)]
 pub struct Pointer {
 	pub id: ObjectId,
@@ -208,6 +210,8 @@ impl WlPointer for Pointer {
 		let Some(surface) = client.get::<Surface>(surface) else {
 			return Ok(());
 		};
+
+		surface.try_set_role(client, SurfaceRole::Cursor).await?;
 		self.cursor_surface.lock().await.replace(surface);
 		Ok(())
 	}

@@ -59,23 +59,9 @@ impl XdgSurface for Surface {
 			),
 		);
 
-		// Check if the surface already has an XDG role
-		match self.wl_surface.role.get() {
-			Some(SurfaceRole::XdgToplevel) => (),
-			None => {
-				let _ = self.wl_surface.role.set(SurfaceRole::XdgToplevel);
-			}
-			_ => {
-				return client
-					.protocol_error(
-						sender_id,
-						toplevel_id,
-						1, // XDG_WM_BASE_ERROR_ROLE
-						"Surface has a non-XDG role".to_string(),
-					)
-					.await;
-			}
-		}
+		self.wl_surface
+			.try_set_role(client, SurfaceRole::XdgToplevel)
+			.await?;
 
 		toplevel.reconfigure(client).await?;
 
@@ -114,22 +100,9 @@ impl XdgSurface for Surface {
 		parent: Option<ObjectId>,
 		positioner: ObjectId,
 	) -> Result<()> {
-		match self.wl_surface.role.get() {
-			Some(SurfaceRole::XdgPopup) => (),
-			None => {
-				let _ = self.wl_surface.role.set(SurfaceRole::XdgPopup);
-			}
-			_ => {
-				return client
-					.protocol_error(
-						sender_id,
-						popup_id,
-						1, // XDG_WM_BASE_ERROR_ROLE
-						"Surface has an incomparible role".to_string(),
-					)
-					.await;
-			}
-		}
+		self.wl_surface
+			.try_set_role(client, SurfaceRole::XdgPopup)
+			.await?;
 
 		let Some(parent) = parent else {
 			return client

@@ -26,7 +26,7 @@ use std::sync::{Arc, OnceLock, Weak};
 use tokio::task::LocalSet;
 use waynest::{
 	server::{
-		Client, Dispatcher, Result,
+		self, Client, Dispatcher, Result,
 		protocol::{
 			core::wayland::{wl_output::Transform, wl_surface::*},
 			stable::presentation_time::wp_presentation_feedback::{Kind, WpPresentationFeedback},
@@ -37,7 +37,7 @@ use waynest::{
 
 pub static WL_SURFACE_REGISTRY: Registry<Surface> = Registry::new();
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SurfaceRole {
 	Cursor,
 	Subsurface,
@@ -126,6 +126,32 @@ impl Surface {
 			material: OnceLock::new(),
 			pending_material_applications: Registry::new(),
 			presentation_feedback: Mutex::default(),
+		}
+	}
+
+	pub async fn try_set_role(&self, client: &mut Client, role: SurfaceRole) -> Result<()> {
+		match self.role.get().cloned() {
+			Some(current_role) => {
+				if current_role == role {
+					Ok(())
+				} else {
+					client
+						.protocol_error(
+							self.id,
+							self.id,
+							1, // XDG_WM_BASE_ERROR_ROLE
+							"Surface has an incomparible role".to_string(),
+						)
+						.await?;
+					Err(server::Error::Custom(
+						"Surface has an incompatible role".to_string(),
+					))
+				}
+			}
+			None => {
+				let _ = self.role.set(SurfaceRole::XdgPopup);
+				Ok(())
+			}
 		}
 	}
 
