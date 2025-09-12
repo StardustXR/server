@@ -30,6 +30,7 @@ use bevy::render::{Render, RenderApp};
 use bevy::{asset::Assets, ecs::resource::Resource, image::Image};
 use bevy_dmabuf::import::ImportedDmatexs;
 use bevy_mod_openxr::render::end_frame;
+use bevy_mod_openxr::resources::{OxrFrameState, OxrInstance};
 use bevy_mod_xr::session::XrRenderSet;
 use cluFlock::{FlockLock, ToFlock};
 use core::buffer::BufferUsage;
@@ -37,6 +38,7 @@ use core::{buffer::Buffer, callback::Callback, surface::WL_SURFACE_REGISTRY};
 use display::Display;
 use mint::Vector2;
 use std::fs::File;
+use std::mem::MaybeUninit;
 use std::time::Duration;
 use std::{
 	fs::{self, OpenOptions},
@@ -381,11 +383,38 @@ fn update_graphics(
 }
 
 #[instrument(level = "debug", name = "Wayland frame", skip_all)]
-fn submit_frame_timings(mut frame_count: Local<u64>) {
+fn submit_frame_timings(
+	mut frame_count: Local<u64>,
+	instance: Option<Res<OxrInstance>>,
+	frame_state: Option<Res<OxrFrameState>>,
+) {
 	*frame_count += 1;
+	let display_timestamp = frame_state
+		.and_then(|state| Some((state, instance?)))
+		.and_then(|(state, instance)| {
+			instance
+				.exts()
+				.khr_convert_timespec_time
+				.and_then(|v| unsafe {
+					let mut out = MaybeUninit::uninit();
+					let result = (v.convert_time_to_timespec_time)(
+						instance.as_raw(),
+						state.predicted_display_time,
+						out.as_mut_ptr(),
+					);
+					if result != openxr::sys::Result::SUCCESS {
+						return None;
+					}
+					let v = out.assume_init();
+					Some(rustix::time::Timespec {
+						tv_sec: v.tv_sec,
+						tv_nsec: v.tv_nsec,
+					})
+				})
+		})
+		.unwrap_or_else(|| rustix::time::clock_gettime(rustix::time::ClockId::Monotonic))
+		.into();
 	for surface in WL_SURFACE_REGISTRY.get_valid_contents() {
-		let display_timestamp =
-			rustix::time::clock_gettime(rustix::time::ClockId::Monotonic).into();
 		surface.submit_presentation_feedback(display_timestamp, *frame_count);
 	}
 }

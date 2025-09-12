@@ -11,6 +11,7 @@ use waynest::{
 
 use crate::wayland::core::surface::Surface;
 
+#[derive(Clone, Copy, Debug)]
 pub struct MonotonicTimestamp {
 	secs: u64,
 	subsec_nanos: u32,
