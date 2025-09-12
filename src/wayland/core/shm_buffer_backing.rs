@@ -1,7 +1,5 @@
-use crate::wayland::{RENDER_DEVICE, vulkano_data::VULKANO_CONTEXT};
-
 use super::shm_pool::ShmPool;
-use bevy::asset::RenderAssetUsages;
+use crate::wayland::{RENDER_DEVICE, vulkano_data::VULKANO_CONTEXT};
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image,
@@ -36,6 +34,7 @@ use vulkano::{
 	sync::GpuFuture,
 };
 use waynest::server::protocol::core::wayland::wl_shm::Format;
+
 /// Parameters for a shared memory buffer
 pub struct ShmBufferBacking {
 	pool: Arc<ShmPool>,
