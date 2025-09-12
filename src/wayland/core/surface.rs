@@ -149,7 +149,7 @@ impl Surface {
 				}
 			}
 			None => {
-				let _ = self.role.set(SurfaceRole::XdgPopup);
+				let _ = self.role.set(role);
 				Ok(())
 			}
 		}
