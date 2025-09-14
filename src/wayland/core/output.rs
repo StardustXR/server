@@ -26,6 +26,16 @@ impl Output {
 		)
 		.await?;
 
+		if self.version >= 4 {
+			self.name(client, self.id, "Stardust Virtual Display".to_string())
+				.await?;
+			self.description(
+				client,
+				self.id,
+				"I needed this to account for dumb clients".to_string(),
+			)
+			.await?;
+		}
 		self.mode(client, self.id, Mode::Current, 2048, 2048, i32::MAX)
 			.await?;
 
