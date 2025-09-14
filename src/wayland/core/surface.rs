@@ -57,7 +57,7 @@ pub struct SurfaceState {
 	pub geometry: Option<Geometry>,
 	pub min_size: Option<Vector2<u32>>,
 	pub max_size: Option<Vector2<u32>>,
-	frame_callbacks: Registry<Callback>,
+	frame_callbacks: Vec<Arc<Callback>>,
 }
 impl Default for SurfaceState {
 	fn default() -> Self {
@@ -67,7 +67,7 @@ impl Default for SurfaceState {
 			geometry: None,
 			min_size: None,
 			max_size: None,
-			frame_callbacks: Registry::new(),
+			frame_callbacks: Vec::new(),
 		}
 	}
 }
@@ -90,7 +90,7 @@ pub struct Surface {
 	pub role: OnceLock<SurfaceRole>,
 	pub panel_item: Mutex<Weak<PanelItem<XdgBackend>>>,
 	on_commit_handlers: Mutex<Vec<OnCommitCallback>>,
-	frame_callbacks: Registry<Callback>,
+	frame_callbacks: Mutex<Vec<Arc<Callback>>>,
 	material: OnceLock<Handle<BevyMaterial>>,
 	pending_material_applications: Registry<ModelPart>,
 	presentation_feedback: Mutex<Vec<Arc<PresentationFeedback>>>,
@@ -123,7 +123,7 @@ impl Surface {
 			role: OnceLock::new(),
 			panel_item: Mutex::new(Weak::default()),
 			on_commit_handlers: Mutex::new(Vec::new()),
-			frame_callbacks: Registry::new(),
+			frame_callbacks: Mutex::new(Vec::new()),
 			material: OnceLock::new(),
 			pending_material_applications: Registry::new(),
 			presentation_feedback: Mutex::default(),
@@ -234,7 +234,7 @@ impl Surface {
 	}
 	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn frame_event(&self) {
-		let callbacks = self.frame_callbacks.take_valid_contents();
+		let callbacks = std::mem::take(&mut *self.frame_callbacks.lock());
 		if !callbacks.is_empty() {
 			let _ = self.message_sink.send(Message::Frame(callbacks));
 		}
@@ -369,7 +369,7 @@ impl WlSurface for Surface {
 		callback_id: ObjectId,
 	) -> Result<()> {
 		let callback = client.insert(callback_id, Callback(callback_id));
-		self.state.lock().pending.frame_callbacks.add_raw(&callback);
+		self.state.lock().pending.frame_callbacks.push(callback);
 		Ok(())
 	}
 
@@ -413,10 +413,12 @@ impl WlSurface for Surface {
 				.unwrap();
 		}
 		self.state.lock().apply();
-		for callback in self.current_state().frame_callbacks.get_valid_contents() {
-			self.frame_callbacks.add_raw(&callback)
-		}
+
+		self.state.lock().pending.frame_callbacks.clear();
 		let current_state = self.current_state();
+		self.frame_callbacks
+			.lock()
+			.extend(current_state.frame_callbacks.iter().cloned());
 		let mut handlers = self.on_commit_handlers.lock();
 		handlers.retain(|f| (f)(self, &current_state));
 		Ok(())
