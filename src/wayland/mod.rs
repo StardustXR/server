@@ -119,7 +119,7 @@ pub fn get_free_wayland_socket_path() -> Option<(PathBuf, FlockLock<File>)> {
 
 pub enum Message {
 	Disconnect,
-	Frame(Arc<Callback>),
+	Frame(Vec<Arc<Callback>>),
 	ReleaseBuffer(Arc<Buffer>),
 	CloseToplevel(Arc<Toplevel>),
 	ResizeToplevel {
@@ -215,17 +215,19 @@ impl WaylandClient {
 	) -> Result<bool, waynest::server::Error> {
 		match message {
 			Message::Disconnect => return Ok(true),
-			Message::Frame(callback) => {
+			Message::Frame(callbacks) => {
 				let now = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
 				let now = Duration::new(now.tv_sec as u64, now.tv_nsec as u32);
 				let ms = (now.as_millis() % (u32::MAX as u128)) as u32;
-				callback.done(client, callback.0, ms).await?;
-				client
-					.get::<Display>(ObjectId::DISPLAY)
-					.unwrap()
-					.delete_id(client, ObjectId::DISPLAY, callback.0.as_raw())
-					.await?;
-				client.remove(callback.0);
+				for callback in callbacks {
+					callback.done(client, callback.0, ms).await?;
+					client
+						.get::<Display>(ObjectId::DISPLAY)
+						.unwrap()
+						.delete_id(client, ObjectId::DISPLAY, callback.0.as_raw())
+						.await?;
+					client.remove(callback.0);
+				}
 			}
 			Message::ReleaseBuffer(buffer) => {
 				buffer.release(client, buffer.id).await?;

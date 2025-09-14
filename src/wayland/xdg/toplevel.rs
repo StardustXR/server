@@ -246,7 +246,7 @@ impl XdgToplevel for Toplevel {
 		width: i32,
 		height: i32,
 	) -> Result<()> {
-		self.wl_surface().pending_state().pending.max_size = if width == 0 && height == 0 {
+		self.wl_surface().state_lock().pending.max_size = if width == 0 && height == 0 {
 			None
 		} else {
 			Some([width as u32, height as u32].into())
@@ -261,7 +261,7 @@ impl XdgToplevel for Toplevel {
 		width: i32,
 		height: i32,
 	) -> Result<()> {
-		self.xdg_surface.wl_surface.pending_state().pending.min_size = if width == 0 && height == 0
+		self.xdg_surface.wl_surface.state_lock().pending.min_size = if width == 0 && height == 0
 		{
 			None
 		} else {
