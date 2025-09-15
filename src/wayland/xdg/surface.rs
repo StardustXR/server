@@ -137,7 +137,18 @@ impl XdgSurface for Surface {
 
 		let popup = client.insert(popup_id, Popup::new(self.version, surface, &positioner));
 
-		popup.configure(client, popup_id, 0, 0, 0, 0).await?;
+		let positioner_geometry = positioner.data().infinite_geometry();
+
+		popup
+			.configure(
+				client,
+				popup_id,
+				positioner_geometry.origin.x,
+				positioner_geometry.origin.y,
+				positioner_geometry.size.x as i32,
+				positioner_geometry.size.y as i32,
+			)
+			.await?;
 		let serial = client.next_event_serial();
 		self.configure(client, sender_id, serial).await?;
 
