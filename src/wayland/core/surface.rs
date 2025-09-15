@@ -80,7 +80,7 @@ impl SurfaceState {
 }
 
 // if returning false, don't run this callback again... just remove it
-pub type OnCommitCallback = Box<dyn Fn(&Surface, &SurfaceState) -> bool + Send + Sync>;
+pub type OnCommitCallback = Box<dyn FnMut(&Surface, &SurfaceState) -> bool + Send + Sync>;
 #[derive(Dispatcher)]
 pub struct Surface {
 	pub id: ObjectId,
@@ -163,7 +163,7 @@ impl Surface {
 	}
 
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn add_commit_handler<F: Fn(&Surface, &SurfaceState) -> bool + Send + Sync + 'static>(
+	pub fn add_commit_handler<F: FnMut(&Surface, &SurfaceState) -> bool + Send + Sync + 'static>(
 		&self,
 		handler: F,
 	) {
@@ -420,7 +420,7 @@ impl WlSurface for Surface {
 			.lock()
 			.extend(current_state.frame_callbacks.iter().cloned());
 		let mut handlers = self.on_commit_handlers.lock();
-		handlers.retain(|f| (f)(self, &current_state));
+		handlers.retain_mut(|f| (f)(self, &current_state));
 		Ok(())
 	}
 

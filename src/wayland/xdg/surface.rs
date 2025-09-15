@@ -1,5 +1,6 @@
 use super::{popup::Popup, positioner::Positioner, toplevel::MappedInner};
 use crate::nodes::items::panel::{ChildInfo, SurfaceId};
+use crate::wayland::Message;
 use crate::wayland::util::ClientExt;
 use crate::wayland::{core::surface::SurfaceRole, display::Display, xdg::toplevel::Toplevel};
 use std::sync::Arc;
@@ -63,17 +64,22 @@ impl XdgSurface for Surface {
 			.try_set_role(client, SurfaceRole::XdgToplevel)
 			.await?;
 
-		toplevel.reconfigure(client).await?;
-
 		let toplevel_weak = Arc::downgrade(&toplevel);
 		let display = client.get::<Display>(ObjectId::DISPLAY).unwrap();
 		let seat = Arc::downgrade(display.seat.get().unwrap());
 		let pid = display.pid;
 		let configured = self.configured.clone();
+		let mut first_commit = true;
+		let message_tx = client.message_sink().clone();
 		self.wl_surface.add_commit_handler(move |surface, state| {
 			let Some(toplevel) = toplevel_weak.upgrade() else {
 				return true;
 			};
+
+			if first_commit {
+				let _ = message_tx.send(Message::ReconfigureToplevel(toplevel.clone()));
+				first_commit = false;
+			}
 
 			let mut mapped_lock = toplevel.mapped.lock();
 			if mapped_lock.is_none()

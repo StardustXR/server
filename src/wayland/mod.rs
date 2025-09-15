@@ -126,6 +126,7 @@ pub enum Message {
 		toplevel: Arc<Toplevel>,
 		size: Option<Vector2<u32>>,
 	},
+	ReconfigureToplevel(Arc<Toplevel>),
 	SetToplevelVisualActive {
 		toplevel: Arc<Toplevel>,
 		active: bool,
@@ -237,6 +238,9 @@ impl WaylandClient {
 			}
 			Message::ResizeToplevel { toplevel, size } => {
 				toplevel.set_size(size);
+				toplevel.reconfigure(client).await?;
+			}
+			Message::ReconfigureToplevel(toplevel) => {
 				toplevel.reconfigure(client).await?;
 			}
 			Message::SetToplevelVisualActive { toplevel, active } => {
