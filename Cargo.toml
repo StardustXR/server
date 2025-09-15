@@ -65,6 +65,8 @@ wgpu-types = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabu
 wgpu-core = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
 naga = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
 wgpu-hal = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
+bevy_pbr = { git = "https://github.com/Schmarni-Dev/bevy", branch = "premul_oit_016" }
+bevy_core_pipeline = { git = "https://github.com/Schmarni-Dev/bevy", branch = "premul_oit_016" }
 
 [dependencies]
 # small utility thingys

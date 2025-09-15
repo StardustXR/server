@@ -21,6 +21,7 @@ use bevy::app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
 use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
 use bevy::audio::AudioPlugin;
 use bevy::core_pipeline::CorePipelinePlugin;
+use bevy::core_pipeline::oit::OrderIndependentTransparencySettings;
 use bevy::core_pipeline::tonemapping::Tonemapping;
 use bevy::diagnostic::DiagnosticsPlugin;
 use bevy::ecs::schedule::{ExecutorKind, ScheduleLabel};
@@ -452,9 +453,11 @@ fn bevy_loop(
 
 fn cam_settings(
 	trigger: Trigger<OnAdd, Camera3d>,
-	mut query: Query<(&mut Projection, &mut Msaa, &mut Tonemapping), With<Camera3d>>,
+	mut query: Query<(Entity, &mut Projection, &mut Msaa, &mut Tonemapping), With<Camera3d>>,
+	mut cmds: Commands,
 ) {
-	let Ok((mut projection, mut msaa, mut tonemapping)) = query.get_mut(trigger.target()) else {
+	let Ok((entity, mut projection, mut msaa, mut tonemapping)) = query.get_mut(trigger.target())
+	else {
 		return;
 	};
 	info!("modifying cam");
@@ -471,6 +474,8 @@ fn cam_settings(
 	}
 	*msaa = Msaa::Off;
 	*tonemapping = Tonemapping::None;
+	cmds.entity(entity)
+		.insert(OrderIndependentTransparencySettings::default());
 }
 
 fn xr_step(world: &mut World) {
