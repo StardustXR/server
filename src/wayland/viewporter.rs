@@ -31,13 +31,16 @@ impl WpViewporter for Viewporter {
 
 #[derive(Debug, Dispatcher)]
 pub struct Viewport {
-	id: ObjectId,
-	surface_id: ObjectId,
+	_id: ObjectId,
+	_surface_id: ObjectId,
 }
 
 impl Viewport {
 	pub fn new(id: ObjectId, surface_id: ObjectId) -> Self {
-		Self { id, surface_id }
+		Self {
+			_id: id,
+			_surface_id: surface_id,
+		}
 	}
 }
 
