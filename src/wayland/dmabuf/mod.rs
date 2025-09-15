@@ -6,7 +6,10 @@ use std::sync::LazyLock;
 
 use super::{util::ClientExt, vulkano_data::VULKANO_CONTEXT};
 use crate::core::registry::Registry;
-use bevy_dmabuf::{format_mapping::drm_fourcc_to_vk_format, wgpu_init::vulkan_to_wgpu};
+use bevy_dmabuf::{
+	format_mapping::{drm_fourcc_to_vk_format, vk_format_to_srgb},
+	wgpu_init::vulkan_to_wgpu,
+};
 use buffer_params::BufferParams;
 use drm_fourcc::DrmFourcc;
 use feedback::DmabufFeedback;
@@ -28,6 +31,7 @@ pub static DMABUF_FORMATS: LazyLock<Vec<(DrmFourcc, u64)>> = LazyLock::new(|| {
 		.copied()
 		.filter_map(|f| Some((f, drm_fourcc_to_vk_format(f)?)))
 		.filter(|(_, vk_format)| vulkan_to_wgpu(*vk_format).is_some())
+		.filter(|(_, vk_format)| vk_format_to_srgb(*vk_format).is_some())
 		.filter_map(|(f, vk_format)| {
 			Some((
 				f,
