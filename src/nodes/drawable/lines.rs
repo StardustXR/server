@@ -95,12 +95,7 @@ fn build_line_mesh(
 				None => {
 					// if we couldn't get the lines entity then we need to gen the mesh later
 					lines.gen_mesh.store(true, Ordering::Relaxed);
-					let e = cmds.spawn((
-						Name::new("LinesNode"),
-						SpatialNode(Arc::downgrade(&lines.spatial)),
-					));
-					_ = lines.entity.set(e.id().into());
-					e
+					continue;
 				}
 			}
 			.remove::<Mesh3d>();
@@ -211,7 +206,7 @@ fn build_line_mesh(
 			RenderAssetUsages::RENDER_WORLD,
 		);
 		mesh.insert_indices(Indices::U32(vertex_indices));
-		mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertex_positions.clone());
+		mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertex_positions);
 		mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vertex_normals);
 		mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vertex_colors);
 
@@ -226,7 +221,7 @@ fn build_line_mesh(
 							base_color: Color::WHITE,
 							perceptual_roughness: 1.0,
 							// TODO: this should be Blend
-							alpha_mode: AlphaMode::Opaque,
+							alpha_mode: AlphaMode::Blend,
 							emissive: Color::srgba_u8(128 / 4, 128 / 4, 128 / 4, 255).into(),
 							..default()
 						},
