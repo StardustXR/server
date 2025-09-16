@@ -152,10 +152,10 @@ cluFlock = { version = "1.2.7", optional = true } # for the lockfile checking
 # 	"stable",
 # 	"tracing",
 # ], default-features = false, optional = true }
-waynest = { git = "https://github.com/technobaboo/waynest.git", branch = "fix/wayland-drm", features = [
+waynest = { git = "https://github.com/technobaboo/waynest.git", branch = "fix/fd_clear", features = [
 	"server",
 	"stable",
-	"external",
+	"mesa",
 	"tracing",
 ], default-features = false, optional = true }
 tokio-stream = { version = "0.1.17", optional = true }

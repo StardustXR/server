@@ -18,7 +18,7 @@ use waynest::{
 		Client, Dispatcher, Error, Result,
 		protocol::{
 			core::wayland::{wl_data_device_manager::WlDataDeviceManager, wl_registry::*},
-			external::drm::wl_drm::WlDrm,
+			mesa::drm::wl_drm::WlDrm,
 			stable::{
 				linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
 				presentation_time::wp_presentation::WpPresentation,

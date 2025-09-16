@@ -7,7 +7,7 @@ use bevy_dmabuf::dmatex::{Dmatex, DmatexPlane, Resolution};
 use rustc_hash::FxHashSet;
 use std::os::fd::OwnedFd;
 use waynest::{
-	server::{Client, Dispatcher, Result, protocol::external::drm::wl_drm::*},
+	server::{Client, Dispatcher, Result, protocol::mesa::drm::wl_drm::*},
 	wire::ObjectId,
 };
 
