@@ -283,7 +283,14 @@ impl OxrControllerInput {
 		let tip = InputDataType::Tip(Tip::default());
 		let node = spatial.node().unwrap();
 		node.set_enabled(false);
-		let model = Model::add_to(&node, ResourceID::Direct(CURSOR_MODEL_PATH.into())).unwrap();
+		let model_node = Arc::new(Node::generate(&INTERNAL_CLIENT, true));
+		let model_spatial = Spatial::add_to(
+			&model_node,
+			Some(spatial.clone()),
+			Mat4::from_scale(Vec3::splat(0.02)),
+			false,
+		);
+		let model = Model::add_to(&model_node, ResourceID::Direct(CURSOR_MODEL_PATH.into())).unwrap();
 		let model_part = model.get_model_part("Cursor".to_string()).unwrap();
 		let input = InputMethod::add_to(
 			&node,
@@ -355,9 +362,7 @@ impl OxrControllerInput {
 					1.0,
 				)),
 			);
-			self.input
-				.spatial
-				.set_local_transform(world_transform * Mat4::from_scale(Vec3::splat(0.02)));
+			self.input.spatial.set_local_transform(world_transform);
 		}
 		let path = session
 			.instance()
