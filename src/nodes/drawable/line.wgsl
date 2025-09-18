@@ -14,6 +14,9 @@
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
 }
 #endif
+#ifdef OIT_ENABLED
+#import bevy_core_pipeline::oit::oit_draw
+#endif
 
 struct LineMaterial {
     unused: u32,
@@ -51,5 +54,10 @@ fn fragment(
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
 #endif
 
+#ifdef OIT_ENABLED
+    oit_draw(in.position, out.color, false);
+    discard;
+#else 
     return out;
+#endif
 }

@@ -49,7 +49,7 @@ impl MaterialExtension for LineExtension {
 	}
 
 	fn alpha_mode() -> Option<AlphaMode> {
-		Some(AlphaMode::Opaque)
+		Some(AlphaMode::Blend)
 	}
 }
 
