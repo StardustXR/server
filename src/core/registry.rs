@@ -143,7 +143,7 @@ impl<T: Send + Sync + ?Sized> OwnedRegistry<T> {
 	pub const fn new() -> Self {
 		OwnedRegistry(const_mutex(None))
 	}
-	fn lock(&self) -> MappedMutexGuard<FxHashMap<usize, Arc<T>>> {
+	fn lock(&self) -> MappedMutexGuard<'_, FxHashMap<usize, Arc<T>>> {
 		MutexGuard::map(self.0.lock(), |r| r.get_or_insert_with(FxHashMap::default))
 	}
 	pub fn add(&self, t: T) -> Arc<T>

@@ -32,7 +32,7 @@ impl ShmPool {
 	}
 
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn data_lock(&self) -> MappedMutexGuard<RawMutex, [u8]> {
+	pub fn data_lock(&self) -> MappedMutexGuard<'_, RawMutex, [u8]> {
 		MutexGuard::map(self.inner.lock(), |i| i.as_mut())
 	}
 }

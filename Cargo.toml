@@ -1,6 +1,6 @@
 [package]
 edition = "2024"
-rust-version = "1.88"
+rust-version = "1.89"
 name = "stardust-xr-server"
 version = "0.45.0"
 authors = ["Nova King <technobaboo@proton.me>"]
@@ -23,7 +23,6 @@ path = "src/main.rs"
 [features]
 default = ["wayland"]
 wayland = [
-	"dep:cluFlock",
 	"dep:waynest",
 	"dep:tokio-stream",
 	"dep:memmap2",
@@ -48,9 +47,11 @@ auto_link_exclude_list = ["libc*", "libdl*", "libpthread*", "ld-linux*"]
 
 
 [profile.release]
+opt-level = "s"
 lto = true
-strip = true
-opt-level = 3
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
 
 [profile.dev.package."*"]
 opt-level = 3
@@ -92,7 +93,7 @@ tracy-client = { version = "=0.18.0", optional = true }
 # (de)serialization
 serde = { version = "1.0.205", features = ["derive"] }
 serde_repr = "0.1.19"
-toml = "0.8.19"
+toml = "0.9.7"
 
 # mathy stuffs
 glam = { version = "0.29.0", features = ["mint", "serde"] }
@@ -113,7 +114,6 @@ bevy = { version = "0.16", default-features = false, features = [
 	"bevy_window",
 	"bevy_winit",
 	"std",
-	"x11",
 	"wayland",
 	"mp3",
 	"wav",
@@ -121,7 +121,6 @@ bevy = { version = "0.16", default-features = false, features = [
 	"png",
 	"hdr",
 	"jpeg",
-	"tonemapping_luts",
 	"multi_threaded",
 ] }
 bevy_mod_xr = "0.3"
@@ -146,10 +145,10 @@ xkbcommon-rs = "0.1.0"
 cosmic-text = "0.14.2"
 
 # Wayland
-cluFlock = { version = "1.2.7", optional = true } # for the lockfile checking
-# waynest = { git = "https://github.com/verdiwm/waynest.git", features = [
+# waynest = { git = "https://github.com/verdiwm/waynest.git", branch="codec-test", features = [
 # 	"server",
 # 	"stable",
+# 	"mesa",
 # 	"tracing",
 # ], default-features = false, optional = true }
 waynest = { git = "https://github.com/technobaboo/waynest.git", branch = "fix/fd_clear", features = [
@@ -162,7 +161,7 @@ tokio-stream = { version = "0.1.17", optional = true }
 memmap2 = { version = "0.9.5", optional = true }
 drm-fourcc = { version = "2.2.0", optional = true }
 memfd = { version = "0.6.4", optional = true }
-vulkano = { git = "https://github.com/Schmarni-Dev/vulkano", branch = "0_35_dmabuf_fixes", optional = true }
+vulkano = { git = "https://github.com/Schmarni-Dev/vulkano", branch = "0_35_dmabuf_fixes", default-features = false, optional = true }
 wgpu-hal = { version = "24", optional = true, features = ["vulkan"] }
 ash = { version = "0.38.0", optional = true, default-features = false }
 rustix = { version = "1.0.8", features = ["time"] }

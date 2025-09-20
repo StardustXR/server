@@ -32,7 +32,6 @@ use bevy_dmabuf::import::ImportedDmatexs;
 use bevy_mod_openxr::render::end_frame;
 use bevy_mod_openxr::resources::{OxrFrameState, OxrInstance};
 use bevy_mod_xr::session::XrRenderSet;
-use cluFlock::{FlockLock, ToFlock};
 use core::buffer::BufferUsage;
 use core::{buffer::Buffer, callback::Callback, surface::WL_SURFACE_REGISTRY};
 use display::Display;
@@ -41,9 +40,8 @@ use std::fs::File;
 use std::mem::MaybeUninit;
 use std::time::Duration;
 use std::{
-	fs::{self, OpenOptions},
+	fs,
 	io::{self, ErrorKind},
-	os::unix::fs::OpenOptionsExt,
 	path::PathBuf,
 	sync::{Arc, OnceLock},
 };
@@ -71,7 +69,7 @@ impl From<waynest::server::Error> for ServerError {
 	}
 }
 
-pub fn get_free_wayland_socket_path() -> Option<(PathBuf, FlockLock<File>)> {
+pub fn get_free_wayland_socket_path() -> Option<(PathBuf, File)> {
 	// Use XDG runtime directory for secure, user-specific sockets
 	let base_dirs = directories::BaseDirs::new()?;
 	let runtime_dir = base_dirs.runtime_dir()?;
@@ -81,21 +79,12 @@ pub fn get_free_wayland_socket_path() -> Option<(PathBuf, FlockLock<File>)> {
 		let socket_path = runtime_dir.join(format!("wayland-{display}"));
 		let socket_lock_path = runtime_dir.join(format!("wayland-{display}.lock"));
 
-		// Open lock file without truncation to preserve existing locks
-		let Ok(lock) = OpenOptions::new()
-			.create(true)
-			.truncate(false) // Prevent destroying other processes' locks
-			.read(true)
-			.write(true)
-			.mode(0o660) // Match Wayland-compositor permissions
-			.open(&socket_lock_path)
-		else {
+		let Ok(lock) = File::create(&socket_lock_path) else {
 			continue;
 		};
 
-		// Atomic mutual exclusion: fail if another process holds the lock\
-		let Ok(lock) = lock.try_exclusive_lock() else {
-			continue; // Lock held by active compositor
+		if lock.try_lock().is_err() {
+			continue;
 		};
 
 		// Check for zombie sockets (file exists but nothing listening)
@@ -273,7 +262,7 @@ impl Drop for WaylandClient {
 
 #[derive(Debug, Resource)]
 pub struct Wayland {
-	_lockfile: FlockLock<File>,
+	_lockfile: File,
 	abort_handle: AbortHandle,
 }
 impl Wayland {
