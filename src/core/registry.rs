@@ -36,18 +36,18 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 
 		for pair in new.0.iter() {
 			let (id, entry) = pair.pair();
-			if let Some(entry) = entry.upgrade() {
-				if !old.0.contains_key(id) {
-					added.push(entry);
-				}
+			if let Some(entry) = entry.upgrade()
+				&& !old.0.contains_key(id)
+			{
+				added.push(entry);
 			}
 		}
 		for pair in old.0.iter() {
 			let (id, entry) = pair.pair();
-			if let Some(entry) = entry.upgrade() {
-				if !new.0.contains_key(id) {
-					removed.push(entry);
-				}
+			if let Some(entry) = entry.upgrade()
+				&& !new.0.contains_key(id)
+			{
+				removed.push(entry);
 			}
 		}
 		(added, removed)

@@ -22,7 +22,7 @@ impl Popup {
 		let _ = surface
 			.wl_surface
 			.surface_id
-			.set(SurfaceId::Child(rand::thread_rng().gen_range(0..u64::MAX)));
+			.set(SurfaceId::Child(rand::rng().random()));
 
 		let positioner_data = positioner.data();
 		Self {

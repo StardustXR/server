@@ -73,7 +73,7 @@ bevy_core_pipeline = { git = "https://github.com/Schmarni-Dev/bevy", branch = "p
 # small utility thingys
 nanoid = "0.4.0"
 lazy_static = "1.5.0"
-rand = "0.8.5"
+rand = "0.9.2"
 rustc-hash = "2.0.0"
 slotmap = "1.0.7"
 global_counter = "=0.2.2"
@@ -145,13 +145,7 @@ xkbcommon-rs = "0.1.0"
 cosmic-text = "0.14.2"
 
 # Wayland
-# waynest = { git = "https://github.com/verdiwm/waynest.git", branch="codec-test", features = [
-# 	"server",
-# 	"stable",
-# 	"mesa",
-# 	"tracing",
-# ], default-features = false, optional = true }
-waynest = { git = "https://github.com/technobaboo/waynest.git", branch = "fix/fd_clear", features = [
+waynest = { git = "https://github.com/verdiwm/waynest.git", branch="codec-test", features = [
 	"server",
 	"stable",
 	"mesa",

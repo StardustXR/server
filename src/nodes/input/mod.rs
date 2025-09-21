@@ -138,10 +138,10 @@ pub fn process_input() {
 				if !handler_node.enabled() {
 					continue;
 				}
-				if let Some(handler_field_node) = handler.field.spatial.node() {
-					if !handler_field_node.enabled() {
-						continue;
-					}
+				if let Some(handler_field_node) = handler.field.spatial.node()
+					&& !handler_field_node.enabled()
+				{
+					continue;
 				};
 
 				let ser_span = debug_span!("serializing input").entered();

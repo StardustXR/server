@@ -20,14 +20,13 @@ pub struct CaptureManager {
 }
 impl CaptureManager {
 	pub fn update_capture(&mut self, method: &InputMethod) {
-		if let Some(capture) = &self.capture.upgrade() {
-			if !method
+		if let Some(capture) = &self.capture.upgrade()
+			&& !method
 				.capture_attempts
 				.get_valid_contents()
 				.contains(capture)
-			{
-				self.capture = Weak::new();
-			}
+		{
+			self.capture = Weak::new();
 		}
 	}
 	pub fn set_new_capture(
