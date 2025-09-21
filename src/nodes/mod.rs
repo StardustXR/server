@@ -126,12 +126,7 @@ impl Node {
 	pub fn enabled(&self) -> bool {
 		self.enabled.load(Ordering::Relaxed)
 			&& if let Ok(spatial) = self.get_aspect::<Spatial>() {
-				spatial
-					.global_transform()
-					.to_scale_rotation_translation()
-					.0
-					.length_squared()
-					> 0.0
+				spatial.visible()
 			} else {
 				true
 			}

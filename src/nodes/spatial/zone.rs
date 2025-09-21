@@ -21,8 +21,8 @@ pub fn capture(spatial: &Arc<Spatial>, zone: &Arc<Zone>) {
 	}
 
 	release(spatial);
-	*spatial.old_parent.lock() = spatial.get_parent();
-	*spatial.zone.lock() = Arc::downgrade(zone);
+	*spatial.old_parent.write() = spatial.get_parent();
+	*spatial.zone.write() = Arc::downgrade(zone);
 	let Some(zone_node) = zone.spatial.node.upgrade() else {
 		return;
 	};
@@ -45,11 +45,11 @@ pub fn release(spatial: &Spatial) {
 	};
 	let spatial = spatial_node.get_aspect::<Spatial>().unwrap();
 
-	let Some(old_parent) = spatial.old_parent.lock().take() else {
+	let Some(old_parent) = spatial.old_parent.read().clone() else {
 		return;
 	};
 	let _ = spatial.set_spatial_parent_in_place(&old_parent);
-	let mut spatial_zone = spatial.zone.lock();
+	let mut spatial_zone = spatial.zone.write();
 
 	if let Some(spatial_zone) = spatial_zone.upgrade() {
 		spatial_zone.captured.remove_aspect(spatial.as_ref());

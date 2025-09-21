@@ -16,10 +16,9 @@ use bevy::render::primitives::Aabb;
 use color_eyre::eyre::OptionExt;
 use glam::{Mat4, Quat, Vec3, vec3a};
 use mint::Vector3;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::fmt::Debug;
-use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, Weak};
 use std::{f32, ptr};
 
@@ -44,7 +43,7 @@ fn spawn_spatial_nodes(mut cmds: Commands) {
 	for spatial in SPATIAL_REGISTRY
 		.get_valid_contents()
 		.into_iter()
-		.filter(|v| v.entity.lock().is_none())
+		.filter(|v| v.entity.read().is_none())
 	{
 		let entity = cmds
 			.spawn((SpatialNode(Arc::downgrade(&spatial)), Name::new("Spatial")))
@@ -64,7 +63,7 @@ fn update_spatial_node_parenting(
 
 		let Some(parent_entity) = spatial
 			.get_parent()
-			.map(|v| v.entity.lock().as_ref().map(|v| v.0))
+			.map(|v| v.entity.read().as_ref().map(|v| v.0))
 		else {
 			continue;
 		};
@@ -95,26 +94,11 @@ fn update_spatial_nodes(mut query: Query<(&mut BevyTransform, &SpatialNode, &mut
 			let Some(spatial) = spatial_node.0.upgrade() else {
 				return;
 			};
-			if spatial
-				.node()
-				.is_some_and(|v| !v.enabled.load(Ordering::Relaxed))
-			{
-				if !matches!(*vis, Visibility::Hidden) {
-					*vis = Visibility::Hidden;
-				}
-				return;
-			}
-			let mat4 =
-				debug_span!("getting global transform").in_scope(|| spatial.global_transform());
-			let (scale, _, _) = mat4.to_scale_rotation_translation();
-			match (*vis, scale == Vec3::ZERO) {
-				(Visibility::Inherited | Visibility::Visible, true) => {
-					*vis = Visibility::Hidden;
-				}
-				(Visibility::Hidden, false) => {
-					*vis = Visibility::Inherited;
-				}
-				_ => {}
+			// Set visibility based on node enabled state
+			if spatial.node().is_some_and(|v| v.enabled()) {
+				*vis = Visibility::Inherited;
+			} else {
+				*vis = Visibility::Hidden;
 			}
 			*transform = BevyTransform::from_matrix(spatial.local_transform());
 		});
@@ -160,12 +144,11 @@ static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
 pub struct Spatial {
 	pub node: Weak<Node>,
-	entity: Mutex<Option<EntityHandle>>,
-	parent: Mutex<Option<Arc<Spatial>>>,
-	old_parent: Mutex<Option<Arc<Spatial>>>,
-	transform: Mutex<Mat4>,
-	cached_global_transform: Mutex<Option<Mat4>>,
-	zone: Mutex<Weak<Zone>>,
+	entity: RwLock<Option<EntityHandle>>,
+	parent: RwLock<Option<Arc<Spatial>>>,
+	old_parent: RwLock<Option<Arc<Spatial>>>,
+	transform: RwLock<Mat4>,
+	zone: RwLock<Weak<Zone>>,
 	children: Registry<Spatial>,
 	pub bounding_box_calc: OnceLock<fn(&Node) -> Aabb>,
 }
@@ -174,18 +157,17 @@ impl Spatial {
 	pub fn new(node: Weak<Node>, parent: Option<Arc<Spatial>>, transform: Mat4) -> Arc<Self> {
 		SPATIAL_REGISTRY.add(Spatial {
 			node,
-			entity: Mutex::new(None),
-			parent: Mutex::new(parent),
-			old_parent: Mutex::new(None),
-			transform: Mutex::new(transform),
-			cached_global_transform: Mutex::new(None),
-			zone: Mutex::new(Weak::new()),
+			entity: RwLock::new(None),
+			parent: RwLock::new(parent),
+			old_parent: RwLock::new(None),
+			transform: RwLock::new(transform),
+			zone: RwLock::new(Weak::new()),
 			children: Registry::new(),
 			bounding_box_calc: OnceLock::default(),
 		})
 	}
 	pub fn set_entity(&self, entity: Entity) {
-		self.entity.lock().replace(entity.into());
+		self.entity.write().replace(entity.into());
 	}
 	pub fn add_to(
 		node: &Arc<Node>,
@@ -239,28 +221,37 @@ impl Spatial {
 		bounds
 	}
 
-	fn clear_cached_global_transform(&self) {
-		self.cached_global_transform.lock().take();
-		for child in self.children.get_valid_contents() {
-			child.clear_cached_global_transform();
-		}
-	}
 	pub fn local_transform(&self) -> Mat4 {
-		*self.transform.lock()
+		*self.transform.read()
+	}
+
+	/// Check if this node or any ancestor has zero scale (for visibility culling)
+	pub fn visible(&self) -> bool {
+		// Check parent chain
+		if let Some(parent) = self.get_parent()
+			&& !parent.visible()
+		{
+			return false;
+		}
+
+		// Check our own scale by looking at matrix column lengths
+		let mat = self.local_transform();
+		let x_scale = mat.x_axis.length_squared();
+		let y_scale = mat.y_axis.length_squared();
+		let z_scale = mat.z_axis.length_squared();
+
+		!(x_scale == 0.0 || y_scale == 0.0 || z_scale == 0.0)
 	}
 	pub fn global_transform(&self) -> Mat4 {
-		*self.cached_global_transform.lock().get_or_insert_with(|| {
-			let parent_transform = self
-				.get_parent()
-				.as_deref()
-				.map(Self::global_transform)
-				.unwrap_or_default();
-			parent_transform * self.local_transform()
-		})
+		let parent_transform = self
+			.get_parent()
+			.as_deref()
+			.map(Self::global_transform)
+			.unwrap_or_default();
+		parent_transform * self.local_transform()
 	}
 	pub fn set_local_transform(&self, transform: Mat4) {
-		self.clear_cached_global_transform();
-		*self.transform.lock() = transform;
+		*self.transform.write() = transform;
 	}
 	pub fn set_local_transform_components(
 		&self,
@@ -321,16 +312,15 @@ impl Spatial {
 	}
 
 	fn get_parent(&self) -> Option<Arc<Spatial>> {
-		self.parent.lock().clone()
+		self.parent.read().clone()
 	}
 	fn set_parent(self: &Arc<Self>, new_parent: &Arc<Spatial>) {
 		if let Some(parent) = self.get_parent() {
 			parent.children.remove(self);
 		}
 		new_parent.children.add_raw(self);
-		self.clear_cached_global_transform();
 
-		*self.parent.lock() = Some(new_parent.clone());
+		*self.parent.write() = Some(new_parent.clone());
 	}
 
 	pub fn set_spatial_parent(self: &Arc<Self>, parent: &Arc<Spatial>) -> Result<()> {
@@ -354,7 +344,7 @@ impl Spatial {
 
 	pub(self) fn zone_distance(&self) -> f32 {
 		self.zone
-			.lock()
+			.read()
 			.upgrade()
 			.map(|zone| zone.field.clone())
 			.map(|field| field.distance(self, vec3a(0.0, 0.0, 0.0)))
