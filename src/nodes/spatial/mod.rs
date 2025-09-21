@@ -164,6 +164,7 @@ pub struct Spatial {
 	parent: Mutex<Option<Arc<Spatial>>>,
 	old_parent: Mutex<Option<Arc<Spatial>>>,
 	transform: Mutex<Mat4>,
+	cached_global_transform: Mutex<Option<Mat4>>,
 	zone: Mutex<Weak<Zone>>,
 	children: Registry<Spatial>,
 	pub bounding_box_calc: OnceLock<fn(&Node) -> Aabb>,
@@ -177,6 +178,7 @@ impl Spatial {
 			parent: Mutex::new(parent),
 			old_parent: Mutex::new(None),
 			transform: Mutex::new(transform),
+			cached_global_transform: Mutex::new(None),
 			zone: Mutex::new(Weak::new()),
 			children: Registry::new(),
 			bounding_box_calc: OnceLock::default(),
@@ -237,18 +239,27 @@ impl Spatial {
 		bounds
 	}
 
+	fn clear_cached_global_transform(&self) {
+		self.cached_global_transform.lock().take();
+		for child in self.children.get_valid_contents() {
+			child.clear_cached_global_transform();
+		}
+	}
 	pub fn local_transform(&self) -> Mat4 {
 		*self.transform.lock()
 	}
 	pub fn global_transform(&self) -> Mat4 {
-		let parent_transform = self
-			.get_parent()
-			.as_deref()
-			.map(Self::global_transform)
-			.unwrap_or_default();
-		parent_transform * self.local_transform()
+		*self.cached_global_transform.lock().get_or_insert_with(|| {
+			let parent_transform = self
+				.get_parent()
+				.as_deref()
+				.map(Self::global_transform)
+				.unwrap_or_default();
+			parent_transform * self.local_transform()
+		})
 	}
 	pub fn set_local_transform(&self, transform: Mat4) {
+		self.clear_cached_global_transform();
 		*self.transform.lock() = transform;
 	}
 	pub fn set_local_transform_components(
@@ -317,6 +328,7 @@ impl Spatial {
 			parent.children.remove(self);
 		}
 		new_parent.children.add_raw(self);
+		self.clear_cached_global_transform();
 
 		*self.parent.lock() = Some(new_parent.clone());
 	}
