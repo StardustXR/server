@@ -204,11 +204,11 @@ impl Node {
 	) {
 		if let Ok(alias) = self.get_aspect::<Alias>() {
 			if !alias.info.server_methods.contains(&method) {
-				response.send(Err(ScenegraphError::MemberNotFound));
+				response.send_err(ScenegraphError::MemberNotFound);
 				return;
 			}
 			let Some(alias) = alias.original.upgrade() else {
-				response.send(Err(ScenegraphError::BrokenAlias));
+				response.send_err(ScenegraphError::BrokenAlias);
 				return;
 			};
 			alias.execute_local_method(
@@ -223,7 +223,7 @@ impl Node {
 			)
 		} else {
 			let Some(aspect) = self.aspects.0.get(&aspect_id).map(|v| v.clone()) else {
-				response.send(Err(ScenegraphError::AspectNotFound));
+				response.send_err(ScenegraphError::AspectNotFound);
 				return;
 			};
 			aspect.run_method(calling_client, self.clone(), method, message, response);

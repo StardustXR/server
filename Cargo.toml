@@ -139,8 +139,8 @@ openxr = "0.19"
 
 # linux stuffs
 input-event-codes = "6.2.0"
-zbus = { version = "5.0.0", default-features = false, features = ["tokio"] }
-directories = "5.0.1"
+zbus = { version = "5.11.0", features = ["blocking-api", "tokio"], default-features = false }
+directories = "6.0.0"
 xkbcommon-rs = "0.1.0"
 cosmic-text = "0.14.2"
 

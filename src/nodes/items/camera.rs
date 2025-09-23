@@ -77,12 +77,12 @@ impl CameraItem {
 		_message: Message,
 		response: MethodResponseSender,
 	) {
-		response.wrap_sync(move || {
+		response.wrap(move || {
 			let ItemType::Camera(_camera) = &node.get_aspect::<Item>().unwrap().specialization
 			else {
 				bail!("Wrong item type?");
 			};
-			Ok(serialize(())?.into())
+			Ok(serialize(())?)
 		});
 	}
 

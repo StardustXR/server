@@ -1,18 +1,79 @@
-use crate::core::error::Result;
-use crate::nodes::Node;
-use crate::nodes::alias::get_original;
-use crate::{core::client::Client, nodes::Message};
+use crate::{
+	core::{
+		client::Client,
+		error::{Result, ServerError},
+	},
+	nodes::{Message, Node, alias::get_original},
+};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
-use stardust_xr::scenegraph;
-use stardust_xr::scenegraph::ScenegraphError;
-use stardust_xr::schemas::flex::serialize;
-use std::future::Future;
-use std::os::fd::OwnedFd;
-use std::sync::{Arc, OnceLock, Weak};
-use tokio::sync::oneshot;
+use stardust_xr::{
+	messenger::MethodResponse,
+	scenegraph::{self, ScenegraphError},
+	schemas::flex::serialize,
+};
+use std::{
+	os::fd::OwnedFd,
+	sync::{Arc, OnceLock, Weak},
+};
 use tracing::{debug, debug_span};
+
+pub struct MethodResponseSender(pub(crate) MethodResponse);
+impl MethodResponseSender {
+	pub fn send_err(self, error: ScenegraphError) {
+		self.0.send(Err(error));
+	}
+	pub fn send<T: Serialize>(self, result: Result<T, ServerError>) {
+		let data = match result {
+			Ok(d) => d,
+			Err(e) => {
+				self.0.send(Err(ScenegraphError::MemberError {
+					error: e.to_string(),
+				}));
+				return;
+			}
+		};
+		let Ok(serialized) = stardust_xr::schemas::flex::serialize(data) else {
+			self.0.send(Err(ScenegraphError::MemberError {
+				error: "Internal: Failed to serialize".to_string(),
+			}));
+			return;
+		};
+		self.0.send(Ok((&serialized, Vec::<OwnedFd>::new())));
+	}
+	pub fn wrap<T: Serialize, F: FnOnce() -> Result<T>>(self, f: F) {
+		self.send(f())
+	}
+	pub fn wrap_async<T: Serialize>(
+		self,
+		f: impl Future<Output = Result<(T, Vec<OwnedFd>)>> + Send + 'static,
+	) {
+		tokio::task::spawn(async move {
+			let (value, fds) = match f.await {
+				Ok(d) => d,
+				Err(e) => {
+					self.0.send(Err(ScenegraphError::MemberError {
+						error: e.to_string(),
+					}));
+					return;
+				}
+			};
+			let Ok(serialized) = serialize(value) else {
+				self.0.send(Err(ScenegraphError::MemberError {
+					error: "Internal: Failed to serialize".to_string(),
+				}));
+				return;
+			};
+			self.0.send(Ok((&serialized, fds)));
+		});
+	}
+}
+impl std::fmt::Debug for MethodResponseSender {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("TypedMethodResponse").finish()
+	}
+}
 
 #[derive(Default)]
 pub struct Scenegraph {
@@ -44,43 +105,6 @@ impl Scenegraph {
 		debug!(node, "Remove node");
 		self.nodes.lock().remove(&node)
 	}
-}
-
-pub type MethodResponse = Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError>;
-pub struct MethodResponseSender(oneshot::Sender<MethodResponse>);
-impl MethodResponseSender {
-	pub fn send(self, t: Result<Message, ScenegraphError>) {
-		let _ = self.0.send(t.map(|m| (m.data, m.fds)));
-	}
-	// pub fn send_method_return<T: Serialize>(
-	// 	self,
-	// 	result: color_eyre::eyre::Result<(T, Vec<OwnedFd>)>,
-	// ) {
-	// 	let _ = self.0.send(map_method_return(result));
-	// }
-	pub fn wrap_sync<F: FnOnce() -> crate::core::error::Result<Message>>(self, f: F) {
-		self.send(f().map_err(|e| ScenegraphError::MemberError {
-			error: e.to_string(),
-		}))
-	}
-	pub fn wrap_async<T: Serialize>(
-		self,
-		f: impl Future<Output = Result<(T, Vec<OwnedFd>)>> + Send + 'static,
-	) {
-		tokio::task::spawn(async move { self.0.send(map_method_return(f.await)) });
-	}
-}
-fn map_method_return<T: Serialize>(
-	result: Result<(T, Vec<OwnedFd>)>,
-) -> Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError> {
-	let (value, fds) = result.map_err(|e| ScenegraphError::MemberError {
-		error: e.to_string(),
-	})?;
-
-	let serialized_value = serialize(value).map_err(|e| ScenegraphError::MemberError {
-		error: format!("Internal: Serialization failed: {e}"),
-	})?;
-	Ok((serialized_value, fds))
 }
 impl scenegraph::Scenegraph for Scenegraph {
 	fn send_signal(
@@ -115,15 +139,15 @@ impl scenegraph::Scenegraph for Scenegraph {
 		method: u64,
 		data: &[u8],
 		fds: Vec<OwnedFd>,
-		response: oneshot::Sender<Result<(Vec<u8>, Vec<OwnedFd>), ScenegraphError>>,
+		response: MethodResponse,
 	) {
 		let Some(client) = self.get_client() else {
-			let _ = response.send(Err(ScenegraphError::NodeNotFound));
+			response.send(Err(ScenegraphError::NodeNotFound));
 			return;
 		};
 		debug!(aspect_id, node_id, method, "Handle method");
 		let Some(node) = self.get_node(node_id) else {
-			let _ = response.send(Err(ScenegraphError::NodeNotFound));
+			response.send(Err(ScenegraphError::NodeNotFound));
 			return;
 		};
 		node.execute_local_method(

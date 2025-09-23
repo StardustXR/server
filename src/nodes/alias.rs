@@ -1,5 +1,7 @@
 use super::{Aspect, AspectIdentifier, Node};
-use crate::core::{client::Client, error::Result, registry::Registry};
+use crate::core::{
+	client::Client, error::Result, registry::Registry, scenegraph::MethodResponseSender,
+};
 use std::{
 	ops::Add,
 	sync::{Arc, Weak},
@@ -86,7 +88,7 @@ impl Aspect for Alias {
 		_node: Arc<Node>,
 		_method: u64,
 		_message: super::Message,
-		_response: crate::core::scenegraph::MethodResponseSender,
+		_response: MethodResponseSender,
 	) {
 	}
 }

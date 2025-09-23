@@ -67,7 +67,7 @@ use objects::play_space::PlaySpacePlugin;
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use session::{launch_start, save_session};
 use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
-use stardust_xr::server;
+use stardust_xr::server::LockedSocket;
 use std::ops::DerefMut as _;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -161,15 +161,15 @@ async fn main() -> Result<AppExit, JoinError> {
 
 	let cli_args = CliArgs::parse();
 
-	let socket_path =
-		server::get_free_socket_path().expect("Unable to find a free stardust socket path");
-	STARDUST_INSTANCE.set(socket_path.file_name().unwrap().to_string_lossy().into_owned()).expect("Someone hasn't done their job, yell at Nova because how is this set multiple times what the hell");
+	let locked_socket =
+		LockedSocket::get_free().expect("Unable to find a free stardust socket path");
+	STARDUST_INSTANCE.set(locked_socket.socket_path.file_name().unwrap().to_string_lossy().into_owned()).expect("Someone hasn't done their job, yell at Nova because how is this set multiple times what the hell");
 	info!(
-		socket_path = ?socket_path.display(),
+		socket_path = ?locked_socket.socket_path.display(),
 		"Stardust socket created"
 	);
-	let socket =
-		UnixListener::bind(socket_path).expect("Couldn't spawn stardust server at {socket_path}");
+	let socket = UnixListener::bind(locked_socket.socket_path)
+		.expect("Couldn't spawn stardust server at {socket_path}");
 	task::new(|| "client join loop", async move {
 		loop {
 			let Ok((stream, _)) = socket.accept().await else {

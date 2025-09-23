@@ -6,7 +6,7 @@ use bevy::{
 };
 use bevy_dmabuf::{
 	dmatex::{Dmatex, DmatexPlane, Resolution},
-	import::{DropCallback, ImportedDmatexs, ImportedTexture, import_texture},
+	import::{DmatexUsage, DropCallback, ImportedDmatexs, ImportedTexture, import_texture},
 };
 use drm_fourcc::DrmFourcc;
 use mint::Vector2;
@@ -176,8 +176,13 @@ impl ShmBufferBacking {
 			flip_y: false,
 			srgb: true,
 		};
-		let imported_dmatex =
-			import_texture(RENDER_DEVICE.wait(), dmatex, DropCallback(None)).unwrap();
+		let imported_dmatex = import_texture(
+			RENDER_DEVICE.wait(),
+			dmatex,
+			DropCallback(None),
+			DmatexUsage::Sampling,
+		)
+		.unwrap();
 		Self {
 			pool,
 			offset,

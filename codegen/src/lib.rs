@@ -305,12 +305,12 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 					_node: std::sync::Arc<crate::nodes::Node>,
 					_method: u64,
 					_message: crate::nodes::Message,
-					_method_response: crate::nodes::MethodResponseSender,
+					_method_response: crate::core::scenegraph::MethodResponseSender,
 				) {
 					match _method {
 						#run_methods
 						_ => {
-							let _ = _method_response.send(Err(stardust_xr::scenegraph::ScenegraphError::MemberNotFound));
+							let _ = _method_response.send_err(stardust_xr::scenegraph::ScenegraphError::MemberNotFound);
 						}
 					}
 				}

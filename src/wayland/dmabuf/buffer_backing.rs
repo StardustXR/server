@@ -6,7 +6,9 @@ use bevy::{
 };
 use bevy_dmabuf::{
 	dmatex::{Dmatex, Resolution},
-	import::{DropCallback, ImportError, ImportedDmatexs, ImportedTexture, import_texture},
+	import::{
+		DmatexUsage, DropCallback, ImportError, ImportedDmatexs, ImportedTexture, import_texture,
+	},
 };
 use drm_fourcc::DrmFourcc;
 use mint::Vector2;
@@ -45,6 +47,7 @@ impl DmabufBacking {
 				dev,
 				dmatex,
 				DropCallback(None),
+				DmatexUsage::Sampling,
 			)?)),
 		})
 	}
