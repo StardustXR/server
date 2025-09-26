@@ -1,10 +1,11 @@
+use crate::wayland::Client;
+use crate::wayland::WaylandResult;
 use crate::wayland::core::{keyboard::Keyboard, pointer::Pointer, surface::Surface, touch::Touch};
 use mint::Vector2;
 use std::sync::Arc;
 use std::sync::OnceLock;
-pub use waynest::server::protocol::core::wayland::wl_seat::*;
-use waynest::server::{Client, Dispatcher, Result};
-use waynest::wire::{Fixed, ObjectId};
+use waynest::ObjectId;
+pub use waynest_protocols::server::core::wayland::wl_seat::*;
 
 #[derive(Debug)]
 pub enum SeatMessage {
@@ -43,11 +44,8 @@ pub enum SeatMessage {
 	Reset,
 }
 
-pub fn fixed_from_f32(f: f32) -> Fixed {
-	unsafe { Fixed::from_raw((f * 256.0).round() as u32) }
-}
-
-#[derive(Default, Dispatcher)]
+#[derive(Default, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Seat {
 	version: u32,
 	pointer: OnceLock<Arc<Pointer>>,
@@ -56,7 +54,7 @@ pub struct Seat {
 }
 
 impl Seat {
-	pub async fn new(client: &mut Client, id: ObjectId, version: u32) -> Result<Self> {
+	pub async fn new(client: &mut Client, id: ObjectId, version: u32) -> WaylandResult<Self> {
 		let seat = Self {
 			version,
 			pointer: OnceLock::new(),
@@ -76,7 +74,11 @@ impl Seat {
 		Ok(seat)
 	}
 
-	pub async fn handle_message(&self, client: &mut Client, message: SeatMessage) -> Result<()> {
+	pub async fn handle_message(
+		&self,
+		client: &mut Client,
+		message: SeatMessage,
+	) -> WaylandResult<()> {
 		match message {
 			SeatMessage::PointerMotion { surface, position } => {
 				if let Some(pointer) = self.pointer.get() {
@@ -160,13 +162,15 @@ impl Seat {
 	}
 }
 impl WlSeat for Seat {
+	type Connection = crate::wayland::Client;
+
 	/// https://wayland.app/protocols/wayland#wl_seat:request:get_pointer
 	async fn get_pointer(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let pointer = client.insert(id, Pointer::new(id, self.version));
 		let _ = self.pointer.set(pointer);
 		Ok(())
@@ -175,10 +179,10 @@ impl WlSeat for Seat {
 	/// https://wayland.app/protocols/wayland#wl_seat:request:get_keyboard
 	async fn get_keyboard(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		tracing::info!("Getting keyboard");
 		let keyboard = client.insert(id, Keyboard::new(id));
 		let _ = self.keyboard.set(keyboard);
@@ -188,17 +192,21 @@ impl WlSeat for Seat {
 	/// https://wayland.app/protocols/wayland#wl_seat:request:get_touch
 	async fn get_touch(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let touch = client.insert(id, Touch(id));
 		let _ = self.touch.set(touch);
 		Ok(())
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_seat:request:release
-	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn release(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 }

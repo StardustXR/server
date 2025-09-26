@@ -1,17 +1,15 @@
-use waynest::{
-	server::{Client, Dispatcher, Result},
-	wire::ObjectId,
-};
+use crate::wayland::{Client, WaylandResult};
+use waynest::ObjectId;
+pub use waynest_protocols::server::core::wayland::wl_output::*;
 
-pub use waynest::server::protocol::core::wayland::wl_output::*;
-
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Output {
 	pub id: ObjectId,
 	pub version: u32,
 }
 impl Output {
-	pub async fn advertise_outputs(&self, client: &mut Client) -> Result<()> {
+	pub async fn advertise_outputs(&self, client: &mut Client) -> WaylandResult<()> {
 		self.geometry(
 			client,
 			self.id,
@@ -46,8 +44,10 @@ impl Output {
 	}
 }
 impl WlOutput for Output {
+	type Connection = Client;
+
 	/// https://wayland.app/protocols/wayland#wl_output:request:release
-	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn release(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
 		Ok(())
 	}
 }

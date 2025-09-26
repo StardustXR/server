@@ -2216,6 +2216,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f27ae1dd37df86211c42e150270f82743308803d90a6f6e6651cd730d5e1732f"
 
 [[package]]
+name = "darling"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cdf337090841a411e2a7f3deb9187445851f91b309c0c0a29e05f74a00a48c0"
+dependencies = [
+ "darling_core",
+ "darling_macro",
+]
+
+[[package]]
+name = "darling_core"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1247195ecd7e3c85f83c8d2a366e4210d588e802133e1e355180a9870b517ea4"
+dependencies = [
+ "fnv",
+ "ident_case",
+ "proc-macro2",
+ "quote",
+ "strsim",
+ "syn 2.0.104",
+]
+
+[[package]]
+name = "darling_macro"
+version = "0.21.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d38308df82d1080de0afee5d069fa14b0326a88c14f15c5ccda35b4a6c414c81"
+dependencies = [
+ "darling_core",
+ "quote",
+ "syn 2.0.104",
+]
+
+[[package]]
 name = "dashmap"
 version = "6.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2494,7 +2529,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3210,6 +3245,12 @@ dependencies = [
  "tower-service",
  "tracing",
 ]
+
+[[package]]
+name = "ident_case"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9e0384b61958566e926dc50660321d12159025e767c18e043daf26b70104c39"
 
 [[package]]
 name = "image"
@@ -5072,7 +5113,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5085,7 +5126,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5502,6 +5543,8 @@ dependencies = [
  "tracy-client",
  "vulkano",
  "waynest",
+ "waynest-protocols",
+ "waynest-server",
  "wgpu-hal",
  "xkbcommon-rs",
  "zbus",
@@ -5694,7 +5737,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6543,32 +6586,54 @@ dependencies = [
 
 [[package]]
 name = "waynest"
-version = "0.0.26"
-source = "git+https://github.com/verdiwm/waynest.git?branch=codec-test#d03960abdd585d923cb068297487932511d997cb"
+version = "0.1.0"
+source = "git+https://github.com/verdiwm/waynest.git#cbbc19ed20ba5610fcc5577375d6b743d615da31"
 dependencies = [
- "async-trait",
- "bitflags 2.9.4",
  "bytes",
  "futures-core",
  "futures-sink",
- "futures-util",
  "pin-project-lite",
  "rustix 1.1.2",
- "thiserror 2.0.16",
  "tokio",
- "tokio-stream",
  "tokio-util",
- "tracing",
- "waynest-macros",
 ]
 
 [[package]]
 name = "waynest-macros"
-version = "0.0.26"
-source = "git+https://github.com/verdiwm/waynest.git?branch=codec-test#d03960abdd585d923cb068297487932511d997cb"
+version = "0.1.0"
+source = "git+https://github.com/verdiwm/waynest.git#cbbc19ed20ba5610fcc5577375d6b743d615da31"
 dependencies = [
+ "darling",
  "quote",
  "syn 2.0.104",
+]
+
+[[package]]
+name = "waynest-protocols"
+version = "0.1.0"
+source = "git+https://github.com/verdiwm/waynest.git#cbbc19ed20ba5610fcc5577375d6b743d615da31"
+dependencies = [
+ "bitflags 2.9.4",
+ "futures-core",
+ "futures-sink",
+ "futures-util",
+ "tracing",
+ "waynest",
+]
+
+[[package]]
+name = "waynest-server"
+version = "0.1.0"
+source = "git+https://github.com/verdiwm/waynest.git#cbbc19ed20ba5610fcc5577375d6b743d615da31"
+dependencies = [
+ "async-trait",
+ "futures-core",
+ "futures-sink",
+ "pin-project-lite",
+ "tokio",
+ "tokio-stream",
+ "waynest",
+ "waynest-macros",
 ]
 
 [[package]]
@@ -6719,7 +6784,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

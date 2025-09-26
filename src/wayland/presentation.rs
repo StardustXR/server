@@ -1,15 +1,10 @@
-use rustix::fs::Timespec;
-use waynest::{
-	server::{
-		Client, Dispatcher, Result,
-		protocol::stable::presentation_time::{
-			wp_presentation::WpPresentation, wp_presentation_feedback::WpPresentationFeedback,
-		},
-	},
-	wire::ObjectId,
-};
-
+use crate::wayland::WaylandResult;
 use crate::wayland::core::surface::Surface;
+use rustix::fs::Timespec;
+use waynest::ObjectId;
+use waynest_protocols::server::stable::presentation_time::{
+	wp_presentation::*, wp_presentation_feedback::*,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct MonotonicTimestamp {
@@ -37,20 +32,23 @@ impl From<Timespec> for MonotonicTimestamp {
 	}
 }
 
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Presentation;
 impl WpPresentation for Presentation {
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	type Connection = crate::wayland::Client;
+
+	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	async fn feedback(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		surface: ObjectId,
 		id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let Some(surface) = client.get::<Surface>(surface) else {
 			tracing::error!("unable to get surface#{surface}");
 			return Ok(());
@@ -62,6 +60,9 @@ impl WpPresentation for Presentation {
 	}
 }
 
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct PresentationFeedback(pub ObjectId);
-impl WpPresentationFeedback for PresentationFeedback {}
+impl WpPresentationFeedback for PresentationFeedback {
+	type Connection = crate::wayland::Client;
+}

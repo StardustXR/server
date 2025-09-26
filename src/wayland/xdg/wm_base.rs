@@ -1,54 +1,51 @@
 use super::positioner::Positioner;
-use crate::wayland::{core::surface::SurfaceRole, util::ClientExt, xdg::surface::Surface};
-pub use waynest::server::protocol::stable::xdg_shell::xdg_wm_base::*;
-use waynest::{
-	server::{Client, Dispatcher, Result},
-	wire::ObjectId,
-};
+use crate::wayland::{WaylandError, WaylandResult, util::ClientExt, xdg::surface::Surface};
 
-#[derive(Debug, Dispatcher, Default)]
+use waynest::ObjectId;
+pub use waynest_protocols::server::stable::xdg_shell::xdg_wm_base::*;
+
+#[derive(Debug, waynest_server::RequestDispatcher, Default)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct WmBase {
 	pub version: u32,
 }
 impl XdgWmBase for WmBase {
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	type Connection = crate::wayland::Client;
+
+	async fn destroy(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	async fn create_positioner(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		client.insert(id, Positioner::default());
 		Ok(())
 	}
 
 	async fn get_xdg_surface(
 		&self,
-		client: &mut Client,
-		sender_id: ObjectId,
+		client: &mut Self::Connection,
+		_sender_id: ObjectId,
 		xdg_surface_id: ObjectId,
 		wl_surface_id: ObjectId,
-	) -> Result<()> {
-		let wl_surface = client
-			.get::<crate::wayland::core::surface::Surface>(wl_surface_id)
-			.ok_or(waynest::server::Error::Custom(
-				"can't get wayland surface id".to_string(),
-			))?;
+	) -> WaylandResult<()> {
+		let wl_surface = client.try_get::<crate::wayland::core::surface::Surface>(wl_surface_id)?;
 		match wl_surface.role.get() {
-			Some(SurfaceRole::XdgToplevel | SurfaceRole::XdgPopup) => (),
 			None => (),
-			_ => {
-				client
-					.protocol_error(
-						sender_id,
-						xdg_surface_id,
-						0,
-						"invalid surface role".to_string(),
-					)
-					.await?
+			Some(_) => {
+				return Err(WaylandError::Fatal {
+					object_id: wl_surface_id,
+					code: Error::Role as u32,
+					message: "Wayland surface has role",
+				});
 			}
 		};
 		let xdg_surface = Surface::new(xdg_surface_id, self.version, wl_surface);
@@ -57,7 +54,12 @@ impl XdgWmBase for WmBase {
 		Ok(())
 	}
 
-	async fn pong(&self, _client: &mut Client, _sender_id: ObjectId, _serial: u32) -> Result<()> {
+	async fn pong(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+		_serial: u32,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 }

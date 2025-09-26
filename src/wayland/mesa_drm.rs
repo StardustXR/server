@@ -1,4 +1,5 @@
 use crate::wayland::{
+	Client, WaylandResult,
 	core::buffer::{Buffer, BufferBacking},
 	dmabuf::{DMABUF_FORMATS, buffer_backing::DmabufBacking},
 	vulkano_data::VULKANO_CONTEXT,
@@ -6,17 +7,16 @@ use crate::wayland::{
 use bevy_dmabuf::dmatex::{Dmatex, DmatexPlane, Resolution};
 use rustc_hash::FxHashSet;
 use std::os::fd::OwnedFd;
-use waynest::{
-	server::{Client, Dispatcher, Result, protocol::mesa::drm::wl_drm::*},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
+use waynest_protocols::server::mesa::drm::wl_drm::*;
 
-#[derive(Debug, Dispatcher, Default)]
+#[derive(Debug, waynest_server::RequestDispatcher, Default)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct MesaDrm {
 	version: u32,
 }
 impl MesaDrm {
-	pub async fn new(client: &mut Client, id: ObjectId, version: u32) -> Result<MesaDrm> {
+	pub async fn new(client: &mut Client, id: ObjectId, version: u32) -> WaylandResult<MesaDrm> {
 		let drm = MesaDrm { version };
 
 		let path = {
@@ -46,13 +46,20 @@ impl MesaDrm {
 	}
 }
 impl WlDrm for MesaDrm {
-	async fn authenticate(&self, client: &mut Client, sender_id: ObjectId, _id: u32) -> Result<()> {
+	type Connection = Client;
+
+	async fn authenticate(
+		&self,
+		client: &mut Self::Connection,
+		sender_id: ObjectId,
+		_id: u32,
+	) -> WaylandResult<()> {
 		self.authenticated(client, sender_id).await
 	}
 
 	async fn create_buffer(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_id: ObjectId,
 		_name: u32,
@@ -60,14 +67,14 @@ impl WlDrm for MesaDrm {
 		_height: i32,
 		_stride: u32,
 		_format: u32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		tracing::error!("Tried to create non-prime wl_drm buffer!");
 		Ok(())
 	}
 
 	async fn create_planar_buffer(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_id: ObjectId,
 		_name: u32,
@@ -80,14 +87,14 @@ impl WlDrm for MesaDrm {
 		_stride1: i32,
 		_offset2: i32,
 		_stride2: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		tracing::error!("Tried to create non-prime wl_drm buffer!");
 		Ok(())
 	}
 
 	async fn create_prime_buffer(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		buffer_id: ObjectId,
 		name: OwnedFd,
@@ -100,7 +107,7 @@ impl WlDrm for MesaDrm {
 		_stride1: i32,
 		_offset2: i32,
 		_stride2: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		// TODO: actual error checking
 
 		let _ = DmabufBacking::new(Dmatex {

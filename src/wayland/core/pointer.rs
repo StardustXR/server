@@ -1,19 +1,18 @@
+use super::surface::SurfaceRole;
 use crate::nodes::items::panel::Geometry;
-use crate::wayland::core::{seat::fixed_from_f32, surface::Surface};
+use crate::wayland::core::surface::Surface;
+use crate::wayland::{Client, WaylandResult};
 use mint::Vector2;
 use std::sync::Arc;
 use std::sync::Weak;
 use tokio::sync::Mutex;
 use tracing;
-pub use waynest::server::protocol::core::wayland::wl_pointer::*;
-use waynest::{
-	server::{Client, Dispatcher, Result},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
 
-use super::surface::SurfaceRole;
+pub use waynest_protocols::server::core::wayland::wl_pointer::*;
 
-#[derive(Dispatcher)]
+#[derive(waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Pointer {
 	pub id: ObjectId,
 	version: u32,
@@ -35,7 +34,7 @@ impl Pointer {
 		client: &mut Client,
 		surface: Arc<Surface>,
 		position: Vector2<f32>,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		tracing::debug!(
 			"Handling pointer motion at ({}, {})",
 			position.x,
@@ -65,8 +64,8 @@ impl Pointer {
 				self.id,
 				serial,
 				surface.id,
-				fixed_from_f32(position.x),
-				fixed_from_f32(position.y),
+				(position.x as f64).into(),
+				(position.y as f64).into(),
 			)
 			.await?;
 
@@ -80,8 +79,8 @@ impl Pointer {
 			client,
 			self.id,
 			0, // time
-			fixed_from_f32(position.x),
-			fixed_from_f32(position.y),
+			(position.x as f64).into(),
+			(position.y as f64).into(),
 		)
 		.await?;
 		if self.version >= 5 {
@@ -97,7 +96,7 @@ impl Pointer {
 		surface: Arc<Surface>,
 		button: u32,
 		pressed: bool,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		tracing::debug!(
 			"Handling pointer button {} {} on surface {:?}",
 			button,
@@ -126,7 +125,7 @@ impl Pointer {
 		_surface: Arc<Surface>,
 		scroll_distance: Option<Vector2<f32>>,
 		scroll_steps: Option<Vector2<f32>>,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		tracing::debug!(
 			"Handling pointer scroll: distance={:?}, steps={:?}",
 			scroll_distance,
@@ -138,7 +137,7 @@ impl Pointer {
 				self.id,
 				0, // time
 				Axis::HorizontalScroll,
-				fixed_from_f32(distance.x),
+				(distance.x as f64).into(),
 			)
 			.await?;
 			self.axis(
@@ -146,7 +145,7 @@ impl Pointer {
 				self.id,
 				0, // time
 				Axis::VerticalScroll,
-				fixed_from_f32(distance.y),
+				(distance.y as f64).into(),
 			)
 			.await?;
 		}
@@ -162,7 +161,7 @@ impl Pointer {
 		Ok(())
 	}
 
-	pub async fn reset(&self, client: &mut Client) -> Result<()> {
+	pub async fn reset(&self, client: &mut Client) -> WaylandResult<()> {
 		let mut focused = self.focused_surface.lock().await;
 		if let Some(old_surface) = focused.upgrade() {
 			let serial = client.next_event_serial();
@@ -179,16 +178,18 @@ impl Pointer {
 }
 
 impl WlPointer for Pointer {
+	type Connection = crate::wayland::Client;
+
 	/// https://wayland.app/protocols/wayland#wl_pointer:request:set_cursor
 	async fn set_cursor(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_serial: u32,
 		surface: Option<ObjectId>,
 		hotspot_x: i32,
 		hotspot_y: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		if let Some(focused_surface) = self.focused_surface.lock().await.upgrade()
 			&& let Some(panel_item) = focused_surface.panel_item.lock().upgrade()
 		{
@@ -211,13 +212,19 @@ impl WlPointer for Pointer {
 			return Ok(());
 		};
 
-		surface.try_set_role(client, SurfaceRole::Cursor).await?;
+		surface
+			.try_set_role(SurfaceRole::Cursor, Error::Role)
+			.await?;
 		self.cursor_surface.lock().await.replace(surface);
 		Ok(())
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_pointer:request:release
-	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn release(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 }

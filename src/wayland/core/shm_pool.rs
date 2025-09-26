@@ -1,25 +1,24 @@
+use super::shm_buffer_backing::ShmBufferBacking;
+use crate::wayland::{
+	Client, WaylandResult,
+	core::buffer::{Buffer, BufferBacking},
+};
 use memmap2::{MmapOptions, RemapOptions};
 use parking_lot::{Mutex, MutexGuard, RawMutex, lock_api::MappedMutexGuard};
 use std::os::fd::{IntoRawFd, OwnedFd};
-use waynest::{
-	server::{Client, Dispatcher, Result, protocol::core::wayland::wl_shm::Format},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
+use waynest_protocols::server::core::wayland::wl_shm::Format;
+pub use waynest_protocols::server::core::wayland::wl_shm_pool::*;
 
-use crate::wayland::core::buffer::{Buffer, BufferBacking};
-
-pub use waynest::server::protocol::core::wayland::wl_shm_pool::*;
-
-use super::shm_buffer_backing::ShmBufferBacking;
-
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct ShmPool {
 	inner: Mutex<memmap2::MmapMut>,
 }
 
 impl ShmPool {
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn new(fd: OwnedFd, size: i32) -> Result<Self> {
+	pub fn new(fd: OwnedFd, size: i32) -> WaylandResult<Self> {
 		let map = unsafe {
 			MmapOptions::new()
 				.len(size as usize)
@@ -38,11 +37,13 @@ impl ShmPool {
 }
 
 impl WlShmPool for ShmPool {
+	type Connection = Client;
+
 	/// https://wayland.app/protocols/wayland#wl_shm_pool:request:create_buffer
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn create_buffer(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		sender_id: ObjectId,
 		id: ObjectId,
 		offset: i32,
@@ -50,7 +51,7 @@ impl WlShmPool for ShmPool {
 		height: i32,
 		stride: i32,
 		format: Format,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let params = ShmBufferBacking::new(
 			client.get::<ShmPool>(sender_id).unwrap(),
 			offset as usize,
@@ -65,7 +66,12 @@ impl WlShmPool for ShmPool {
 
 	/// https://wayland.app/protocols/wayland#wl_shm_pool:request:resize
 	#[tracing::instrument(level = "debug", skip_all)]
-	async fn resize(&self, _client: &mut Client, _sender_id: ObjectId, size: i32) -> Result<()> {
+	async fn resize(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+		size: i32,
+	) -> WaylandResult<()> {
 		let mut inner = self.inner.lock();
 		unsafe { inner.remap(size as usize, RemapOptions::new().may_move(true))? };
 		Ok(())
@@ -73,7 +79,7 @@ impl WlShmPool for ShmPool {
 
 	/// https://wayland.app/protocols/wayland#wl_shm_pool:request:destroy
 	#[tracing::instrument(level = "debug", skip_all)]
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
 		Ok(())
 	}
 }

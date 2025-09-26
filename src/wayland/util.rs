@@ -1,22 +1,16 @@
 #![allow(unused)]
 
 use super::{Message, MessageSink, display::Display};
+use crate::wayland::{Client, WaylandError, WaylandResult};
 use std::{fmt::Debug, sync::Arc};
-use waynest::{
-	server::{Client, Result, protocol::core::wayland::wl_display::WlDisplay},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
+use waynest_protocols::server::core::wayland::wl_display::WlDisplay;
+use waynest_server::RequestDispatcher;
 
 pub trait ClientExt {
 	fn message_sink(&self) -> MessageSink;
 	fn display(&self) -> Arc<Display>;
-	async fn protocol_error(
-		&mut self,
-		sender_id: ObjectId,
-		object_id: ObjectId,
-		code: u32,
-		message: String,
-	) -> Result<()>;
+	fn try_get<D: RequestDispatcher>(&self, id: ObjectId) -> WaylandResult<Arc<D>>;
 }
 impl ClientExt for Client {
 	fn message_sink(&self) -> MessageSink {
@@ -30,19 +24,8 @@ impl ClientExt for Client {
 		self.get::<Display>(ObjectId::DISPLAY).unwrap()
 	}
 
-	async fn protocol_error(
-		&mut self,
-		sender_id: ObjectId,
-		object_id: ObjectId,
-		code: u32,
-		message: String,
-	) -> Result<()> {
-		self.display()
-			.error(self, sender_id, object_id, code, message)
-			.await?;
-		let _ = self.message_sink().send(Message::Disconnect);
-
-		Ok(())
+	fn try_get<D: RequestDispatcher>(&self, id: ObjectId) -> WaylandResult<Arc<D>> {
+		self.get::<D>(id).ok_or(WaylandError::MissingObject(id))
 	}
 }
 

@@ -1,26 +1,22 @@
 use super::Dmabuf;
-use crate::wayland::vulkano_data::VULKANO_CONTEXT;
+use crate::wayland::{Client, WaylandResult, vulkano_data::VULKANO_CONTEXT};
 use memfd::MemfdOptions;
 use std::{
 	io::Write,
 	os::fd::{FromRawFd, IntoRawFd, OwnedFd},
 	sync::Arc,
 };
-use waynest::{
-	server::{
-		Client, Dispatcher, Result,
-		protocol::stable::linux_dmabuf_v1::zwp_linux_dmabuf_feedback_v1::{
-			TrancheFlags, ZwpLinuxDmabufFeedbackV1,
-		},
-	},
-	wire::ObjectId,
+use waynest::ObjectId;
+use waynest_protocols::server::stable::linux_dmabuf_v1::zwp_linux_dmabuf_feedback_v1::{
+	TrancheFlags, ZwpLinuxDmabufFeedbackV1,
 };
 
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct DmabufFeedback(pub Arc<Dmabuf>);
 impl DmabufFeedback {
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub async fn send_params(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
+	pub async fn send_params(&self, client: &mut Client, sender_id: ObjectId) -> WaylandResult<()> {
 		let num_formats = self.0.formats.len();
 		// Send format table first
 		self.send_format_table(client, sender_id).await?;
@@ -63,16 +59,18 @@ impl DmabufFeedback {
 	}
 
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub async fn send_format_table(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
+	pub async fn send_format_table(
+		&self,
+		client: &mut Client,
+		sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		// Format + modifier pair (16 bytes):
 		// - format: u32
 		// - padding: 4 bytes
 		// - modifier: u64
 		let size = self.0.formats.len() as u32 * 16u32;
 		// Create a temporary file for the format table
-		let mfd = MemfdOptions::default()
-			.create("stardustxr-format-table")
-			.map_err(|e| waynest::server::Error::Custom(e.to_string()))?;
+		let mfd = MemfdOptions::default().create("stardustxr-format-table")?;
 
 		mfd.as_file().set_len(size as u64)?;
 
@@ -96,7 +94,13 @@ impl DmabufFeedback {
 }
 
 impl ZwpLinuxDmabufFeedbackV1 for DmabufFeedback {
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	type Connection = crate::wayland::Client;
+
+	async fn destroy(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 }

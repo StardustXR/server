@@ -29,8 +29,6 @@ pub enum ServerError {
 	#[error("Reader error: {0}")]
 	ReaderError(#[from] ReaderError),
 	#[cfg(feature = "wayland")]
-	#[error("Wayland error: {0}")]
-	WaylandError(waynest::server::Error),
 	#[error("Aspect {} does not exist for node", 0.to_string())]
 	NoAspect(TypeId),
 	#[error("{0}")]

@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use crate::wayland::{
-	MessageSink,
+	MessageSink, WaylandResult,
 	core::{
 		callback::{Callback, WlCallback},
 		output::Output,
@@ -14,13 +14,11 @@ use std::{
 	sync::{Arc, OnceLock},
 	time::Instant,
 };
-pub use waynest::server::protocol::core::wayland::wl_display::*;
-use waynest::{
-	server::{Client, Dispatcher, Result},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
+pub use waynest_protocols::server::core::wayland::wl_display::*;
 
-#[derive(Dispatcher)]
+#[derive(waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Display {
 	pub message_sink: MessageSink,
 	pub pid: Option<i32>,
@@ -45,13 +43,15 @@ impl Display {
 	}
 }
 impl WlDisplay for Display {
+	type Connection = crate::wayland::Client;
+
 	/// https://wayland.app/protocols/wayland#wl_display:request:sync
 	async fn sync(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		sender_id: ObjectId,
 		callback_id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let serial = client.next_event_serial();
 		Callback(callback_id)
 			.done(client, callback_id, serial)
@@ -65,10 +65,10 @@ impl WlDisplay for Display {
 	/// https://wayland.app/protocols/wayland#wl_display:request:get_registry
 	async fn get_registry(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		registry_id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let registry = client.insert(registry_id, Registry);
 
 		registry.advertise_globals(client, registry_id).await?;

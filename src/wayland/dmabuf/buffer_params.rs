@@ -1,5 +1,6 @@
 use super::buffer_backing::DmabufBacking;
 use crate::wayland::{
+	Client, WaylandError, WaylandResult,
 	core::buffer::{Buffer, BufferBacking},
 	util::ClientExt,
 };
@@ -8,14 +9,9 @@ use drm_fourcc::DrmFourcc;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use std::os::fd::{AsRawFd, OwnedFd};
-use waynest::{
-	server::{
-		Client, Dispatcher, Result,
-		protocol::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::{
-			Error, Flags, ZwpLinuxBufferParamsV1,
-		},
-	},
-	wire::ObjectId,
+use waynest::ObjectId;
+use waynest_protocols::server::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::{
+	Error, Flags, ZwpLinuxBufferParamsV1,
 };
 
 /// Parameters for creating a DMA-BUF-based wl_buffer
@@ -23,7 +19,8 @@ use waynest::{
 /// This is a temporary object that collects dmabufs and other parameters
 /// that together form a single logical buffer. The object may eventually
 /// create one wl_buffer unless cancelled by destroying it.
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct BufferParams {
 	pub id: ObjectId,
 	pub(super) planes: Mutex<FxHashMap<u32, DmatexPlane>>,
@@ -41,7 +38,13 @@ impl BufferParams {
 }
 
 impl ZwpLinuxBufferParamsV1 for BufferParams {
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	type Connection = Client;
+
+	async fn destroy(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		tracing::info!("Destroying BufferParams {:?}", self.id);
 		Ok(())
 	}
@@ -49,7 +52,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn add(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		fd: OwnedFd,
 		plane_idx: u32,
@@ -57,7 +60,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		stride: u32,
 		modifier_hi: u32,
 		modifier_lo: u32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let fd_num = fd.as_raw_fd();
 		tracing::info!(
 			"Adding plane {} with fd {} to BufferParams {:?}",
@@ -75,7 +78,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 				plane_idx,
 				self.id
 			);
-			return Err(waynest::server::Error::MissingObject(self.id));
+			return Err(crate::wayland::WaylandError::MissingObject(self.id));
 		}
 
 		// Create plane with the provided parameters
@@ -94,13 +97,13 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn create(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		width: i32,
 		height: i32,
 		format: u32,
 		flags: Flags,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		tracing::info!("Creating buffer from BufferParams {:?}", self.id);
 		// Create the buffer with DMA-BUF backing using self as the backing
 		let size = [width as u32, height as u32].into();
@@ -128,14 +131,14 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn create_immed(
 		&self,
-		client: &mut Client,
-		sender_id: ObjectId,
+		client: &mut Self::Connection,
+		_sender_id: ObjectId,
 		buffer_id: ObjectId,
 		width: i32,
 		height: i32,
 		format: u32,
 		flags: Flags,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		// TODO: terminate client on fail, or send a fail event or something
 		// Create the buffer with DMA-BUF backing using self as the backing
 		match DmabufBacking::from_params(
@@ -148,15 +151,12 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 				Buffer::new(client, buffer_id, BufferBacking::Dmabuf(backing));
 			}
 			Err(e) => {
-				client
-					.protocol_error(
-						sender_id,
-						buffer_id,
-						Error::Incomplete as u32,
-						format!("Failed to import dmabuf because {e}"),
-					)
-					.await?;
 				tracing::error!("Failed to import dmabuf because {e}");
+				return Err(WaylandError::Fatal {
+					object_id: buffer_id,
+					code: Error::Incomplete as u32,
+					message: "Failed to import dmabuf",
+				});
 			}
 		}
 		Ok(())

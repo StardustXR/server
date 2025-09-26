@@ -1,4 +1,6 @@
+use crate::wayland::{Client, WaylandResult};
 use crate::wayland::{
+	WaylandError,
 	core::{
 		compositor::{Compositor, WlCompositor},
 		data_device::DataDeviceManager,
@@ -13,20 +15,15 @@ use crate::wayland::{
 	viewporter::Viewporter,
 	xdg::wm_base::{WmBase, XdgWmBase},
 };
-use waynest::{
-	server::{
-		Client, Dispatcher, Error, Result,
-		protocol::{
-			core::wayland::{wl_data_device_manager::WlDataDeviceManager, wl_registry::*},
-			mesa::drm::wl_drm::WlDrm,
-			stable::{
-				linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
-				presentation_time::wp_presentation::WpPresentation,
-				viewporter::wp_viewporter::WpViewporter,
-			},
-		},
+use waynest::{NewId, ObjectId};
+use waynest_protocols::server::{
+	core::wayland::{wl_data_device_manager::WlDataDeviceManager, wl_registry::*},
+	mesa::drm::wl_drm::WlDrm,
+	stable::{
+		linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
+		presentation_time::wp_presentation::WpPresentation,
+		viewporter::wp_viewporter::WpViewporter,
 	},
-	wire::{NewId, ObjectId},
 };
 
 struct RegistryGlobals;
@@ -43,11 +40,16 @@ impl RegistryGlobals {
 	pub const VIEWPORTER: u32 = 9;
 }
 
-#[derive(Debug, Dispatcher, Default)]
+#[derive(Debug, waynest_server::RequestDispatcher, Default)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Registry;
 
 impl Registry {
-	pub async fn advertise_globals(&self, client: &mut Client, sender_id: ObjectId) -> Result<()> {
+	pub async fn advertise_globals(
+		&self,
+		client: &mut Client,
+		sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		self.global(
 			client,
 			sender_id,
@@ -143,13 +145,15 @@ impl Registry {
 }
 
 impl WlRegistry for Registry {
+	type Connection = crate::wayland::Client;
+
 	async fn bind(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		name: u32,
 		new_id: NewId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		match name {
 			RegistryGlobals::COMPOSITOR => {
 				tracing::info!("Binding compositor");
@@ -217,7 +221,7 @@ impl WlRegistry for Registry {
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");
-				return Err(Error::MissingObject(unsafe { ObjectId::from_raw(name) }));
+				return Err(WaylandError::UnknownGlobal(name));
 			}
 		}
 

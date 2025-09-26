@@ -7,7 +7,7 @@ use crate::{
 		items::panel::{Geometry, PanelItem, SurfaceId},
 	},
 	wayland::{
-		Message, MessageSink,
+		Client, Message, MessageSink, WaylandError, WaylandResult,
 		core::buffer::BufferUsage,
 		presentation::{MonotonicTimestamp, PresentationFeedback},
 		util::{ClientExt, DoubleBuffer},
@@ -22,16 +22,14 @@ use bevy::{
 use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
 use parking_lot::Mutex;
-use std::sync::{Arc, OnceLock, Weak};
-use waynest::{
-	server::{
-		self, Client, Dispatcher, Result,
-		protocol::{
-			core::wayland::{wl_output::Transform, wl_surface::*},
-			stable::presentation_time::wp_presentation_feedback::{Kind, WpPresentationFeedback},
-		},
-	},
-	wire::ObjectId,
+use std::{
+	fmt::Display,
+	sync::{Arc, OnceLock, Weak},
+};
+use waynest::ObjectId;
+use waynest_protocols::server::{
+	core::wayland::{wl_output::Transform, wl_surface::*},
+	stable::presentation_time::wp_presentation_feedback::{Kind, WpPresentationFeedback},
 };
 
 pub static WL_SURFACE_REGISTRY: Registry<Surface> = Registry::new();
@@ -42,6 +40,16 @@ pub enum SurfaceRole {
 	Subsurface,
 	XdgToplevel,
 	XdgPopup,
+}
+impl Display for SurfaceRole {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		match self {
+			SurfaceRole::Cursor => f.write_str("SurfaceRole::Cursor"),
+			SurfaceRole::Subsurface => f.write_str("SurfaceRole::Subsurface"),
+			SurfaceRole::XdgToplevel => f.write_str("SurfaceRole::XdgToplevel"),
+			SurfaceRole::XdgPopup => f.write_str("SurfaceRole::XdgPopup"),
+		}
+	}
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +89,8 @@ impl SurfaceState {
 
 // if returning false, don't run this callback again... just remove it
 pub type OnCommitCallback = Box<dyn FnMut(&Surface, &SurfaceState) -> bool + Send + Sync>;
-#[derive(Dispatcher)]
+#[derive(waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Surface {
 	pub id: ObjectId,
 	pub surface_id: OnceLock<SurfaceId>,
@@ -130,24 +139,21 @@ impl Surface {
 		}
 	}
 
-	pub async fn try_set_role(&self, client: &mut Client, role: SurfaceRole) -> Result<()> {
+	pub async fn try_set_role(
+		&self,
+		role: SurfaceRole,
+		role_error: impl Into<u32>,
+	) -> WaylandResult<()> {
 		match self.role.get().cloned() {
 			Some(current_role) => {
 				if current_role == role {
 					Ok(())
 				} else {
-					client
-						.protocol_error(
-							self.id,
-							self.id,
-							1, // XDG_WM_BASE_ERROR_ROLE
-							"Surface has an incomparible role".to_string(),
-						)
-						.await?;
-					Err(server::Error::Custom(format!(
-						"Surface {} has role {current_role:?} but tried to set to {role:?}",
-						self.id
-					)))
+					Err(WaylandError::Fatal {
+						object_id: self.id,
+						code: role_error.into(),
+						message: "Surface has an incomparible role",
+					})
 				}
 			}
 			None => {
@@ -248,7 +254,7 @@ impl Surface {
 	// 		.map(|b| [b.size.x as u32, b.size.y as u32].into())
 	// }
 
-	// pub async fn release_old_buffer(&self, client: &mut Client) -> Result<()> {
+	// pub async fn release_old_buffer(&self, client: &mut Self::Connection) -> Result<()> {
 	// 	let (old_buffer, object) = {
 	// 		let lock = self.state.lock();
 
@@ -291,7 +297,7 @@ impl Surface {
 		client: &mut Client,
 		display_timestamp: MonotonicTimestamp,
 		refresh_cycle: u64,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let feedbacks = self
 			.presentation_feedback
 			.lock()
@@ -325,16 +331,18 @@ impl Surface {
 	}
 }
 impl WlSurface for Surface {
+	type Connection = crate::wayland::Client;
+
 	/// https://wayland.app/protocols/wayland#wl_surface:request:attach
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn attach(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		buffer: Option<ObjectId>,
 		_x: i32,
 		_y: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		self.state.lock().pending.buffer = buffer.and_then(|b| {
 			let buffer = client.get::<Buffer>(b)?;
 			let mut usage = Some(BufferUsage::new(client, &buffer));
@@ -350,13 +358,13 @@ impl WlSurface for Surface {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn damage(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_x: i32,
 		_y: i32,
 		_width: i32,
 		_height: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
@@ -364,10 +372,10 @@ impl WlSurface for Surface {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn frame(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		callback_id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let callback = client.insert(callback_id, Callback(callback_id));
 		self.state.lock().pending.frame_callbacks.push(callback);
 		Ok(())
@@ -377,10 +385,10 @@ impl WlSurface for Surface {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn set_opaque_region(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_region: Option<ObjectId>,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		// nothing we can really do to repaint behind this so ignore it
 		Ok(())
 	}
@@ -389,17 +397,21 @@ impl WlSurface for Surface {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn set_input_region(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_region: Option<ObjectId>,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		// too complicated to implement this for now so who the hell cares
 		Ok(())
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:commit
 	#[tracing::instrument(level = "debug", skip_all)]
-	async fn commit(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn commit(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		// we want the upload to complete before we give the image to bevy
 		let buffer_option = self
 			.state_lock()
@@ -428,10 +440,10 @@ impl WlSurface for Surface {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn set_buffer_transform(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_transform: Transform,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		// we just don't have the output transform or fullscreen at all so this optimization is never needed
 		Ok(())
 	}
@@ -440,10 +452,10 @@ impl WlSurface for Surface {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn set_buffer_scale(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		scale: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		self.state.lock().pending.density = scale as f32;
 		Ok(())
 	}
@@ -452,13 +464,13 @@ impl WlSurface for Surface {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn damage_buffer(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_x: i32,
 		_y: i32,
 		_width: i32,
 		_height: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
@@ -466,17 +478,21 @@ impl WlSurface for Surface {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn offset(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_x: i32,
 		_y: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_surface:request:destroy
 	#[tracing::instrument(level = "debug", skip_all)]
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn destroy(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 }

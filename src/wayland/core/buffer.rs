@@ -1,5 +1,5 @@
-use crate::wayland::Message;
 use crate::wayland::dmabuf::buffer_backing::DmabufBacking;
+use crate::wayland::{Client, Message, WaylandResult};
 use crate::wayland::{MessageSink, core::shm_buffer_backing::ShmBufferBacking, util::ClientExt};
 use bevy::{
 	asset::{Assets, Handle},
@@ -8,11 +8,9 @@ use bevy::{
 use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
 use std::sync::Arc;
-pub use waynest::server::protocol::core::wayland::wl_buffer::*;
-use waynest::{
-	server::{Client, Dispatcher, Result},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
+pub use waynest_protocols::server::core::wayland::wl_buffer::*;
+use waynest_server::RequestDispatcher;
 
 #[derive(Debug)]
 pub struct BufferUsage {
@@ -41,7 +39,8 @@ pub enum BufferBacking {
 	Dmabuf(DmabufBacking),
 }
 
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Buffer {
 	pub id: ObjectId,
 	backing: BufferBacking,
@@ -98,8 +97,10 @@ impl Buffer {
 }
 
 impl WlBuffer for Buffer {
+	type Connection = crate::wayland::Client;
+
 	/// https://wayland.app/protocols/wayland#wl_buffer:request:destroy
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> WaylandResult<()> {
 		tracing::info!("Destroying buffer {:?}", self.id);
 		Ok(())
 	}

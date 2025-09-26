@@ -1,35 +1,37 @@
-use waynest::{
-	server::{Client, Dispatcher, Result},
-	wire::{Fixed, ObjectId},
-};
-
-pub use waynest::server::protocol::stable::viewporter::wp_viewport::*;
-pub use waynest::server::protocol::stable::viewporter::wp_viewporter::*;
+use crate::wayland::WaylandResult;
+use waynest::Fixed;
+use waynest::ObjectId;
+pub use waynest_protocols::server::stable::viewporter::wp_viewport::*;
+pub use waynest_protocols::server::stable::viewporter::wp_viewporter::*;
 
 // This is a barebones/stub no-op implementation of wp_viewporter to make xwayland apps work
 
-#[derive(Debug, Dispatcher, Default)]
+#[derive(Debug, waynest_server::RequestDispatcher, Default)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Viewporter;
 
 impl WpViewporter for Viewporter {
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	type Connection = crate::wayland::Client;
+
+	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	async fn get_viewport(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		id: ObjectId,
 		surface_id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let viewport = Viewport::new(id, surface_id);
 		client.insert(id, viewport);
 		Ok(())
 	}
 }
 
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Viewport {
 	_id: ObjectId,
 	_surface_id: ObjectId,
@@ -45,29 +47,31 @@ impl Viewport {
 }
 
 impl WpViewport for Viewport {
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	type Connection = crate::wayland::Client;
+
+	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	async fn set_source(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_x: Fixed,
 		_y: Fixed,
 		_width: Fixed,
 		_height: Fixed,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	async fn set_destination(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_width: i32,
 		_height: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 }

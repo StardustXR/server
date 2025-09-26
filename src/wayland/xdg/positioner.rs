@@ -1,15 +1,8 @@
-use crate::nodes::items::panel::Geometry;
+use crate::{nodes::items::panel::Geometry, wayland::WaylandResult};
 use mint::Vector2;
 use parking_lot::Mutex;
-use waynest::{
-	server::{
-		Client, Dispatcher, Result,
-		protocol::stable::xdg_shell::xdg_positioner::{
-			Anchor, ConstraintAdjustment, Gravity, XdgPositioner,
-		},
-	},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
+use waynest_protocols::server::stable::xdg_shell::xdg_positioner::*;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PositionerData {
@@ -133,7 +126,8 @@ impl Default for PositionerData {
 	}
 }
 
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Positioner {
 	data: Mutex<PositionerData>,
 }
@@ -150,13 +144,15 @@ impl Positioner {
 	}
 }
 impl XdgPositioner for Positioner {
+	type Connection = crate::wayland::Client;
+
 	async fn set_size(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_width: i32,
 		_height: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let mut data = self.data.lock();
 		data.size = [_width.max(0) as u32, _height.max(0) as u32].into();
 		data.reactive = true;
@@ -165,13 +161,13 @@ impl XdgPositioner for Positioner {
 
 	async fn set_anchor_rect(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_x: i32,
 		_y: i32,
 		_width: i32,
 		_height: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let mut data = self.data.lock();
 		data.anchor_rect.origin = [_x, _y].into();
 		data.anchor_rect.size = [_width.max(0) as u32, _height.max(0) as u32].into();
@@ -181,10 +177,10 @@ impl XdgPositioner for Positioner {
 
 	async fn set_anchor(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_anchor: Anchor,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let mut data = self.data.lock();
 		data.anchor = _anchor;
 		Ok(())
@@ -192,10 +188,10 @@ impl XdgPositioner for Positioner {
 
 	async fn set_gravity(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		gravity: Gravity,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let mut data = self.data.lock();
 		data.gravity = gravity;
 		Ok(())
@@ -203,10 +199,10 @@ impl XdgPositioner for Positioner {
 
 	async fn set_constraint_adjustment(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_constraint_adjustment: ConstraintAdjustment,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let mut data = self.data.lock();
 		data.constraint_adjustment = _constraint_adjustment;
 		Ok(())
@@ -214,28 +210,32 @@ impl XdgPositioner for Positioner {
 
 	async fn set_offset(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_x: i32,
 		_y: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let mut data = self.data.lock();
 		data.offset.x += _x;
 		data.offset.y += _y;
 		Ok(())
 	}
 
-	async fn set_reactive(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn set_reactive(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	async fn set_parent_size(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_parent_width: i32,
 		_parent_height: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let mut data = self.data.lock();
 		data.parent_size.x = _parent_width.max(0) as u32;
 		data.parent_size.y = _parent_height.max(0) as u32;
@@ -244,14 +244,18 @@ impl XdgPositioner for Positioner {
 
 	async fn set_parent_configure(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_serial: u32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn destroy(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 }

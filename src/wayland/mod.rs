@@ -9,18 +9,14 @@ mod viewporter;
 mod vulkano_data;
 mod xdg;
 
+use crate::core::error::ServerError;
 use crate::core::registry::OwnedRegistry;
 use crate::nodes::drawable::model::ModelNodeSystemSet;
 use crate::wayland::core::seat::SeatMessage;
 use crate::wayland::core::surface::Surface;
 use crate::wayland::presentation::MonotonicTimestamp;
-use crate::{
-	BevyMaterial,
-	core::{
-		error::{Result, ServerError},
-		task,
-	},
-};
+use crate::wayland::util::ClientExt;
+use crate::{BevyMaterial, core::task};
 use bevy::app::{App, Plugin, Update};
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Local, Res, ResMut};
@@ -37,11 +33,11 @@ use core::{buffer::Buffer, callback::Callback, surface::WL_SURFACE_REGISTRY};
 use display::Display;
 use mint::Vector2;
 use std::fs::File;
+use std::io::ErrorKind;
 use std::mem::MaybeUninit;
 use std::time::Duration;
 use std::{
-	fs,
-	io::{self, ErrorKind},
+	io,
 	path::PathBuf,
 	sync::{Arc, OnceLock},
 };
@@ -49,24 +45,37 @@ use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
 use tokio_stream::StreamExt;
 use tracing::{debug_span, instrument};
 use vulkano_data::setup_vulkano_context;
-use waynest::{
-	server::{
-		self,
-		protocol::{
-			core::wayland::{wl_buffer::WlBuffer, wl_callback::WlCallback, wl_display::WlDisplay},
-			stable::xdg_shell::xdg_toplevel::XdgToplevel,
-		},
-	},
-	wire::{DecodeError, ObjectId},
-};
+use waynest::ObjectId;
+use waynest_protocols::server::core::wayland::wl_display::WlDisplay;
+use waynest_server::{Connection, Listener};
 use xdg::toplevel::Toplevel;
 
 pub static WAYLAND_DISPLAY: OnceLock<PathBuf> = OnceLock::new();
 
-impl From<waynest::server::Error> for ServerError {
-	fn from(err: waynest::server::Error) -> Self {
-		ServerError::WaylandError(err)
-	}
+#[derive(thiserror::Error, Debug)]
+pub enum WaylandError {
+	// #[error("Listener error: {0}")]
+	// Listener(#[from] waynest_server::ListenerError),
+	#[error("I/O error: {0}")]
+	Io(#[from] io::Error),
+	#[error("Decode error: {0}")]
+	DecodeError(#[from] waynest::ProtocolError),
+	#[error("Client requested unknown global: {0}")]
+	UnknownGlobal(u32),
+	#[error("No object found with ID {0}")]
+	MissingObject(ObjectId),
+	#[error("Fatal error on object {object_id} with code {code}: {message}")]
+	Fatal {
+		object_id: ObjectId,
+		code: u32,
+		message: &'static str,
+	},
+	#[error("Memfd error: {0}")]
+	MemfdError(#[from] memfd::Error),
+	#[error("Dmabuf import error: {0}")]
+	DmabufImport(#[from] bevy_dmabuf::import::ImportError),
+	#[error("Server error: {0}")]
+	Server(#[from] ServerError),
 }
 
 pub fn get_free_wayland_socket_path() -> Option<(PathBuf, File)> {
@@ -93,7 +102,7 @@ pub fn get_free_wayland_socket_path() -> Option<(PathBuf, File)> {
 				Ok(_) => continue, // Active compositor found - skip
 				Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
 					// Stale socket - safe to remove since we hold the lock
-					let _ = fs::remove_file(&socket_path);
+					let _ = std::fs::remove_file(&socket_path);
 				}
 				Err(_) => continue, // Transient error - conservative skip
 			}
@@ -106,8 +115,10 @@ pub fn get_free_wayland_socket_path() -> Option<(PathBuf, File)> {
 	None // Exhausted all conventional display numbers
 }
 
+pub type WaylandResult<T, E = WaylandError> = std::result::Result<T, E>;
+pub type Client = waynest_server::Connection<WaylandError>;
+
 pub enum Message {
-	Disconnect,
 	Frame(Vec<Arc<Callback>>),
 	ReleaseBuffer(Arc<Buffer>),
 	CloseToplevel(Arc<Toplevel>),
@@ -135,26 +146,25 @@ struct WaylandClient {
 	abort_handle: AbortHandle,
 }
 impl WaylandClient {
-	pub fn from_stream(socket: UnixStream) -> Result<Self> {
+	pub fn from_stream(socket: UnixStream) -> WaylandResult<Self> {
 		let pid = socket.peer_cred().ok().and_then(|c| c.pid());
-		let mut client = server::Client::new(socket)?;
+		let mut client = Connection::new(socket)?;
 		let (message_sink, message_source) = mpsc::unbounded_channel();
 
 		client.insert(ObjectId::DISPLAY, Display::new(message_sink, pid));
-		let abort_handle = task::new(
-			|| "wayland client",
-			Self::handle_client_messages(client, message_source),
-		)?
-		.abort_handle();
+		let abort_handle =
+			tokio::task::spawn(Self::dispatch_loop(client, message_source)).abort_handle();
 
 		Ok(WaylandClient { abort_handle })
 	}
-	async fn handle_client_messages(
-		mut client: server::Client,
+
+	async fn dispatch_loop(
+		mut client: Client,
 		mut render_message_rx: mpsc::UnboundedReceiver<Message>,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		loop {
 			tokio::select! {
+				biased;
 				// send all queued up messages
 				msg = render_message_rx.recv() => {
 					if let Some(msg) = msg {
@@ -162,49 +172,32 @@ impl WaylandClient {
 					}
 				}
 				// handle the next message
-				msg = client.next_message() => {
-					match msg {
-						Ok(Some(mut msg)) => {
-							if let Err(e) = client.handle_message(&mut msg).await {
-								tracing::error!("Wayland: Error handling message: {:?}", e);
-								break;
-							}
+				msg = client.try_next() => {
+					if let Some(mut msg) = msg? &&
+						let Err(e) = client
+						.get_raw(msg.object_id())
+						.ok_or(WaylandError::MissingObject(msg.object_id()))?
+						.dispatch_request(&mut client, msg.object_id(), &mut msg)
+						.await
+					{
+						if let WaylandError::Fatal { object_id, code, message } = e {
+							client.display().error(&mut client, ObjectId::DISPLAY, object_id, code, message.to_string()).await?;
 						}
-						Err(e) => {
-							// wayland clients really aren't nice when disconnecting properly, are they? :p
-							if let server::Error::Decode(DecodeError::IoError(e)) = &e && e.kind() == io::ErrorKind::ConnectionReset {
-									if let Some(pid) = client.get::<Display>(ObjectId::DISPLAY).and_then(|d| d.pid) {
-										tracing::info!("Wayland: Client with pid: {pid} disconnected from server");
-									} else {
-										tracing::info!("Wayland: Unknown client disconnected from server");
-									}
-									break;
-							}
-							tracing::error!("Wayland: Error reading message: {:?}", e);
-							break;
-						}
-						Ok(None) => {
-							if let Some(pid) = client.get::<Display>(ObjectId::DISPLAY).and_then(|d| d.pid) {
-								tracing::info!("Wayland: Client with pid: {pid} disconnected from server");
-							} else {
-								tracing::info!("Wayland: Unknown client disconnected from server");
-							}
-							// Message stream ended
-							break;
-						}
+						tracing::error!("Wayland: {e}");
+						return Err(e);
 					}
 				}
-			}
+			};
 		}
-		Ok(())
 	}
 
-	async fn handle_render_message(
-		client: &mut server::Client,
-		message: Message,
-	) -> Result<bool, waynest::server::Error> {
+	async fn handle_render_message(client: &mut Client, message: Message) -> WaylandResult<()> {
+		use waynest_protocols::server::core::wayland::wl_buffer::WlBuffer;
+		use waynest_protocols::server::core::wayland::wl_callback::WlCallback;
+		use waynest_protocols::server::core::wayland::wl_display::WlDisplay;
+		use waynest_protocols::server::stable::xdg_shell::xdg_toplevel::XdgToplevel;
+
 		match message {
-			Message::Disconnect => return Ok(true),
 			Message::Frame(callbacks) => {
 				let now = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
 				let now = Duration::new(now.tv_sec as u64, now.tv_nsec as u32);
@@ -251,7 +244,7 @@ impl WaylandClient {
 					.await?;
 			}
 		}
-		Ok(false)
+		Ok(())
 	}
 }
 impl Drop for WaylandClient {
@@ -266,16 +259,15 @@ pub struct Wayland {
 	abort_handle: AbortHandle,
 }
 impl Wayland {
-	pub fn new() -> Result<Self> {
-		let (socket_path, _lockfile) =
-			get_free_wayland_socket_path().ok_or(ServerError::WaylandError(
-				waynest::server::Error::IoError(std::io::ErrorKind::AddrNotAvailable.into()),
-			))?;
+	pub fn new() -> color_eyre::eyre::Result<Self> {
+		let (socket_path, _lockfile) = get_free_wayland_socket_path().ok_or(WaylandError::Io(
+			std::io::ErrorKind::AddrNotAvailable.into(),
+		))?;
 
 		let _ = WAYLAND_DISPLAY.set(socket_path.clone());
 
-		let listener =
-			server::Listener::new_with_path(&socket_path).map_err(ServerError::WaylandError)?;
+		let listener = waynest_server::Listener::new_with_path(&socket_path)?;
+		let _ = WAYLAND_DISPLAY.set(listener.socket_path().to_path_buf());
 
 		let abort_handle =
 			task::new(|| "wayland loop", Self::handle_wayland_loop(listener))?.abort_handle();
@@ -285,7 +277,7 @@ impl Wayland {
 			abort_handle,
 		})
 	}
-	async fn handle_wayland_loop(mut listener: server::Listener) -> Result<()> {
+	async fn handle_wayland_loop(mut listener: Listener) -> WaylandResult<()> {
 		let mut clients = Vec::new();
 		loop {
 			if let Ok(Some(stream)) = listener.try_next().await {

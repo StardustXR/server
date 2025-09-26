@@ -2,10 +2,11 @@ pub mod buffer_backing;
 pub mod buffer_params;
 pub mod feedback;
 
-use std::sync::LazyLock;
-
-use super::{util::ClientExt, vulkano_data::VULKANO_CONTEXT};
-use crate::core::registry::Registry;
+use super::vulkano_data::VULKANO_CONTEXT;
+use crate::{
+	core::registry::Registry,
+	wayland::{Client, WaylandError, WaylandResult},
+};
 use bevy_dmabuf::{
 	format_mapping::{drm_fourcc_to_vk_format, vk_format_to_srgb},
 	wgpu_init::vulkan_to_wgpu,
@@ -14,14 +15,10 @@ use buffer_params::BufferParams;
 use drm_fourcc::DrmFourcc;
 use feedback::DmabufFeedback;
 use rustc_hash::FxHashSet;
+use std::sync::LazyLock;
 use vulkano::format::FormatFeatures;
-use waynest::{
-	server::{
-		Client, Dispatcher, Error, Result,
-		protocol::stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
-	},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
+use waynest_protocols::server::stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
 
 pub static DMABUF_FORMATS: LazyLock<Vec<(DrmFourcc, u64)>> = LazyLock::new(|| {
 	let vk = VULKANO_CONTEXT.wait();
@@ -76,7 +73,8 @@ pub static DMABUF_FORMATS: LazyLock<Vec<(DrmFourcc, u64)>> = LazyLock::new(|| {
 /// - Coherency for read access in dmabuf data
 /// - Proper lifetime management of dmabuf file descriptors
 /// - Safe handling of buffer attachments
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Dmabuf {
 	// Track supported formats and modifiers
 	// formats: Mutex<FxHashSet<DrmFormat>>,
@@ -88,7 +86,7 @@ pub struct Dmabuf {
 
 impl Dmabuf {
 	/// Create a new DMA-BUF interface instance
-	pub async fn new(client: &mut Client, id: ObjectId, version: u32) -> Result<Self> {
+	pub async fn new(client: &mut Client, id: ObjectId, version: u32) -> WaylandResult<Self> {
 		let dmabuf = Self {
 			active_params: Registry::new(),
 			version,
@@ -122,17 +120,23 @@ impl Dmabuf {
 }
 
 impl ZwpLinuxDmabufV1 for Dmabuf {
-	async fn destroy(&self, _client: &mut Client, sender_id: ObjectId) -> Result<()> {
+	type Connection = crate::wayland::Client;
+
+	async fn destroy(
+		&self,
+		_client: &mut Self::Connection,
+		sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		self.remove_params(sender_id);
 		Ok(())
 	}
 
 	async fn create_params(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		params_id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		// Create new buffer parameters object
 		let params = client.insert(params_id, BufferParams::new(params_id));
 		self.active_params.add_raw(&params);
@@ -141,20 +145,16 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 
 	async fn get_default_feedback(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		sender_id: ObjectId,
 		id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		if self.version < 3 {
-			client
-				.protocol_error(
-					sender_id,
-					id,
-					71,
-					"Can't call get_default_feedback on version < 4 of dmabuf".into(),
-				)
-				.await?;
-			return Err(Error::Custom("Protocol error".into()));
+			return Err(WaylandError::Fatal {
+				object_id: id,
+				code: 71,
+				message: "Can't call get_default_feedback on version < 4 of dmabuf",
+			});
 		}
 		// Create feedback object for default (non-surface-specific) settings
 		let feedback = client.insert(id, DmabufFeedback(client.get::<Dmabuf>(sender_id).unwrap()));
@@ -164,11 +164,11 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 
 	async fn get_surface_feedback(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		sender_id: ObjectId,
 		id: ObjectId,
 		_surface: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		// Create feedback object for surface-specific settings
 		// Note: Surface-specific feedback could be optimized based on the surface's
 		// requirements, but for now we use the same feedback as default

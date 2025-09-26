@@ -24,6 +24,8 @@ path = "src/main.rs"
 default = ["wayland"]
 wayland = [
 	"dep:waynest",
+	"dep:waynest-protocols",
+	"dep:waynest-server",
 	"dep:tokio-stream",
 	"dep:memmap2",
 	"dep:drm-fourcc",
@@ -145,12 +147,14 @@ xkbcommon-rs = "0.1.0"
 cosmic-text = "0.14.2"
 
 # Wayland
-waynest = { git = "https://github.com/verdiwm/waynest.git", branch="codec-test", features = [
+waynest = { git = "https://github.com/verdiwm/waynest.git", default-features = false, optional = true }
+waynest-protocols = { git = "https://github.com/verdiwm/waynest.git", features = [
 	"server",
 	"stable",
 	"mesa",
 	"tracing",
 ], default-features = false, optional = true }
+waynest-server = { git = "https://github.com/verdiwm/waynest.git", default-features = false, optional = true }
 tokio-stream = { version = "0.1.17", optional = true }
 memmap2 = { version = "0.9.5", optional = true }
 drm-fourcc = { version = "2.2.0", optional = true }

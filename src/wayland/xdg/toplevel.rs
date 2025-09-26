@@ -4,16 +4,16 @@ use crate::{
 		Node,
 		items::panel::{PanelItem, SurfaceId},
 	},
-	wayland::core::{seat::Seat, surface::Surface},
+	wayland::{
+		Client, WaylandResult,
+		core::{seat::Seat, surface::Surface},
+	},
 };
 use mint::Vector2;
 use parking_lot::Mutex;
 use std::sync::Arc;
-pub use waynest::server::protocol::stable::xdg_shell::xdg_toplevel::*;
-use waynest::{
-	server::{Client, Dispatcher, Result},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
+pub use waynest_protocols::server::stable::xdg_shell::xdg_toplevel::*;
 
 #[derive(Debug)]
 pub struct MappedInner {
@@ -54,7 +54,8 @@ impl Default for ToplevelData {
 	}
 }
 
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Toplevel {
 	pub id: ObjectId,
 	xdg_surface: Arc<super::surface::Surface>,
@@ -115,7 +116,7 @@ impl Toplevel {
 		clamped
 	}
 
-	pub async fn reconfigure(&self, client: &mut Client) -> Result<()> {
+	pub async fn reconfigure(&self, client: &mut Client) -> WaylandResult<()> {
 		let data = self.data.lock().clone();
 
 		// Use the explicitly set size, applying constraints
@@ -152,12 +153,14 @@ impl Toplevel {
 	}
 }
 impl XdgToplevel for Toplevel {
+	type Connection = crate::wayland::Client;
+
 	async fn set_parent(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		parent: Option<ObjectId>,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		// Handle case where parent is specified
 		if let Some(parent) = parent {
 			// Per spec: parent must be another xdg_toplevel surface
@@ -188,64 +191,64 @@ impl XdgToplevel for Toplevel {
 
 	async fn set_title(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		title: String,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		self.data.lock().title.replace(title);
 		Ok(())
 	}
 
 	async fn set_app_id(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		app_id: String,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		self.data.lock().app_id.replace(app_id);
 		Ok(())
 	}
 
 	async fn show_window_menu(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_seat: ObjectId,
 		_serial: u32,
 		_x: i32,
 		_y: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	async fn r#move(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_seat: ObjectId,
 		_serial: u32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	async fn resize(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_seat: ObjectId,
 		_serial: u32,
 		_edges: ResizeEdge,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	async fn set_max_size(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		width: i32,
 		height: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		self.wl_surface().state_lock().pending.max_size = if width == 0 && height == 0 {
 			None
 		} else {
@@ -256,13 +259,12 @@ impl XdgToplevel for Toplevel {
 
 	async fn set_min_size(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		width: i32,
 		height: i32,
-	) -> Result<()> {
-		self.xdg_surface.wl_surface.state_lock().pending.min_size = if width == 0 && height == 0
-		{
+	) -> WaylandResult<()> {
+		self.xdg_surface.wl_surface.state_lock().pending.min_size = if width == 0 && height == 0 {
 			None
 		} else {
 			Some([width as u32, height as u32].into())
@@ -270,32 +272,52 @@ impl XdgToplevel for Toplevel {
 		Ok(())
 	}
 
-	async fn set_maximized(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn set_maximized(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
-	async fn unset_maximized(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn unset_maximized(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	async fn set_fullscreen(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_output: Option<ObjectId>,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
-	async fn unset_fullscreen(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn unset_fullscreen(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
-	async fn set_minimized(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn set_minimized(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn destroy(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		self.mapped.lock().take();
 		Ok(())
 	}

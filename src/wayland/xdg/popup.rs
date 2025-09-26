@@ -3,15 +3,15 @@ use super::{
 	surface::Surface,
 };
 use crate::nodes::items::panel::SurfaceId;
+use crate::wayland::WaylandResult;
 use parking_lot::Mutex;
 use rand::Rng;
 use std::sync::Arc;
-use waynest::{
-	server::{Client, Dispatcher, Result, protocol::stable::xdg_shell::xdg_popup::XdgPopup},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
+use waynest_protocols::server::stable::xdg_shell::xdg_popup::XdgPopup;
 
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Popup {
 	version: u32,
 	pub surface: Arc<Surface>,
@@ -33,25 +33,27 @@ impl Popup {
 	}
 }
 impl XdgPopup for Popup {
+	type Connection = crate::wayland::Client;
+
 	/// https://wayland.app/protocols/xdg-shell#xdg_popup:request:grab
 	async fn grab(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_seat: ObjectId,
 		_serial: u32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	/// https://wayland.app/protocols/xdg-shell#xdg_popup:request:reposition
 	async fn reposition(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		sender_id: ObjectId,
 		positioner: ObjectId,
 		token: u32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let positioner = client.get::<Positioner>(positioner).unwrap();
 		let positioner_data = positioner.data();
 		*self.positioner_data.lock() = positioner_data;
@@ -80,7 +82,7 @@ impl XdgPopup for Popup {
 	}
 
 	/// https://wayland.app/protocols/xdg-shell#xdg_popup:request:destroy
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
 		Ok(())
 	}
 }

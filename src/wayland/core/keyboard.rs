@@ -1,6 +1,6 @@
 use crate::{
 	nodes::items::panel::KEYMAPS,
-	wayland::{core::surface::Surface, util::ClientExt},
+	wayland::{Client, WaylandResult, core::surface::Surface, util::ClientExt},
 };
 use dashmap::{DashMap, DashSet};
 use memfd::MemfdOptions;
@@ -15,11 +15,8 @@ use std::{
 	sync::{Arc, Weak},
 };
 use tokio::sync::Mutex;
-pub use waynest::server::protocol::core::wayland::wl_keyboard::*;
-use waynest::{
-	server::{Client, Dispatcher, Result},
-	wire::ObjectId,
-};
+use waynest::ObjectId;
+pub use waynest_protocols::server::core::wayland::wl_keyboard::*;
 
 #[derive(Default)]
 struct ModifierState {
@@ -69,7 +66,8 @@ impl ModifierState {
 	}
 }
 
-#[derive(Dispatcher)]
+#[derive(waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Keyboard {
 	pub id: ObjectId,
 	focused_surface: Mutex<Weak<Surface>>,
@@ -89,10 +87,9 @@ impl Keyboard {
 		}
 	}
 
-	async fn send_keymap(&self, client: &mut Client, keymap: &[u8]) -> Result<()> {
+	async fn send_keymap(&self, client: &mut Client, keymap: &[u8]) -> WaylandResult<()> {
 		let mut file = MemfdOptions::default()
-			.create("stardust-keymap")
-			.map_err(|e| waynest::server::Error::Custom(e.to_string()))?
+			.create("stardust-keymap")?
 			.into_file();
 		file.set_len(keymap.len() as u64)?;
 		file.write_all(keymap)?;
@@ -121,7 +118,7 @@ impl Keyboard {
 		keymap_id: u64,
 		key: u32,
 		pressed: bool,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		// KEYMAP UPDATES
 		{
 			let mut old_keymap_id = self.current_keymap_id.lock().await;
@@ -224,7 +221,7 @@ impl Keyboard {
 		Ok(())
 	}
 
-	pub async fn reset(&self, client: &mut Client) -> Result<()> {
+	pub async fn reset(&self, client: &mut Client) -> WaylandResult<()> {
 		let mut modifier_state = self.modifier_state.lock().await;
 		modifier_state.pressed_keys.clear();
 		modifier_state.mods_depressed = 0;
@@ -247,8 +244,10 @@ impl Keyboard {
 }
 
 impl WlKeyboard for Keyboard {
+	type Connection = Client;
+
 	/// https://wayland.app/protocols/wayland#wl_keyboard:request:release
-	async fn release(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn release(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
 		Ok(())
 	}
 }

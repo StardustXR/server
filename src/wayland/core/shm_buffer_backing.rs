@@ -33,7 +33,7 @@ use vulkano::{
 	},
 	sync::GpuFuture,
 };
-use waynest::server::protocol::core::wayland::wl_shm::Format;
+use waynest_protocols::server::core::wayland::wl_shm::Format;
 
 /// Parameters for a shared memory buffer
 pub struct ShmBufferBacking {

@@ -1,17 +1,17 @@
 use super::{popup::Popup, positioner::Positioner, toplevel::MappedInner};
 use crate::nodes::items::panel::{ChildInfo, SurfaceId};
-use crate::wayland::Message;
-use crate::wayland::util::ClientExt;
-use crate::wayland::{core::surface::SurfaceRole, display::Display, xdg::toplevel::Toplevel};
-use std::sync::Arc;
-use waynest::server::protocol::stable::xdg_shell::xdg_popup::XdgPopup;
-pub use waynest::server::protocol::stable::xdg_shell::xdg_surface::*;
-use waynest::{
-	server::{Client, Dispatcher, Result},
-	wire::ObjectId,
+use crate::wayland::{Client, WaylandError};
+use crate::wayland::{
+	Message, WaylandResult, core::surface::SurfaceRole, display::Display, util::ClientExt,
+	xdg::toplevel::Toplevel,
 };
+use std::sync::Arc;
+use waynest::ObjectId;
+use waynest_protocols::server::stable::xdg_shell::xdg_popup::XdgPopup;
+pub use waynest_protocols::server::stable::xdg_shell::xdg_surface::*;
 
-#[derive(Debug, Dispatcher)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
+#[waynest(error = crate::wayland::WaylandError)]
 pub struct Surface {
 	id: ObjectId,
 	version: u32,
@@ -32,25 +32,31 @@ impl Surface {
 		}
 	}
 
-	pub async fn reconfigure(&self, client: &mut Client) -> Result<()> {
+	pub async fn reconfigure(&self, client: &mut Client) -> WaylandResult<()> {
 		let serial = client.next_event_serial();
 		self.configure(client, self.id, serial).await
 	}
 }
 
 impl XdgSurface for Surface {
+	type Connection = crate::wayland::Client;
+
 	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:destroy
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> Result<()> {
+	async fn destroy(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 
 	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:get_toplevel
 	async fn get_toplevel(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		sender_id: ObjectId,
 		toplevel_id: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		let toplevel = client.insert(
 			toplevel_id,
 			Toplevel::new(
@@ -61,7 +67,7 @@ impl XdgSurface for Surface {
 		);
 
 		self.wl_surface
-			.try_set_role(client, SurfaceRole::XdgToplevel)
+			.try_set_role(SurfaceRole::XdgToplevel, Error::AlreadyConstructed)
 			.await?;
 
 		let toplevel_weak = Arc::downgrade(&toplevel);
@@ -100,35 +106,29 @@ impl XdgSurface for Surface {
 	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:get_popup
 	async fn get_popup(
 		&self,
-		client: &mut Client,
+		client: &mut Self::Connection,
 		sender_id: ObjectId,
 		popup_id: ObjectId,
 		parent: Option<ObjectId>,
 		positioner: ObjectId,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		self.wl_surface
-			.try_set_role(client, SurfaceRole::XdgPopup)
+			.try_set_role(SurfaceRole::XdgPopup, Error::AlreadyConstructed)
 			.await?;
 
 		let Some(parent) = parent else {
-			return client
-				.protocol_error(
-					sender_id,
-					popup_id,
-					3, // INVALID_POPUP_PARENT
-					"Parent surface does not have an XDG role".to_string(),
-				)
-				.await;
+			return Err(WaylandError::Fatal {
+				object_id: popup_id,
+				code: 3,
+				message: "Parent surface does not have an XDG role",
+			});
 		};
 		let Some(parent) = client.get::<Surface>(parent) else {
-			return client
-				.protocol_error(
-					sender_id,
-					popup_id,
-					3, // INVALID_POPUP_PARENT
-					"Parent surface does not exist".to_string(),
-				)
-				.await;
+			return Err(WaylandError::Fatal {
+				object_id: popup_id,
+				code: 3,
+				message: "Parent surface does not exist",
+			});
 		};
 		*self.wl_surface.panel_item.lock() = parent.wl_surface.panel_item.lock().clone();
 		let positioner = client.get::<Positioner>(positioner).unwrap();
@@ -192,13 +192,13 @@ impl XdgSurface for Surface {
 	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:set_window_geometry
 	async fn set_window_geometry(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_x: i32,
 		_y: i32,
 		_width: i32,
 		_height: i32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		// we're gonna delegate literally all the window management
 		// to 3D stuff sooo we don't care, maximized is the floating state
 		Ok(())
@@ -207,10 +207,10 @@ impl XdgSurface for Surface {
 	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:ack_configure
 	async fn ack_configure(
 		&self,
-		_client: &mut Client,
+		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 		_serial: u32,
-	) -> Result<()> {
+	) -> WaylandResult<()> {
 		self.configured
 			.store(true, std::sync::atomic::Ordering::SeqCst);
 		Ok(())
