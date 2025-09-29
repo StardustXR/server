@@ -53,7 +53,8 @@ impl ModifierState {
 				input_event_codes::KEY_LEFTCTRL!() | input_event_codes::KEY_RIGHTCTRL!() => {
 					mods |= 4
 				}
-				input_event_codes::KEY_LEFTALT!() | input_event_codes::KEY_RIGHTALT!() => mods |= 8,
+				input_event_codes::KEY_LEFTALT!() => mods |= 8,
+				input_event_codes::KEY_RIGHTALT!() => mods |= 128,
 				input_event_codes::KEY_LEFTMETA!() | input_event_codes::KEY_RIGHTMETA!() => {
 					mods |= 64
 				}
