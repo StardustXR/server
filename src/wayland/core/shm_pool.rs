@@ -14,11 +14,12 @@ pub use waynest_protocols::server::core::wayland::wl_shm_pool::*;
 #[waynest(error = crate::wayland::WaylandError)]
 pub struct ShmPool {
 	inner: Mutex<memmap2::MmapMut>,
+	id: ObjectId,
 }
 
 impl ShmPool {
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn new(fd: OwnedFd, size: i32) -> WaylandResult<Self> {
+	pub fn new(fd: OwnedFd, size: i32, id: ObjectId) -> WaylandResult<Self> {
 		let map = unsafe {
 			MmapOptions::new()
 				.len(size as usize)
@@ -27,6 +28,7 @@ impl ShmPool {
 
 		Ok(Self {
 			inner: Mutex::new(map),
+			id,
 		})
 	}
 
@@ -79,7 +81,12 @@ impl WlShmPool for ShmPool {
 
 	/// https://wayland.app/protocols/wayland#wl_shm_pool:request:destroy
 	#[tracing::instrument(level = "debug", skip_all)]
-	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
+	async fn destroy(
+		&self,
+		client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
+		client.remove(self.id);
 		Ok(())
 	}
 }

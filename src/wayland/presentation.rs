@@ -34,11 +34,23 @@ impl From<Timespec> for MonotonicTimestamp {
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
 #[waynest(error = crate::wayland::WaylandError)]
-pub struct Presentation;
+pub struct Presentation {
+	id: ObjectId,
+}
+impl Presentation {
+	pub fn new(id: ObjectId) -> Self {
+		Self { id }
+	}
+}
 impl WpPresentation for Presentation {
 	type Connection = crate::wayland::Client;
 
-	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
+	async fn destroy(
+		&self,
+		client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
+		client.remove(self.id);
 		Ok(())
 	}
 

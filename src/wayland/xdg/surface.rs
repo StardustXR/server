@@ -44,9 +44,10 @@ impl XdgSurface for Surface {
 	/// https://wayland.app/protocols/xdg-shell#xdg_surface:request:destroy
 	async fn destroy(
 		&self,
-		_client: &mut Self::Connection,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 	) -> WaylandResult<()> {
+		client.remove(self.id);
 		Ok(())
 	}
 
@@ -135,7 +136,10 @@ impl XdgSurface for Surface {
 
 		let surface = client.get::<Surface>(self.id).unwrap();
 
-		let popup = client.insert(popup_id, Popup::new(self.version, surface, &positioner));
+		let popup = client.insert(
+			popup_id,
+			Popup::new(self.version, surface, &positioner, popup_id),
+		);
 
 		let positioner_geometry = positioner.data().infinite_geometry();
 

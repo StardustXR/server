@@ -130,11 +130,13 @@ impl Default for PositionerData {
 #[waynest(error = crate::wayland::WaylandError)]
 pub struct Positioner {
 	data: Mutex<PositionerData>,
+	id: ObjectId,
 }
-impl Default for Positioner {
-	fn default() -> Self {
+impl Positioner {
+	pub fn new(id: ObjectId) -> Self {
 		Self {
 			data: Mutex::new(PositionerData::default()),
+			id,
 		}
 	}
 }
@@ -253,9 +255,10 @@ impl XdgPositioner for Positioner {
 
 	async fn destroy(
 		&self,
-		_client: &mut Self::Connection,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 	) -> WaylandResult<()> {
+		client.remove(self.id);
 		Ok(())
 	}
 }

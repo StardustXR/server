@@ -100,7 +100,8 @@ impl WlBuffer for Buffer {
 	type Connection = crate::wayland::Client;
 
 	/// https://wayland.app/protocols/wayland#wl_buffer:request:destroy
-	async fn destroy(&self, _client: &mut Client, _sender_id: ObjectId) -> WaylandResult<()> {
+	async fn destroy(&self, client: &mut Client, _sender_id: ObjectId) -> WaylandResult<()> {
+		client.remove(self.id);
 		tracing::info!("Destroying buffer {:?}", self.id);
 		Ok(())
 	}

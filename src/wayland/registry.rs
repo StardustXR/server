@@ -168,9 +168,7 @@ impl WlRegistry for Registry {
 				tracing::info!("Binding WM_BASE");
 				client.insert(
 					new_id.object_id,
-					WmBase {
-						version: new_id.version,
-					},
+					WmBase::new(new_id.object_id, new_id.version),
 				);
 			}
 			RegistryGlobals::SEAT => {
@@ -212,12 +210,12 @@ impl WlRegistry for Registry {
 			RegistryGlobals::PRESENTATION => {
 				tracing::info!("Binding wp_presentation");
 
-				client.insert(new_id.object_id, Presentation);
+				client.insert(new_id.object_id, Presentation::new(new_id.object_id));
 			}
 			RegistryGlobals::VIEWPORTER => {
 				tracing::info!("Binding wp_viewporter");
 
-				client.insert(new_id.object_id, Viewporter);
+				client.insert(new_id.object_id, Viewporter::new(new_id.object_id));
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");

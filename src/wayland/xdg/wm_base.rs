@@ -4,19 +4,26 @@ use crate::wayland::{WaylandError, WaylandResult, util::ClientExt, xdg::surface:
 use waynest::ObjectId;
 pub use waynest_protocols::server::stable::xdg_shell::xdg_wm_base::*;
 
-#[derive(Debug, waynest_server::RequestDispatcher, Default)]
+#[derive(Debug, waynest_server::RequestDispatcher)]
 #[waynest(error = crate::wayland::WaylandError)]
 pub struct WmBase {
-	pub version: u32,
+	version: u32,
+	id: ObjectId,
+}
+impl WmBase {
+	pub fn new(id: ObjectId, version: u32) -> Self {
+		Self { version, id }
+	}
 }
 impl XdgWmBase for WmBase {
 	type Connection = crate::wayland::Client;
 
 	async fn destroy(
 		&self,
-		_client: &mut Self::Connection,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 	) -> WaylandResult<()> {
+		client.remove(self.id);
 		Ok(())
 	}
 
@@ -26,7 +33,7 @@ impl XdgWmBase for WmBase {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> WaylandResult<()> {
-		client.insert(id, Positioner::default());
+		client.insert(id, Positioner::new(id));
 		Ok(())
 	}
 

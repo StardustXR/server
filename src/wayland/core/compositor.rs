@@ -1,5 +1,5 @@
 use super::surface::WL_SURFACE_REGISTRY;
-use crate::wayland::{WaylandResult, WaylandError};
+use crate::wayland::{WaylandError, WaylandResult};
 use crate::wayland::{core::surface::Surface, util::ClientExt};
 use waynest::ObjectId;
 use waynest_protocols::server::core::wayland::wl_surface::WlSurface;
@@ -35,14 +35,16 @@ impl WlCompositor for Compositor {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> WaylandResult<()> {
-		client.insert(id, Region::default());
+		client.insert(id, Region { id });
 		Ok(())
 	}
 }
 
-#[derive(Debug, RequestDispatcher, Default)]
+#[derive(Debug, RequestDispatcher)]
 #[waynest(error = WaylandError)]
-pub struct Region {}
+pub struct Region {
+	id: ObjectId,
+}
 impl WlRegion for Region {
 	type Connection = crate::wayland::Client;
 
@@ -73,7 +75,12 @@ impl WlRegion for Region {
 	}
 
 	/// https://wayland.app/protocols/wayland#wl_region:request:destroy
-	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
+	async fn destroy(
+		&self,
+		client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
+		client.remove(self.id);
 		Ok(())
 	}
 }

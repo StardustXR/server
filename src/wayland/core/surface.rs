@@ -490,9 +490,10 @@ impl WlSurface for Surface {
 	#[tracing::instrument(level = "debug", skip_all)]
 	async fn destroy(
 		&self,
-		_client: &mut Self::Connection,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 	) -> WaylandResult<()> {
+		client.remove(self.id);
 		Ok(())
 	}
 }

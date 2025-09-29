@@ -19,7 +19,7 @@ impl WlDataDeviceManager for DataDeviceManager {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> WaylandResult<()> {
-		client.insert(id, DataSource);
+		client.insert(id, DataSource { id });
 		Ok(())
 	}
 
@@ -37,7 +37,9 @@ impl WlDataDeviceManager for DataDeviceManager {
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
 #[waynest(error = crate::wayland::WaylandError)]
-pub struct DataSource;
+pub struct DataSource {
+	id: ObjectId,
+}
 impl WlDataSource for DataSource {
 	type Connection = Client;
 
@@ -60,7 +62,12 @@ impl WlDataSource for DataSource {
 		Ok(())
 	}
 
-	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
+	async fn destroy(
+		&self,
+		client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
+		client.remove(self.id);
 		Ok(())
 	}
 
@@ -102,14 +109,20 @@ impl WlDataDevice for DataDevice {
 		Ok(())
 	}
 
-	async fn release(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
+	async fn release(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
 #[waynest(error = crate::wayland::WaylandError)]
-pub struct DataOffer;
+pub struct DataOffer {
+	id: ObjectId,
+}
 impl WlDataOffer for DataOffer {
 	type Connection = Client;
 
@@ -133,11 +146,20 @@ impl WlDataOffer for DataOffer {
 		Ok(())
 	}
 
-	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
+	async fn destroy(
+		&self,
+		client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
+		client.remove(self.id);
 		Ok(())
 	}
 
-	async fn finish(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
+	async fn finish(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 

@@ -315,9 +315,10 @@ impl XdgToplevel for Toplevel {
 
 	async fn destroy(
 		&self,
-		_client: &mut Self::Connection,
+		client: &mut Self::Connection,
 		_sender_id: ObjectId,
 	) -> WaylandResult<()> {
+		client.remove(self.id);
 		self.mapped.lock().take();
 		Ok(())
 	}

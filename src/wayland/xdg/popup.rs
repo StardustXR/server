@@ -16,9 +16,10 @@ pub struct Popup {
 	version: u32,
 	pub surface: Arc<Surface>,
 	positioner_data: Mutex<PositionerData>,
+	id: ObjectId,
 }
 impl Popup {
-	pub fn new(version: u32, surface: Arc<Surface>, positioner: &Positioner) -> Self {
+	pub fn new(version: u32, surface: Arc<Surface>, positioner: &Positioner, id: ObjectId) -> Self {
 		let _ = surface
 			.wl_surface
 			.surface_id
@@ -29,6 +30,7 @@ impl Popup {
 			version,
 			surface,
 			positioner_data: Mutex::new(positioner_data),
+			id,
 		}
 	}
 }
@@ -82,7 +84,12 @@ impl XdgPopup for Popup {
 	}
 
 	/// https://wayland.app/protocols/xdg-shell#xdg_popup:request:destroy
-	async fn destroy(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
+	async fn destroy(
+		&self,
+		client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
+		client.remove(self.id);
 		Ok(())
 	}
 }
