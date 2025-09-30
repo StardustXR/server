@@ -5,16 +5,17 @@ use crate::wayland::{
 };
 use memmap2::{MmapOptions, RemapOptions};
 use parking_lot::{Mutex, MutexGuard, RawMutex, lock_api::MappedMutexGuard};
-use waynest_server::Client as _;
-use std::os::fd::{IntoRawFd, OwnedFd};
+use std::os::fd::{AsRawFd, OwnedFd};
 use waynest::ObjectId;
 use waynest_protocols::server::core::wayland::wl_shm::Format;
 pub use waynest_protocols::server::core::wayland::wl_shm_pool::*;
+use waynest_server::Client as _;
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
 #[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct ShmPool {
 	inner: Mutex<memmap2::MmapMut>,
+	fd: OwnedFd,
 	id: ObjectId,
 }
 
@@ -24,11 +25,12 @@ impl ShmPool {
 		let map = unsafe {
 			MmapOptions::new()
 				.len(size as usize)
-				.map_mut(fd.into_raw_fd())?
+				.map_mut(fd.as_raw_fd())?
 		};
 
 		Ok(Self {
 			inner: Mutex::new(map),
+			fd,
 			id,
 		})
 	}
