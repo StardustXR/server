@@ -3,12 +3,12 @@ use crate::nodes::items::panel::Geometry;
 use crate::wayland::core::surface::Surface;
 use crate::wayland::{Client, WaylandResult};
 use mint::Vector2;
-use waynest_server::Client as _;
 use std::sync::Arc;
 use std::sync::Weak;
 use tokio::sync::Mutex;
 use tracing;
 use waynest::ObjectId;
+use waynest_server::Client as _;
 
 pub use waynest_protocols::server::core::wayland::wl_pointer::*;
 
@@ -150,13 +150,34 @@ impl Pointer {
 			)
 			.await?;
 		}
+		if self.version < 8
+			&& self.version >= 5
+			&& let Some(steps) = scroll_steps
+		{
+			self.axis_discrete(client, self.id, Axis::HorizontalScroll, steps.x as i32)
+				.await?;
+			self.axis_discrete(client, self.id, Axis::VerticalScroll, steps.y as i32)
+				.await?;
+		}
+		if self.version >= 8
+			&& let Some(steps) = scroll_steps
+		{
+			self.axis_value120(
+				client,
+				self.id,
+				Axis::HorizontalScroll,
+				(steps.x * 120.) as i32,
+			)
+			.await?;
+			self.axis_value120(
+				client,
+				self.id,
+				Axis::VerticalScroll,
+				(steps.y * 120.) as i32,
+			)
+			.await?;
+		}
 		if self.version >= 5 {
-			if let Some(steps) = scroll_steps {
-				self.axis_discrete(client, self.id, Axis::HorizontalScroll, steps.x as i32)
-					.await?;
-				self.axis_discrete(client, self.id, Axis::VerticalScroll, steps.y as i32)
-					.await?;
-			}
 			self.frame(client, self.id).await?;
 		}
 		Ok(())
