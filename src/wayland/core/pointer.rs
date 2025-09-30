@@ -3,6 +3,7 @@ use crate::nodes::items::panel::Geometry;
 use crate::wayland::core::surface::Surface;
 use crate::wayland::{Client, WaylandResult};
 use mint::Vector2;
+use waynest_server::Client as _;
 use std::sync::Arc;
 use std::sync::Weak;
 use tokio::sync::Mutex;
@@ -12,7 +13,7 @@ use waynest::ObjectId;
 pub use waynest_protocols::server::core::wayland::wl_pointer::*;
 
 #[derive(waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Pointer {
 	pub id: ObjectId,
 	version: u32,

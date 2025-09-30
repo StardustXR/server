@@ -4,10 +4,10 @@ use crate::wayland::{core::surface::Surface, util::ClientExt};
 use waynest::ObjectId;
 use waynest_protocols::server::core::wayland::wl_surface::WlSurface;
 pub use waynest_protocols::server::core::wayland::{wl_compositor::*, wl_region::*};
-use waynest_server::RequestDispatcher;
+use waynest_server::{Client as _, RequestDispatcher};
 
 #[derive(Debug, waynest_server::RequestDispatcher, Default)]
-#[waynest(error = WaylandError)]
+#[waynest(error = WaylandError, connection = crate::wayland::Client)]
 pub struct Compositor;
 impl WlCompositor for Compositor {
 	type Connection = crate::wayland::Client;
@@ -19,7 +19,7 @@ impl WlCompositor for Compositor {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> WaylandResult<()> {
-		let surface = client.insert(id, Surface::new(client, id));
+		let surface = client.insert(id, Surface::new(client, id))?;
 		if let Some(output) = client.display().output.get() {
 			surface.enter(client, id, output.id).await?;
 		}
@@ -35,13 +35,13 @@ impl WlCompositor for Compositor {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> WaylandResult<()> {
-		client.insert(id, Region { id });
+		client.insert(id, Region { id })?;
 		Ok(())
 	}
 }
 
 #[derive(Debug, RequestDispatcher)]
-#[waynest(error = WaylandError)]
+#[waynest(error = WaylandError, connection = crate::wayland::Client)]
 pub struct Region {
 	id: ObjectId,
 }

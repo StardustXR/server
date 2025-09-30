@@ -3,6 +3,7 @@ use mint::Vector2;
 use parking_lot::Mutex;
 use waynest::ObjectId;
 use waynest_protocols::server::stable::xdg_shell::xdg_positioner::*;
+use waynest_server::Client as _;
 
 #[derive(Debug, Clone, Copy)]
 pub struct PositionerData {
@@ -127,7 +128,7 @@ impl Default for PositionerData {
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Positioner {
 	data: Mutex<PositionerData>,
 	id: ObjectId,

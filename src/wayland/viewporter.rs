@@ -3,11 +3,12 @@ use waynest::Fixed;
 use waynest::ObjectId;
 pub use waynest_protocols::server::stable::viewporter::wp_viewport::*;
 pub use waynest_protocols::server::stable::viewporter::wp_viewporter::*;
+use waynest_server::Client as _;
 
 // This is a barebones/stub no-op implementation of wp_viewporter to make xwayland apps work
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Viewporter {
 	id: ObjectId,
 }
@@ -38,13 +39,13 @@ impl WpViewporter for Viewporter {
 		surface_id: ObjectId,
 	) -> WaylandResult<()> {
 		let viewport = Viewport::new(id, surface_id);
-		client.insert(id, viewport);
+		client.insert(id, viewport)?;
 		Ok(())
 	}
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Viewport {
 	id: ObjectId,
 	_surface_id: ObjectId,

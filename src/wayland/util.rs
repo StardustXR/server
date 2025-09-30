@@ -5,7 +5,7 @@ use crate::wayland::{Client, WaylandError, WaylandResult};
 use std::{fmt::Debug, sync::Arc};
 use waynest::ObjectId;
 use waynest_protocols::server::core::wayland::wl_display::WlDisplay;
-use waynest_server::RequestDispatcher;
+use waynest_server::{Client as _, RequestDispatcher};
 
 pub trait ClientExt {
 	fn message_sink(&self) -> MessageSink;

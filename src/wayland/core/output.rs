@@ -3,7 +3,7 @@ use waynest::ObjectId;
 pub use waynest_protocols::server::core::wayland::wl_output::*;
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Output {
 	pub id: ObjectId,
 	pub version: u32,

@@ -8,6 +8,7 @@ use bevy_dmabuf::dmatex::DmatexPlane;
 use drm_fourcc::DrmFourcc;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
+use waynest_server::Client as _;
 use std::os::fd::{AsRawFd, OwnedFd};
 use waynest::ObjectId;
 use waynest_protocols::server::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::{
@@ -20,7 +21,7 @@ use waynest_protocols::server::stable::linux_dmabuf_v1::zwp_linux_buffer_params_
 /// that together form a single logical buffer. The object may eventually
 /// create one wl_buffer unless cancelled by destroying it.
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct BufferParams {
 	pub id: ObjectId,
 	pub(super) planes: Mutex<FxHashMap<u32, DmatexPlane>>,
@@ -120,7 +121,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 		});
 
 		match buffer {
-			Ok(buffer) => self.created(client, self.id, buffer.id).await,
+			Ok(buffer) => self.created(client, self.id, buffer?.id).await,
 			Err(_) => {
 				client.remove(self.id);
 				self.failed(client, self.id).await
@@ -148,7 +149,7 @@ impl ZwpLinuxBufferParamsV1 for BufferParams {
 			flags,
 		) {
 			Ok(backing) => {
-				Buffer::new(client, buffer_id, BufferBacking::Dmabuf(backing));
+				Buffer::new(client, buffer_id, BufferBacking::Dmabuf(backing))?;
 			}
 			Err(e) => {
 				tracing::error!("Failed to import dmabuf because {e}");

@@ -22,6 +22,7 @@ use bevy::{
 use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
 use parking_lot::Mutex;
+use waynest_server::Client as _;
 use std::{
 	fmt::Display,
 	sync::{Arc, OnceLock, Weak},
@@ -90,7 +91,7 @@ impl SurfaceState {
 // if returning false, don't run this callback again... just remove it
 pub type OnCommitCallback = Box<dyn FnMut(&Surface, &SurfaceState) -> bool + Send + Sync>;
 #[derive(waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Surface {
 	pub id: ObjectId,
 	pub surface_id: OnceLock<SurfaceId>,
@@ -376,7 +377,7 @@ impl WlSurface for Surface {
 		_sender_id: ObjectId,
 		callback_id: ObjectId,
 	) -> WaylandResult<()> {
-		let callback = client.insert(callback_id, Callback(callback_id));
+		let callback = client.insert(callback_id, Callback(callback_id))?;
 		self.state.lock().pending.frame_callbacks.push(callback);
 		Ok(())
 	}

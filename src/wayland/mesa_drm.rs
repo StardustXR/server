@@ -11,7 +11,7 @@ use waynest::ObjectId;
 use waynest_protocols::server::mesa::drm::wl_drm::*;
 
 #[derive(Debug, waynest_server::RequestDispatcher, Default)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct MesaDrm {
 	version: u32,
 }

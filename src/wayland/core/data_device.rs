@@ -4,11 +4,12 @@ use waynest::ObjectId;
 use waynest_protocols::server::core::wayland::{
 	wl_data_device::*, wl_data_device_manager::*, wl_data_offer::WlDataOffer, wl_data_source::*,
 };
+use waynest_server::Client as _;
 
 // TODO: actually implement this
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct DataDeviceManager;
 impl WlDataDeviceManager for DataDeviceManager {
 	type Connection = Client;
@@ -19,7 +20,7 @@ impl WlDataDeviceManager for DataDeviceManager {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> WaylandResult<()> {
-		client.insert(id, DataSource { id });
+		client.insert(id, DataSource { id })?;
 		Ok(())
 	}
 
@@ -30,28 +31,18 @@ impl WlDataDeviceManager for DataDeviceManager {
 		id: ObjectId,
 		_seat: ObjectId,
 	) -> WaylandResult<()> {
-		client.insert(id, DataDevice);
+		client.insert(id, DataDevice)?;
 		Ok(())
 	}
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct DataSource {
 	id: ObjectId,
 }
 impl WlDataSource for DataSource {
 	type Connection = Client;
-
-	async fn send(
-		&self,
-		_client: &mut Self::Connection,
-		_sender_id: ObjectId,
-		_mime_type: String,
-		_fd: OwnedFd,
-	) -> WaylandResult<()> {
-		Ok(())
-	}
 
 	async fn offer(
 		&self,
@@ -82,7 +73,7 @@ impl WlDataSource for DataSource {
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct DataDevice;
 impl WlDataDevice for DataDevice {
 	type Connection = Client;
@@ -119,7 +110,7 @@ impl WlDataDevice for DataDevice {
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct DataOffer {
 	id: ObjectId,
 }

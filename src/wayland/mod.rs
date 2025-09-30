@@ -32,6 +32,7 @@ use core::buffer::BufferUsage;
 use core::{buffer::Buffer, callback::Callback, surface::WL_SURFACE_REGISTRY};
 use display::Display;
 use mint::Vector2;
+use pin_project_lite::pin_project;
 use std::fs::File;
 use std::io::ErrorKind;
 use std::mem::MaybeUninit;
@@ -42,12 +43,13 @@ use std::{
 	sync::{Arc, OnceLock},
 };
 use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
-use tokio_stream::StreamExt;
+use tokio_stream::{Stream, StreamExt};
 use tracing::{debug_span, instrument};
 use vulkano_data::setup_vulkano_context;
-use waynest::ObjectId;
+use waynest::{Connection, Socket};
+use waynest::{ObjectId, ProtocolError};
 use waynest_protocols::server::core::wayland::wl_display::WlDisplay;
-use waynest_server::{Connection, Listener};
+use waynest_server::{Client as _, Listener, Store, StoreError};
 use xdg::toplevel::Toplevel;
 
 pub static WAYLAND_DISPLAY: OnceLock<PathBuf> = OnceLock::new();
@@ -76,6 +78,97 @@ pub enum WaylandError {
 	DmabufImport(#[from] bevy_dmabuf::import::ImportError),
 	#[error("Server error: {0}")]
 	Server(#[from] ServerError),
+	#[error("Failed to Insert Object")]
+	FailedToInsertObject,
+}
+impl<T: Clone> From<StoreError<T>> for WaylandError {
+	fn from(_value: StoreError<T>) -> Self {
+		Self::FailedToInsertObject
+	}
+}
+
+pin_project! {
+	pub struct Client {
+		store: Store<Client, WaylandError>,
+		#[pin]
+		connection: Socket,
+		next_event_serial: u32,
+	}
+}
+impl Connection for Client {
+	type Error = WaylandError;
+
+	fn fd(&mut self) -> Result<std::os::unix::prelude::OwnedFd, <Self as Connection>::Error> {
+		Ok(self.connection.fd()?)
+	}
+}
+impl Stream for Client {
+	type Item = <Socket as Stream>::Item;
+
+	fn poll_next(
+		self: std::pin::Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>,
+	) -> std::task::Poll<Option<Self::Item>> {
+		// <Socket as Stream>::poll_next(self.project().connection, cx)
+		self.project().connection.poll_next(cx)
+	}
+}
+impl futures_sink::Sink<waynest::Message> for Client {
+	type Error = ProtocolError;
+
+	fn poll_ready(
+		self: std::pin::Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>,
+	) -> std::task::Poll<Result<(), Self::Error>> {
+		self.project().connection.poll_ready(cx)
+	}
+
+	fn start_send(
+		self: std::pin::Pin<&mut Self>,
+		item: waynest::Message,
+	) -> Result<(), Self::Error> {
+		self.project().connection.start_send(item)
+	}
+
+	fn poll_flush(
+		self: std::pin::Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>,
+	) -> std::task::Poll<Result<(), Self::Error>> {
+		self.project().connection.poll_flush(cx)
+	}
+
+	fn poll_close(
+		self: std::pin::Pin<&mut Self>,
+		cx: &mut std::task::Context<'_>,
+	) -> std::task::Poll<Result<(), Self::Error>> {
+		self.project().connection.poll_close(cx)
+	}
+}
+impl Client {
+	fn new(unix_stream: UnixStream) -> tokio::io::Result<Self> {
+		Ok(Self {
+			store: Store::new(),
+			connection: Socket::new(unix_stream.into_std()?)?,
+			next_event_serial: 0,
+		})
+	}
+	pub fn next_event_serial(&mut self) -> u32 {
+		let prev = self.next_event_serial;
+		self.next_event_serial = self.next_event_serial.wrapping_add(1);
+		prev
+	}
+}
+
+impl waynest_server::Client for Client {
+	type Store = Store<Client, WaylandError>;
+
+	fn store(&self) -> &Self::Store {
+		&self.store
+	}
+
+	fn store_mut(&mut self) -> &mut Self::Store {
+		&mut self.store
+	}
 }
 
 pub fn get_free_wayland_socket_path() -> Option<(PathBuf, File)> {
@@ -116,7 +209,6 @@ pub fn get_free_wayland_socket_path() -> Option<(PathBuf, File)> {
 }
 
 pub type WaylandResult<T, E = WaylandError> = std::result::Result<T, E>;
-pub type Client = waynest_server::Connection<WaylandError>;
 
 pub enum Message {
 	Frame(Vec<Arc<Callback>>),
@@ -148,10 +240,10 @@ struct WaylandClient {
 impl WaylandClient {
 	pub fn from_stream(socket: UnixStream) -> WaylandResult<Self> {
 		let pid = socket.peer_cred().ok().and_then(|c| c.pid());
-		let mut client = Connection::new(socket)?;
+		let mut client = Client::new(socket)?;
 		let (message_sink, message_source) = mpsc::unbounded_channel();
 
-		client.insert(ObjectId::DISPLAY, Display::new(message_sink, pid));
+		client.insert(ObjectId::DISPLAY, Display::new(message_sink, pid))?;
 		let abort_handle =
 			tokio::task::spawn(Self::dispatch_loop(client, message_source)).abort_handle();
 

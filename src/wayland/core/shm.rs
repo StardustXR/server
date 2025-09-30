@@ -2,9 +2,10 @@ use crate::wayland::{Client, WaylandResult, core::shm_pool::ShmPool};
 use std::os::fd::OwnedFd;
 use waynest::ObjectId;
 pub use waynest_protocols::server::core::wayland::wl_shm::*;
+use waynest_server::Client as _;
 
 #[derive(Debug, waynest_server::RequestDispatcher, Default)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Shm;
 impl Shm {
 	pub async fn advertise_formats(
@@ -30,7 +31,7 @@ impl WlShm for Shm {
 		fd: OwnedFd,
 		size: i32,
 	) -> WaylandResult<()> {
-		client.insert(pool_id, ShmPool::new(fd, size, pool_id)?);
+		client.insert(pool_id, ShmPool::new(fd, size, pool_id)?)?;
 
 		Ok(())
 	}

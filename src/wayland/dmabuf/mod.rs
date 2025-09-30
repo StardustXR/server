@@ -15,6 +15,7 @@ use buffer_params::BufferParams;
 use drm_fourcc::DrmFourcc;
 use feedback::DmabufFeedback;
 use rustc_hash::FxHashSet;
+use waynest_server::Client as _;
 use std::sync::LazyLock;
 use vulkano::format::FormatFeatures;
 use waynest::ObjectId;
@@ -74,7 +75,7 @@ pub static DMABUF_FORMATS: LazyLock<Vec<(DrmFourcc, u64)>> = LazyLock::new(|| {
 /// - Proper lifetime management of dmabuf file descriptors
 /// - Safe handling of buffer attachments
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Dmabuf {
 	// Track supported formats and modifiers
 	// formats: Mutex<FxHashSet<DrmFormat>>,
@@ -138,7 +139,7 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 		params_id: ObjectId,
 	) -> WaylandResult<()> {
 		// Create new buffer parameters object
-		let params = client.insert(params_id, BufferParams::new(params_id));
+		let params = client.insert(params_id, BufferParams::new(params_id))?;
 		self.active_params.add_raw(&params);
 		Ok(())
 	}
@@ -157,7 +158,7 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 			});
 		}
 		// Create feedback object for default (non-surface-specific) settings
-		let feedback = client.insert(id, DmabufFeedback(client.get::<Dmabuf>(sender_id).unwrap()));
+		let feedback = client.insert(id, DmabufFeedback(client.get::<Dmabuf>(sender_id).unwrap()))?;
 		feedback.send_params(client, id).await?;
 		Ok(())
 	}

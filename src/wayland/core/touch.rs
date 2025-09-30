@@ -5,7 +5,7 @@ use waynest::ObjectId;
 pub use waynest_protocols::server::core::wayland::wl_touch::*;
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Touch(pub ObjectId);
 impl Touch {
 	pub async fn handle_touch_down(

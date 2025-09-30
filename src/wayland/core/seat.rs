@@ -2,6 +2,7 @@ use crate::wayland::Client;
 use crate::wayland::WaylandResult;
 use crate::wayland::core::{keyboard::Keyboard, pointer::Pointer, surface::Surface, touch::Touch};
 use mint::Vector2;
+use waynest_server::Client as _;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use waynest::ObjectId;
@@ -45,7 +46,7 @@ pub enum SeatMessage {
 }
 
 #[derive(Default, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Seat {
 	version: u32,
 	pointer: OnceLock<Arc<Pointer>>,
@@ -171,7 +172,7 @@ impl WlSeat for Seat {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> WaylandResult<()> {
-		let pointer = client.insert(id, Pointer::new(id, self.version));
+		let pointer = client.insert(id, Pointer::new(id, self.version))?;
 		let _ = self.pointer.set(pointer);
 		Ok(())
 	}
@@ -184,7 +185,7 @@ impl WlSeat for Seat {
 		id: ObjectId,
 	) -> WaylandResult<()> {
 		tracing::info!("Getting keyboard");
-		let keyboard = client.insert(id, Keyboard::new(id));
+		let keyboard = client.insert(id, Keyboard::new(id))?;
 		let _ = self.keyboard.set(keyboard);
 		Ok(())
 	}
@@ -196,7 +197,7 @@ impl WlSeat for Seat {
 		_sender_id: ObjectId,
 		id: ObjectId,
 	) -> WaylandResult<()> {
-		let touch = client.insert(id, Touch(id));
+		let touch = client.insert(id, Touch(id))?;
 		let _ = self.touch.set(touch);
 		Ok(())
 	}

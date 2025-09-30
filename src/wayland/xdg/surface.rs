@@ -9,9 +9,10 @@ use std::sync::Arc;
 use waynest::ObjectId;
 use waynest_protocols::server::stable::xdg_shell::xdg_popup::XdgPopup;
 pub use waynest_protocols::server::stable::xdg_shell::xdg_surface::*;
+use waynest_server::Client as _;
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Surface {
 	id: ObjectId,
 	version: u32,
@@ -65,7 +66,7 @@ impl XdgSurface for Surface {
 				self.wl_surface.clone(),
 				client.get::<Self>(sender_id).unwrap(),
 			),
-		);
+		)?;
 
 		self.wl_surface
 			.try_set_role(SurfaceRole::XdgToplevel, Error::AlreadyConstructed)
@@ -139,7 +140,7 @@ impl XdgSurface for Surface {
 		let popup = client.insert(
 			popup_id,
 			Popup::new(self.version, surface, &positioner, popup_id),
-		);
+		)?;
 
 		let positioner_geometry = positioner.data().infinite_geometry();
 

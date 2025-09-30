@@ -10,7 +10,7 @@ use mint::Vector2;
 use std::sync::Arc;
 use waynest::ObjectId;
 pub use waynest_protocols::server::core::wayland::wl_buffer::*;
-use waynest_server::RequestDispatcher;
+use waynest_server::{Client as _, RequestDispatcher};
 
 #[derive(Debug)]
 pub struct BufferUsage {
@@ -40,7 +40,7 @@ pub enum BufferBacking {
 }
 
 #[derive(Debug, RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Buffer {
 	pub id: ObjectId,
 	backing: BufferBacking,
@@ -48,8 +48,12 @@ pub struct Buffer {
 
 impl Buffer {
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn new(client: &mut Client, id: ObjectId, backing: BufferBacking) -> Arc<Self> {
-		client.insert(id, Self { id, backing })
+	pub fn new(
+		client: &mut Client,
+		id: ObjectId,
+		backing: BufferBacking,
+	) -> WaylandResult<Arc<Self>> {
+		Ok(client.insert(id, Self { id, backing })?)
 	}
 
 	/// Returns the tex if it was updated

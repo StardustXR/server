@@ -10,6 +10,7 @@ use crate::wayland::{
 	registry::Registry,
 };
 use global_counter::primitive::exact::CounterU32;
+use waynest_server::Client as _;
 use std::{
 	sync::{Arc, OnceLock},
 	time::Instant,
@@ -18,7 +19,7 @@ use waynest::ObjectId;
 pub use waynest_protocols::server::core::wayland::wl_display::*;
 
 #[derive(waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Display {
 	pub message_sink: MessageSink,
 	pub pid: Option<i32>,
@@ -69,7 +70,7 @@ impl WlDisplay for Display {
 		_sender_id: ObjectId,
 		registry_id: ObjectId,
 	) -> WaylandResult<()> {
-		let registry = client.insert(registry_id, Registry);
+		let registry = client.insert(registry_id, Registry)?;
 
 		registry.advertise_globals(client, registry_id).await?;
 

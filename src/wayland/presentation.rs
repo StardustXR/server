@@ -5,6 +5,7 @@ use waynest::ObjectId;
 use waynest_protocols::server::stable::presentation_time::{
 	wp_presentation::*, wp_presentation_feedback::*,
 };
+use waynest_server::Client as _;
 
 #[derive(Clone, Copy, Debug)]
 pub struct MonotonicTimestamp {
@@ -33,7 +34,7 @@ impl From<Timespec> for MonotonicTimestamp {
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Presentation {
 	id: ObjectId,
 }
@@ -65,7 +66,7 @@ impl WpPresentation for Presentation {
 			tracing::error!("unable to get surface#{surface}");
 			return Ok(());
 		};
-		let feedback = client.insert(id, PresentationFeedback(id));
+		let feedback = client.insert(id, PresentationFeedback(id))?;
 		surface.add_presentation_feedback(feedback);
 
 		Ok(())
@@ -73,7 +74,7 @@ impl WpPresentation for Presentation {
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct PresentationFeedback(pub ObjectId);
 impl WpPresentationFeedback for PresentationFeedback {
 	type Connection = crate::wayland::Client;

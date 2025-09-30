@@ -9,7 +9,7 @@ use std::{
 	collections::HashSet,
 	io::Write,
 	os::{
-		fd::IntoRawFd,
+		fd::{AsFd, IntoRawFd},
 		unix::io::{FromRawFd, OwnedFd},
 	},
 	sync::{Arc, Weak},
@@ -68,7 +68,7 @@ impl ModifierState {
 }
 
 #[derive(waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Keyboard {
 	pub id: ObjectId,
 	focused_surface: Mutex<Weak<Surface>>,
@@ -103,7 +103,7 @@ impl Keyboard {
 			client,
 			self.id,
 			KeymapFormat::XkbV1,
-			fd,
+			fd.as_fd(),
 			keymap.len() as u32,
 		)
 		.await?;

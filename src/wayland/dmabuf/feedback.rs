@@ -3,7 +3,7 @@ use crate::wayland::{Client, WaylandResult, vulkano_data::VULKANO_CONTEXT};
 use memfd::MemfdOptions;
 use std::{
 	io::Write,
-	os::fd::{FromRawFd, IntoRawFd, OwnedFd},
+	os::fd::{AsFd as _, FromRawFd, IntoRawFd, OwnedFd},
 	sync::Arc,
 };
 use waynest::ObjectId;
@@ -12,7 +12,7 @@ use waynest_protocols::server::stable::linux_dmabuf_v1::zwp_linux_dmabuf_feedbac
 };
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct DmabufFeedback(pub Arc<Dmabuf>);
 impl DmabufFeedback {
 	#[tracing::instrument(level = "debug", skip_all)]
@@ -81,14 +81,9 @@ impl DmabufFeedback {
 			mfd.as_file().write_all(&0_u32.to_ne_bytes())?;
 			mfd.as_file().write_all(&modifier.to_ne_bytes())?;
 		}
-
-		self.format_table(
-			client,
-			sender_id,
-			unsafe { OwnedFd::from_raw_fd(mfd.into_raw_fd()) },
-			size,
-		)
-		.await?;
+		let fd = unsafe { OwnedFd::from_raw_fd(mfd.into_raw_fd()) };
+		self.format_table(client, sender_id, fd.as_fd(), size)
+			.await?;
 		Ok(())
 	}
 }

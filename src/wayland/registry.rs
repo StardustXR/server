@@ -25,6 +25,7 @@ use waynest_protocols::server::{
 		viewporter::wp_viewporter::WpViewporter,
 	},
 };
+use waynest_server::Client as _;
 
 struct RegistryGlobals;
 impl RegistryGlobals {
@@ -41,7 +42,7 @@ impl RegistryGlobals {
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher, Default)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Registry;
 
 impl Registry {
@@ -157,11 +158,11 @@ impl WlRegistry for Registry {
 		match name {
 			RegistryGlobals::COMPOSITOR => {
 				tracing::info!("Binding compositor");
-				client.insert(new_id.object_id, Compositor);
+				client.insert(new_id.object_id, Compositor)?;
 			}
 			RegistryGlobals::SHM => {
 				tracing::info!("Binding SHM");
-				let shm = client.insert(new_id.object_id, Shm);
+				let shm = client.insert(new_id.object_id, Shm)?;
 				shm.advertise_formats(client, new_id.object_id).await?;
 			}
 			RegistryGlobals::WM_BASE => {
@@ -169,19 +170,19 @@ impl WlRegistry for Registry {
 				client.insert(
 					new_id.object_id,
 					WmBase::new(new_id.object_id, new_id.version),
-				);
+				)?;
 			}
 			RegistryGlobals::SEAT => {
 				tracing::info!("Binding seat with id {}", new_id.object_id);
 				let seat = Seat::new(client, new_id.object_id, new_id.version).await?;
-				let seat = client.insert(new_id.object_id, seat);
+				let seat = client.insert(new_id.object_id, seat)?;
 				let _ = client.display().seat.set(seat.clone());
 
 				tracing::info!("Seat capabilities advertised");
 			}
 			RegistryGlobals::DATA_DEVICE_MANAGER => {
 				tracing::info!("Binding data device manager");
-				client.insert(new_id.object_id, DataDeviceManager);
+				client.insert(new_id.object_id, DataDeviceManager)?;
 			}
 			RegistryGlobals::OUTPUT => {
 				tracing::info!("Binding output");
@@ -191,7 +192,7 @@ impl WlRegistry for Registry {
 						id: new_id.object_id,
 						version: new_id.version,
 					},
-				);
+				)?;
 				let _ = client.display().output.set(output.clone());
 				output.advertise_outputs(client).await?;
 			}
@@ -199,23 +200,23 @@ impl WlRegistry for Registry {
 				tracing::info!("Binding dmabuf");
 
 				let dmabuf = Dmabuf::new(client, new_id.object_id, new_id.version).await?;
-				client.insert(new_id.object_id, dmabuf);
+				client.insert(new_id.object_id, dmabuf)?;
 			}
 			RegistryGlobals::WL_DRM => {
 				tracing::info!("Binding wl_drm");
 
 				let drm = MesaDrm::new(client, new_id.object_id, new_id.version).await?;
-				client.insert(new_id.object_id, drm);
+				client.insert(new_id.object_id, drm)?;
 			}
 			RegistryGlobals::PRESENTATION => {
 				tracing::info!("Binding wp_presentation");
 
-				client.insert(new_id.object_id, Presentation::new(new_id.object_id));
+				client.insert(new_id.object_id, Presentation::new(new_id.object_id))?;
 			}
 			RegistryGlobals::VIEWPORTER => {
 				tracing::info!("Binding wp_viewporter");
 
-				client.insert(new_id.object_id, Viewporter::new(new_id.object_id));
+				client.insert(new_id.object_id, Viewporter::new(new_id.object_id))?;
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");

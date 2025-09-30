@@ -11,6 +11,7 @@ use crate::{
 };
 use mint::Vector2;
 use parking_lot::Mutex;
+use waynest_server::Client as _;
 use std::sync::Arc;
 use waynest::ObjectId;
 pub use waynest_protocols::server::stable::xdg_shell::xdg_toplevel::*;
@@ -55,7 +56,7 @@ impl Default for ToplevelData {
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
-#[waynest(error = crate::wayland::WaylandError)]
+#[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Toplevel {
 	pub id: ObjectId,
 	xdg_surface: Arc<super::surface::Surface>,
