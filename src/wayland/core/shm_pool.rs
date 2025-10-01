@@ -15,7 +15,6 @@ use waynest_server::Client as _;
 #[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct ShmPool {
 	inner: Mutex<memmap2::MmapMut>,
-	fd: OwnedFd,
 	id: ObjectId,
 }
 
@@ -30,7 +29,6 @@ impl ShmPool {
 
 		Ok(Self {
 			inner: Mutex::new(map),
-			fd,
 			id,
 		})
 	}
