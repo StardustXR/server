@@ -1,13 +1,14 @@
 use super::camera::CameraItemAcceptor;
 use super::{create_item_acceptor_flex, register_item_ui_flex};
 use crate::bail;
-use crate::core::error::Result;
-use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
-use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
-use crate::nodes::{Aspect, AspectIdentifier};
+use crate::nodes::{
+	Aspect, AspectIdentifier,
+	items::{ITEM_ACCEPTOR_ASPECT_ALIAS_INFO, ITEM_ASPECT_ALIAS_INFO, ITEM_UI_ASPECT_ALIAS_INFO},
+};
 use crate::{
 	core::{
 		client::{Client, INTERNAL_CLIENT, get_env, state},
+		error::Result,
 		registry::Registry,
 	},
 	nodes::{

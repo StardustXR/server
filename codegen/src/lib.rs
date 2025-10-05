@@ -63,6 +63,7 @@ fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 				description: protocol.description.clone(),
 				inherits: vec![],
 				members: p.members,
+				inherited_aspects: vec![],
 			});
 			quote! {
 				#node_id
@@ -104,7 +105,7 @@ fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 	let aspects = protocol
 		.aspects
 		.iter()
-		.map(generate_aspect)
+		.map(|a| generate_aspect(&a.blocking_read()))
 		.reduce(fold_tokens)
 		.unwrap_or_default();
 	quote!(#custom_enums #custom_unions #custom_structs #aspects #interface).into()

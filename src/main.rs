@@ -254,7 +254,7 @@ async fn main() -> Result<AppExit, JoinError> {
 #[derive(ScheduleLabel, Hash, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct PreFrameWait;
 #[derive(Resource, Deref)]
-pub struct ObjectRegistryRes(ObjectRegistry);
+pub struct ObjectRegistryRes(Arc<ObjectRegistry>);
 #[derive(Resource, Deref)]
 pub struct DbusConnection(Connection);
 
@@ -263,7 +263,7 @@ fn bevy_loop(
 	_project_dirs: Option<ProjectDirs>,
 	args: CliArgs,
 	dbus_connection: Connection,
-	object_registry: ObjectRegistry,
+	object_registry: Arc<ObjectRegistry>,
 ) -> AppExit {
 	let mut app = App::new();
 	app.insert_resource(DbusConnection(dbus_connection));

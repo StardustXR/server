@@ -27,10 +27,7 @@ use rustc_hash::{FxHashMap, FxHasher};
 use serde::{Deserialize, Serialize};
 use slotmap::{DefaultKey, Key as SlotKey};
 use stardust_xr::{
-	schemas::dbus::{
-		interfaces::FieldRefProxy,
-		object_registry::{ObjectInfo, ObjectRegistry},
-	},
+	schemas::dbus::{ObjectInfo, interfaces::FieldRefProxy, object_registry::ObjectRegistry},
 	values::Datamap,
 };
 use std::sync::{Arc, Weak};
