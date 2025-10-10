@@ -53,14 +53,15 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 panic = "abort"
-strip = "symbols"
+# strip = "symbols"
+debug = true
 
 [profile.dev.package."*"]
 opt-level = 3
 
 [patch.crates-io]
-bevy_mod_openxr = { git = "https://github.com/awtterpip/bevy_oxr" }
-bevy_mod_xr = { git = "https://github.com/awtterpip/bevy_oxr" }
+bevy_mod_openxr = { git = "https://github.com/awtterpip/bevy_oxr", rev = "9fd0c797"}
+bevy_mod_xr = { git = "https://github.com/awtterpip/bevy_oxr", rev = "9fd0c797" }
 bevy_gltf = { git = "https://github.com/Schmarni-Dev/bevy", branch = "gltf_backport" }
 # TODO: figure out how to not need this horrifing patch
 wgpu = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }

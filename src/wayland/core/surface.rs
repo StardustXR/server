@@ -22,7 +22,6 @@ use bevy::{
 use bevy_dmabuf::import::ImportedDmatexs;
 use mint::Vector2;
 use parking_lot::Mutex;
-use waynest_server::Client as _;
 use std::{
 	fmt::Display,
 	sync::{Arc, OnceLock, Weak},
@@ -32,6 +31,7 @@ use waynest_protocols::server::{
 	core::wayland::{wl_output::Transform, wl_surface::*},
 	stable::presentation_time::wp_presentation_feedback::{Kind, WpPresentationFeedback},
 };
+use waynest_server::Client as _;
 
 pub static WL_SURFACE_REGISTRY: Registry<Surface> = Registry::new();
 
@@ -305,13 +305,9 @@ impl Surface {
 			.drain(..)
 			.collect::<Vec<_>>();
 		for feedback in feedbacks {
-			feedback
-				.sync_output(
-					client,
-					feedback.0,
-					client.display().output.get().unwrap().id,
-				)
-				.await?;
+			if let Some(display_id) = client.display().output.get().map(|display| display.id) {
+				feedback.sync_output(client, feedback.0, display_id).await?;
+			}
 			let cycle_lo = refresh_cycle as u32;
 			let cycle_hi = (refresh_cycle >> 32) as u32;
 			feedback
