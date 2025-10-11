@@ -51,7 +51,6 @@ use bevy_mod_xr::session::{XrFirst, XrHandleEvents, XrSessionPlugin};
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
 use core::entity_handle::EntityHandlePlugin;
-use core::task;
 use directories::ProjectDirs;
 use nodes::audio::AudioNodePlugin;
 use nodes::drawable::lines::LinesNodePlugin;
@@ -143,9 +142,7 @@ async fn main() -> Result<AppExit, JoinError> {
 	);
 
 	#[cfg(feature = "profile_tokio")]
-	let (console_layer, _) = console_subscriber::ConsoleLayer::builder().build();
-	#[cfg(feature = "profile_tokio")]
-	let registry = registry.with(console_layer);
+	let registry = registry.with(console_subscriber::spawn());
 
 	let log_layer = fmt::Layer::new()
 		.with_thread_names(true)
@@ -170,17 +167,19 @@ async fn main() -> Result<AppExit, JoinError> {
 	);
 	let socket = UnixListener::bind(locked_socket.socket_path)
 		.expect("Couldn't spawn stardust server at {socket_path}");
-	task::new(|| "client join loop", async move {
-		loop {
-			let Ok((stream, _)) = socket.accept().await else {
-				continue;
-			};
-			if let Err(e) = Client::from_connection(stream) {
-				error!(?e, "Unable to create client from connection");
+	tokio::task::Builder::new()
+		.name("Stardust client accept loop")
+		.spawn(async move {
+			loop {
+				let Ok((stream, _)) = socket.accept().await else {
+					continue;
+				};
+				if let Err(e) = Client::from_connection(stream) {
+					error!(?e, "Unable to create client from connection");
+				}
 			}
-		}
-	})
-	.unwrap();
+		})
+		.unwrap();
 	info!("Init client join loop");
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");

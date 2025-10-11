@@ -1,6 +1,6 @@
 use super::toplevel::Toplevel;
 use crate::{
-	core::{error::Result, task},
+	core::error::Result,
 	nodes::{
 		drawable::model::ModelPart,
 		items::panel::{
@@ -137,12 +137,14 @@ impl Backend for XdgBackend {
 		let Some(seat) = self.seat.upgrade() else {
 			return;
 		};
-		let _ = task::new(|| "apply cursor material", async move {
-			let Some(cursor) = seat.cursor_surface().await else {
-				return;
-			};
-			cursor.apply_material(&model_part);
-		});
+		let _ = tokio::task::Builder::new()
+			.name("Apply cursor material")
+			.spawn(async move {
+				let Some(cursor) = seat.cursor_surface().await else {
+					return;
+				};
+				cursor.apply_material(&model_part);
+			});
 	}
 	fn apply_surface_material(&self, surface: SurfaceId, model_part: &Arc<ModelPart>) {
 		if let Some(surface) = self.surface_from_id(&surface) {
