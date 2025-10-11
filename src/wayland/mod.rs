@@ -240,12 +240,29 @@ struct WaylandClient {
 impl WaylandClient {
 	pub fn from_stream(socket: UnixStream) -> WaylandResult<Self> {
 		let pid = socket.peer_cred().ok().and_then(|c| c.pid());
+		let exe = pid.and_then(|pid| std::fs::read_link(format!("/proc/{pid}/exe")).ok());
+
 		let mut client = Client::new(socket)?;
 		let (message_sink, message_source) = mpsc::unbounded_channel();
 
 		client.insert(ObjectId::DISPLAY, Display::new(message_sink, pid))?;
-		let abort_handle =
-			tokio::task::spawn(Self::dispatch_loop(client, message_source)).abort_handle();
+
+		let pid_printable = pid
+			.map(|pid| pid.to_string())
+			.unwrap_or_else(|| "??".to_string());
+		let exe_printable = exe
+			.and_then(|exe| {
+				exe.file_name()
+					.and_then(|exe| exe.to_str())
+					.map(|exe| exe.to_string())
+			})
+			.unwrap_or_else(|| "??".to_string());
+		let abort_handle = tokio::task::Builder::new()
+			.name(&format!(
+				"Wayland client \"{exe_printable}\" dispatch, pid={pid_printable}",
+			))
+			.spawn(Self::dispatch_loop(client, message_source))?
+			.abort_handle();
 
 		Ok(WaylandClient { abort_handle })
 	}
@@ -259,14 +276,19 @@ impl WaylandClient {
 				biased;
 				// send all queued up messages
 				msg = render_message_rx.recv() => {
-					if let Some(msg) = msg {
-						Self::handle_render_message(&mut client, msg).await?;
-					}
+					let Some(msg) = msg else {
+						// Render message channel closed, end the dispatch loop
+						return Ok(());
+					};
+					Self::handle_render_message(&mut client, msg).await?;
 				}
 				// handle the next message
 				msg = client.try_next() => {
-					if let Some(mut msg) = msg? &&
-						let Err(e) = client
+					let Some(mut msg) = msg? else {
+						// Client disconnected, end the dispatch loop
+						return Ok(());
+					};
+					if let Err(e) = client
 						.get_raw(msg.object_id())
 						.ok_or(WaylandError::MissingObject(msg.object_id()))?
 						.dispatch_request(&mut client, msg.object_id(), &mut msg)
