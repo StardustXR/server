@@ -8,3 +8,4 @@ pub mod error;
 pub mod registry;
 pub mod resource;
 pub mod scenegraph;
+pub mod task;

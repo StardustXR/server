@@ -3,7 +3,7 @@ use super::{
 	scenegraph::Scenegraph,
 };
 use crate::{
-	core::registry::OwnedRegistry,
+	core::{registry::OwnedRegistry, task},
 	nodes::{
 		Node, audio, drawable, fields, input, items,
 		root::{ClientState, Root},
@@ -143,11 +143,9 @@ impl Client {
 			})
 			.unwrap_or_else(|| "??".to_string());
 		let _ = client.dispatch_join_handle.get_or_init(|| {
-			tokio::task::Builder::new()
-				.name(&format!(
-					"Stardust client \"{exe_printable}\" dispatch, pid={pid_printable}",
-				))
-				.spawn({
+			task::new(
+				|| format!("Stardust client \"{exe_printable}\" dispatch, pid={pid_printable}"),
+				{
 					let client = client.clone();
 					async move {
 						loop {
@@ -157,15 +155,14 @@ impl Client {
 							let _ = message_time_tx.send(Instant::now());
 						}
 					}
-				})
-				.unwrap()
+				},
+			)
+			.unwrap()
 		});
 		let _ = client.flush_join_handle.get_or_init(|| {
-			tokio::task::Builder::new()
-				.name(&format!(
-					"Stardust client \"{exe_printable}\" flush, pid={pid_printable}",
-				))
-				.spawn({
+			task::new(
+				|| format!("Stardust client \"{exe_printable}\" flush, pid={pid_printable}"),
+				{
 					let client = client.clone();
 					async move {
 						loop {
@@ -174,8 +171,9 @@ impl Client {
 							}
 						}
 					}
-				})
-				.unwrap()
+				},
+			)
+			.unwrap()
 		});
 
 		Ok(client)

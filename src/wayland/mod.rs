@@ -9,7 +9,6 @@ mod viewporter;
 mod vulkano_data;
 mod xdg;
 
-use crate::BevyMaterial;
 use crate::core::error::ServerError;
 use crate::core::registry::OwnedRegistry;
 use crate::nodes::drawable::model::ModelNodeSystemSet;
@@ -17,6 +16,7 @@ use crate::wayland::core::seat::SeatMessage;
 use crate::wayland::core::surface::Surface;
 use crate::wayland::presentation::MonotonicTimestamp;
 use crate::wayland::util::ClientExt;
+use crate::{BevyMaterial, core::task};
 use bevy::app::{App, Plugin, Update};
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Local, Res, ResMut};
@@ -257,12 +257,11 @@ impl WaylandClient {
 					.map(|exe| exe.to_string())
 			})
 			.unwrap_or_else(|| "??".to_string());
-		let abort_handle = tokio::task::Builder::new()
-			.name(&format!(
-				"Wayland client \"{exe_printable}\" dispatch, pid={pid_printable}",
-			))
-			.spawn(Self::dispatch_loop(client, message_source))?
-			.abort_handle();
+		let abort_handle = task::new(
+			|| format!("Wayland client \"{exe_printable}\" dispatch, pid={pid_printable}"),
+			Self::dispatch_loop(client, message_source),
+		)?
+		.abort_handle();
 
 		Ok(WaylandClient { abort_handle })
 	}
@@ -383,10 +382,11 @@ impl Wayland {
 		let listener = waynest_server::Listener::new_with_path(&socket_path)?;
 		let _ = WAYLAND_DISPLAY.set(listener.socket_path().to_path_buf());
 
-		let abort_handle = tokio::task::Builder::new()
-			.name("Wayland client accept loop")
-			.spawn(Self::handle_wayland_loop(listener))?
-			.abort_handle();
+		let abort_handle = task::new(
+			|| "Wayland socket accept loop",
+			Self::handle_wayland_loop(listener),
+		)?
+		.abort_handle();
 
 		Ok(Self {
 			_lockfile,
