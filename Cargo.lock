@@ -2530,7 +2530,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5114,7 +5114,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5127,7 +5127,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.52.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5462,7 +5462,7 @@ checksum = "6eae92052b72ef70dafa16eddbabffc77e5ca3574be2f7bc1127b36f0a7ad7f2"
 [[package]]
 name = "stardust-xr"
 version = "0.45.0"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#4e616a1ebbaf3fc96d3c7d3d5da00b64bf867142"
+source = "git+https://github.com/StardustXR/core.git?branch=dev#e859b31459debe81a13198459431ca98c6b278c0"
 dependencies = [
  "color-eyre",
  "dirs",
@@ -5481,7 +5481,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-schemas"
 version = "1.5.3"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#4e616a1ebbaf3fc96d3c7d3d5da00b64bf867142"
+source = "git+https://github.com/StardustXR/core.git?branch=dev#e859b31459debe81a13198459431ca98c6b278c0"
 dependencies = [
  "console-subscriber",
  "flatbuffers",
@@ -5495,6 +5495,7 @@ dependencies = [
  "serde_repr",
  "thiserror 2.0.16",
  "tokio",
+ "tokio-stream",
  "variadics_please",
  "zbus",
 ]
@@ -5742,7 +5743,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6790,7 +6791,7 @@ version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf221c93e13a30d793f7645a0e7762c55d169dbb0a49671918a2319d289b10bb"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
