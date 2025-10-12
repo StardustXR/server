@@ -91,7 +91,7 @@ use bevy::prelude::*;
 struct CliArgs {
 	/// Force flatscreen mode and use the mouse pointer as a 3D pointer
 	#[clap(short, long, action)]
-	flatscreen: bool,
+	force_flatscreen: bool,
 
 	/// Replaces the flatscreen mode with a first person spectator camera
 	#[clap(short, long, action)]
@@ -326,7 +326,7 @@ fn bevy_loop(
 		.async_compute
 		.on_thread_spawn = Some(enter_runtime_context.clone());
 	plugins = plugins.set(task_pool_plugin);
-	if args.flatscreen {
+	if std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok() {
 		let mut plugin = WinitPlugin::<WakeUp>::default();
 		plugin.run_on_any_thread = true;
 		plugins = plugins.add(plugin).disable::<ScheduleRunnerPlugin>();
@@ -336,7 +336,7 @@ fn bevy_loop(
 		};
 	}
 	app.add_plugins(
-		if !args.flatscreen {
+		if !args.force_flatscreen {
 			add_xr_plugins(plugins)
 				.set(OxrInitPlugin {
 					app_info: AppInfo {
