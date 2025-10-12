@@ -16,7 +16,7 @@ use zbus::{Connection, ObjectServer, interface};
 
 use crate::{DbusConnection, PreFrameWait, nodes::spatial::Spatial};
 
-use super::{ObjectHandle, SpatialRef, Tracked};
+use super::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
 
 pub struct PlaySpacePlugin;
 impl Plugin for PlaySpacePlugin {
@@ -31,7 +31,7 @@ impl Plugin for PlaySpacePlugin {
 fn setup(connection: Res<DbusConnection>, mut cmds: Commands) {
 	let (spatial, spatial_handle) = SpatialRef::create(&connection, "/org/stardustxr/PlaySpace");
 	// the OpenXR session might not exist quite yet
-	let tracked = Tracked::new(&connection, "/org/stardustxr/PlaySpace");
+	let tracked = AsyncTracked::new(&connection, "/org/stardustxr/PlaySpace");
 	let dbus_connection = connection.clone();
 	let play_space_data = Arc::new(RwLock::default());
 	tokio::task::spawn({
@@ -80,12 +80,7 @@ fn update(
 		(session, stage, ref_space, state)
 	else {
 		play_space.bounds.write().drain(..);
-		tokio::task::spawn({
-			let handle = play_space.tracked_handle.clone();
-			async move {
-				handle.set_tracked(false).await;
-			}
-		});
+		play_space.tracked_handle.set_tracked(false);
 
 		play_space
 			.spatial
@@ -103,12 +98,7 @@ fn update(
 				| SpaceLocationFlags::ORIENTATION_VALID
 				| SpaceLocationFlags::ORIENTATION_TRACKED,
 		);
-		tokio::task::spawn({
-			let handle = play_space.tracked_handle.clone();
-			async move {
-				handle.set_tracked(is_tracked).await;
-			}
-		});
+		play_space.tracked_handle.set_tracked(is_tracked);
 		if is_tracked {
 			play_space
 				.spatial
@@ -140,7 +130,7 @@ fn update(
 pub struct PlaySpace {
 	spatial: Arc<Spatial>,
 	_spatial_handle: ObjectHandle<SpatialRef>,
-	tracked_handle: ObjectHandle<Tracked>,
+	tracked_handle: AsyncTracked,
 	bounds: Arc<RwLock<Vec<(f64, f64)>>>,
 }
 pub struct PlaySpaceBounds(Arc<RwLock<Vec<(f64, f64)>>>);

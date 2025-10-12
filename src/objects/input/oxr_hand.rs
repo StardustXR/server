@@ -7,7 +7,7 @@ use crate::nodes::{
 	input::{Hand, InputMethod, Joint},
 	spatial::Spatial,
 };
-use crate::objects::{ObjectHandle, SpatialRef, Tracked};
+use crate::objects::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
 use crate::{BevyMaterial, DbusConnection, ObjectRegistryRes, PreFrameWait};
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
@@ -52,23 +52,14 @@ fn update_hands(
 	joints_query: Query<&XrHandBoneEntities>,
 ) {
 	let (Some(session), Some(state), Some(ref_space)) = (session, state, ref_space) else {
-		tokio::task::spawn({
-			let left = hands.left.tracked.clone();
-			let right = hands.right.tracked.clone();
-			async move {
-				left.set_tracked(false);
-				right.set_tracked(false);
-			}
-		});
+		hands.left.tracked.set_tracked(false);
+		hands.right.tracked.set_tracked(false);
 		return;
 	};
 	let get_joints = |hand: &mut OxrHandInput| -> Option<openxr::HandJointLocations> {
 		let Some(tracker) = hand.tracker.as_ref() else {
 			hand.input.spatial.node().unwrap().set_enabled(false);
-			let handle = hand.tracked.clone();
-			tokio::task::spawn(async move {
-				handle.set_tracked(false);
-			});
+			hand.tracked.set_tracked(false);
 			return None;
 		};
 		// this won't be correct with pipelined rendering
@@ -182,7 +173,7 @@ pub struct OxrHandInput {
 	input: Arc<InputMethod>,
 	capture_manager: CaptureManager,
 	datamap: HandDatamap,
-	tracked: ObjectHandle<Tracked>,
+	tracked: AsyncTracked,
 	tracker: Option<openxr::HandTracker>,
 	captured: bool,
 	material: Handle<BevyMaterial>,
@@ -201,7 +192,7 @@ impl OxrHandInput {
 					HandSide::Right => "right",
 				} + "/palm"),
 		);
-		let tracked = Tracked::new(
+		let tracked = AsyncTracked::new(
 			connection,
 			&("/org/stardustxr/Hand/".to_string()
 				+ match side {
@@ -243,13 +234,7 @@ impl OxrHandInput {
 		if let Some(node) = self.input.spatial.node() {
 			node.set_enabled(enabled);
 		}
-		tokio::spawn({
-			// this is suboptimal since it probably allocates a fresh string every frame
-			let handle = self.tracked.clone();
-			async move {
-				handle.set_tracked(enabled).await;
-			}
-		});
+		self.tracked.set_tracked(enabled);
 	}
 	fn update(
 		&mut self,

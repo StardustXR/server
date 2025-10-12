@@ -12,7 +12,7 @@ use crate::{
 		input::{INPUT_HANDLER_REGISTRY, InputDataType, InputHandler, InputMethod, Tip},
 		spatial::Spatial,
 	},
-	objects::{ObjectHandle, SpatialRef, Tracked},
+	objects::{AsyncTracked, ObjectHandle, SpatialRef, Tracked},
 };
 use bevy::{asset::Handle, ecs::resource::Resource};
 use bevy::{math::Affine3, prelude::*};
@@ -268,7 +268,7 @@ pub struct OxrControllerInput {
 	model_part: Arc<ModelPart>,
 	capture_manager: CaptureManager,
 	datamap: ControllerDatamap,
-	tracked: ObjectHandle<Tracked>,
+	tracked: AsyncTracked,
 	space: Option<XrSpace>,
 }
 impl OxrControllerInput {
@@ -279,7 +279,7 @@ impl OxrControllerInput {
 				HandSide::Right => "right",
 			};
 		let (spatial, object_handle) = SpatialRef::create(connection, &path);
-		let tracked = Tracked::new(connection, &path);
+		let tracked = AsyncTracked::new(connection, &path);
 		let tip = InputDataType::Tip(Tip::default());
 		let node = spatial.node().unwrap();
 		node.set_enabled(false);
@@ -314,13 +314,7 @@ impl OxrControllerInput {
 		if let Some(node) = self.input.spatial.node() {
 			node.set_enabled(enabled);
 		}
-		tokio::spawn({
-			// this is suboptimal since it probably allocates a fresh string every frame
-			let handle = self.tracked.clone();
-			async move {
-				handle.set_tracked(enabled).await;
-			}
-		});
+		self.tracked.set_tracked(enabled);
 	}
 	fn update(
 		&mut self,

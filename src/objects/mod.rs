@@ -20,6 +20,7 @@ use std::{
 	marker::PhantomData,
 	sync::{Arc, atomic::Ordering},
 };
+use tokio::{sync::mpsc, task::AbortHandle};
 use zbus::{Connection, interface, object_server::Interface, zvariant::OwnedObjectPath};
 
 pub mod hmd;
@@ -40,6 +41,48 @@ impl<I: Interface> Drop for ObjectHandle<I> {
 		tokio::task::spawn(async move {
 			connection.object_server().remove::<I, _>(object_path);
 		});
+	}
+}
+
+/// A wrapper around ObjectHandle<Tracked> that batches async updates
+/// instead of spawning a tokio task for each state change
+pub struct AsyncTracked {
+	pub sender: mpsc::UnboundedSender<bool>,
+	pub _handle: ObjectHandle<Tracked>,
+	pub _abort_handle: AbortHandle,
+}
+
+impl AsyncTracked {
+	pub fn new(connection: &Connection, path: &str) -> Self {
+		let handle = Tracked::new(connection, path);
+		let (sender, mut receiver) = mpsc::unbounded_channel::<bool>();
+
+		// Spawn a single long-running task that processes state updates
+		let task = tokio::task::spawn({
+			let handle = handle.clone();
+			async move {
+				while let Some(is_tracked) = receiver.recv().await {
+					let _ = handle.set_tracked(is_tracked).await;
+				}
+			}
+		});
+
+		Self {
+			sender,
+			_handle: handle,
+			_abort_handle: task.abort_handle(),
+		}
+	}
+
+	pub fn set_tracked(&self, is_tracked: bool) {
+		// Just send over channel instead of spawning a task
+		let _ = self.sender.send(is_tracked);
+	}
+}
+
+impl Drop for AsyncTracked {
+	fn drop(&mut self) {
+		self._abort_handle.abort();
 	}
 }
 
