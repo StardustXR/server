@@ -1,7 +1,7 @@
 use super::{CaptureManager, DistanceCalculator, get_sorted_handlers};
 use crate::{
 	DbusConnection, ObjectRegistryRes,
-	core::client::INTERNAL_CLIENT,
+	core::{client::INTERNAL_CLIENT, task},
 	nodes::{
 		Node, OwnedNode,
 		fields::{EXPORTED_FIELDS, Field, FieldTrait, Ray},
@@ -9,6 +9,7 @@ use crate::{
 		items::panel::KEYMAPS,
 		spatial::Spatial,
 	},
+	objects::FieldRef,
 };
 use bevy::{
 	input::{
@@ -27,17 +28,36 @@ use rustc_hash::{FxHashMap, FxHasher};
 use serde::{Deserialize, Serialize};
 use slotmap::{DefaultKey, Key as SlotKey};
 use stardust_xr::{
-	schemas::dbus::{ObjectInfo, interfaces::FieldRefProxy, object_registry::ObjectRegistry},
+	schemas::dbus::{
+		ObjectInfo,
+		interfaces::FieldRefProxy,
+		list_query::{ListEvent, ObjectListQuery},
+		object_registry::ObjectRegistry,
+		query::{ObjectQuery, QueryContext, QueryEvent},
+	},
 	values::Datamap,
 };
 use std::sync::{Arc, Weak};
-use tokio::task::JoinSet;
+use tokio::sync::{Notify, mpsc, watch};
+use tokio::task::{AbortHandle, JoinSet};
 use tokio::time::{Duration, timeout};
 use xkbcommon_rs::{Context, Keymap, KeymapFormat, xkb_keymap::CompileFlags};
 use zbus::{Connection, names::OwnedInterfaceName};
 
-pub struct FlatscreenInputPlugin;
+#[derive(Clone)]
+struct HandlerInfo {
+	handler: ObjectInfo,
+	field_ref: Arc<Field>,
+	keyboard_proxy: KeyboardHandlerProxy<'static>,
+}
 
+#[derive(Debug, Clone)]
+struct InputEvent {
+	key: u32,
+	pressed: bool,
+}
+
+pub struct FlatscreenInputPlugin;
 impl Plugin for FlatscreenInputPlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(Startup, setup);
@@ -50,9 +70,9 @@ impl Plugin for FlatscreenInputPlugin {
 #[require(Camera3d)]
 pub struct FlatscreenCam;
 
-fn setup(mut cmds: Commands) {
-	let Ok(pointer) =
-		MousePointer::new().inspect_err(|err| error!("unable to create mouse pointer: {err}"))
+fn setup(mut cmds: Commands, object_registry: Res<ObjectRegistryRes>) {
+	let Ok(pointer) = MousePointer::new(object_registry.0.clone())
+		.inspect_err(|err| error!("unable to create mouse pointer: {err}"))
 	else {
 		return;
 	};
@@ -161,6 +181,14 @@ trait KeyboardHandler {
 	async fn reset(&self) -> zbus::Result<()>;
 }
 
+// Make KeyboardHandlerProxy queryable
+stardust_xr::schemas::impl_queryable_for_proxy!(KeyboardHandlerProxy);
+
+// Query context for keyboard handlers
+#[derive(Debug, Clone)]
+struct KeyboardQueryContext;
+impl QueryContext for KeyboardQueryContext {}
+
 #[derive(Resource)]
 pub struct MousePointer {
 	node: OwnedNode,
@@ -169,10 +197,16 @@ pub struct MousePointer {
 	pointer: Arc<InputMethod>,
 	capture_manager: CaptureManager,
 	mouse_datamap: MouseEvent,
-	keyboard_cache: Arc<DashMap<ObjectInfo, Weak<Field>>>,
+	// Task management
+	focus_task_abort_handle: AbortHandle,
+	input_delivery_task_abort_handle: AbortHandle,
+	// Channels
+	input_event_tx: mpsc::UnboundedSender<InputEvent>,
+	// Notification for focus recalculation
+	focus_notify: Arc<Notify>,
 }
 impl MousePointer {
-	pub fn new() -> Result<Self> {
+	pub fn new(object_registry: Arc<ObjectRegistry>) -> Result<Self> {
 		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
 		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
 		let pointer = InputMethod::add_to(
@@ -189,6 +223,39 @@ impl MousePointer {
 				.unwrap(),
 		);
 
+		// Create channels and notification
+		let (focused_handler_tx, focused_handler_rx) = watch::channel::<Option<HandlerInfo>>(None);
+		let (input_event_tx, input_event_rx) = mpsc::unbounded_channel::<InputEvent>();
+		let focus_notify = Arc::new(Notify::new());
+		// Spawn input delivery task
+		info!("Creating input delivery task");
+		let input_delivery_task_abort_handle = task::new(
+			|| "Mouse pointer input delivery task",
+			Self::input_delivery_task(
+				object_registry.get_connection().clone(),
+				focused_handler_rx,
+				input_event_rx,
+				keymap.data().as_ffi(),
+			),
+		)?
+		.abort_handle();
+		info!("Input delivery task created successfully");
+
+		// Spawn focus tracking task
+		info!("Creating focus tracking task");
+		let focus_task_abort_handle = task::new(
+			|| "Mouse pointer focus task",
+			Self::focus_tracking_task(
+				object_registry,
+				focus_notify.clone(),
+				spatial.clone(),
+				pointer.clone(),
+				focused_handler_tx,
+			),
+		)?
+		.abort_handle();
+		info!("Focus tracking task created successfully");
+
 		Ok(MousePointer {
 			node,
 			spatial,
@@ -196,7 +263,10 @@ impl MousePointer {
 			capture_manager: CaptureManager::default(),
 			mouse_datamap: Default::default(),
 			keymap,
-			keyboard_cache: Arc::new(DashMap::default()),
+			focus_task_abort_handle,
+			input_delivery_task_abort_handle,
+			input_event_tx,
+			focus_notify,
 		})
 	}
 	pub fn update(
@@ -251,12 +321,28 @@ impl MousePointer {
 			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).unwrap();
 		}
 		self.target_pointer_input();
-		self.send_keyboard_input(
-			dbus_connection,
-			object_registry,
-			keyboard_input_events,
-			self.keyboard_cache.clone(),
-		);
+
+		// Send keyboard input events via channel
+		for event in keyboard_input_events.read() {
+			if let Some(key) = map_key(event.key_code) {
+				let input_event = InputEvent {
+					key,
+					pressed: matches!(event.state, ButtonState::Pressed),
+				};
+				info!(
+					"Sending keyboard input event: key={}, pressed={}",
+					key, input_event.pressed
+				);
+				if let Err(e) = self.input_event_tx.send(input_event) {
+					error!("Failed to send keyboard input event: {}", e);
+				}
+			} else {
+				warn!("Unable to map key code: {:?}", event.key_code);
+			}
+		}
+
+		// Notify focus tracking task to recalculate focus
+		self.focus_notify.notify_waiters();
 	}
 	fn target_pointer_input(&mut self) {
 		let distance_calculator: DistanceCalculator = |space, data, field| {
@@ -293,112 +379,146 @@ impl MousePointer {
 		);
 	}
 
-	pub fn send_keyboard_input(
-		&mut self,
-		dbus_connection: &Connection,
-		object_registry: &ObjectRegistry,
-		mut keyboard_input_events: EventReader<KeyboardInput>,
-		keyboard_handler_cache: Arc<DashMap<ObjectInfo, Weak<Field>>>,
+	async fn focus_tracking_task(
+		object_registry: Arc<ObjectRegistry>,
+		focus_notify: Arc<Notify>,
+		spatial: Arc<Spatial>,
+		pointer: Arc<InputMethod>,
+		focused_handler_tx: watch::Sender<Option<HandlerInfo>>,
 	) {
-		let keyboard_handlers = object_registry.get_objects("org.stardustxr.XKBv1");
-		let events = keyboard_input_events
-			.read()
-			.filter_map(|e| Some((map_key(e.key_code)?, e.state)))
-			.collect::<Vec<_>>();
-		// Spawn async task to handle keyboard input
-		tokio::spawn({
-			let keyboard_handlers = keyboard_handlers.clone();
-			let spatial = self.spatial.clone();
-			let keymap_id = self.keymap.data().as_ffi();
-			let dbus_connection = dbus_connection.clone();
+		info!("Focus tracking task started");
 
-			async move {
-				let mut closest_handler = None;
-				let mut closest_distance = f32::MAX;
-
-				let mut join_set = JoinSet::new();
-				for handler in &keyboard_handlers {
-					if keyboard_handler_cache.contains_key(handler) {
-						continue;
-					}
-					let handler = handler.clone();
-					let dbus_connection = dbus_connection.clone();
-					join_set.spawn(async move {
-						// TODO: refactor the whole thing so picking the keyboardhandler to send input to is separate from sending
-						timeout(Duration::from_millis(10), async {
-							let field_ref = handler
-								.to_typed_proxy::<FieldRefProxy>(&dbus_connection)
-								.await
-								.ok()?;
-							let uid = field_ref.uid().await.ok()?;
-							Some((handler, uid))
-						})
+		// Create keyboard handler query inside the task
+		let mut keyboard_query = ObjectQuery::<
+			(FieldRefProxy<'static>, KeyboardHandlerProxy<'static>),
+			_,
+		>::new(object_registry.clone(), ());
+		let (keyboard_handlers, mapper) = keyboard_query.to_list_query();
+		task::new(
+			|| "Focus tracking mapper",
+			mapper.init(async |ev| match ev {
+				ListEvent::NewMatch((field_ref, keyboard_proxy)) => {
+					info!("New keyboard handler found");
+					let uid = timeout(Duration::from_millis(100), field_ref.uid())
 						.await
-						.ok()
-						.flatten()
-					});
+						.ok()?
+						.ok()?;
+					let field_node = EXPORTED_FIELDS.lock().get(&uid)?.upgrade()?;
+					let field = field_node.get_aspect::<Field>();
+					Some((field, keyboard_proxy))
 				}
-				while let Some(Ok(Some((handler, field_ref_id)))) = join_set.join_next().await {
-					let exported_fields = EXPORTED_FIELDS.lock();
-					let Some(field_ref_node) =
-						exported_fields.get(&field_ref_id).and_then(|f| f.upgrade())
-					else {
-						println!("didn't find a thing :(");
-						continue;
-					};
-					// println!("still sendin stuff :)");
-					let Ok(field_ref) = field_ref_node.get_aspect::<Field>() else {
-						continue;
-					};
-					drop(exported_fields);
-					keyboard_handler_cache.insert(handler.clone(), Arc::downgrade(&field_ref));
+				ListEvent::Modified((field_ref, keyboard_proxy)) => {
+					let uid = timeout(Duration::from_millis(100), field_ref.uid())
+						.await
+						.ok()?
+						.ok()?;
+					let field_node = EXPORTED_FIELDS.lock().get(&uid)?.upgrade()?;
+					let field = field_node.get_aspect::<Field>();
+					Some((field, keyboard_proxy))
 				}
-				keyboard_handler_cache.retain(|k, v| v.upgrade().is_some());
-				if events.is_empty() {
-					return;
-				}
+				_ => None,
+			}),
+		);
 
-				for entry in &*keyboard_handler_cache {
-					let (handler, field_ref) = entry.pair();
-					let Some(field_ref) = field_ref.clone().upgrade() else {
-						continue;
-					};
+		// Main focus calculation loop
+		loop {
+			let mut closest_handler = None;
+			let mut closest_distance = f32::MAX;
 
-					let result = field_ref.ray_march(Ray {
-						origin: vec3(0.0, 0.0, 0.0),
-						direction: vec3(0.0, 0.0, -1.0),
-						space: spatial.clone(),
-					});
-
-					if result.deepest_point_distance > 0.0
-						&& result.min_distance < 0.05
-						&& result.deepest_point_distance < closest_distance
-					{
-						closest_distance = result.deepest_point_distance;
-						closest_handler = Some(handler.clone());
-					}
-				}
-
-				let Some(handler) = closest_handler else {
-					return;
-				};
-				let Ok(keyboard_handler) = handler
-					.to_typed_proxy::<KeyboardHandlerProxy>(&dbus_connection)
-					.await
-				else {
-					return;
+			// Find closest handler
+			for (handler, (field_ref, keyboard_proxy)) in &*keyboard_handlers.iter().await {
+				let Ok(field_ref) = field_ref else {
+					continue;
 				};
 
-				// Register keymap first
-				let _ = keyboard_handler.keymap(keymap_id).await;
+				let result = field_ref.ray_march(Ray {
+					origin: vec3(0.0, 0.0, 0.0),
+					direction: vec3(0.0, 0.0, -1.0),
+					space: spatial.clone(),
+				});
 
-				// Send key states
-				for (key, state) in events.iter() {
-					let pressed = matches!(state, ButtonState::Pressed);
-					let _ = keyboard_handler.key_state(key + 8, pressed).await;
+				if result.deepest_point_distance > 0.0
+					&& result.min_distance < 0.05
+					&& result.deepest_point_distance < closest_distance
+				{
+					closest_distance = result.deepest_point_distance;
+					closest_handler = Some(HandlerInfo {
+						handler: handler.clone(),
+						field_ref: field_ref.clone(),
+						keyboard_proxy: keyboard_proxy.clone(),
+					});
 				}
 			}
-		});
+
+			// Update focused handler
+			if let Some(ref handler_info) = closest_handler {
+				info!(
+					"Focus tracking task: Focused on handler at distance {}",
+					closest_distance
+				);
+			} else {
+				debug!("Focus tracking task: No handler in focus");
+			}
+			let _ = focused_handler_tx.send(closest_handler);
+
+			// Wait for next frame signal
+			focus_notify.notified().await;
+		}
+	}
+
+	async fn input_delivery_task(
+		dbus_connection: Connection,
+		mut focused_handler_rx: watch::Receiver<Option<HandlerInfo>>,
+		mut input_event_rx: mpsc::UnboundedReceiver<InputEvent>,
+		keymap_id: u64,
+	) {
+		info!("Input delivery task started");
+		loop {
+			// Handle input events
+			while let Some(input_event) = input_event_rx.recv().await {
+				info!(
+					"Input delivery task: Received input event key={}, pressed={}",
+					input_event.key, input_event.pressed
+				);
+				// Get current focused handler
+				let current_handler = focused_handler_rx.borrow().clone();
+				let Some(handler_info) = current_handler else {
+					warn!("Input delivery task: No focused handler, dropping input event");
+					continue;
+				};
+
+				// Send input to handler using cached proxy
+				info!("Input delivery task: Sending to handler");
+				let keyboard_handler = &handler_info.keyboard_proxy;
+
+				// Register keymap first
+				if let Err(e) = keyboard_handler.keymap(keymap_id).await {
+					warn!("Input delivery task: Failed to register keymap: {}", e);
+				}
+
+				// Send key state
+				if let Err(e) = keyboard_handler
+					.key_state(input_event.key + 8, input_event.pressed)
+					.await
+				{
+					error!("Input delivery task: Failed to send key state: {}", e);
+				} else {
+					info!(
+						"Input delivery task: Successfully sent key {} (pressed={})",
+						input_event.key + 8,
+						input_event.pressed
+					);
+				}
+			}
+		}
+	}
+}
+
+impl Drop for MousePointer {
+	fn drop(&mut self) {
+		// Abort the persistent tasks when MousePointer is dropped
+		self.focus_task_abort_handle.abort();
+		self.input_delivery_task_abort_handle.abort();
 	}
 }
 
