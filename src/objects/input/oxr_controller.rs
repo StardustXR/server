@@ -270,6 +270,7 @@ pub struct OxrControllerInput {
 	datamap: ControllerDatamap,
 	tracked: AsyncTracked,
 	space: Option<XrSpace>,
+	_model_node: OwnedNode,
 }
 impl OxrControllerInput {
 	fn new(connection: &Connection, side: HandSide) -> Result<Self> {
@@ -290,7 +291,8 @@ impl OxrControllerInput {
 			Mat4::from_scale(Vec3::splat(0.02)),
 			false,
 		);
-		let model = Model::add_to(&model_node, ResourceID::Direct(CURSOR_MODEL_PATH.into())).unwrap();
+		let model =
+			Model::add_to(&model_node, ResourceID::Direct(CURSOR_MODEL_PATH.into())).unwrap();
 		let model_part = model.get_model_part("Cursor".to_string()).unwrap();
 		let input = InputMethod::add_to(
 			&node,
@@ -307,6 +309,7 @@ impl OxrControllerInput {
 			datamap: Default::default(),
 			tracked,
 			space: None,
+			_model_node: OwnedNode(model_node),
 		})
 	}
 	#[instrument(level = "debug", skip(self))]
