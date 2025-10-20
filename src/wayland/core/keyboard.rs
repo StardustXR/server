@@ -248,7 +248,11 @@ impl WlKeyboard for Keyboard {
 	type Connection = Client;
 
 	/// https://wayland.app/protocols/wayland#wl_keyboard:request:release
-	async fn release(&self, _client: &mut Self::Connection, _sender_id: ObjectId) -> WaylandResult<()> {
+	async fn release(
+		&self,
+		_client: &mut Self::Connection,
+		_sender_id: ObjectId,
+	) -> WaylandResult<()> {
 		Ok(())
 	}
 }

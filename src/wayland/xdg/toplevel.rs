@@ -11,10 +11,10 @@ use crate::{
 };
 use mint::Vector2;
 use parking_lot::Mutex;
-use waynest_server::Client as _;
 use std::sync::Arc;
 use waynest::ObjectId;
 pub use waynest_protocols::server::stable::xdg_shell::xdg_toplevel::*;
+use waynest_server::Client as _;
 
 #[derive(Debug)]
 pub struct MappedInner {

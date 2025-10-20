@@ -6,10 +6,10 @@ use crate::nodes::items::panel::SurfaceId;
 use crate::wayland::WaylandResult;
 use parking_lot::Mutex;
 use rand::Rng;
-use waynest_server::Client as _;
 use std::sync::Arc;
 use waynest::ObjectId;
 use waynest_protocols::server::stable::xdg_shell::xdg_popup::XdgPopup;
+use waynest_server::Client as _;
 
 #[derive(Debug, waynest_server::RequestDispatcher)]
 #[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]

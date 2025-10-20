@@ -8,12 +8,12 @@ use bevy_dmabuf::dmatex::DmatexPlane;
 use drm_fourcc::DrmFourcc;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use waynest_server::Client as _;
 use std::os::fd::{AsRawFd, OwnedFd};
 use waynest::ObjectId;
 use waynest_protocols::server::stable::linux_dmabuf_v1::zwp_linux_buffer_params_v1::{
 	Error, Flags, ZwpLinuxBufferParamsV1,
 };
+use waynest_server::Client as _;
 
 /// Parameters for creating a DMA-BUF-based wl_buffer
 ///

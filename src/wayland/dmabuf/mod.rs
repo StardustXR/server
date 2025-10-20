@@ -15,11 +15,11 @@ use buffer_params::BufferParams;
 use drm_fourcc::DrmFourcc;
 use feedback::DmabufFeedback;
 use rustc_hash::FxHashSet;
-use waynest_server::Client as _;
 use std::sync::LazyLock;
 use vulkano::format::FormatFeatures;
 use waynest::ObjectId;
 use waynest_protocols::server::stable::linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1;
+use waynest_server::Client as _;
 
 pub static DMABUF_FORMATS: LazyLock<Vec<(DrmFourcc, u64)>> = LazyLock::new(|| {
 	let vk = VULKANO_CONTEXT.wait();
@@ -158,7 +158,8 @@ impl ZwpLinuxDmabufV1 for Dmabuf {
 			});
 		}
 		// Create feedback object for default (non-surface-specific) settings
-		let feedback = client.insert(id, DmabufFeedback(client.get::<Dmabuf>(sender_id).unwrap()))?;
+		let feedback =
+			client.insert(id, DmabufFeedback(client.get::<Dmabuf>(sender_id).unwrap()))?;
 		feedback.send_params(client, id).await?;
 		Ok(())
 	}

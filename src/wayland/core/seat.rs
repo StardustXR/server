@@ -2,11 +2,11 @@ use crate::wayland::Client;
 use crate::wayland::WaylandResult;
 use crate::wayland::core::{keyboard::Keyboard, pointer::Pointer, surface::Surface, touch::Touch};
 use mint::Vector2;
-use waynest_server::Client as _;
 use std::sync::Arc;
 use std::sync::OnceLock;
 use waynest::ObjectId;
 pub use waynest_protocols::server::core::wayland::wl_seat::*;
+use waynest_server::Client as _;
 
 #[derive(Debug)]
 pub enum SeatMessage {

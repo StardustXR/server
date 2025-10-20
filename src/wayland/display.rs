@@ -10,13 +10,13 @@ use crate::wayland::{
 	registry::Registry,
 };
 use global_counter::primitive::exact::CounterU32;
-use waynest_server::Client as _;
 use std::{
 	sync::{Arc, OnceLock},
 	time::Instant,
 };
 use waynest::ObjectId;
 pub use waynest_protocols::server::core::wayland::wl_display::*;
+use waynest_server::Client as _;
 
 #[derive(waynest_server::RequestDispatcher)]
 #[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
