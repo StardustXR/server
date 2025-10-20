@@ -11,6 +11,7 @@ mod xdg;
 
 use crate::core::error::ServerError;
 use crate::core::registry::OwnedRegistry;
+use crate::get_time;
 use crate::nodes::drawable::model::ModelNodeSystemSet;
 use crate::wayland::core::seat::SeatMessage;
 use crate::wayland::core::surface::Surface;
@@ -26,7 +27,7 @@ use bevy::render::{Render, RenderApp};
 use bevy::{asset::Assets, ecs::resource::Resource, image::Image};
 use bevy_dmabuf::import::ImportedDmatexs;
 use bevy_mod_openxr::render::end_frame;
-use bevy_mod_openxr::resources::{OxrFrameState, OxrInstance};
+use bevy_mod_openxr::resources::{OxrFrameState, OxrInstance, Pipelined};
 use bevy_mod_xr::session::XrRenderSet;
 use core::buffer::BufferUsage;
 use core::{buffer::Buffer, callback::Callback, surface::WL_SURFACE_REGISTRY};
@@ -490,6 +491,7 @@ fn submit_frame_timings(
 	mut frame_count: Local<u64>,
 	instance: Option<Res<OxrInstance>>,
 	frame_state: Option<Res<OxrFrameState>>,
+	pipelined: Option<Res<Pipelined>>,
 ) {
 	*frame_count += 1;
 	let display_timestamp = frame_state
@@ -502,7 +504,7 @@ fn submit_frame_timings(
 					let mut out = MaybeUninit::uninit();
 					let result = (v.convert_time_to_timespec_time)(
 						instance.as_raw(),
-						state.predicted_display_time,
+						get_time(pipelined.is_some(), &state),
 						out.as_mut_ptr(),
 					);
 					if result != openxr::sys::Result::SUCCESS {

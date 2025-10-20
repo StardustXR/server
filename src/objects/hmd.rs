@@ -3,7 +3,7 @@ use std::sync::Arc;
 use bevy::prelude::*;
 use bevy_mod_openxr::{
 	helper_traits::{ToQuat as _, ToVec3 as _},
-	resources::OxrFrameState,
+	resources::{OxrFrameState, Pipelined},
 	session::OxrSession,
 };
 use bevy_mod_xr::{
@@ -12,7 +12,7 @@ use bevy_mod_xr::{
 };
 use openxr::SpaceLocationFlags;
 
-use crate::{DbusConnection, PreFrameWait, nodes::spatial::Spatial};
+use crate::{DbusConnection, PreFrameWait, get_time, nodes::spatial::Spatial};
 
 use super::{ObjectHandle, SpatialRef, input::mouse_pointer::FlatscreenCam};
 
@@ -68,6 +68,7 @@ fn update_xr(
 	ref_space: Option<Res<XrPrimaryReferenceSpace>>,
 	hmd: Res<Hmd>,
 	state: Option<Res<OxrFrameState>>,
+	pipelined: Option<Res<Pipelined>>,
 ) {
 	let (Some(session), Some(view), Some(ref_space), Some(state)) =
 		(session, hmd.space, ref_space, state)
@@ -80,9 +81,9 @@ fn update_xr(
 		// });
 		return;
 	};
-	// this won't be correct with pipelined rendering
+	let time = get_time(pipelined.is_some(), &state);
 	let location = session
-		.locate_space(&view, &ref_space, state.predicted_display_time)
+		.locate_space(&view, &ref_space, time)
 		.inspect_err(|err| error!("Error while Locating OpenXR Stage Space {err}"));
 	if let Ok(location) = location {
 		let is_tracked = location

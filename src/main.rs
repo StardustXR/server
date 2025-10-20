@@ -29,6 +29,9 @@ use bevy::gizmos::GizmoPlugin;
 use bevy::gltf::GltfPlugin;
 use bevy::input::InputPlugin;
 use bevy::pbr::PbrPlugin;
+use bevy::render::pipelined_rendering::{
+	PipelinedRenderThreadOnCreateCallback, PipelinedRenderingPlugin,
+};
 use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
 use bevy::render::{RenderDebugFlags, RenderPlugin};
 use bevy::scene::ScenePlugin;
@@ -335,6 +338,9 @@ fn bevy_loop(
 			false => plugins.add(FlatscreenInputPlugin),
 		};
 	}
+	app.insert_resource(PipelinedRenderThreadOnCreateCallback(
+		enter_runtime_context.clone(),
+	));
 	app.add_plugins(
 		if !args.force_flatscreen {
 			add_xr_plugins(plugins)
@@ -386,6 +392,7 @@ fn bevy_loop(
 			..default()
 		}),
 	);
+	app.add_plugins(PipelinedRenderingPlugin);
 
 	app.add_plugins(bevy_sk::hand::HandPlugin);
 	app.add_plugins(bevy_equirect::EquirectangularPlugin);
@@ -505,4 +512,14 @@ fn xr_step(world: &mut World) {
 	}
 
 	tick_internal_client();
+}
+
+pub fn get_time(pipelined: bool, state: &OxrFrameState) -> openxr::Time {
+	if pipelined {
+		openxr::Time::from_nanos(
+			state.predicted_display_time.as_nanos() + state.predicted_display_period.as_nanos(),
+		)
+	} else {
+		state.predicted_display_time
+	}
 }

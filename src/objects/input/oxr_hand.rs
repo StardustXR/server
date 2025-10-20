@@ -8,11 +8,11 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use crate::objects::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
-use crate::{BevyMaterial, DbusConnection, ObjectRegistryRes, PreFrameWait};
+use crate::{BevyMaterial, DbusConnection, ObjectRegistryRes, PreFrameWait, get_time};
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
-use bevy_mod_openxr::resources::OxrFrameState;
+use bevy_mod_openxr::resources::{OxrFrameState, Pipelined};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::hands::{HandBone, HandSide, XrHandBoneEntities, XrHandBoneRadius};
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
@@ -50,6 +50,7 @@ fn update_hands(
 		&mut XrHandBoneRadius,
 	)>,
 	joints_query: Query<&XrHandBoneEntities>,
+	pipelined: Option<Res<Pipelined>>,
 ) {
 	let (Some(session), Some(state), Some(ref_space)) = (session, state, ref_space) else {
 		hands.left.tracked.set_tracked(false);
@@ -62,9 +63,9 @@ fn update_hands(
 			hand.tracked.set_tracked(false);
 			return None;
 		};
-		// this won't be correct with pipelined rendering
+		let time = get_time(pipelined.is_some(), &state);
 		session
-			.locate_hand_joints(tracker, &ref_space, state.predicted_display_time)
+			.locate_hand_joints(tracker, &ref_space, time)
 			.inspect_err(|err| error!("Error while locating hand joints"))
 			.ok()
 			.flatten()

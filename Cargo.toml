@@ -60,7 +60,7 @@ debug = true
 opt-level = 3
 
 [patch.crates-io]
-bevy_mod_openxr = { git = "https://github.com/awtterpip/bevy_oxr", rev = "9fd0c797"}
+bevy_mod_openxr = { git = "https://github.com/awtterpip/bevy_oxr", rev = "9fd0c797" }
 bevy_mod_xr = { git = "https://github.com/awtterpip/bevy_oxr", rev = "9fd0c797" }
 bevy_gltf = { git = "https://github.com/Schmarni-Dev/bevy", branch = "gltf_backport" }
 # TODO: figure out how to not need this horrifing patch
@@ -71,6 +71,7 @@ naga = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_work
 wgpu-hal = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
 bevy_pbr = { git = "https://github.com/Schmarni-Dev/bevy", branch = "premul_oit_016" }
 bevy_core_pipeline = { git = "https://github.com/Schmarni-Dev/bevy", branch = "premul_oit_016" }
+bevy_render = { git = "https://github.com/Schmarni-Dev/bevy", branch = "render_thread_init_callback" }
 
 [dependencies]
 # small utility thingys

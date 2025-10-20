@@ -2,6 +2,7 @@ use super::{CaptureManager, get_sorted_handlers};
 use crate::{
 	DbusConnection, PreFrameWait,
 	core::client::INTERNAL_CLIENT,
+	get_time,
 	nodes::{
 		Node, OwnedNode,
 		drawable::{
@@ -19,7 +20,7 @@ use bevy::{math::Affine3, prelude::*};
 use bevy_mod_openxr::{
 	action_binding::{OxrSendActionBindings, OxrSuggestActionBinding},
 	helper_traits::{ToIsometry3d, ToVec2},
-	resources::{OxrFrameState, OxrInstance},
+	resources::{OxrFrameState, OxrInstance, Pipelined},
 	session::OxrSession,
 };
 use bevy_mod_xr::{
@@ -147,6 +148,7 @@ fn update(
 	session: Option<Res<OxrSession>>,
 	ref_space: Option<Res<XrPrimaryReferenceSpace>>,
 	state: Option<Res<OxrFrameState>>,
+	pipelined: Option<Res<Pipelined>>,
 ) {
 	let (Some(session), Some(state), Some(ref_space)) = (session, state, ref_space) else {
 		controllers.left.set_enabled(false);
@@ -158,8 +160,7 @@ fn update(
 			.sync_actions(&[ActiveActionSet::new(&actions.set)])
 			.unwrap();
 	});
-	let time = state.predicted_display_time;
-	// stupid bevy gltf loading issue (rotated 180 degrees on the y axis)
+	let time = get_time(pipelined.is_some(), &state);
 	controllers
 		.left
 		.update(&session, &actions, time, ref_space.0);
