@@ -4766,7 +4766,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.11.0",
  "proc-macro2",
  "quote",
  "syn 2.0.104",
@@ -5448,7 +5448,7 @@ checksum = "6eae92052b72ef70dafa16eddbabffc77e5ca3574be2f7bc1127b36f0a7ad7f2"
 [[package]]
 name = "stardust-xr"
 version = "0.45.0"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#f6cec16352034401114c1368bd8c21c3a6914f32"
+source = "git+https://github.com/StardustXR/core.git?branch=dev#d61d268ae60a36f6a42af2cef95807187b6a5532"
 dependencies = [
  "color-eyre",
  "dirs",
@@ -5467,7 +5467,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-schemas"
 version = "1.5.3"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#f6cec16352034401114c1368bd8c21c3a6914f32"
+source = "git+https://github.com/StardustXR/core.git?branch=dev#d61d268ae60a36f6a42af2cef95807187b6a5532"
 dependencies = [
  "console-subscriber",
  "flatbuffers",
