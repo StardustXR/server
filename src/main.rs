@@ -209,9 +209,7 @@ async fn main() -> Result<AppExit, JoinError> {
 		.await
 		.expect("Couldn't add the object manager");
 
-	let object_registry = ObjectRegistry::new(&dbus_connection).await.expect(
-		"Couldn't make the object registry to find all objects with given interfaces in d-bus",
-	);
+	let object_registry = ObjectRegistry::new(&dbus_connection).await;
 
 	let _wayland = Wayland::new().expect("Couldn't create Wayland instance");
 

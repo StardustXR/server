@@ -483,7 +483,6 @@ impl MousePointer {
 				// Get current focused handler
 				let current_handler = focused_handler_rx.borrow().clone();
 				let Some(handler_info) = current_handler else {
-					warn!("Input delivery task: No focused handler, dropping input event");
 					continue;
 				};
 
