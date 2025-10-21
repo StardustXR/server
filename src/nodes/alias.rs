@@ -121,6 +121,7 @@ impl AliasList {
 	fn add(&self, node: &Arc<Node>) {
 		self.0.add_raw(node);
 	}
+	#[tracing::instrument(level = "trace", skip_all)]
 	pub fn get_from_original_node(&self, original: Weak<Node>) -> Option<Arc<Node>> {
 		self.0
 			.get_valid_contents()
