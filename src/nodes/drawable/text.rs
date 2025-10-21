@@ -107,8 +107,7 @@ fn spawn_text(
 						emissive: Color::WHITE.to_linear(),
 						metallic: 0.0,
 						perceptual_roughness: 1.0,
-						// If alpha is supported on text we need to change this
-						alpha_mode: AlphaMode::Opaque,
+						alpha_mode: AlphaMode::Premultiplied,
 						double_sided: false,
 						..default()
 					},

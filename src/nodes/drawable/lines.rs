@@ -182,7 +182,7 @@ fn build_line_mesh(
 				let points = normals.map(|v| (v * curr.thickness) + Vec3::from(curr.point));
 				vertex_normals.extend(normals);
 				vertex_positions.extend(points);
-				vertex_colors.extend([curr.color.to_bevy().to_srgba().to_f32_array(); 8]);
+				vertex_colors.extend([curr.color.to_bevy().to_linear().to_f32_array(); 8]);
 				// Only connect vertices between segments if this isn't the end point
 				if !last_point {
 					vertex_indices.extend(indices(indices_set));
@@ -220,9 +220,8 @@ fn build_line_mesh(
 						base: BevyMaterial {
 							base_color: Color::WHITE,
 							perceptual_roughness: 1.0,
-							// TODO: this should be Blend
-							alpha_mode: AlphaMode::Blend,
-							emissive: Color::srgba_u8(128 / 4, 128 / 4, 128 / 4, 255).into(),
+							alpha_mode: AlphaMode::Premultiplied,
+							emissive: Color::linear_rgba(0.25, 0.25, 0.25, 1.0).into(),
 							..default()
 						},
 						extension: LineExtension { unused: 0 },
