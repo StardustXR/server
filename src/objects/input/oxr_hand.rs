@@ -15,7 +15,7 @@ use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
 use bevy_mod_openxr::resources::{OxrFrameState, Pipelined};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::hands::{HandBone, HandSide, XrHandBoneEntities, XrHandBoneRadius};
-use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
+use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated, session_available};
 use bevy_mod_xr::spaces::{XrPrimaryReferenceSpace, XrSpaceLocationFlags};
 use bevy_sk::hand::GRADIENT_TEXTURE_HANDLE;
 use color_eyre::eyre::Result;
@@ -34,8 +34,8 @@ impl Plugin for HandPlugin {
 		app.add_systems(PreFrameWait, update_hands.run_if(resource_exists::<Hands>));
 		app.add_systems(XrSessionCreated, create_trackers);
 		app.add_systems(XrPreDestroySession, destroy_trackers);
-		app.add_systems(PostUpdate, update_hand_material);
-		app.add_systems(Startup, setup);
+		app.add_systems(PostUpdate, update_hand_material.run_if(resource_exists::<Hands>));
+		app.add_systems(Startup, setup.run_if(session_available));
 	}
 }
 fn update_hands(
