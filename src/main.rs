@@ -44,10 +44,10 @@ use bevy_mod_openxr::add_xr_plugins;
 use bevy_mod_openxr::exts::OxrExtensions;
 use bevy_mod_openxr::features::overlay::OxrOverlaySettings;
 use bevy_mod_openxr::graphics::{GraphicsBackend, OxrManualGraphicsConfig};
-use bevy_mod_openxr::init::OxrInitPlugin;
+use bevy_mod_openxr::init::{OxrInitPlugin, should_run_frame_loop};
 use bevy_mod_openxr::reference_space::OxrReferenceSpacePlugin;
 use bevy_mod_openxr::render::{OxrRenderPlugin, OxrWaitFrameSystem};
-use bevy_mod_openxr::resources::{OxrFrameState, OxrSessionConfig};
+use bevy_mod_openxr::resources::{OxrFrameState, OxrFrameWaiter, OxrSessionConfig};
 use bevy_mod_openxr::types::AppInfo;
 use bevy_mod_xr::camera::XrProjection;
 use bevy_mod_xr::session::{XrFirst, XrHandleEvents, XrSessionPlugin};
@@ -491,6 +491,23 @@ fn xr_step(world: &mut World) {
 	input::process_input();
 	let time = world.resource::<bevy::prelude::Time>().delta_secs_f64();
 	nodes::root::Root::send_frame_events(time);
+
+	let should_wait = world
+		.run_system_cached(should_run_frame_loop)
+		.unwrap_or(false);
+	// we might want to do an adaptive sleep when not OpenXR waiting
+	if should_wait {
+		world.resource_scope::<OxrFrameWaiter, _>(|world, mut waiter| {
+			let state = waiter
+				.wait()
+				.inspect_err(|err| error!("failed to wait OpenXR frame: {err}"))
+				.ok();
+
+			if let Some(state) = state {
+				world.insert_resource(OxrFrameState(state));
+			}
+		});
+	}
 
 	tick_internal_client();
 }
