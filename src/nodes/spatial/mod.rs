@@ -19,6 +19,7 @@ use mint::Vector3;
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::fmt::Debug;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, Weak};
 use std::{f32, ptr};
 
@@ -88,14 +89,18 @@ fn despawn_unneeded_spatial_nodes(query: Query<(Entity, &SpatialNode)>, cmds: Pa
 
 fn update_spatial_nodes(mut query: Query<(&mut BevyTransform, &SpatialNode, &mut Visibility)>) {
 	query
-		.par_iter_mut()
+		.iter_mut()
 		.for_each(|(mut transform, spatial_node, mut vis)| {
 			let _span = debug_span!("updating spatial node").entered();
 			let Some(spatial) = spatial_node.0.upgrade() else {
 				return;
 			};
 			// Set visibility based on node enabled state
-			if spatial.node().is_some_and(|v| v.enabled()) {
+			if spatial
+				.node()
+				.is_some_and(|v| v.enabled.load(Ordering::Relaxed))
+				&& spatial.local_visible()
+			{
 				*vis = Visibility::Inherited;
 			} else {
 				*vis = Visibility::Hidden;
@@ -225,6 +230,15 @@ impl Spatial {
 		*self.transform.read()
 	}
 
+	fn local_visible(&self) -> bool {
+		// Check our own scale by looking at matrix column lengths
+		let mat = self.local_transform();
+		let x_scale = mat.x_axis.length_squared();
+		let y_scale = mat.y_axis.length_squared();
+		let z_scale = mat.z_axis.length_squared();
+
+		!(x_scale == 0.0 && y_scale == 0.0 && z_scale == 0.0)
+	}
 	/// Check if this node or any ancestor has zero scale (for visibility culling)
 	pub fn visible(&self) -> bool {
 		// Check parent chain
@@ -235,12 +249,7 @@ impl Spatial {
 		}
 
 		// Check our own scale by looking at matrix column lengths
-		let mat = self.local_transform();
-		let x_scale = mat.x_axis.length_squared();
-		let y_scale = mat.y_axis.length_squared();
-		let z_scale = mat.z_axis.length_squared();
-
-		!(x_scale == 0.0 || y_scale == 0.0 || z_scale == 0.0)
+		self.local_visible()
 	}
 	pub fn global_transform(&self) -> Mat4 {
 		let parent_transform = self
