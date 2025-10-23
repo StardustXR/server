@@ -126,9 +126,17 @@ impl Transform {
 			.then_some(self.rotation)
 			.flatten()
 			.unwrap_or_else(|| Quat::IDENTITY.into());
+
+		// Zero scale values break everything
+		let epsilon = 0.00001;
 		let scale = scale
 			.then_some(self.scale)
 			.flatten()
+			.map(|s| Vector3 {
+				x: if s.x == 0.0 { epsilon } else { s.x },
+				y: if s.y == 0.0 { epsilon } else { s.y },
+				z: if s.z == 0.0 { epsilon } else { s.z },
+			})
 			.unwrap_or_else(|| Vector3::from([1.0; 3]));
 
 		Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
@@ -268,9 +276,7 @@ impl Spatial {
 		transform: Transform,
 	) {
 		if reference_space == Some(self) {
-			self.set_local_transform(
-				parse_transform(transform, true, true, true) * self.local_transform(),
-			);
+			self.set_local_transform(transform.to_mat4(true, true, true) * self.local_transform());
 			return;
 		}
 		let reference_to_parent_transform = reference_space
@@ -517,23 +523,6 @@ impl SpatialRefAspect for SpatialRef {
 	}
 }
 
-pub fn parse_transform(transform: Transform, position: bool, rotation: bool, scale: bool) -> Mat4 {
-	let position = position
-		.then_some(transform.translation)
-		.flatten()
-		.unwrap_or_else(|| Vector3::from([0.0; 3]));
-	let rotation = rotation
-		.then_some(transform.rotation)
-		.flatten()
-		.unwrap_or_else(|| Quat::IDENTITY.into());
-	let scale = scale
-		.then_some(transform.scale)
-		.flatten()
-		.unwrap_or_else(|| Vector3::from([1.0; 3]));
-
-	Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
-}
-
 impl InterfaceAspect for Interface {
 	fn create_spatial(
 		_node: Arc<Node>,
@@ -544,7 +533,7 @@ impl InterfaceAspect for Interface {
 		zoneable: bool,
 	) -> Result<()> {
 		let parent = parent.get_aspect::<Spatial>()?;
-		let transform = parse_transform(transform, true, true, true);
+		let transform = transform.to_mat4(true, true, true);
 		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
 		Spatial::add_to(&node, Some(parent.clone()), transform, zoneable);
 		Ok(())
@@ -558,7 +547,7 @@ impl InterfaceAspect for Interface {
 		field: Arc<Node>,
 	) -> Result<()> {
 		let parent = parent.get_aspect::<Spatial>()?;
-		let transform = parse_transform(transform, true, true, false);
+		let transform = transform.to_mat4(true, true, false);
 		let field = field.get_aspect::<Field>()?;
 
 		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
