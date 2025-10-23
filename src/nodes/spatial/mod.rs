@@ -19,7 +19,7 @@ use mint::Vector3;
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::fmt::Debug;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use std::{f32, ptr};
 
@@ -87,26 +87,32 @@ fn despawn_unneeded_spatial_nodes(query: Query<(Entity, &SpatialNode)>, cmds: Pa
 	});
 }
 
-fn update_spatial_nodes(mut query: Query<(&mut BevyTransform, &SpatialNode, &mut Visibility)>) {
-	query
-		.iter_mut()
-		.for_each(|(mut transform, spatial_node, mut vis)| {
-			let _span = debug_span!("updating spatial node").entered();
-			let Some(spatial) = spatial_node.0.upgrade() else {
-				return;
-			};
-			// Set visibility based on node enabled state
-			if spatial
-				.node()
-				.is_some_and(|v| v.enabled.load(Ordering::Relaxed))
-				&& spatial.local_visible()
-			{
-				*vis = Visibility::Inherited;
-			} else {
-				*vis = Visibility::Hidden;
-			}
-			*transform = BevyTransform::from_matrix(spatial.local_transform());
-		});
+fn update_spatial_nodes(
+	mut query: Query<(Entity, &mut BevyTransform, &SpatialNode, &mut Visibility)>,
+) {
+	for (entity, mut transform, spatial_node, mut vis) in query.iter_mut() {
+		let _span = debug_span!("updating spatial node").entered();
+		let Some(spatial) = spatial_node.0.upgrade() else {
+			continue;
+		};
+		if !spatial.bevy_dirty.swap(false, Ordering::Relaxed) {
+			continue;
+		}
+
+		println!("Spatial node was dirty on entity `{}`", entity);
+
+		// Set visibility based on node enabled state
+		if spatial
+			.node()
+			.is_some_and(|v| v.enabled.load(Ordering::Relaxed))
+			&& spatial.local_visible()
+		{
+			*vis = Visibility::Inherited;
+		} else {
+			*vis = Visibility::Hidden;
+		}
+		*transform = BevyTransform::from_matrix(spatial.local_transform());
+	}
 }
 
 static SPATIAL_REGISTRY: Registry<Spatial> = Registry::new();
@@ -158,6 +164,7 @@ static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
 pub struct Spatial {
 	pub node: Weak<Node>,
+	bevy_dirty: AtomicBool,
 	entity: RwLock<Option<EntityHandle>>,
 	parent: RwLock<Option<Arc<Spatial>>>,
 	old_parent: RwLock<Option<Arc<Spatial>>>,
@@ -171,6 +178,7 @@ impl Spatial {
 	pub fn new(node: Weak<Node>, parent: Option<Arc<Spatial>>, transform: Mat4) -> Arc<Self> {
 		SPATIAL_REGISTRY.add(Spatial {
 			node,
+			bevy_dirty: AtomicBool::new(true),
 			entity: RwLock::new(None),
 			parent: RwLock::new(parent),
 			old_parent: RwLock::new(None),
@@ -269,6 +277,7 @@ impl Spatial {
 		parent_transform * self.local_transform()
 	}
 	pub fn set_local_transform(&self, transform: Mat4) {
+		self.bevy_dirty.store(true, Ordering::Relaxed);
 		*self.transform.write() = transform;
 	}
 	pub fn set_local_transform_components(
@@ -337,6 +346,7 @@ impl Spatial {
 		new_parent.children.add_raw(self);
 
 		*self.parent.write() = Some(new_parent.clone());
+		self.bevy_dirty.store(true, Ordering::Relaxed);
 	}
 
 	pub fn set_spatial_parent(self: &Arc<Self>, parent: &Arc<Spatial>) -> Result<()> {
