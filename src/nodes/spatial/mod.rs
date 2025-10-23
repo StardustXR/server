@@ -115,6 +115,8 @@ static SPATIAL_REGISTRY: Registry<Spatial> = Registry::new();
 #[require(BevyTransform, Visibility)]
 pub struct SpatialNode(pub Weak<Spatial>);
 
+const EPSILON: f32 = 0.00001;
+
 stardust_xr_server_codegen::codegen_spatial_protocol!();
 impl Transform {
 	pub fn to_mat4(&self, position: bool, rotation: bool, scale: bool) -> Mat4 {
@@ -128,14 +130,13 @@ impl Transform {
 			.unwrap_or_else(|| Quat::IDENTITY.into());
 
 		// Zero scale values break everything
-		let epsilon = 0.00001;
 		let scale = scale
 			.then_some(self.scale)
 			.flatten()
 			.map(|s| Vector3 {
-				x: if s.x == 0.0 { epsilon } else { s.x },
-				y: if s.y == 0.0 { epsilon } else { s.y },
-				z: if s.z == 0.0 { epsilon } else { s.z },
+				x: if s.x == 0.0 { EPSILON } else { s.x },
+				y: if s.y == 0.0 { EPSILON } else { s.y },
+				z: if s.z == 0.0 { EPSILON } else { s.z },
 			})
 			.unwrap_or_else(|| Vector3::from([1.0; 3]));
 
@@ -245,7 +246,7 @@ impl Spatial {
 		let y_scale = mat.y_axis.length_squared();
 		let z_scale = mat.z_axis.length_squared();
 
-		!(x_scale == 0.0 && y_scale == 0.0 && z_scale == 0.0)
+		x_scale >= EPSILON.powi(2) || y_scale >= EPSILON.powi(2) || z_scale >= EPSILON.powi(2)
 	}
 	/// Check if this node or any ancestor has zero scale (for visibility culling)
 	pub fn visible(&self) -> bool {
