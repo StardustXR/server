@@ -132,7 +132,10 @@ impl Node {
 			}
 	}
 	pub fn set_enabled(&self, enabled: bool) {
-		self.enabled.store(enabled, Ordering::Relaxed)
+		self.enabled.store(enabled, Ordering::Relaxed);
+		if let Ok(spatial) = self.get_aspect::<Spatial>() {
+			spatial.bevy_dirty.store(true, Ordering::Relaxed);
+		}
 	}
 	pub fn destroy(&self) {
 		if let Some(client) = self.get_client() {

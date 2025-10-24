@@ -10,6 +10,7 @@ use crate::core::entity_handle::EntityHandle;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
+use bevy::platform::collections::HashMap;
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
@@ -90,16 +91,15 @@ fn despawn_unneeded_spatial_nodes(query: Query<(Entity, &SpatialNode)>, cmds: Pa
 fn update_spatial_nodes(
 	mut query: Query<(Entity, &mut BevyTransform, &SpatialNode, &mut Visibility)>,
 ) {
+	let mut spatials = HashMap::new();
 	for (entity, mut transform, spatial_node, mut vis) in query.iter_mut() {
 		let _span = debug_span!("updating spatial node").entered();
 		let Some(spatial) = spatial_node.0.upgrade() else {
 			continue;
 		};
-		if !spatial.bevy_dirty.swap(false, Ordering::Relaxed) {
+		if !spatial.bevy_dirty.load(Ordering::Relaxed) {
 			continue;
 		}
-
-		println!("Spatial node was dirty on entity `{}`", entity);
 
 		// Set visibility based on node enabled state
 		if spatial
@@ -112,6 +112,10 @@ fn update_spatial_nodes(
 			*vis = Visibility::Hidden;
 		}
 		*transform = BevyTransform::from_matrix(spatial.local_transform());
+		spatials.insert(Arc::as_ptr(&spatial) as usize, spatial);
+	}
+	for spatial in spatials.into_values() {
+		spatial.bevy_dirty.store(false, Ordering::Relaxed);
 	}
 }
 
@@ -164,7 +168,7 @@ static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
 pub struct Spatial {
 	pub node: Weak<Node>,
-	bevy_dirty: AtomicBool,
+	pub(super) bevy_dirty: AtomicBool,
 	entity: RwLock<Option<EntityHandle>>,
 	parent: RwLock<Option<Arc<Spatial>>>,
 	old_parent: RwLock<Option<Arc<Spatial>>>,
@@ -190,6 +194,8 @@ impl Spatial {
 	}
 	pub fn set_entity(&self, entity: Entity) {
 		self.entity.write().replace(entity.into());
+		self.bevy_dirty.store(true, Ordering::Relaxed);
+		println!("setting entity dirty: {entity}");
 	}
 	pub fn add_to(
 		node: &Arc<Node>,
@@ -277,8 +283,8 @@ impl Spatial {
 		parent_transform * self.local_transform()
 	}
 	pub fn set_local_transform(&self, transform: Mat4) {
-		self.bevy_dirty.store(true, Ordering::Relaxed);
 		*self.transform.write() = transform;
+		self.bevy_dirty.store(true, Ordering::Relaxed);
 	}
 	pub fn set_local_transform_components(
 		&self,
