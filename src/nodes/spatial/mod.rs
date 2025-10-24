@@ -31,7 +31,7 @@ impl Plugin for SpatialNodePlugin {
 			PostUpdate,
 			(
 				spawn_spatial_nodes,
-				update_spatial_node_parenting,
+				// update_spatial_node_parenting,
 				despawn_unneeded_spatial_nodes,
 				update_spatial_nodes,
 			)
@@ -88,10 +88,13 @@ fn despawn_unneeded_spatial_nodes(query: Query<(Entity, &SpatialNode)>, cmds: Pa
 	});
 }
 
-fn update_spatial_nodes(mut query: Query<(&mut BevyTransform, &mut Visibility)>) {
-	for (entity, transform) in UPDATED_SPATIALS_NODES.lock().drain() {
+fn update_spatial_nodes(
+	mut query: Query<(&mut BevyTransform, &mut Visibility, Option<&ChildOf>)>,
+	mut cmds: Commands,
+) {
+	for (entity, (transform, parent_entity)) in UPDATED_SPATIALS_NODES.lock().drain() {
 		let _span = debug_span!("updating spatial node").entered();
-		let Ok((mut bevy_transform, mut vis)) = query.get_mut(entity) else {
+		let Ok((mut bevy_transform, mut vis, parent)) = query.get_mut(entity) else {
 			continue;
 		};
 		// Set visibility based on node enabled state
@@ -100,6 +103,13 @@ fn update_spatial_nodes(mut query: Query<(&mut BevyTransform, &mut Visibility)>)
 			*bevy_transform = transform;
 		} else {
 			*vis = Visibility::Hidden;
+		}
+
+		if parent.map(|v| v.0) != parent_entity {
+			match parent_entity {
+				Some(e) => cmds.entity(entity).insert(ChildOf(e)),
+				None => cmds.entity(entity).remove::<ChildOf>(),
+			};
 		}
 	}
 }
@@ -180,6 +190,9 @@ impl Spatial {
 	pub fn set_entity(&self, entity: Entity) {
 		self.entity.write().replace(entity.into());
 		self.mark_dirty();
+		for child in self.children.get_valid_contents() {
+			child.mark_dirty();
+		}
 	}
 	pub fn add_to(
 		node: &Arc<Node>,
@@ -241,7 +254,12 @@ impl Spatial {
 			.is_none_or(|n| n.enabled.load(Ordering::Relaxed))
 			&& self.local_visible();
 		let transform = enabled.then(|| BevyTransform::from_matrix(self.local_transform()));
-		UPDATED_SPATIALS_NODES.lock().insert(entity, transform);
+		let parent = self
+			.get_parent()
+			.and_then(|v| v.entity.read().as_ref().map(|v| v.0));
+		UPDATED_SPATIALS_NODES
+			.lock()
+			.insert(entity, (transform, parent));
 	}
 
 	pub fn local_transform(&self) -> Mat4 {
@@ -378,7 +396,7 @@ impl Spatial {
 			.unwrap_or(f32::NEG_INFINITY)
 	}
 }
-static UPDATED_SPATIALS_NODES: Mutex<EntityHashMap<Option<BevyTransform>>> =
+static UPDATED_SPATIALS_NODES: Mutex<EntityHashMap<(Option<BevyTransform>, Option<Entity>)>> =
 	Mutex::new(EntityHashMap::new());
 impl AspectIdentifier for Spatial {
 	impl_aspect_for_spatial_aspect_id! {}

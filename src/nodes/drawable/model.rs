@@ -56,7 +56,7 @@ impl Plugin for ModelNodePlugin {
 			Update,
 			(
 				load_models,
-				gen_model_parts.after(TransformSystem::TransformPropagate),
+				gen_model_parts,
 				apply_materials,
 			)
 				.chain()
@@ -101,6 +101,7 @@ fn load_models(
 				SceneRoot(handle),
 				ModelNode(Arc::downgrade(&model)),
 				SpatialNode(Arc::downgrade(&model.spatial)),
+				Visibility::Hidden,
 			))
 			.id();
 		model.bevy_scene_entity.set(entity.into()).unwrap();
