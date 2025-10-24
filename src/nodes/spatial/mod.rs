@@ -10,7 +10,7 @@ use crate::core::entity_handle::EntityHandle;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};
-use bevy::platform::collections::HashMap;
+use bevy::ecs::entity::EntityHashMap;
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
@@ -20,7 +20,7 @@ use mint::Vector3;
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, Weak};
 use std::{f32, ptr};
 
@@ -88,34 +88,19 @@ fn despawn_unneeded_spatial_nodes(query: Query<(Entity, &SpatialNode)>, cmds: Pa
 	});
 }
 
-fn update_spatial_nodes(
-	mut query: Query<(Entity, &mut BevyTransform, &SpatialNode, &mut Visibility)>,
-) {
-	let mut spatials = HashMap::new();
-	for (entity, mut transform, spatial_node, mut vis) in query.iter_mut() {
+fn update_spatial_nodes(mut query: Query<(&mut BevyTransform, &mut Visibility)>) {
+	for (entity, transform) in UPDATED_SPATIALS_NODES.lock().drain() {
 		let _span = debug_span!("updating spatial node").entered();
-		let Some(spatial) = spatial_node.0.upgrade() else {
+		let Ok((mut bevy_transform, mut vis)) = query.get_mut(entity) else {
 			continue;
 		};
-		if !spatial.bevy_dirty.load(Ordering::Relaxed) {
-			continue;
-		}
-
 		// Set visibility based on node enabled state
-		if spatial
-			.node()
-			.is_some_and(|v| v.enabled.load(Ordering::Relaxed))
-			&& spatial.local_visible()
-		{
+		if let Some(transform) = transform {
 			*vis = Visibility::Inherited;
+			*bevy_transform = transform;
 		} else {
 			*vis = Visibility::Hidden;
 		}
-		*transform = BevyTransform::from_matrix(spatial.local_transform());
-		spatials.insert(Arc::as_ptr(&spatial) as usize, spatial);
-	}
-	for spatial in spatials.into_values() {
-		spatial.bevy_dirty.store(false, Ordering::Relaxed);
 	}
 }
 
@@ -168,7 +153,6 @@ static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
 pub struct Spatial {
 	pub node: Weak<Node>,
-	pub(super) bevy_dirty: AtomicBool,
 	entity: RwLock<Option<EntityHandle>>,
 	parent: RwLock<Option<Arc<Spatial>>>,
 	old_parent: RwLock<Option<Arc<Spatial>>>,
@@ -180,9 +164,8 @@ pub struct Spatial {
 
 impl Spatial {
 	pub fn new(node: Weak<Node>, parent: Option<Arc<Spatial>>, transform: Mat4) -> Arc<Self> {
-		SPATIAL_REGISTRY.add(Spatial {
+		let spatial = SPATIAL_REGISTRY.add(Spatial {
 			node,
-			bevy_dirty: AtomicBool::new(true),
 			entity: RwLock::new(None),
 			parent: RwLock::new(parent),
 			old_parent: RwLock::new(None),
@@ -190,12 +173,13 @@ impl Spatial {
 			zone: RwLock::new(Weak::new()),
 			children: Registry::new(),
 			bounding_box_calc: OnceLock::default(),
-		})
+		});
+		spatial.mark_dirty();
+		spatial
 	}
 	pub fn set_entity(&self, entity: Entity) {
 		self.entity.write().replace(entity.into());
-		self.bevy_dirty.store(true, Ordering::Relaxed);
-		println!("setting entity dirty: {entity}");
+		self.mark_dirty();
 	}
 	pub fn add_to(
 		node: &Arc<Node>,
@@ -248,6 +232,17 @@ impl Spatial {
 		}
 		bounds
 	}
+	pub(super) fn mark_dirty(&self) {
+		let Some(entity) = self.entity.read().as_ref().map(|v| v.0) else {
+			return;
+		};
+		let enabled = self
+			.node()
+			.is_none_or(|n| n.enabled.load(Ordering::Relaxed))
+			&& self.local_visible();
+		let transform = enabled.then(|| BevyTransform::from_matrix(self.local_transform()));
+		UPDATED_SPATIALS_NODES.lock().insert(entity, transform);
+	}
 
 	pub fn local_transform(&self) -> Mat4 {
 		*self.transform.read()
@@ -284,7 +279,7 @@ impl Spatial {
 	}
 	pub fn set_local_transform(&self, transform: Mat4) {
 		*self.transform.write() = transform;
-		self.bevy_dirty.store(true, Ordering::Relaxed);
+		self.mark_dirty();
 	}
 	pub fn set_local_transform_components(
 		&self,
@@ -352,7 +347,7 @@ impl Spatial {
 		new_parent.children.add_raw(self);
 
 		*self.parent.write() = Some(new_parent.clone());
-		self.bevy_dirty.store(true, Ordering::Relaxed);
+		self.mark_dirty();
 	}
 
 	pub fn set_spatial_parent(self: &Arc<Self>, parent: &Arc<Spatial>) -> Result<()> {
@@ -383,6 +378,8 @@ impl Spatial {
 			.unwrap_or(f32::NEG_INFINITY)
 	}
 }
+static UPDATED_SPATIALS_NODES: Mutex<EntityHashMap<Option<BevyTransform>>> =
+	Mutex::new(EntityHashMap::new());
 impl AspectIdentifier for Spatial {
 	impl_aspect_for_spatial_aspect_id! {}
 }
