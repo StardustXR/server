@@ -18,13 +18,6 @@
 #import bevy_core_pipeline::oit::oit_draw
 #endif
 
-struct LineMaterial {
-    unused: u32,
-}
-
-@group(2) @binding(100)
-var<uniform> line_mat: LineMaterial;
-
 @fragment
 fn fragment(
     in: VertexOutput,

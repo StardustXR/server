@@ -7,17 +7,19 @@ use crate::{
 	},
 	nodes::{
 		Node,
+		drawable::LinePoint,
 		spatial::{Spatial, SpatialNode},
 	},
 };
 use bevy::{
-	asset::{RenderAssetUsages, weak_handle},
+	asset::{AssetEvents, RenderAssetUsages, weak_handle},
 	pbr::{ExtendedMaterial, MaterialExtension},
 	prelude::*,
 	render::{
 		mesh::{Indices, MeshAabb, PrimitiveTopology},
 		primitives::Aabb,
 		render_resource::{AsBindGroup, ShaderRef},
+		view::VisibilitySystems,
 	},
 };
 use glam::Vec3;
@@ -31,9 +33,13 @@ type LineMaterial = ExtendedMaterial<BevyMaterial, LineExtension>;
 const LINE_SHADER_HANDLE: Handle<Shader> = weak_handle!("7d28aa5a-3abd-43bb-b0e9-0de8b81b650d");
 // No extra data needed for a simple holdout
 #[derive(Default, Asset, AsBindGroup, TypePath, Debug, Clone)]
-pub struct LineExtension {
-	#[uniform(100)]
-	unused: u32,
+#[data(50, u32, binding_array(101))]
+#[bindless(index_table(range(50..51), binding(100)))]
+pub struct LineExtension {}
+impl From<&LineExtension> for u32 {
+	fn from(_: &LineExtension) -> Self {
+		0
+	}
 }
 impl MaterialExtension for LineExtension {
 	fn fragment_shader() -> ShaderRef {
@@ -56,7 +62,14 @@ impl MaterialExtension for LineExtension {
 pub struct LinesNodePlugin;
 impl Plugin for LinesNodePlugin {
 	fn build(&self, app: &mut App) {
-		app.add_systems(Update, build_line_mesh);
+		app.add_systems(
+			PostUpdate,
+			build_line_mesh
+				.after(TransformSystem::TransformPropagate)
+				.before(AssetEvents)
+				.after(VisibilitySystems::VisibilityPropagate)
+				.before(VisibilitySystems::CheckVisibility),
+		);
 		app.world_mut().resource_mut::<Assets<Shader>>().insert(
 			LINE_SHADER_HANDLE.id(),
 			Shader::from_wgsl(
@@ -76,6 +89,7 @@ fn build_line_mesh(
 	mut cmds: Commands,
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut materials: ResMut<Assets<LineMaterial>>,
+	query: Query<(&GlobalTransform, &InheritedVisibility)>,
 ) {
 	for lines in LINES_REGISTRY
 		.get_valid_contents()
@@ -88,6 +102,10 @@ fn build_line_mesh(
 		let mut vertex_colors = Vec::<[f32; 4]>::new();
 		let mut vertex_indices = Vec::<u32>::new();
 		let lines_data = lines.data.lock();
+		let Some((transform, visibil)) = lines.spatial.get_entity().and_then(|e| query.get(e).ok())
+		else {
+			continue;
+		};
 		if lines_data.is_empty() {
 			*lines.bounds.lock() = Aabb::default();
 			match lines.entity.get() {
@@ -104,14 +122,26 @@ fn build_line_mesh(
 
 		let mut indices_set = 0;
 		for line in lines_data.iter() {
+			// yes this alloc is suboptimal, but good enough for now
+			let line_points = line
+				.points
+				.iter()
+				.map(|p: &LinePoint| LinePoint {
+					// point: transform.transform_point(p.point.into()).into(),
+					point: transform.transform_point(p.point.into()).into(),
+					thickness: p.thickness,
+					color: p.color,
+				})
+				.collect::<Vec<_>>();
+
 			let start_set = indices_set;
 			// Create a sliding window of points to process each segment of the line
 			// For cyclic lines: wraps around by connecting last point back to first
 			// For non-cyclic lines: handles endpoints with None values
 			let point_windows = {
 				let mut out = Vec::new();
-				let mut last = line.cyclic.then(|| line.points.last()).flatten();
-				let mut peekable = line.points.iter().peekable();
+				let mut last = line.cyclic.then(|| line_points.last()).flatten();
+				let mut peekable = line_points.iter().peekable();
 				while let Some(curr) = peekable.next() {
 					// Skip this point if it has the same position as the previous point
 					if let Some(prev) = last
@@ -128,7 +158,7 @@ fn build_line_mesh(
 						Some(v) => Some(*v),
 						None => {
 							end = true;
-							line.cyclic.then(|| line.points.first()).flatten()
+							line.cyclic.then(|| line_points.first()).flatten()
 						}
 					};
 
@@ -224,10 +254,9 @@ fn build_line_mesh(
 							emissive: Color::linear_rgba(0.25, 0.25, 0.25, 1.0).into(),
 							..default()
 						},
-						extension: LineExtension { unused: 0 },
+						extension: LineExtension {},
 					})),
 				));
-				lines.spatial.set_entity(e.id());
 				_ = lines.entity.set(e.id().into());
 				e
 			}
@@ -236,7 +265,13 @@ fn build_line_mesh(
 			*lines.bounds.lock() = aabb;
 			entity.insert(aabb);
 		}
-		entity.insert(Mesh3d(meshes.add(mesh)));
+		entity
+			.insert(Mesh3d(meshes.add(mesh)))
+			.insert(*visibil)
+			.insert(match visibil.get() {
+				true => Visibility::Visible,
+				false => Visibility::Hidden,
+			});
 	}
 }
 

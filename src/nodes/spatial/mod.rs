@@ -194,6 +194,9 @@ impl Spatial {
 			child.mark_dirty();
 		}
 	}
+	pub fn get_entity(&self) -> Option<Entity> {
+		self.entity.read().as_ref().map(|v| v.0)
+	}
 	pub fn add_to(
 		node: &Arc<Node>,
 		parent: Option<Arc<Spatial>>,

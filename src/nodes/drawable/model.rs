@@ -67,7 +67,14 @@ impl Plugin for ModelNodePlugin {
 
 // No extra data needed for a simple holdout
 #[derive(Default, Asset, AsBindGroup, TypePath, Debug, Clone)]
+#[data(50, u32, binding_array(101))]
+#[bindless(index_table(range(50..51), binding(100)))]
 pub struct HoldoutExtension {}
+impl From<&HoldoutExtension> for u32 {
+    fn from(_: &HoldoutExtension) -> Self {
+        0
+    }
+}
 impl MaterialExtension for HoldoutExtension {
 	fn fragment_shader() -> ShaderRef {
 		HOLDOUT_SHADER_HANDLE.into()
