@@ -31,7 +31,6 @@ impl Plugin for SpatialNodePlugin {
 			PostUpdate,
 			(
 				spawn_spatial_nodes,
-				// update_spatial_node_parenting,
 				despawn_unneeded_spatial_nodes,
 				update_spatial_nodes,
 			)
@@ -51,32 +50,6 @@ fn spawn_spatial_nodes(mut cmds: Commands) {
 			.spawn((SpatialNode(Arc::downgrade(&spatial)), Name::new("Spatial")))
 			.id();
 		spatial.set_entity(entity);
-	}
-}
-
-fn update_spatial_node_parenting(
-	query: Query<(Entity, Option<&ChildOf>, &SpatialNode)>,
-	mut cmds: Commands,
-) {
-	for (entity, parent, spatial) in &query {
-		let Some(spatial) = spatial.0.upgrade() else {
-			continue;
-		};
-
-		let Some(parent_entity) = spatial
-			.get_parent()
-			.map(|v| v.entity.read().as_ref().map(|v| v.0))
-		else {
-			continue;
-		};
-		// no changes needed, early exit
-		if parent.map(|v| v.0) == parent_entity {
-			continue;
-		}
-		match parent_entity {
-			Some(e) => cmds.entity(entity).insert(ChildOf(e)),
-			None => cmds.entity(entity).remove::<ChildOf>(),
-		};
 	}
 }
 

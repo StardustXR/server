@@ -54,11 +54,7 @@ impl Plugin for ModelNodePlugin {
 		app.init_resource::<MaterialRegistry>();
 		app.add_systems(
 			Update,
-			(
-				load_models,
-				gen_model_parts,
-				apply_materials,
-			)
+			(load_models, gen_model_parts, apply_materials)
 				.chain()
 				.in_set(ModelNodeSystemSet),
 		);
@@ -71,9 +67,9 @@ impl Plugin for ModelNodePlugin {
 #[bindless(index_table(range(50..51), binding(100)))]
 pub struct HoldoutExtension {}
 impl From<&HoldoutExtension> for u32 {
-    fn from(_: &HoldoutExtension) -> Self {
-        0
-    }
+	fn from(_: &HoldoutExtension) -> Self {
+		0
+	}
 }
 impl MaterialExtension for HoldoutExtension {
 	fn fragment_shader() -> ShaderRef {

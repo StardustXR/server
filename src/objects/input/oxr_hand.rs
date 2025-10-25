@@ -34,7 +34,10 @@ impl Plugin for HandPlugin {
 		app.add_systems(PreFrameWait, update_hands.run_if(resource_exists::<Hands>));
 		app.add_systems(XrSessionCreated, create_trackers);
 		app.add_systems(XrPreDestroySession, destroy_trackers);
-		app.add_systems(PostUpdate, update_hand_material.run_if(resource_exists::<Hands>));
+		app.add_systems(
+			PostUpdate,
+			update_hand_material.run_if(resource_exists::<Hands>),
+		);
 		app.add_systems(Startup, setup.run_if(session_available));
 	}
 }
