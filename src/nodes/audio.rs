@@ -73,10 +73,11 @@ fn update_sound_event(
 					},
 				))
 				.id();
-			sound.spatial.set_entity(entity);
-			sound.entity.set(entity.into()).unwrap();
+			let entity = EntityHandle::new(entity);
+			sound.spatial.set_entity(entity.clone());
+			sound.entity.set(entity).unwrap();
 		}
-		if let Some(sink) = sound.entity.get().and_then(|e| sinks.get(e.0).ok()) {
+		if let Some(sink) = sound.entity.get().and_then(|e| sinks.get(e.get()).ok()) {
 			if sound.play.lock().take().is_some() {
 				sink.play();
 			}

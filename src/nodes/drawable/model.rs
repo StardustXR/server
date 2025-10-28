@@ -107,7 +107,10 @@ fn load_models(
 				Visibility::Hidden,
 			))
 			.id();
-		model.bevy_scene_entity.set(entity.into()).unwrap();
+		model
+			.bevy_scene_entity
+			.set(EntityHandle::new(entity))
+			.unwrap();
 	}
 }
 
@@ -144,7 +147,7 @@ fn apply_materials(
 		for (param_name, param) in model_part.pending_material_parameters.lock().drain() {
 			let mut new_mat = materials.get(&mesh_mat.0).unwrap().clone();
 			param.apply_to_material(
-				&model_part.space.node().unwrap().get_client().unwrap(),
+				&model_part.spatial.node().unwrap().get_client().unwrap(),
 				&mut new_mat,
 				&param_name,
 				&asset_server,
@@ -193,7 +196,7 @@ fn gen_model_parts(
 						.unwrap_or_else(|| name.to_string());
 					let parent_spatial = parent
 						.as_ref()
-						.map(|p| p.space.clone())
+						.map(|p| p.spatial.clone())
 						.unwrap_or_else(|| model.spatial.clone());
 					let client = model.spatial.node()?.get_client()?;
 					let (spatial, model_part) =
@@ -211,8 +214,7 @@ fn gen_model_parts(
 									entity: OnceLock::new(),
 									mesh_entity: OnceLock::new(),
 									path,
-									space: spatial.clone(),
-									_model: Arc::downgrade(&model),
+									spatial: spatial.clone(),
 									pending_material_parameters: Mutex::default(),
 									pending_material_replacement: Mutex::default(),
 									holdout: AtomicBool::new(false),
@@ -222,8 +224,8 @@ fn gen_model_parts(
 								(spatial, model_part)
 							}
 							Some(part) => {
-								part.space.set_spatial_parent(&parent_spatial).unwrap();
-								(part.space.clone(), part.clone())
+								part.spatial.set_spatial_parent(&parent_spatial).unwrap();
+								(part.spatial.clone(), part.clone())
 							}
 						};
 					let aabb = Aabb::enclosing(
@@ -247,8 +249,8 @@ fn gen_model_parts(
 					});
 					let _ = spatial.set_spatial_parent(&parent_spatial);
 					spatial.set_local_transform(transform.compute_matrix());
-
-					spatial.set_entity(entity);
+					let entity_handle = EntityHandle::new(entity);
+					spatial.set_entity(entity_handle.clone());
 					cmds.entity(entity)
 						.insert(SpatialNode(Arc::downgrade(&spatial)));
 					let mesh_entity = children_query
@@ -257,17 +259,18 @@ fn gen_model_parts(
 						.flat_map(|v| v.iter())
 						.find(|e| has_mesh.get(*e).unwrap_or(false))?;
 					_ = model_part.bounds.set(aabb);
-					_ = model_part.entity.set(entity.into());
-					_ = model_part.mesh_entity.set(mesh_entity.into());
+					_ = model_part.entity.set(entity_handle);
+					_ = model_part.mesh_entity.set(EntityHandle::new(mesh_entity));
 					parts.push(model_part.clone());
 					Some(model_part)
 				},
 			);
 		}
 		_ = model.parts.set(parts);
+		model.pre_bound_parts.lock().clear();
 		model
 			.spatial
-			.set_entity(model.bevy_scene_entity.get().unwrap().0);
+			.set_entity(model.bevy_scene_entity.get().unwrap().clone());
 	}
 }
 
@@ -324,8 +327,6 @@ impl HashedPbrMaterial {
 		mat.emissive_texture.hash(state);
 		mat.metallic_roughness_texture.hash(state);
 		mat.occlusion_texture.hash(state);
-		// should always be the same, TODO: make the spherical harmonics buffer a per mesh instance thing
-		// mat.spherical_harmonics.hash(state);
 	}
 }
 fn hash_color<H: Hasher>(color: Color, state: &mut H) {
@@ -463,8 +464,7 @@ pub struct ModelPart {
 	entity: OnceLock<EntityHandle>,
 	mesh_entity: OnceLock<EntityHandle>,
 	path: String,
-	space: Arc<Spatial>,
-	_model: Weak<Model>,
+	spatial: Arc<Spatial>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Handle<BevyMaterial>>>,
 	holdout: AtomicBool,
@@ -591,8 +591,7 @@ impl Model {
 					entity: OnceLock::new(),
 					mesh_entity: OnceLock::new(),
 					path: part_path,
-					space: spatial,
-					_model: Arc::downgrade(self),
+					spatial,
 					pending_material_parameters: Mutex::default(),
 					pending_material_replacement: Mutex::default(),
 					holdout: AtomicBool::new(false),
@@ -617,7 +616,7 @@ impl ModelAspect for Model {
 		let model = node.get_aspect::<Model>()?;
 		let part = model.get_model_part(part_path)?;
 		Alias::create_with_id(
-			&part.space.node().unwrap(),
+			&part.spatial.node().unwrap(),
 			&calling_client,
 			id,
 			MODEL_PART_ASPECT_ALIAS_INFO.clone(),
@@ -628,6 +627,11 @@ impl ModelAspect for Model {
 }
 impl Drop for Model {
 	fn drop(&mut self) {
+		for p in self.parts.get().unwrap().iter() {
+			if let Some(node) = p.spatial.node() {
+				node.destroy();
+			}
+		}
 		MODEL_REGISTRY.remove(self);
 	}
 }

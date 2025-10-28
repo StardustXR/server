@@ -257,7 +257,7 @@ fn build_line_mesh(
 						extension: LineExtension {},
 					})),
 				));
-				_ = lines.entity.set(e.id().into());
+				_ = lines.entity.set(EntityHandle::new(e.id()));
 				e
 			}
 		};

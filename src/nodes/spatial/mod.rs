@@ -49,7 +49,7 @@ fn spawn_spatial_nodes(mut cmds: Commands) {
 		let entity = cmds
 			.spawn((SpatialNode(Arc::downgrade(&spatial)), Name::new("Spatial")))
 			.id();
-		spatial.set_entity(entity);
+		spatial.set_entity(EntityHandle::new(entity));
 	}
 }
 
@@ -160,15 +160,15 @@ impl Spatial {
 		spatial.mark_dirty();
 		spatial
 	}
-	pub fn set_entity(&self, entity: Entity) {
-		self.entity.write().replace(entity.into());
+	pub fn set_entity(&self, entity: EntityHandle) {
+		self.entity.write().replace(entity);
 		self.mark_dirty();
 		for child in self.children.get_valid_contents() {
 			child.mark_dirty();
 		}
 	}
 	pub fn get_entity(&self) -> Option<Entity> {
-		self.entity.read().as_ref().map(|v| v.0)
+		self.entity.read().as_ref().map(|v| v.get())
 	}
 	pub fn add_to(
 		node: &Arc<Node>,
@@ -222,7 +222,7 @@ impl Spatial {
 		bounds
 	}
 	pub(super) fn mark_dirty(&self) {
-		let Some(entity) = self.entity.read().as_ref().map(|v| v.0) else {
+		let Some(entity) = self.entity.read().as_ref().map(|v| v.get()) else {
 			return;
 		};
 		let enabled = self
@@ -232,7 +232,7 @@ impl Spatial {
 		let transform = enabled.then(|| BevyTransform::from_matrix(self.local_transform()));
 		let parent = self
 			.get_parent()
-			.and_then(|v| v.entity.read().as_ref().map(|v| v.0));
+			.and_then(|v| v.entity.read().as_ref().map(|v| v.get()));
 		UPDATED_SPATIALS_NODES
 			.lock()
 			.insert(entity, (transform, parent));

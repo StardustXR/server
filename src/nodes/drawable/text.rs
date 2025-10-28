@@ -152,7 +152,8 @@ fn spawn_text(
 			))
 			.add_children(&letters)
 			.id();
-		text.entity.lock().replace(EntityHandle(entity));
+		let entity = EntityHandle::new(entity);
+		text.entity.lock().replace(entity.clone());
 		text.spatial.set_entity(entity);
 	}
 }

@@ -1,3 +1,6 @@
+use std::ops::Deref;
+use std::sync::Arc;
+
 use bevy::prelude::*;
 
 use super::bevy_channel::{BevyChannel, BevyChannelReader};
@@ -16,16 +19,28 @@ fn despawn(mut cmds: Commands, mut reader: ResMut<BevyChannelReader<Entity>>) {
 	}
 }
 
-static DESTROY: BevyChannel<Entity> = BevyChannel::new();
-#[derive(Deref, DerefMut, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct EntityHandle(pub Entity);
-impl Drop for EntityHandle {
-	fn drop(&mut self) {
-		DESTROY.send(self.0);
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord, Clone)]
+pub struct EntityHandle(Arc<EntityHandleInner>);
+impl EntityHandle {
+	pub fn get(&self) -> Entity {
+		self.0.0
+	}
+	pub fn new(entity: Entity) -> Self {
+		Self(EntityHandleInner(entity).into())
 	}
 }
-impl From<Entity> for EntityHandle {
-	fn from(value: Entity) -> Self {
-		Self(value)
+impl Deref for EntityHandle {
+	type Target = Entity;
+
+	fn deref(&self) -> &Self::Target {
+		&self.0.0
+	}
+}
+static DESTROY: BevyChannel<Entity> = BevyChannel::new();
+#[derive(Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct EntityHandleInner(Entity);
+impl Drop for EntityHandleInner {
+	fn drop(&mut self) {
+		DESTROY.send(self.0);
 	}
 }
