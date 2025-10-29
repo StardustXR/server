@@ -94,7 +94,7 @@ fn build_line_mesh(
 	for lines in LINES_REGISTRY
 		.get_valid_contents()
 		.into_iter()
-		.filter(|l| l.gen_mesh.load(Ordering::Relaxed))
+		// .filter(|l| l.gen_mesh.load(Ordering::Relaxed))
 	{
 		lines.gen_mesh.store(false, Ordering::Relaxed);
 		let mut vertex_positions = Vec::<Vec3>::new();
