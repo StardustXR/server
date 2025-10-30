@@ -327,7 +327,9 @@ fn bevy_loop(
 		.async_compute
 		.on_thread_spawn = Some(enter_runtime_context.clone());
 	plugins = plugins.set(task_pool_plugin);
-	if std::env::var("DISPLAY").is_ok() || std::env::var("WAYLAND_DISPLAY").is_ok() {
+	if std::env::var("DISPLAY").is_ok_and(|s| !s.is_empty())
+		|| std::env::var("WAYLAND_DISPLAY").is_ok_and(|s| !s.is_empty())
+	{
 		let mut plugin = WinitPlugin::<WakeUp>::default();
 		plugin.run_on_any_thread = true;
 		plugins = plugins.add(plugin).disable::<ScheduleRunnerPlugin>();
