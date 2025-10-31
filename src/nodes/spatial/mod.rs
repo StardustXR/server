@@ -30,11 +30,7 @@ impl Plugin for SpatialNodePlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(
 			PostUpdate,
-			(
-				spawn_spatial_nodes,
-				despawn_unneeded_spatial_nodes,
-				update_spatial_nodes,
-			)
+			(spawn_spatial_nodes, update_spatial_nodes)
 				.chain()
 				.before(TransformSystem::TransformPropagate),
 		);
@@ -52,14 +48,6 @@ fn spawn_spatial_nodes(mut cmds: Commands) {
 			.id();
 		spatial.set_entity(EntityHandle::new(entity));
 	}
-}
-
-fn despawn_unneeded_spatial_nodes(query: Query<(Entity, &SpatialNode)>, cmds: ParallelCommands) {
-	query.par_iter().for_each(|(entity, spatial_node)| {
-		if spatial_node.0.upgrade().is_none() {
-			cmds.command_scope(|mut cmds| cmds.entity(entity).despawn());
-		}
-	});
 }
 
 fn update_spatial_nodes(
