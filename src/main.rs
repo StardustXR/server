@@ -488,13 +488,6 @@ fn cam_settings(
 }
 
 fn xr_step(world: &mut World) {
-	// we are targeting the frame after the wait
-	if let Some(mut state) = world.get_resource_mut::<OxrFrameState>() {
-		state.predicted_display_time = openxr::Time::from_nanos(
-			state.predicted_display_time.as_nanos() + state.predicted_display_period.as_nanos(),
-		);
-	}
-
 	// update things like the Xr input methods
 	world.run_schedule(PreFrameWait);
 	input::process_input();
