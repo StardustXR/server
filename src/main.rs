@@ -83,6 +83,7 @@ use tracing::{error, info};
 use tracing_subscriber::filter::Directive;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use tracking_offset::TrackingOffsetPlugin;
+#[cfg(feature = "wayland")]
 use wayland::{Wayland, WaylandPlugin};
 use zbus::Connection;
 use zbus::fdo::ObjectManager;
@@ -211,6 +212,7 @@ async fn main() -> Result<AppExit, JoinError> {
 
 	let object_registry = ObjectRegistry::new(&dbus_connection).await;
 
+	#[cfg(feature = "wayland")]
 	let _wayland = Wayland::new().expect("Couldn't create Wayland instance");
 
 	let ready_notifier = Arc::new(Notify::new());
@@ -438,7 +440,9 @@ fn bevy_loop(
 	// object plugins
 	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin, HmdPlugin));
 	// feature plugins
-	app.add_plugins((WaylandPlugin, TrackingOffsetPlugin, FieldDebugGizmoPlugin));
+	#[cfg(feature = "wayland")]
+	app.add_plugins(WaylandPlugin);
+	app.add_plugins((TrackingOffsetPlugin, FieldDebugGizmoPlugin));
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
