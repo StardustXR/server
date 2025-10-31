@@ -646,7 +646,7 @@ impl ModelAspect for Model {
 }
 impl Drop for Model {
 	fn drop(&mut self) {
-		for p in self.parts.get().unwrap().iter() {
+		for p in self.parts.get().iter().flat_map(|v|v.iter()) {
 			if let Some(node) = p.spatial.node() {
 				node.destroy();
 			}
