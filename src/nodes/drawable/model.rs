@@ -25,6 +25,7 @@ use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
+use tokio::sync::Notify;
 
 static LOAD_MODEL: BevyChannel<(Arc<Model>, PathBuf)> = BevyChannel::new();
 
@@ -242,10 +243,12 @@ fn gen_model_parts(
 					)
 					.unwrap_or_default();
 					_ = spatial.bounding_box_calc.set(move |n| {
-						n.get_aspect::<ModelPart>()
-							.ok()
-							.and_then(|v| v.bounds.get().copied())
-							.unwrap_or_default()
+						Box::pin(async {
+							n.get_aspect::<ModelPart>()
+								.ok()
+								.and_then(|v| v.bounds.get().copied())
+								.unwrap_or_default()
+						})
 					});
 					let _ = spatial.set_spatial_parent(&parent_spatial);
 					spatial.set_local_transform(transform.compute_matrix());
@@ -271,6 +274,8 @@ fn gen_model_parts(
 		model
 			.spatial
 			.set_entity(model.bevy_scene_entity.get().unwrap().clone());
+		model.setup_complete.store(true, Ordering::Relaxed);
+		model.setup_complete_notify.notify_waiters();
 	}
 }
 
@@ -534,6 +539,8 @@ pub struct Model {
 	bevy_scene_entity: OnceLock<EntityHandle>,
 	parts: OnceLock<Vec<Arc<ModelPart>>>,
 	pre_bound_parts: Mutex<Vec<Arc<ModelPart>>>,
+	setup_complete: AtomicBool,
+	setup_complete_notify: Notify,
 }
 impl Model {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Model>> {
@@ -550,6 +557,18 @@ impl Model {
 			bevy_scene_entity: OnceLock::new(),
 			pre_bound_parts: Mutex::default(),
 			parts: OnceLock::new(),
+			setup_complete_notify: Notify::new(),
+			setup_complete: AtomicBool::new(false),
+		});
+		model.spatial.bounding_box_calc.set(|n| {
+			Box::pin(async {
+				if let Ok(model) = n.get_aspect::<Model>()
+					&& !model.setup_complete.load(Ordering::Relaxed)
+				{
+					model.setup_complete_notify.notified().await;
+				}
+				Aabb::default()
+			})
 		});
 		LOAD_MODEL
 			.send((model.clone(), pending_model_path))

@@ -20,6 +20,7 @@ use mint::Vector3;
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
 use std::fmt::Debug;
+use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, OnceLock, Weak};
 use std::{f32, ptr};
@@ -142,7 +143,8 @@ pub struct Spatial {
 	transform: RwLock<Mat4>,
 	zone: RwLock<Weak<Zone>>,
 	children: Registry<Spatial>,
-	pub bounding_box_calc: OnceLock<fn(&Node) -> Aabb>,
+	pub bounding_box_calc:
+		OnceLock<for<'a> fn(&'a Node) -> Pin<Box<dyn Future<Output = Aabb> + 'a + Send + Sync>>>,
 }
 
 impl Spatial {
@@ -199,18 +201,17 @@ impl Spatial {
 	}
 
 	// the output bounds are probably way bigger than they need to be
-	pub fn get_bounding_box(&self) -> Aabb {
+	pub async fn get_bounding_box(&self) -> Aabb {
 		let Some(node) = self.node() else {
 			return Aabb::default();
 		};
-		let mut bounds = self
-			.bounding_box_calc
-			.get()
-			.map(|b| (b)(&node))
-			.unwrap_or_default();
+		let mut bounds = match self.bounding_box_calc.get() {
+			Some(f) => f(&node).await,
+			None => Aabb::default(),
+		};
 		for child in self.children.get_valid_contents() {
 			let mat = child.local_transform();
-			let child_aabb = child.get_bounding_box();
+			let child_aabb = Box::pin(child.get_bounding_box()).await;
 			bounds = Aabb::enclosing([
 				bounds.min().into(),
 				bounds.max().into(),
@@ -480,7 +481,7 @@ impl SpatialRefAspect for SpatialRef {
 		_calling_client: Arc<Client>,
 	) -> Result<BoundingBox> {
 		let this_spatial = node.get_aspect::<Spatial>()?;
-		let bounds = this_spatial.get_bounding_box();
+		let bounds = this_spatial.get_bounding_box().await;
 
 		Ok(BoundingBox {
 			center: Vec3::from(bounds.center).into(),
@@ -496,7 +497,7 @@ impl SpatialRefAspect for SpatialRef {
 		let this_spatial = node.get_aspect::<Spatial>()?;
 		let relative_spatial = relative_to.get_aspect::<Spatial>()?;
 		let mat = Spatial::space_to_space_matrix(Some(&this_spatial), Some(&relative_spatial));
-		let bb = this_spatial.get_bounding_box();
+		let bb = this_spatial.get_bounding_box().await;
 		let bounds = Aabb::enclosing([
 			mat.transform_point3(bb.min().into()),
 			mat.transform_point3(bb.max().into()),

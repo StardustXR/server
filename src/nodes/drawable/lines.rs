@@ -16,7 +16,7 @@ use bevy::{
 	pbr::{ExtendedMaterial, MaterialExtension},
 	prelude::*,
 	render::{
-		mesh::{Indices, MeshAabb, PrimitiveTopology},
+		mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
 		primitives::Aabb,
 		render_resource::{AsBindGroup, ShaderRef},
 		view::VisibilitySystems,
@@ -28,6 +28,7 @@ use std::sync::{
 	Arc, OnceLock,
 	atomic::{AtomicBool, Ordering},
 };
+use tokio::sync::Notify;
 
 type LineMaterial = ExtendedMaterial<BevyMaterial, LineExtension>;
 const LINE_SHADER_HANDLE: Handle<Shader> = weak_handle!("7d28aa5a-3abd-43bb-b0e9-0de8b81b650d");
@@ -91,10 +92,8 @@ fn build_line_mesh(
 	mut materials: ResMut<Assets<LineMaterial>>,
 	query: Query<(&GlobalTransform, &InheritedVisibility)>,
 ) {
-	for lines in LINES_REGISTRY
-		.get_valid_contents()
-		.into_iter()
-		// .filter(|l| l.gen_mesh.load(Ordering::Relaxed))
+	for lines in LINES_REGISTRY.get_valid_contents().into_iter()
+	// .filter(|l| l.gen_mesh.load(Ordering::Relaxed))
 	{
 		lines.gen_mesh.store(false, Ordering::Relaxed);
 		let mut vertex_positions = Vec::<Vec3>::new();
@@ -107,7 +106,8 @@ fn build_line_mesh(
 			continue;
 		};
 		if lines_data.is_empty() {
-			*lines.bounds.lock() = Aabb::default();
+			*lines.bounds.lock() = Some(Aabb::default());
+			lines.setup_complete.notify_waiters();
 			match lines.entity.get() {
 				Some(e) => cmds.entity(**e),
 				None => {
@@ -261,9 +261,21 @@ fn build_line_mesh(
 				e
 			}
 		};
-		if let Some(aabb) = mesh.compute_aabb() {
-			*lines.bounds.lock() = aabb;
-			entity.insert(aabb);
+		if let Some(VertexAttributeValues::Float32x3(values)) =
+			mesh.attribute(Mesh::ATTRIBUTE_POSITION)
+		{
+			let global_to_local = transform.affine().inverse();
+			let local_aabb = Aabb::enclosing(
+				values
+					.iter()
+					.map(|p| global_to_local.transform_point3(Vec3::from_slice(p))),
+			)
+			.unwrap_or_default();
+			let global_aabb =
+				Aabb::enclosing(values.iter().map(|p| Vec3::from_slice(p))).unwrap_or_default();
+			*lines.bounds.lock() = Some(local_aabb);
+			lines.setup_complete.notify_waiters();
+			entity.insert(global_aabb);
 		}
 		entity
 			.insert(Mesh3d(meshes.add(mesh)))
@@ -313,7 +325,8 @@ pub struct Lines {
 	data: Mutex<Vec<Line>>,
 	gen_mesh: AtomicBool,
 	entity: OnceLock<EntityHandle>,
-	bounds: Mutex<Aabb>,
+	bounds: Mutex<Option<Aabb>>,
+	setup_complete: Notify,
 }
 impl Lines {
 	pub fn add_to(node: &Arc<Node>, lines: Vec<Line>) -> Result<Arc<Lines>> {
@@ -322,10 +335,19 @@ impl Lines {
 			.unwrap()
 			.bounding_box_calc
 			.set(|node| {
-				node.get_aspect::<Lines>()
-					.ok()
-					.map(|v| *v.bounds.lock())
-					.unwrap_or_default()
+				Box::pin(async {
+					let Ok(lines) = node.get_aspect::<Lines>() else {
+						return Default::default();
+					};
+					let bounds = *lines.bounds.lock();
+					match bounds {
+						Some(aabb) => aabb,
+						None => {
+							lines.setup_complete.notified().await;
+							lines.bounds.lock().unwrap_or_default()
+						}
+					}
+				})
 			});
 
 		let lines = LINES_REGISTRY.add(Lines {
@@ -333,7 +355,8 @@ impl Lines {
 			data: Mutex::new(lines),
 			gen_mesh: AtomicBool::new(true),
 			entity: OnceLock::new(),
-			bounds: Mutex::new(Aabb::default()),
+			bounds: Mutex::new(Some(Aabb::default())),
+			setup_complete: Notify::new(),
 		});
 		node.add_aspect_raw(lines.clone());
 
