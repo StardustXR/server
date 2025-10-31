@@ -312,8 +312,11 @@ fn bevy_loop(
 		// .add(AnimationPlugin)
 		.add(AudioPlugin::default())
 		.add(GizmoPlugin)
-		.add(WindowPlugin::default())
-		.add(DmabufImportPlugin);
+		.add(WindowPlugin::default());
+	#[cfg(feature = "wayland")]
+	{
+		plugins = plugins.add(DmabufImportPlugin);
+	}
 	let mut task_pool_plugin = TaskPoolPlugin::default();
 	// make tokio work
 	let handle = tokio::runtime::Handle::current();

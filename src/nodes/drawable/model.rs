@@ -560,7 +560,7 @@ impl Model {
 			setup_complete_notify: Notify::new(),
 			setup_complete: AtomicBool::new(false),
 		});
-		model.spatial.bounding_box_calc.set(|n| {
+		_ = model.spatial.bounding_box_calc.set(|n| {
 			Box::pin(async {
 				if let Ok(model) = n.get_aspect::<Model>()
 					&& !model.setup_complete.load(Ordering::Relaxed)
