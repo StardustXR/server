@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use bevy::prelude::*;
 
+use crate::nodes::spatial::SpatialNode;
+
 use super::bevy_channel::{BevyChannel, BevyChannelReader};
 pub struct EntityHandlePlugin;
 
@@ -13,9 +15,21 @@ impl Plugin for EntityHandlePlugin {
 	}
 }
 
-fn despawn(mut cmds: Commands, mut reader: ResMut<BevyChannelReader<Entity>>) {
+fn despawn(
+	mut cmds: Commands,
+	mut reader: ResMut<BevyChannelReader<Entity>>,
+	child_query: Query<&Children>,
+	has_spatial: Query<Has<SpatialNode>>,
+) {
 	while let Some(e) = reader.read() {
-		cmds.entity(e).try_despawn();
+		if let Ok(children) = child_query.get(e) {
+			for e in children {
+				if has_spatial.get(*e).unwrap_or_default() {
+					cmds.entity(*e).remove::<ChildOf>();
+				}
+			}
+		}
+		cmds.entity(e).despawn();
 	}
 }
 

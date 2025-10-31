@@ -32,7 +32,6 @@ pub struct TextNodePlugin;
 impl Plugin for TextNodePlugin {
 	fn build(&self, app: &mut App) {
 		// Text init stuff
-		// 1.0 for font size in meters
 		app.add_plugins(MeshTextPlugin);
 		app.world_mut()
 			.resource_mut::<FontSettings>()
