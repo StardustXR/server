@@ -555,7 +555,7 @@ dependencies = [
 [[package]]
 name = "bevy-dmabuf"
 version = "0.2.0"
-source = "git+https://github.com/Schmarni-Dev/bevy-dmabuf#0fe1c70f1174c596834278a14c00e47333b5138e"
+source = "git+https://github.com/Schmarni-Dev/bevy-dmabuf#92d23a35512a8e619517fa501aa6b408aa892b50"
 dependencies = [
  "ash",
  "bevy",
@@ -4028,7 +4028,7 @@ version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77e878c846a8abae00dd069496dbe8751b16ac1c3d6bd2a7283a938e8228f90d"
 dependencies = [
- "proc-macro-crate 1.3.1",
+ "proc-macro-crate 3.3.0",
  "proc-macro2",
  "quote",
  "syn 2.0.104",
