@@ -5,11 +5,7 @@ use crate::{
 		client::Client, color::ColorConvert, entity_handle::EntityHandle, error::Result,
 		registry::Registry,
 	},
-	nodes::{
-		Node,
-		drawable::LinePoint,
-		spatial::{Spatial, SpatialNode},
-	},
+	nodes::{Node, drawable::LinePoint, spatial::Spatial},
 };
 use bevy::{
 	asset::{AssetEvents, RenderAssetUsages, weak_handle},
@@ -90,21 +86,23 @@ fn build_line_mesh(
 	mut cmds: Commands,
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut materials: ResMut<Assets<LineMaterial>>,
-	query: Query<(&GlobalTransform, &InheritedVisibility)>,
+	query: Query<(Ref<GlobalTransform>, &InheritedVisibility)>,
 ) {
 	for lines in LINES_REGISTRY.get_valid_contents().into_iter()
-	// .filter(|l| l.gen_mesh.load(Ordering::Relaxed))
 	{
+		let Some((transform, visibil)) = lines.spatial.get_entity().and_then(|e| query.get(e).ok())
+		else {
+			continue;
+		};
+		if !(lines.gen_mesh.load(Ordering::Relaxed) || transform.is_changed()) {
+			continue;
+		}
 		lines.gen_mesh.store(false, Ordering::Relaxed);
 		let mut vertex_positions = Vec::<Vec3>::new();
 		let mut vertex_normals = Vec::<Vec3>::new();
 		let mut vertex_colors = Vec::<[f32; 4]>::new();
 		let mut vertex_indices = Vec::<u32>::new();
 		let lines_data = lines.data.lock();
-		let Some((transform, visibil)) = lines.spatial.get_entity().and_then(|e| query.get(e).ok())
-		else {
-			continue;
-		};
 		if lines_data.is_empty() {
 			*lines.bounds.lock() = Some(Aabb::default());
 			lines.setup_complete.notify_waiters();
@@ -245,7 +243,6 @@ fn build_line_mesh(
 			None => {
 				let e = cmds.spawn((
 					Name::new("LinesNode"),
-					SpatialNode(Arc::downgrade(&lines.spatial)),
 					MeshMaterial3d(materials.add(ExtendedMaterial {
 						base: BevyMaterial {
 							base_color: Color::WHITE,
