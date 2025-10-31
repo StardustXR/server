@@ -25,7 +25,7 @@ fn despawn(
 		if let Ok(children) = child_query.get(e) {
 			for e in children {
 				if has_spatial.get(*e).unwrap_or_default() {
-					cmds.entity(*e).remove::<ChildOf>();
+					cmds.entity(*e).try_remove::<ChildOf>();
 				}
 			}
 		}
