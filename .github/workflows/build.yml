@@ -24,3 +24,6 @@ jobs:
 
       - name: Build server
         run: cargo build --release
+
+      - name: Build server (no dependencies)
+        run: cargo build --release --no-default-features
