@@ -4,21 +4,10 @@
   name,
   vulkan-loader,
   vulkan-headers,
-  mesa,
-  xorg,
-  fontconfig,
   libxkbcommon,
-  libclang,
 
-  cmake,
   pkg-config,
-  llvmPackages,
-  fetchFromGitHub,
-  libXau,
 
-  libXdmcp,
-  stdenv,
-  lib,
   openxr-loader,
   wayland,
   alsa-lib,
@@ -38,25 +27,13 @@ rustPlatform.buildRustPackage rec {
   '';
 
   nativeBuildInputs = [
-    cmake
     pkg-config
-    llvmPackages.libcxxClang
   ];
   buildInputs = [
     vulkan-loader
     vulkan-headers
-    mesa
-    xorg.libX11.dev
-    xorg.libXft
-    xorg.libXfixes
-    fontconfig
-    libxkbcommon
-    libXau
-    libXdmcp
     openxr-loader
     wayland
     alsa-lib
   ];
-
-  LIBCLANG_PATH = "${libclang.lib}/lib";
 }
