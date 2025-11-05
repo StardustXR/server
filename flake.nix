@@ -72,7 +72,7 @@
             type = "app";
             program = self'.packages.${name} + "/bin/stardust-xr-server";
           };
-          checks.gnome-graphical-test = pkgs.nixosTest (
+          checks.gnome-graphical-test = pkgs.testers.nixosTest (
             import ./nix/gnome-graphical-test.nix { inherit pkgs self; }
           );
           devShells.default = pkgs.mkShell {

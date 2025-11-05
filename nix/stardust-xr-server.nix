@@ -31,12 +31,6 @@ rustPlatform.buildRustPackage rec {
     allowBuiltinFetchGit = true;
   };
 
-  preBuild = ''
-    substituteInPlace /build/cargo-vendor-dir/bevy_gltf-0.16.1/Cargo.toml \
-      --replace-fail '[lints]' "" \
-      --replace-fail 'workspace = true' ""
-  '';
-
   postFixup = ''
     patchelf $out/bin/stardust-xr-server --add-rpath ${vulkan-loader}/lib
     patchelf $out/bin/stardust-xr-server --add-rpath ${openxr-loader}/lib
