@@ -23,12 +23,13 @@ impl Plugin for SkyPlugin {
 // TODO: make this work with cameras spawned after setting the sky texture
 fn apply_sky(
 	mut equirect: ResMut<EquirectManager>,
+	mut ambient_light: ResMut<AmbientLight>,
 	cameras: Query<Entity, With<Camera3d>>,
 	mut cmds: Commands,
 ) {
 	if let Some(tex) = super::QUEUED_SKYTEX.lock().take() {
 		if let Some(path) = tex {
-			let image_handle = equirect.load_equirect_as_cubemap(path, 1024);
+			let image_handle = equirect.load_equirect_as_cubemap(path, 2048);
 			for cam in cameras {
 				cmds.entity(cam).insert(Skybox {
 					image: image_handle.clone(),
@@ -44,29 +45,23 @@ fn apply_sky(
 	}
 	if let Some(light) = super::QUEUED_SKYLIGHT.lock().take() {
 		if let Some(path) = light {
-			let image_handle = equirect.load_equirect_as_cubemap(path, 1024);
+			let image_handle = equirect.load_equirect_as_cubemap(path, 2048);
 			for cam in cameras {
-				cmds.entity(cam)
-					.insert(EnvironmentMapLight {
-						diffuse_map: image_handle.clone(),
-						// we might want to use the SkyTex for this?
-						specular_map: image_handle.clone(),
-						intensity: 1000.0,
-						rotation: Quat::IDENTITY,
-						affects_lightmapped_mesh_diffuse: false,
-					})
-					.remove::<AmbientLight>();
+				cmds.entity(cam).insert(EnvironmentMapLight {
+					diffuse_map: image_handle.clone(),
+					// we might want to use the SkyTex for this?
+					specular_map: image_handle.clone(),
+					intensity: 1000.0,
+					rotation: Quat::IDENTITY,
+					affects_lightmapped_mesh_diffuse: false,
+				});
 			}
+			ambient_light.color = Color::BLACK;
 		} else {
 			for cam in cameras {
-				cmds.entity(cam)
-					.insert(AmbientLight {
-						color: Color::WHITE,
-						brightness: 1000.0,
-						affects_lightmapped_meshes: true,
-					})
-					.remove::<EnvironmentMapLight>();
+				cmds.entity(cam).remove::<EnvironmentMapLight>();
 			}
+			ambient_light.color = Color::WHITE;
 		}
 	}
 }

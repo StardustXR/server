@@ -54,8 +54,12 @@ impl InterfaceAspect for Interface {
 	) -> Result<()> {
 		let resource_path = tex
 			.map(|tex| {
-				get_resource_file(&tex, &calling_client, &[OsStr::new("hdr")])
-					.ok_or(eyre!("Could not find resource"))
+				get_resource_file(
+					&tex,
+					&calling_client,
+					&[OsStr::new("hdr"), OsStr::new("png"), OsStr::new("jpg")],
+				)
+				.ok_or(eyre!("Could not find resource"))
 			})
 			.transpose()?;
 		QUEUED_SKYTEX.lock().replace(resource_path);
@@ -69,8 +73,12 @@ impl InterfaceAspect for Interface {
 	) -> Result<()> {
 		let resource_path = light
 			.map(|light| {
-				get_resource_file(&light, &calling_client, &[OsStr::new("hdr")])
-					.ok_or(eyre!("Could not find resource"))
+				get_resource_file(
+					&light,
+					&calling_client,
+					&[OsStr::new("hdr"), OsStr::new("png"), OsStr::new("jpg")],
+				)
+				.ok_or(eyre!("Could not find resource"))
 			})
 			.transpose()?;
 		QUEUED_SKYLIGHT.lock().replace(resource_path);
