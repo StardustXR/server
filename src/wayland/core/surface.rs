@@ -409,18 +409,6 @@ impl WlSurface for Surface {
 		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 	) -> WaylandResult<()> {
-		// we want the upload to complete before we give the image to bevy
-		let buffer_option = self
-			.state_lock()
-			.pending
-			.buffer
-			.as_ref()
-			.map(|b| b.buffer.clone());
-		if let Some(buffer) = buffer_option {
-			tokio::task::spawn_blocking(move || buffer.on_commit())
-				.await
-				.unwrap();
-		}
 		self.state.lock().apply();
 
 		self.state.lock().pending.frame_callbacks.clear();

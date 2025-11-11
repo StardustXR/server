@@ -65,17 +65,8 @@ impl Buffer {
 	) -> Option<Handle<Image>> {
 		tracing::debug!("Updating texture for buffer {:?}", self.id);
 		match &self.backing {
-			BufferBacking::Shm(backing) => backing.update_tex(dmatexes, images),
+			BufferBacking::Shm(backing) => backing.update_tex(images),
 			BufferBacking::Dmabuf(backing) => backing.update_tex(dmatexes, images),
-		}
-	}
-
-	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn on_commit(&self) {
-		tracing::debug!("running on_commit for buffer {:?}", self.id);
-		match &self.backing {
-			BufferBacking::Shm(backing) => backing.on_commit(),
-			BufferBacking::Dmabuf(_backing) => {}
 		}
 	}
 
