@@ -21,8 +21,7 @@ use crate::{
 use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::Vector2;
-use parking_lot::Mutex;
-use slotmap::{DefaultKey, Key, KeyData, SlotMap};
+use sharded_slab::Slab;
 use std::sync::{Arc, Weak};
 use tracing::debug;
 
@@ -38,7 +37,7 @@ impl Default for Geometry {
 impl Copy for Geometry {}
 
 lazy_static! {
-	pub static ref KEYMAPS: Mutex<SlotMap<DefaultKey, String>> = Mutex::new(SlotMap::default());
+	pub static ref KEYMAPS: Slab<String> = Slab::default();
 	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
 		type_name: "panel",
 		alias_info: PANEL_ITEM_ASPECT_ALIAS_INFO.clone(),
@@ -496,18 +495,11 @@ impl InterfaceAspect for Interface {
 		_calling_client: Arc<Client>,
 		keymap: String,
 	) -> Result<u64> {
-		let mut keymaps = KEYMAPS.lock();
-		if let Some(found_keymap_id) = keymaps
-			.iter()
-			.filter(|(_k, v)| *v == &keymap)
-			.map(|(k, _v)| k)
-			.last()
-		{
-			return Ok(found_keymap_id.data().as_ffi());
-		}
+		let Some(key) = KEYMAPS.insert(keymap) else {
+			bail!("Could not register keymap");
+		};
 
-		let key = keymaps.insert(keymap);
-		Ok(key.data().as_ffi())
+		Ok(key as u64)
 	}
 
 	async fn get_keymap(
@@ -515,8 +507,7 @@ impl InterfaceAspect for Interface {
 		_calling_client: Arc<Client>,
 		keymap_id: u64,
 	) -> Result<String> {
-		let keymaps = KEYMAPS.lock();
-		let Some(keymap) = keymaps.get(KeyData::from_ffi(keymap_id).into()) else {
+		let Some(keymap) = KEYMAPS.get(keymap_id as usize) else {
 			bail!("Could not find keymap. Try registering it");
 		};
 

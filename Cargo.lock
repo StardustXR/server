@@ -5520,7 +5520,7 @@ dependencies = [
  "rustix 1.1.2",
  "serde",
  "serde_repr",
- "slotmap",
+ "sharded-slab",
  "stardust-xr",
  "stardust-xr-server-codegen",
  "thiserror 2.0.16",
