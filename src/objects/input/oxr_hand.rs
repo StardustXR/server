@@ -47,9 +47,6 @@ impl Plugin for HandPlugin {
 			transparent: self.transparent_hands,
 		});
 
-		// setup hand rendering
-		app.add_plugins(bevy_sk::hand::HandPlugin);
-
 		app.add_systems(PreFrameWait, update_hands.run_if(resource_exists::<Hands>));
 		app.add_systems(XrSessionCreated, create_trackers);
 		app.add_systems(XrPreDestroySession, destroy_trackers);
