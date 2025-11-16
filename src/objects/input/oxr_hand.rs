@@ -8,7 +8,7 @@ use crate::nodes::{
 	spatial::Spatial,
 };
 use crate::objects::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
-use crate::{BevyMaterial, DbusConnection, ObjectRegistryRes, PreFrameWait, get_time};
+use crate::{BevyMaterial, DbusConnection, HandRenderConfig, ObjectRegistryRes, PreFrameWait, get_time};
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
@@ -132,6 +132,7 @@ fn setup(
 	connection: Res<DbusConnection>,
 	mut cmds: Commands,
 	mut materials: ResMut<Assets<BevyMaterial>>,
+	hand_config: Res<HandRenderConfig>,
 ) {
 	tokio::task::spawn({
 		let connection = connection.clone();
@@ -143,8 +144,8 @@ fn setup(
 		}
 	});
 	cmds.insert_resource(Hands {
-		left: OxrHandInput::new(&connection, HandSide::Left, &mut materials).unwrap(),
-		right: OxrHandInput::new(&connection, HandSide::Right, &mut materials).unwrap(),
+		left: OxrHandInput::new(&connection, HandSide::Left, &mut materials, hand_config.transparent).unwrap(),
+		right: OxrHandInput::new(&connection, HandSide::Right, &mut materials, hand_config.transparent).unwrap(),
 	});
 }
 
@@ -187,6 +188,7 @@ impl OxrHandInput {
 		connection: &Connection,
 		side: HandSide,
 		materials: &mut Assets<BevyMaterial>,
+		transparent: bool,
 	) -> Result<Self> {
 		let (palm_spatial, palm_object) = SpatialRef::create(
 			connection,
@@ -214,7 +216,13 @@ impl OxrHandInput {
 		let input = InputMethod::add_to(&node.0, hand, datamap)?;
 
 		let material = materials.add(BevyMaterial {
-			base_color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
+			base_color: if transparent {
+				// Fully transparent for passthrough
+				Srgba::new(0.0, 0.0, 0.0, 0.0).into()
+			} else {
+				// Normal white color with alpha
+				Srgba::new(1.0, 1.0, 1.0, 1.0).into()
+			},
 			alpha_mode: AlphaMode::Blend,
 			base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
 			perceptual_roughness: 1.0,
