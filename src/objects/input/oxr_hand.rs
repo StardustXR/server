@@ -290,7 +290,6 @@ impl OxrHandInput {
 			tracker: None,
 			material,
 			captured: false,
-			transparent_mode: transparent,
 		})
 	}
 	pub fn set_enabled(&self, enabled: bool) {
