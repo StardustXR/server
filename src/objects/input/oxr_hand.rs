@@ -158,6 +158,11 @@ fn update_hand_material(
 			HandSide::Right => &hands.right,
 		};
 		
+		// Remove any existing materials first
+		cmds.entity(entity)
+			.remove::<MeshMaterial3d<BevyMaterial>>()
+			.remove::<MeshMaterial3d<HandHoldoutMaterial>>();
+		
 		match &hand.material {
 			HandMaterial::Normal(handle) => {
 				cmds.entity(entity)
