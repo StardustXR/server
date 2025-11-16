@@ -112,6 +112,10 @@ struct CliArgs {
 	#[clap(long)]
 	disable_hands: bool,
 
+	/// Make hands fully transparent for passthrough (useful for wivrn)
+	#[clap(long, action)]
+	transparent_hands: bool,
+
 	/// Run Stardust XR as an overlay with given priority
 	#[clap(id = "PRIORITY", short = 'o', long = "overlay", action)]
 	overlay_priority: Option<u32>,
@@ -441,7 +445,14 @@ fn bevy_loop(
 		SkyPlugin,
 	));
 	// object plugins
-	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin, HmdPlugin));
+	app.add_plugins((
+		PlaySpacePlugin,
+		HandPlugin {
+			transparent_hands: args.transparent_hands,
+		},
+		ControllerPlugin,
+		HmdPlugin,
+	));
 	// feature plugins
 	#[cfg(feature = "wayland")]
 	app.add_plugins(WaylandPlugin);

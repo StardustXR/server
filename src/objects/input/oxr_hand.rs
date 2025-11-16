@@ -7,10 +7,12 @@ use crate::nodes::{
 	input::{Hand, InputMethod, Joint},
 	spatial::Spatial,
 };
+use crate::nodes::drawable::model::HoldoutExtension;
 use crate::objects::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
 use crate::{BevyMaterial, DbusConnection, ObjectRegistryRes, PreFrameWait, get_time};
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
+use bevy::pbr::ExtendedMaterial;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
 use bevy_mod_openxr::resources::{OxrFrameState, Pipelined};
 use bevy_mod_openxr::session::OxrSession;
@@ -28,9 +30,23 @@ use zbus::Connection;
 
 use super::{CaptureManager, get_sorted_handlers};
 
-pub struct HandPlugin;
+// Holdout material for transparent hands (passthrough)
+type HandHoldoutMaterial = ExtendedMaterial<BevyMaterial, HoldoutExtension>;
+
+#[derive(Resource)]
+pub struct HandRenderConfig {
+	pub transparent: bool,
+}
+
+pub struct HandPlugin {
+	pub transparent_hands: bool,
+}
 impl Plugin for HandPlugin {
 	fn build(&self, app: &mut App) {
+		app.insert_resource(HandRenderConfig {
+			transparent: self.transparent_hands,
+		});
+		
 		app.add_systems(PreFrameWait, update_hands.run_if(resource_exists::<Hands>));
 		app.add_systems(XrSessionCreated, create_trackers);
 		app.add_systems(XrPreDestroySession, destroy_trackers);
@@ -110,7 +126,6 @@ fn update_hand_material(
 		(Entity, &HandSide),
 		(
 			With<XrHandBoneEntities>,
-			With<MeshMaterial3d<BevyMaterial>>,
 			Without<CorrectHandMaterial>,
 		),
 	>,
@@ -118,13 +133,23 @@ fn update_hand_material(
 	hands: Res<Hands>,
 ) {
 	for (entity, side) in &query {
-		let handle = match side {
-			HandSide::Left => hands.left.material.clone(),
-			HandSide::Right => hands.right.material.clone(),
+		let hand = match side {
+			HandSide::Left => &hands.left,
+			HandSide::Right => &hands.right,
 		};
-		cmds.entity(entity)
-			.insert(MeshMaterial3d(handle))
-			.insert(CorrectHandMaterial);
+		
+		match &hand.material {
+			HandMaterial::Normal(handle) => {
+				cmds.entity(entity)
+					.insert(MeshMaterial3d(handle.clone()))
+					.insert(CorrectHandMaterial);
+			}
+			HandMaterial::Holdout(handle) => {
+				cmds.entity(entity)
+					.insert(MeshMaterial3d(handle.clone()))
+					.insert(CorrectHandMaterial);
+			}
+		}
 	}
 }
 
@@ -132,6 +157,8 @@ fn setup(
 	connection: Res<DbusConnection>,
 	mut cmds: Commands,
 	mut materials: ResMut<Assets<BevyMaterial>>,
+	mut holdout_materials: ResMut<Assets<HandHoldoutMaterial>>,
+	hand_config: Res<HandRenderConfig>,
 ) {
 	tokio::task::spawn({
 		let connection = connection.clone();
@@ -143,8 +170,8 @@ fn setup(
 		}
 	});
 	cmds.insert_resource(Hands {
-		left: OxrHandInput::new(&connection, HandSide::Left, &mut materials).unwrap(),
-		right: OxrHandInput::new(&connection, HandSide::Right, &mut materials).unwrap(),
+		left: OxrHandInput::new(&connection, HandSide::Left, &mut materials, &mut holdout_materials, &hand_config).unwrap(),
+		right: OxrHandInput::new(&connection, HandSide::Right, &mut materials, &mut holdout_materials, &hand_config).unwrap(),
 	});
 }
 
@@ -169,6 +196,11 @@ struct HandDatamap {
 	grab_strength: f32,
 }
 
+enum HandMaterial {
+	Normal(Handle<BevyMaterial>),
+	Holdout(Handle<HandHoldoutMaterial>),
+}
+
 pub struct OxrHandInput {
 	_node: OwnedNode,
 	palm_spatial: Arc<Spatial>,
@@ -180,13 +212,15 @@ pub struct OxrHandInput {
 	tracked: AsyncTracked,
 	tracker: Option<openxr::HandTracker>,
 	captured: bool,
-	material: Handle<BevyMaterial>,
+	material: HandMaterial,
 }
 impl OxrHandInput {
 	pub fn new(
 		connection: &Connection,
 		side: HandSide,
 		materials: &mut Assets<BevyMaterial>,
+		holdout_materials: &mut Assets<HandHoldoutMaterial>,
+		hand_config: &HandRenderConfig,
 	) -> Result<Self> {
 		let (palm_spatial, palm_object) = SpatialRef::create(
 			connection,
@@ -213,13 +247,22 @@ impl OxrHandInput {
 		let datamap = Datamap::from_typed(HandDatamap::default())?;
 		let input = InputMethod::add_to(&node.0, hand, datamap)?;
 
-		let material = materials.add(BevyMaterial {
-			base_color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
-			alpha_mode: AlphaMode::Blend,
-			base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
-			perceptual_roughness: 1.0,
-			..default()
-		});
+		let material = if hand_config.transparent {
+			// Use holdout material for passthrough
+			HandMaterial::Holdout(holdout_materials.add(HandHoldoutMaterial {
+				base: BevyMaterial::default(),
+				extension: HoldoutExtension {},
+			}))
+		} else {
+			// Normal material
+			HandMaterial::Normal(materials.add(BevyMaterial {
+				base_color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
+				alpha_mode: AlphaMode::Blend,
+				base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
+				perceptual_roughness: 1.0,
+				..default()
+			}))
+		};
 		Ok(OxrHandInput {
 			_node: node,
 			palm_spatial,
@@ -316,15 +359,19 @@ impl OxrHandInput {
 
 			*self.input.data.lock() = InputDataType::Hand(new_hand);
 			*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
-			let captured = self.capture_manager.capture.upgrade().is_some();
-			if captured && !self.captured {
-				materials.get_mut(&self.material).unwrap().base_color =
-					Srgba::rgb(0., 1., 0.75).into();
-			} else if self.captured && !captured {
-				materials.get_mut(&self.material).unwrap().base_color =
-					Srgba::rgb(1., 1.0, 1.0).into();
+			
+			// Only change colors for normal materials (not holdout)
+			if let HandMaterial::Normal(material_handle) = &self.material {
+				let captured = self.capture_manager.capture.upgrade().is_some();
+				if captured && !self.captured {
+					materials.get_mut(material_handle).unwrap().base_color =
+						Srgba::rgb(0., 1., 0.75).into();
+				} else if self.captured && !captured {
+					materials.get_mut(material_handle).unwrap().base_color =
+						Srgba::rgb(1., 1.0, 1.0).into();
+				}
+				self.captured = captured;
 			}
-			self.captured = captured;
 		}
 
 		let distance_calculator = |space: &Arc<Spatial>, data: &InputDataType, field: &Field| {
