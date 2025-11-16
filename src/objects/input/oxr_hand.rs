@@ -1,5 +1,6 @@
 use crate::core::client::INTERNAL_CLIENT;
 use crate::nodes::OwnedNode;
+use crate::nodes::drawable::model::HoldoutExtension;
 use crate::nodes::fields::{Field, FieldTrait};
 use crate::nodes::input::{Finger, INPUT_HANDLER_REGISTRY, InputDataType, InputHandler, Thumb};
 use crate::nodes::{
@@ -7,12 +8,11 @@ use crate::nodes::{
 	input::{Hand, InputMethod, Joint},
 	spatial::Spatial,
 };
-use crate::nodes::drawable::model::HoldoutExtension;
 use crate::objects::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
 use crate::{BevyMaterial, DbusConnection, ObjectRegistryRes, PreFrameWait, get_time};
+use bevy::pbr::ExtendedMaterial;
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
-use bevy::pbr::ExtendedMaterial;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
 use bevy_mod_openxr::resources::{OxrFrameState, Pipelined};
 use bevy_mod_openxr::session::OxrSession;
@@ -46,7 +46,10 @@ impl Plugin for HandPlugin {
 		app.insert_resource(HandRenderConfig {
 			transparent: self.transparent_hands,
 		});
-		
+
+		// setup hand rendering
+		app.add_plugins(bevy_sk::hand::HandPlugin);
+
 		app.add_systems(PreFrameWait, update_hands.run_if(resource_exists::<Hands>));
 		app.add_systems(XrSessionCreated, create_trackers);
 		app.add_systems(XrPreDestroySession, destroy_trackers);
@@ -122,13 +125,7 @@ fn destroy_trackers(mut hands: ResMut<Hands>) {
 #[derive(Component)]
 struct CorrectHandMaterial;
 fn update_hand_material(
-	query: Query<
-		(Entity, &HandSide),
-		(
-			With<XrHandBoneEntities>,
-			Without<CorrectHandMaterial>,
-		),
-	>,
+	query: Query<(Entity, &HandSide), (With<XrHandBoneEntities>, Without<CorrectHandMaterial>)>,
 	mut cmds: Commands,
 	hands: Res<Hands>,
 ) {
@@ -137,7 +134,7 @@ fn update_hand_material(
 			HandSide::Left => &hands.left,
 			HandSide::Right => &hands.right,
 		};
-		
+
 		match &hand.material {
 			HandMaterial::Normal(handle) => {
 				cmds.entity(entity)
@@ -170,8 +167,22 @@ fn setup(
 		}
 	});
 	cmds.insert_resource(Hands {
-		left: OxrHandInput::new(&connection, HandSide::Left, &mut materials, &mut holdout_materials, &hand_config).unwrap(),
-		right: OxrHandInput::new(&connection, HandSide::Right, &mut materials, &mut holdout_materials, &hand_config).unwrap(),
+		left: OxrHandInput::new(
+			&connection,
+			HandSide::Left,
+			&mut materials,
+			&mut holdout_materials,
+			&hand_config,
+		)
+		.unwrap(),
+		right: OxrHandInput::new(
+			&connection,
+			HandSide::Right,
+			&mut materials,
+			&mut holdout_materials,
+			&hand_config,
+		)
+		.unwrap(),
 	});
 }
 
@@ -359,7 +370,7 @@ impl OxrHandInput {
 
 			*self.input.data.lock() = InputDataType::Hand(new_hand);
 			*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
-			
+
 			// Only change colors for normal materials (not holdout)
 			if let HandMaterial::Normal(material_handle) = &self.material {
 				let captured = self.capture_manager.capture.upgrade().is_some();

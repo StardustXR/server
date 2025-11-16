@@ -403,7 +403,6 @@ fn bevy_loop(
 	);
 	app.add_plugins(PipelinedRenderingPlugin);
 
-	app.add_plugins(bevy_sk::hand::HandPlugin);
 	app.add_plugins(bevy_equirect::EquirectangularPlugin);
 	// app.add_plugins(HandGizmosPlugin);
 	app.world_mut().resource_mut::<AmbientLight>().brightness = 1000.0;
@@ -445,14 +444,19 @@ fn bevy_loop(
 		SkyPlugin,
 	));
 	// object plugins
-	app.add_plugins((
-		PlaySpacePlugin,
-		HandPlugin {
-			transparent_hands: args.transparent_hands,
-		},
-		ControllerPlugin,
-		HmdPlugin,
-	));
+	app.add_plugins((PlaySpacePlugin, HmdPlugin));
+	if !args.disable_hands {
+		app.add_plugins((
+			HandPlugin {
+				transparent_hands: args.transparent_hands,
+			},
+			bevy_sk::hand::HandPlugin,
+		));
+	}
+	if !args.disable_controllers {
+		app.add_plugins(ControllerPlugin);
+	}
+
 	// feature plugins
 	#[cfg(feature = "wayland")]
 	app.add_plugins(WaylandPlugin);
