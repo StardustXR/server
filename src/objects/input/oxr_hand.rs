@@ -38,10 +38,15 @@ pub struct HandRenderConfig {
 	pub transparent: bool,
 }
 
-pub struct HandPlugin;
+pub struct HandPlugin {
+	pub transparent_hands: bool,
+}
 impl Plugin for HandPlugin {
 	fn build(&self, app: &mut App) {
 		app.add_plugins(MaterialPlugin::<HandHoldoutMaterial>::default());
+		app.insert_resource(HandRenderConfig {
+			transparent: self.transparent_hands,
+		});
 		
 		app.add_systems(PreFrameWait, update_hands.run_if(resource_exists::<Hands>));
 		app.add_systems(XrSessionCreated, create_trackers);
@@ -141,9 +146,7 @@ fn update_hand_material(
 					.insert(CorrectHandMaterial);
 			}
 			HandMaterial::Holdout(handle) => {
-				// Remove base material before applying holdout
 				cmds.entity(entity)
-					.remove::<MeshMaterial3d<BevyMaterial>>()
 					.insert(MeshMaterial3d(handle.clone()))
 					.insert(CorrectHandMaterial);
 			}
