@@ -146,7 +146,6 @@ fn update_hand_material(
 		(Entity, &HandSide),
 		(
 			With<XrHandBoneEntities>,
-			With<MeshMaterial3d<BevyMaterial>>,
 			Without<CorrectHandMaterial>,
 		),
 	>,
@@ -154,13 +153,23 @@ fn update_hand_material(
 	hands: Res<Hands>,
 ) {
 	for (entity, side) in &query {
-		let handle = match side {
-			HandSide::Left => hands.left.material.clone(),
-			HandSide::Right => hands.right.material.clone(),
+		let hand = match side {
+			HandSide::Left => &hands.left,
+			HandSide::Right => &hands.right,
 		};
-		cmds.entity(entity)
-			.insert(MeshMaterial3d(handle))
-			.insert(CorrectHandMaterial);
+		
+		match &hand.material {
+			HandMaterial::Normal(handle) => {
+				cmds.entity(entity)
+					.insert(MeshMaterial3d(handle.clone()))
+					.insert(CorrectHandMaterial);
+			}
+			HandMaterial::Holdout(handle) => {
+				cmds.entity(entity)
+					.insert(MeshMaterial3d(handle.clone()))
+					.insert(CorrectHandMaterial);
+			}
+		}
 	}
 }
 
@@ -168,6 +177,7 @@ fn setup(
 	connection: Res<DbusConnection>,
 	mut cmds: Commands,
 	mut materials: ResMut<Assets<BevyMaterial>>,
+	mut holdout_materials: ResMut<Assets<HandHoldoutMaterial>>,
 	hand_config: Res<HandRenderConfig>,
 ) {
 	tokio::task::spawn({
@@ -180,8 +190,8 @@ fn setup(
 		}
 	});
 	cmds.insert_resource(Hands {
-		left: OxrHandInput::new(&connection, HandSide::Left, &mut materials, hand_config.transparent).unwrap(),
-		right: OxrHandInput::new(&connection, HandSide::Right, &mut materials, hand_config.transparent).unwrap(),
+		left: OxrHandInput::new(&connection, HandSide::Left, &mut materials, &mut holdout_materials, hand_config.transparent).unwrap(),
+		right: OxrHandInput::new(&connection, HandSide::Right, &mut materials, &mut holdout_materials, hand_config.transparent).unwrap(),
 	});
 }
 
