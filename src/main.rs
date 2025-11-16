@@ -116,6 +116,10 @@ struct CliArgs {
 	#[clap(long, action)]
 	transparent_hands: bool,
 
+	/// Disable pipelined rendering, in case of weird behavior, will decrease performance
+	#[clap(long, action)]
+	disable_pipelined_rendering: bool,
+
 	/// Run Stardust XR as an overlay with given priority
 	#[clap(id = "PRIORITY", short = 'o', long = "overlay", action)]
 	overlay_priority: Option<u32>,
@@ -401,7 +405,9 @@ fn bevy_loop(
 			..default()
 		}),
 	);
-	app.add_plugins(PipelinedRenderingPlugin);
+	if !args.disable_pipelined_rendering {
+		app.add_plugins(PipelinedRenderingPlugin);
+	}
 
 	app.add_plugins(bevy_equirect::EquirectangularPlugin);
 	// app.add_plugins(HandGizmosPlugin);
