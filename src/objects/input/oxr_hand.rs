@@ -385,14 +385,14 @@ impl OxrHandInput {
 			*self.input.data.lock() = InputDataType::Hand(new_hand);
 			*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 			
-			// Only change colors if not in transparent mode
-			if !self.transparent_mode {
+			// Only change colors for normal materials (not holdout)
+			if let HandMaterial::Normal(material_handle) = &self.material {
 				let captured = self.capture_manager.capture.upgrade().is_some();
 				if captured && !self.captured {
-					materials.get_mut(&self.material).unwrap().base_color =
+					materials.get_mut(material_handle).unwrap().base_color =
 						Srgba::rgb(0., 1., 0.75).into();
 				} else if self.captured && !captured {
-					materials.get_mut(&self.material).unwrap().base_color =
+					materials.get_mut(material_handle).unwrap().base_color =
 						Srgba::rgb(1., 1.0, 1.0).into();
 				}
 				self.captured = captured;
