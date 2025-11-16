@@ -272,9 +272,6 @@ fn bevy_loop(
 ) -> AppExit {
 	let mut app = App::new();
 	app.insert_resource(DbusConnection(dbus_connection));
-	app.insert_resource(objects::input::oxr_hand::HandRenderConfig {
-		transparent: args.transparent_hands,
-	});
 	app.insert_resource(OxrManualGraphicsConfig {
 		fallback_backend: GraphicsBackend::Vulkan(()),
 		vk_instance_exts: Vec::new(),
@@ -448,7 +445,14 @@ fn bevy_loop(
 		SkyPlugin,
 	));
 	// object plugins
-	app.add_plugins((PlaySpacePlugin, HandPlugin, ControllerPlugin, HmdPlugin));
+	app.add_plugins((
+		PlaySpacePlugin,
+		HandPlugin {
+			transparent_hands: args.transparent_hands,
+		},
+		ControllerPlugin,
+		HmdPlugin,
+	));
 	// feature plugins
 	#[cfg(feature = "wayland")]
 	app.add_plugins(WaylandPlugin);
