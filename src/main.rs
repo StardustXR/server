@@ -112,6 +112,10 @@ struct CliArgs {
 	#[clap(long)]
 	disable_hands: bool,
 
+	/// Make hands fully transparent for passthrough (useful for wivrn)
+	#[clap(long, action)]
+	transparent_hands: bool,
+
 	/// Run Stardust XR as an overlay with given priority
 	#[clap(id = "PRIORITY", short = 'o', long = "overlay", action)]
 	overlay_priority: Option<u32>,
@@ -259,6 +263,11 @@ pub struct ObjectRegistryRes(Arc<ObjectRegistry>);
 #[derive(Resource, Deref)]
 pub struct DbusConnection(Connection);
 
+#[derive(Resource)]
+pub struct HandRenderConfig {
+	pub transparent: bool,
+}
+
 fn bevy_loop(
 	ready_notifier: Arc<Notify>,
 	_project_dirs: Option<ProjectDirs>,
@@ -268,6 +277,9 @@ fn bevy_loop(
 ) -> AppExit {
 	let mut app = App::new();
 	app.insert_resource(DbusConnection(dbus_connection));
+	app.insert_resource(HandRenderConfig {
+		transparent: args.transparent_hands,
+	});
 	app.insert_resource(OxrManualGraphicsConfig {
 		fallback_backend: GraphicsBackend::Vulkan(()),
 		vk_instance_exts: Vec::new(),
