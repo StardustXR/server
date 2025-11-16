@@ -182,6 +182,7 @@ pub struct OxrHandInput {
 	tracker: Option<openxr::HandTracker>,
 	captured: bool,
 	material: Handle<BevyMaterial>,
+	transparent_mode: bool,
 }
 impl OxrHandInput {
 	pub fn new(
@@ -240,6 +241,7 @@ impl OxrHandInput {
 			tracker: None,
 			material,
 			captured: false,
+			transparent_mode: transparent,
 		})
 	}
 	pub fn set_enabled(&self, enabled: bool) {
