@@ -168,8 +168,8 @@ fn setup(
 		}
 	});
 	cmds.insert_resource(Hands {
-		left: OxrHandInput::new(&connection, HandSide::Left, &mut materials, &mut holdout_materials, hand_config.transparent).unwrap(),
-		right: OxrHandInput::new(&connection, HandSide::Right, &mut materials, &mut holdout_materials, hand_config.transparent).unwrap(),
+		left: OxrHandInput::new(&connection, HandSide::Left, &mut materials, &mut holdout_materials, &hand_config).unwrap(),
+		right: OxrHandInput::new(&connection, HandSide::Right, &mut materials, &mut holdout_materials, &hand_config).unwrap(),
 	});
 }
 
