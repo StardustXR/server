@@ -206,6 +206,11 @@ struct HandDatamap {
 	grab_strength: f32,
 }
 
+enum HandMaterial {
+	Normal(Handle<BevyMaterial>),
+	Holdout(Handle<HandHoldoutMaterial>),
+}
+
 pub struct OxrHandInput {
 	_node: OwnedNode,
 	palm_spatial: Arc<Spatial>,
@@ -217,8 +222,7 @@ pub struct OxrHandInput {
 	tracked: AsyncTracked,
 	tracker: Option<openxr::HandTracker>,
 	captured: bool,
-	material: Handle<BevyMaterial>,
-	transparent_mode: bool,
+	material: HandMaterial,
 }
 impl OxrHandInput {
 	pub fn new(
