@@ -7,13 +7,12 @@ use crate::nodes::{
 	input::{Hand, InputMethod, Joint},
 	spatial::Spatial,
 };
+use crate::nodes::drawable::model::HoldoutExtension;
 use crate::objects::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
-use crate::{BevyMaterial, DbusConnection, HandRenderConfig, ObjectRegistryRes, PreFrameWait, get_time};
+use crate::{BevyMaterial, DbusConnection, ObjectRegistryRes, PreFrameWait, get_time};
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
-use bevy::pbr::{ExtendedMaterial, MaterialExtension};
-use bevy::render::render_resource::{AsBindGroup, ShaderRef};
-use bevy::asset::weak_handle;
+use bevy::pbr::ExtendedMaterial;
 use bevy_mod_openxr::helper_traits::{ToQuat, ToVec3};
 use bevy_mod_openxr::resources::{OxrFrameState, Pipelined};
 use bevy_mod_openxr::session::OxrSession;
@@ -32,46 +31,16 @@ use zbus::Connection;
 use super::{CaptureManager, get_sorted_handlers};
 
 // Holdout material for transparent hands (passthrough)
-type HandHoldoutMaterial = ExtendedMaterial<BevyMaterial, HandHoldoutExtension>;
-const HAND_HOLDOUT_SHADER_HANDLE: Handle<Shader> = weak_handle!("a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+type HandHoldoutMaterial = ExtendedMaterial<BevyMaterial, HoldoutExtension>;
 
-#[derive(Default, Asset, AsBindGroup, TypePath, Debug, Clone)]
-#[data(50, u32, binding_array(101))]
-#[bindless(index_table(range(50..51), binding(100)))]
-pub struct HandHoldoutExtension {}
-impl From<&HandHoldoutExtension> for u32 {
-	fn from(_: &HandHoldoutExtension) -> Self {
-		0
-	}
-}
-impl MaterialExtension for HandHoldoutExtension {
-	fn fragment_shader() -> ShaderRef {
-		HAND_HOLDOUT_SHADER_HANDLE.into()
-	}
-
-	fn alpha_mode() -> Option<AlphaMode> {
-		Some(AlphaMode::Opaque)
-	}
+#[derive(Resource)]
+pub struct HandRenderConfig {
+	pub transparent: bool,
 }
 
 pub struct HandPlugin;
 impl Plugin for HandPlugin {
 	fn build(&self, app: &mut App) {
-		// Register holdout shader and material for transparent hands
-		app.world_mut().resource_mut::<Assets<Shader>>().insert(
-			&HAND_HOLDOUT_SHADER_HANDLE,
-			Shader::from_wgsl(
-				r#"
-#import bevy_pbr::forward_io::VertexOutput
-
-@fragment
-fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(0.0, 0.0, 0.0, 0.0);
-}
-				"#,
-				"hand_holdout.wgsl",
-			),
-		);
 		app.add_plugins(MaterialPlugin::<HandHoldoutMaterial>::default());
 		
 		app.add_systems(PreFrameWait, update_hands.run_if(resource_exists::<Hands>));
