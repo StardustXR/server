@@ -134,11 +134,6 @@ fn update_hand_material(
 			HandSide::Right => &hands.right,
 		};
 		
-		// Remove any existing materials first
-		cmds.entity(entity)
-			.remove::<MeshMaterial3d<BevyMaterial>>()
-			.remove::<MeshMaterial3d<HandHoldoutMaterial>>();
-		
 		match &hand.material {
 			HandMaterial::Normal(handle) => {
 				cmds.entity(entity)
@@ -146,7 +141,9 @@ fn update_hand_material(
 					.insert(CorrectHandMaterial);
 			}
 			HandMaterial::Holdout(handle) => {
+				// Remove base material before applying holdout
 				cmds.entity(entity)
+					.remove::<MeshMaterial3d<BevyMaterial>>()
 					.insert(MeshMaterial3d(handle.clone()))
 					.insert(CorrectHandMaterial);
 			}
@@ -221,7 +218,7 @@ impl OxrHandInput {
 		side: HandSide,
 		materials: &mut Assets<BevyMaterial>,
 		holdout_materials: &mut Assets<HandHoldoutMaterial>,
-		transparent: bool,
+		hand_config: &HandRenderConfig,
 	) -> Result<Self> {
 		let (palm_spatial, palm_object) = SpatialRef::create(
 			connection,
@@ -248,16 +245,11 @@ impl OxrHandInput {
 		let datamap = Datamap::from_typed(HandDatamap::default())?;
 		let input = InputMethod::add_to(&node.0, hand, datamap)?;
 
-		let material = if transparent {
+		let material = if hand_config.transparent {
 			// Use holdout material for passthrough
 			HandMaterial::Holdout(holdout_materials.add(HandHoldoutMaterial {
-				base: BevyMaterial {
-					base_color: Srgba::new(0.0, 0.0, 0.0, 1.0).into(),
-					base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
-					perceptual_roughness: 1.0,
-					..default()
-				},
-				extension: HandHoldoutExtension {},
+				base: BevyMaterial::default(),
+				extension: HoldoutExtension {},
 			}))
 		} else {
 			// Normal material
