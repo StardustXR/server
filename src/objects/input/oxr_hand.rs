@@ -57,6 +57,16 @@ impl MaterialExtension for HandHoldoutExtension {
 pub struct HandPlugin;
 impl Plugin for HandPlugin {
 	fn build(&self, app: &mut App) {
+		// Register holdout shader and material for transparent hands
+		app.world_mut().resource_mut::<Assets<Shader>>().insert(
+			&HAND_HOLDOUT_SHADER_HANDLE,
+			Shader::from_wgsl(
+				include_str!("../../nodes/drawable/holdout.wgsl"),
+				"hand_holdout.wgsl",
+			),
+		);
+		app.add_plugins(MaterialPlugin::<HandHoldoutMaterial>::default());
+		
 		app.add_systems(PreFrameWait, update_hands.run_if(resource_exists::<Hands>));
 		app.add_systems(XrSessionCreated, create_trackers);
 		app.add_systems(XrPreDestroySession, destroy_trackers);
