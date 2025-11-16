@@ -61,7 +61,14 @@ impl Plugin for HandPlugin {
 		app.world_mut().resource_mut::<Assets<Shader>>().insert(
 			&HAND_HOLDOUT_SHADER_HANDLE,
 			Shader::from_wgsl(
-				include_str!("../../nodes/drawable/holdout.wgsl"),
+				r#"
+#import bevy_pbr::forward_io::VertexOutput
+
+@fragment
+fn fragment(in: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+}
+				"#,
 				"hand_holdout.wgsl",
 			),
 		);
