@@ -229,6 +229,7 @@ impl OxrHandInput {
 		connection: &Connection,
 		side: HandSide,
 		materials: &mut Assets<BevyMaterial>,
+		holdout_materials: &mut Assets<HandHoldoutMaterial>,
 		transparent: bool,
 	) -> Result<Self> {
 		let (palm_spatial, palm_object) = SpatialRef::create(
@@ -256,19 +257,27 @@ impl OxrHandInput {
 		let datamap = Datamap::from_typed(HandDatamap::default())?;
 		let input = InputMethod::add_to(&node.0, hand, datamap)?;
 
-		let material = materials.add(BevyMaterial {
-			base_color: if transparent {
-				// Fully transparent for passthrough
-				Srgba::new(0.0, 0.0, 0.0, 0.0).into()
-			} else {
-				// Normal white color with alpha
-				Srgba::new(1.0, 1.0, 1.0, 1.0).into()
-			},
-			alpha_mode: AlphaMode::Blend,
-			base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
-			perceptual_roughness: 1.0,
-			..default()
-		});
+		let material = if transparent {
+			// Use holdout material for passthrough
+			HandMaterial::Holdout(holdout_materials.add(HandHoldoutMaterial {
+				base: BevyMaterial {
+					base_color: Srgba::new(0.0, 0.0, 0.0, 1.0).into(),
+					base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
+					perceptual_roughness: 1.0,
+					..default()
+				},
+				extension: HandHoldoutExtension {},
+			}))
+		} else {
+			// Normal material
+			HandMaterial::Normal(materials.add(BevyMaterial {
+				base_color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
+				alpha_mode: AlphaMode::Blend,
+				base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
+				perceptual_roughness: 1.0,
+				..default()
+			}))
+		};
 		Ok(OxrHandInput {
 			_node: node,
 			palm_spatial,
