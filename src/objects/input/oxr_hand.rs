@@ -43,7 +43,6 @@ pub struct HandPlugin {
 }
 impl Plugin for HandPlugin {
 	fn build(&self, app: &mut App) {
-		app.add_plugins(MaterialPlugin::<HandHoldoutMaterial>::default());
 		app.insert_resource(HandRenderConfig {
 			transparent: self.transparent_hands,
 		});
