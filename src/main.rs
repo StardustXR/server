@@ -263,11 +263,6 @@ pub struct ObjectRegistryRes(Arc<ObjectRegistry>);
 #[derive(Resource, Deref)]
 pub struct DbusConnection(Connection);
 
-#[derive(Resource)]
-pub struct HandRenderConfig {
-	pub transparent: bool,
-}
-
 fn bevy_loop(
 	ready_notifier: Arc<Notify>,
 	_project_dirs: Option<ProjectDirs>,
@@ -277,7 +272,7 @@ fn bevy_loop(
 ) -> AppExit {
 	let mut app = App::new();
 	app.insert_resource(DbusConnection(dbus_connection));
-	app.insert_resource(HandRenderConfig {
+	app.insert_resource(objects::input::oxr_hand::HandRenderConfig {
 		transparent: args.transparent_hands,
 	});
 	app.insert_resource(OxrManualGraphicsConfig {
