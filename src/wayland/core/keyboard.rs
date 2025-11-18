@@ -176,6 +176,18 @@ impl Keyboard {
 				pressed_keys.iter().flat_map(|k| k.to_ne_bytes()).collect(),
 			)
 			.await?;
+
+			let serial = client.next_event_serial();
+			self.modifiers(
+				client,
+				self.id,
+				serial,
+				modifier_state.mods_depressed,
+				modifier_state.mods_latched,
+				modifier_state.mods_locked,
+				modifier_state.group,
+			)
+			.await?;
 			// println!("Entered new surface {}", surface.id);
 
 			// Update focused surface
@@ -204,7 +216,7 @@ impl Keyboard {
 
 		// MODIFIER UPDATES
 		// Update modifier state and send modifiers event if changed
-		if refocus || modifier_state.update_key(key, pressed) {
+		if modifier_state.update_key(key, pressed) {
 			// println!("Update modifiers");
 			let serial = client.next_event_serial();
 			self.modifiers(

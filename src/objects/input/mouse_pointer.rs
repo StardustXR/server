@@ -285,11 +285,11 @@ impl MousePointer {
 			match e.unit {
 				bevy::input::mouse::MouseScrollUnit::Line => {
 					discrete.x += e.x;
-					discrete.y += e.y;
+					discrete.y -= e.y;
 				}
 				bevy::input::mouse::MouseScrollUnit::Pixel => {
 					continuous.x += e.x;
-					continuous.y += e.y;
+					continuous.y -= e.y;
 				}
 			}
 		}
