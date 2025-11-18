@@ -20,13 +20,13 @@ use bevy::{
 	prelude::*,
 	window::PrimaryWindow,
 };
-use color_eyre::eyre::{Result, bail};
+use color_eyre::eyre::Result;
 use dashmap::DashMap;
 use glam::{Mat4, Vec3, vec3};
 use mint::Vector2;
 use rustc_hash::{FxHashMap, FxHasher};
 use serde::{Deserialize, Serialize};
-use sharded_slab::{OwnedEntry, Slab};
+use slotmap::{DefaultKey, Key as SlotKey};
 use stardust_xr::{
 	schemas::dbus::{
 		ObjectInfo,
@@ -192,7 +192,7 @@ impl QueryContext for KeyboardQueryContext {}
 #[derive(Resource)]
 pub struct MousePointer {
 	node: OwnedNode,
-	keymap: usize,
+	keymap: DefaultKey,
 	spatial: Arc<Spatial>,
 	pointer: Arc<InputMethod>,
 	capture_manager: CaptureManager,
@@ -216,14 +216,12 @@ impl MousePointer {
 		)?;
 
 		let context = Context::new(0).unwrap();
-		let Some(keymap) = KEYMAPS.insert(
+		let keymap = KEYMAPS.lock().insert(
 			Keymap::new_from_names(context, None, CompileFlags::NO_FLAGS)
 				.unwrap()
 				.get_as_string(KeymapFormat::TextV1)
 				.unwrap(),
-		) else {
-			bail!("Failed to insert keymap");
-		};
+		);
 
 		// Create channels and notification
 		let (focused_handler_tx, focused_handler_rx) = watch::channel::<Option<HandlerInfo>>(None);
@@ -237,7 +235,7 @@ impl MousePointer {
 				object_registry.get_connection().clone(),
 				focused_handler_rx,
 				input_event_rx,
-				keymap as u64,
+				keymap.data().as_ffi(),
 			),
 		)?
 		.abort_handle();

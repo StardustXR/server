@@ -4,6 +4,7 @@ use crate::{
 };
 use dashmap::{DashMap, DashSet};
 use memfd::MemfdOptions;
+use slotmap::{DefaultKey, KeyData};
 use std::{
 	collections::HashSet,
 	io::Write,
@@ -124,11 +125,16 @@ impl Keyboard {
 			let mut old_keymap_id = self.current_keymap_id.lock().await;
 
 			if *old_keymap_id != keymap_id {
+				let keymap_key = DefaultKey::from(KeyData::from_ffi(keymap_id));
+
 				// Get keymap data and drop the lock immediately
-				let keymap_data = KEYMAPS
-					.get(keymap_id as usize)
-					.map(|s| s.as_bytes().to_vec())
-					.unwrap_or_default();
+				let keymap_data = {
+					let keymap_lock = KEYMAPS.lock();
+					keymap_lock
+						.get(keymap_key)
+						.map(|s| s.as_bytes().to_vec())
+						.unwrap_or_default()
+				};
 
 				// Now we can safely await
 				self.send_keymap(client, &keymap_data).await?;
