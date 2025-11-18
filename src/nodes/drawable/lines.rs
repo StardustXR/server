@@ -111,11 +111,10 @@ fn build_line_mesh(
 	mut cmds: Commands,
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut materials: ResMut<Assets<LineMaterial>>,
-	query: Query<(Ref<GlobalTransform>, &InheritedVisibility)>,
+	query: Query<Ref<GlobalTransform>>,
 ) {
 	for lines in LINES_REGISTRY.get_valid_contents().into_iter() {
-		let Some((transform, visibil)) = lines.spatial.get_entity().and_then(|e| query.get(e).ok())
-		else {
+		let Some(transform) = lines.spatial.get_entity().and_then(|e| query.get(e).ok()) else {
 			continue;
 		};
 		if !(lines.gen_mesh.load(Ordering::Relaxed) || transform.is_changed()) {
