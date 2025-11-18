@@ -21,7 +21,7 @@ use bevy::{
 use glam::Vec3;
 use parking_lot::Mutex;
 use std::sync::{
-	Arc, OnceLock,
+	Arc, OnceLock, Weak,
 	atomic::{AtomicBool, Ordering},
 };
 use tokio::sync::Notify;
@@ -61,7 +61,8 @@ impl Plugin for LinesNodePlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(
 			PostUpdate,
-			build_line_mesh
+			(build_line_mesh, update_line_vis)
+				.chain()
 				.after(TransformSystem::TransformPropagate)
 				.before(AssetEvents)
 				.after(VisibilitySystems::VisibilityPropagate)
@@ -82,14 +83,37 @@ impl Plugin for LinesNodePlugin {
 	}
 }
 
+#[derive(Component)]
+struct LinesNode(Weak<Lines>);
+
+fn update_line_vis(
+	query: Query<(&InheritedVisibility, &LinesNode), Changed<InheritedVisibility>>,
+	mut cmds: Commands,
+) {
+	for (vis, line) in &query {
+		let Some(line) = line.0.upgrade() else {
+			continue;
+		};
+		let Some(target) = line.entity.get() else {
+			continue;
+		};
+
+		cmds.entity(target.entity())
+			.insert(*vis)
+			.insert(match vis.get() {
+				true => Visibility::Visible,
+				false => Visibility::Hidden,
+			});
+	}
+}
+
 fn build_line_mesh(
 	mut cmds: Commands,
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut materials: ResMut<Assets<LineMaterial>>,
 	query: Query<(Ref<GlobalTransform>, &InheritedVisibility)>,
 ) {
-	for lines in LINES_REGISTRY.get_valid_contents().into_iter()
-	{
+	for lines in LINES_REGISTRY.get_valid_contents().into_iter() {
 		let Some((transform, visibil)) = lines.spatial.get_entity().and_then(|e| query.get(e).ok())
 		else {
 			continue;
@@ -241,6 +265,8 @@ fn build_line_mesh(
 		let mut entity = match lines.entity.get() {
 			Some(e) => cmds.entity(**e),
 			None => {
+				cmds.entity(lines.spatial.get_entity().unwrap())
+					.insert(LinesNode(Arc::downgrade(&lines)));
 				let e = cmds.spawn((
 					Name::new("LinesNode"),
 					MeshMaterial3d(materials.add(ExtendedMaterial {
@@ -255,6 +281,7 @@ fn build_line_mesh(
 					})),
 				));
 				_ = lines.entity.set(EntityHandle::new(e.id()));
+
 				e
 			}
 		};
@@ -274,13 +301,7 @@ fn build_line_mesh(
 			lines.setup_complete.notify_waiters();
 			entity.insert(global_aabb);
 		}
-		entity
-			.insert(Mesh3d(meshes.add(mesh)))
-			.insert(*visibil)
-			.insert(match visibil.get() {
-				true => Visibility::Visible,
-				false => Visibility::Hidden,
-			});
+		entity.insert(Mesh3d(meshes.add(mesh)));
 	}
 }
 

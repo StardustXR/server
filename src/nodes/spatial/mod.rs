@@ -238,7 +238,7 @@ impl Spatial {
 		let y_scale = mat.y_axis.length_squared();
 		let z_scale = mat.z_axis.length_squared();
 
-		x_scale >= EPSILON * 2.0 || y_scale >= EPSILON * 2.0 || z_scale >= EPSILON * 2.0
+		x_scale >= EPSILON * 20.0 || y_scale >= EPSILON * 20.0 || z_scale >= EPSILON * 20.0
 	}
 	/// Check if this node or any ancestor has zero scale (for visibility culling)
 	pub fn visible(&self) -> bool {
