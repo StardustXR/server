@@ -211,7 +211,14 @@ impl WlRegistry for Registry {
 			RegistryGlobals::PRESENTATION => {
 				tracing::info!("Binding wp_presentation");
 
-				client.insert(new_id.object_id, Presentation::new(new_id.object_id))?;
+				client
+					.insert(new_id.object_id, Presentation::new(new_id.object_id))?
+					.clock_id(
+						client,
+						new_id.object_id,
+						rustix::time::ClockId::Monotonic as u32,
+					)
+					.await?;
 			}
 			RegistryGlobals::VIEWPORTER => {
 				tracing::info!("Binding wp_viewporter");
