@@ -247,7 +247,7 @@ impl OxrHandInput {
 				}),
 		);
 		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
-		Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
+		Spatial::add_to(&node.0, None, Mat4::IDENTITY);
 		let hand = InputDataType::Hand(Hand {
 			right: matches!(side, HandSide::Right),
 			..Default::default()

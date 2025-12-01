@@ -154,7 +154,7 @@ impl InterfaceAspect for Interface {
 		let transform = transform.to_mat4(true, true, false);
 
 		let node = Node::from_id(&calling_client, id, false).add_to_scenegraph()?;
-		Spatial::add_to(&node, None, transform * space.global_transform(), false);
+		Spatial::add_to(&node, None, transform * space.global_transform());
 		CameraItem::add_to(&node, proj_matrix.into(), px_size);
 		Ok(())
 	}

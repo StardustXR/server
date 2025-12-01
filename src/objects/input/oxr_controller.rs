@@ -290,7 +290,6 @@ impl OxrControllerInput {
 			&model_node,
 			Some(spatial.clone()),
 			Mat4::from_scale(Vec3::splat(0.02)),
-			false,
 		);
 		let model =
 			Model::add_to(&model_node, ResourceID::Direct(CURSOR_MODEL_PATH.into())).unwrap();

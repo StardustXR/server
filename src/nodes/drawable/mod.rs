@@ -98,7 +98,7 @@ impl InterfaceAspect for Interface {
 		let transform = transform.to_mat4(true, true, true);
 
 		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		Spatial::add_to(&node, Some(parent.clone()), transform);
 		Lines::add_to(&node, lines)?;
 		Ok(())
 	}
@@ -115,7 +115,7 @@ impl InterfaceAspect for Interface {
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		Spatial::add_to(&node, Some(parent.clone()), transform);
 		Model::add_to(&node, model)?;
 		Ok(())
 	}
@@ -134,7 +134,7 @@ impl InterfaceAspect for Interface {
 		let transform = transform.to_mat4(true, true, true);
 
 		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		Spatial::add_to(&node, Some(parent.clone()), transform);
 		Text::add_to(&node, text, style)?;
 		Ok(())
 	}

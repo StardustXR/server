@@ -1,8 +1,4 @@
-pub mod zone;
-
-use self::zone::Zone;
 use super::alias::Alias;
-use super::fields::{Field, FieldTrait};
 use super::{Aspect, AspectIdentifier};
 use crate::bail;
 use crate::core::client::Client;
@@ -15,7 +11,7 @@ use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
 use color_eyre::eyre::OptionExt;
-use glam::{Mat4, Quat, Vec3, vec3a};
+use glam::{Mat4, Quat, Vec3};
 use mint::Vector3;
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
@@ -110,26 +106,15 @@ impl Transform {
 		Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
 	}
 }
-impl AspectIdentifier for Zone {
-	impl_aspect_for_zone_aspect_id! {}
-}
-impl Aspect for Zone {
-	impl_aspect_for_zone_aspect! {}
-}
-
 lazy_static::lazy_static! {
 	pub static ref EXPORTED_SPATIALS: Mutex<FxHashMap<u64, Weak<Node>>> = Mutex::new(FxHashMap::default());
 }
-
-static ZONEABLE_REGISTRY: Registry<Spatial> = Registry::new();
 
 pub struct Spatial {
 	pub node: Weak<Node>,
 	entity: RwLock<Option<EntityHandle>>,
 	parent: RwLock<Option<Arc<Spatial>>>,
-	old_parent: RwLock<Option<Arc<Spatial>>>,
 	transform: RwLock<Mat4>,
-	zone: RwLock<Weak<Zone>>,
 	children: Registry<Spatial>,
 	pub bounding_box_calc:
 		OnceLock<for<'a> fn(&'a Node) -> Pin<Box<dyn Future<Output = Aabb> + 'a + Send + Sync>>>,
@@ -141,9 +126,7 @@ impl Spatial {
 			node,
 			entity: RwLock::new(None),
 			parent: RwLock::new(parent),
-			old_parent: RwLock::new(None),
 			transform: RwLock::new(transform),
-			zone: RwLock::new(Weak::new()),
 			children: Registry::new(),
 			bounding_box_calc: OnceLock::default(),
 		});
@@ -160,16 +143,8 @@ impl Spatial {
 	pub fn get_entity(&self) -> Option<Entity> {
 		self.entity.read().as_ref().map(|v| v.get())
 	}
-	pub fn add_to(
-		node: &Arc<Node>,
-		parent: Option<Arc<Spatial>>,
-		transform: Mat4,
-		zoneable: bool,
-	) -> Arc<Spatial> {
+	pub fn add_to(node: &Arc<Node>, parent: Option<Arc<Spatial>>, transform: Mat4) -> Arc<Spatial> {
 		let spatial = Spatial::new(Arc::downgrade(node), parent.clone(), transform);
-		if zoneable {
-			ZONEABLE_REGISTRY.add_raw(&spatial);
-		}
 		if let Some(parent) = parent {
 			parent.children.add_raw(&spatial);
 		}
@@ -351,15 +326,6 @@ impl Spatial {
 
 		Ok(())
 	}
-
-	pub(self) fn zone_distance(&self) -> f32 {
-		self.zone
-			.read()
-			.upgrade()
-			.map(|zone| zone.field.clone())
-			.map(|field| field.distance(self, vec3a(0.0, 0.0, 0.0)))
-			.unwrap_or(f32::NEG_INFINITY)
-	}
 }
 static UPDATED_SPATIALS_NODES: Mutex<EntityHashMap<(Option<BevyTransform>, Option<Entity>)>> =
 	Mutex::new(EntityHashMap::new());
@@ -416,17 +382,6 @@ impl SpatialAspect for Spatial {
 		Ok(())
 	}
 
-	fn set_zoneable(node: Arc<Node>, _calling_client: Arc<Client>, zoneable: bool) -> Result<()> {
-		let spatial = node.get_aspect::<Spatial>()?;
-		if zoneable {
-			ZONEABLE_REGISTRY.add_raw(&spatial);
-		} else {
-			ZONEABLE_REGISTRY.remove(&spatial);
-			zone::release(&spatial);
-		}
-		Ok(())
-	}
-
 	// legit gotta find a way to remove old ones, this just keeps the node alive
 	async fn export_spatial(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<u64> {
 		let id = rand::random();
@@ -443,15 +398,12 @@ impl Debug for Spatial {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Spatial")
 			.field("parent", &self.parent)
-			.field("old_parent", &self.old_parent)
 			.field("transform", &self.transform)
 			.finish()
 	}
 }
 impl Drop for Spatial {
 	fn drop(&mut self) {
-		zone::release(self);
-		ZONEABLE_REGISTRY.remove(self);
 		SPATIAL_REGISTRY.remove(self);
 	}
 }
@@ -527,29 +479,11 @@ impl InterfaceAspect for Interface {
 		id: u64,
 		parent: Arc<Node>,
 		transform: Transform,
-		zoneable: bool,
 	) -> Result<()> {
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform, zoneable);
-		Ok(())
-	}
-	fn create_zone(
-		_node: Arc<Node>,
-		calling_client: Arc<Client>,
-		id: u64,
-		parent: Arc<Node>,
-		transform: Transform,
-		field: Arc<Node>,
-	) -> Result<()> {
-		let parent = parent.get_aspect::<Spatial>()?;
-		let transform = transform.to_mat4(true, true, false);
-		let field = field.get_aspect::<Field>()?;
-
-		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
-		let space = Spatial::add_to(&node, Some(parent.clone()), transform, false);
-		Zone::add_to(&node, space, field);
+		Spatial::add_to(&node, Some(parent.clone()), transform);
 		Ok(())
 	}
 

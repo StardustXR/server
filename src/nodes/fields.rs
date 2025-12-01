@@ -395,7 +395,7 @@ impl InterfaceAspect for Interface {
 		let transform = transform.to_mat4(true, true, false);
 		let parent = parent.get_aspect::<Spatial>()?;
 		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		Spatial::add_to(&node, Some(parent.clone()), transform);
 		Field::add_to(&node, shape)?;
 		Ok(())
 	}

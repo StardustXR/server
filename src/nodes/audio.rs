@@ -159,7 +159,7 @@ impl InterfaceAspect for Interface {
 		let parent = parent.get_aspect::<Spatial>()?;
 		let transform = transform.to_mat4(true, true, true);
 		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		Spatial::add_to(&node, Some(parent.clone()), transform);
 		Sound::add_to(&node, resource)?;
 		Ok(())
 	}

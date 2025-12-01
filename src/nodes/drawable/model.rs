@@ -209,7 +209,6 @@ fn gen_model_parts(
 									&node,
 									Some(parent_spatial.clone()),
 									transform.compute_matrix(),
-									false,
 								);
 								let model_part = node.add_aspect(ModelPart {
 									entity: OnceLock::new(),
@@ -600,12 +599,8 @@ impl Model {
 			None => {
 				let client = self.spatial.node().unwrap().get_client().unwrap();
 				let part_node = client.scenegraph.add_node(Node::generate(&client, false));
-				let spatial = Spatial::add_to(
-					&part_node,
-					Some(self.spatial.clone()),
-					Mat4::IDENTITY,
-					false,
-				);
+				let spatial =
+					Spatial::add_to(&part_node, Some(self.spatial.clone()), Mat4::IDENTITY);
 				let part = part_node.add_aspect(ModelPart {
 					entity: OnceLock::new(),
 					mesh_entity: OnceLock::new(),

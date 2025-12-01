@@ -22,7 +22,7 @@ impl Root {
 	pub fn create(client: &Arc<Client>, transform: Mat4) -> Result<Arc<Self>> {
 		let node = Node::from_id(client, 0, false);
 		let node = node.add_to_scenegraph()?;
-		let _ = Spatial::add_to(&node, None, transform, false);
+		let _ = Spatial::add_to(&node, None, transform);
 		let root_aspect = node.add_aspect(Root {
 			node: node.clone(),
 			connect_instant: Instant::now(),

@@ -90,7 +90,7 @@ pub struct SpatialRef(u64, OwnedNode);
 impl SpatialRef {
 	pub fn create(connection: &Connection, path: &str) -> (Arc<Spatial>, ObjectHandle<SpatialRef>) {
 		let node = OwnedNode(Arc::new(Node::generate(&INTERNAL_CLIENT, false)));
-		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
+		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY);
 		let uid: u64 = rand::random();
 		EXPORTED_SPATIALS
 			.lock()
@@ -179,7 +179,7 @@ impl FieldRef {
 		shape: Shape,
 	) -> (Arc<Field>, ObjectHandle<FieldRef>) {
 		let node = OwnedNode(Arc::new(Node::generate(&INTERNAL_CLIENT, false)));
-		Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
+		Spatial::add_to(&node.0, None, Mat4::IDENTITY);
 		let field = Field::add_to(&node.0, shape).unwrap();
 		let uid: u64 = rand::random();
 		EXPORTED_FIELDS.lock().insert(uid, Arc::downgrade(&node.0));

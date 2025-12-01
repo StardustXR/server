@@ -208,7 +208,7 @@ pub struct MousePointer {
 impl MousePointer {
 	pub fn new(object_registry: Arc<ObjectRegistry>) -> Result<Self> {
 		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
-		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY, false);
+		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY);
 		let pointer = InputMethod::add_to(
 			&node.0,
 			InputDataType::Pointer(Pointer::default()),

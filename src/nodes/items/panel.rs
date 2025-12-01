@@ -114,7 +114,7 @@ impl<B: Backend> PanelItem<B> {
 			.and_then(|env| state(&env));
 
 		let node = Arc::new(Node::generate(&INTERNAL_CLIENT, true));
-		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY, false);
+		let spatial = Spatial::add_to(&node, None, Mat4::IDENTITY);
 		if let Some(startup_settings) = &startup_settings {
 			spatial.set_local_transform(startup_settings.root);
 		}

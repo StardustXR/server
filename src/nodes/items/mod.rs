@@ -392,7 +392,7 @@ fn create_item_acceptor_flex(
 	let transform = transform.to_mat4(true, true, false);
 
 	let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
-	Spatial::add_to(&node, Some(space.clone()), transform, false);
+	Spatial::add_to(&node, Some(space.clone()), transform);
 	ItemAcceptor::add_to(&node, type_info, field);
 	(type_info.add_acceptor_aspect)(&node);
 	Ok(())

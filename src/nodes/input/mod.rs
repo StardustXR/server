@@ -85,7 +85,7 @@ impl InterfaceAspect for Interface {
 		let transform = transform.to_mat4(true, true, true);
 
 		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		Spatial::add_to(&node, Some(parent.clone()), transform);
 		InputMethod::add_to(&node, initial_data, datamap)?;
 		Ok(())
 	}
@@ -104,7 +104,7 @@ impl InterfaceAspect for Interface {
 		let field = field.get_aspect::<Field>()?;
 
 		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform, false);
+		Spatial::add_to(&node, Some(parent.clone()), transform);
 		InputHandler::add_to(&node, &field)?;
 		Ok(())
 	}

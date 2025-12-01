@@ -96,7 +96,7 @@ impl ClientStateParsed {
 				.iter()
 				.map(|(k, v)| {
 					let node = Node::generate(client, true).add_to_scenegraph().unwrap();
-					Spatial::add_to(&node, None, *v, false);
+					Spatial::add_to(&node, None, *v);
 					(k.clone(), node.get_id())
 				})
 				.collect(),
