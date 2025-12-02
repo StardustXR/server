@@ -1,6 +1,0 @@
-[Desktop Entry]
-Name=Stardust XR
-Comment=FOSS XR system UI (display server) project
-Exec=stardust-xr-server
-Type=Application
-Icon=stardust.png
