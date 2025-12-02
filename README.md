@@ -23,7 +23,7 @@ Command line installation of core & dynamic dependencies are provided below:
 <details>
 <summary>Fedora</summary>
   <pre><code class="language-bash">
-  sudo apt update && sudo apt install \
+  sudo dnf update && sudo dnf install \
   cargo \
   cmake \
   libxkbcommon-devel systemd-devel libinput-devel libcap-devel mtdev-devel libevdev-devel glib2-devel \
