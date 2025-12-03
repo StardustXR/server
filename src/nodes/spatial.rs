@@ -492,8 +492,8 @@ impl InterfaceAspect for Interface {
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
 		uid: Id,
-	) -> Result<Arc<Node>> {
-		Ok(EXPORTED_SPATIALS
+	) -> Result<Id> {
+		let node = EXPORTED_SPATIALS
 			.lock()
 			.get(&uid.0)
 			.and_then(|s| s.upgrade())
@@ -506,6 +506,7 @@ impl InterfaceAspect for Interface {
 				)
 				.unwrap()
 			})
-			.ok_or_eyre("Couldn't find spatial with that ID")?)
+			.ok_or_eyre("Couldn't find spatial with that ID")?;
+		Ok(node.get_id())
 	}
 }

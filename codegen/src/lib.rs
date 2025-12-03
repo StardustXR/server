@@ -410,7 +410,7 @@ fn generate_member(aspect_id: u64, aspect_name: &str, member: &Member) -> TokenS
 	let return_type = member
 		.return_type
 		.as_ref()
-		.map(|r| generate_argument_type(r, false, true))
+		.map(generate_return_type)
 		.unwrap_or_else(|| quote!(()));
 	let name_str = name.to_string();
 
@@ -503,7 +503,7 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 			}
 		})
 		.unwrap_or_default();
-	let serialize = generate_argument_serialize(
+	let serialize = generate_return_serialize(
 		"result",
 		&member.return_type.clone().unwrap_or(ArgumentType::Empty),
 		false,
@@ -593,15 +593,37 @@ fn generate_argument_serialize(
 	argument_type: &ArgumentType,
 	optional: bool,
 ) -> TokenStream {
+	generate_argument_serialize_inner(argument_name, argument_type, optional, false)
+}
+
+fn generate_return_serialize(
+	argument_name: &str,
+	argument_type: &ArgumentType,
+	optional: bool,
+) -> TokenStream {
+	generate_argument_serialize_inner(argument_name, argument_type, optional, true)
+}
+
+fn generate_argument_serialize_inner(
+	argument_name: &str,
+	argument_type: &ArgumentType,
+	optional: bool,
+	is_return: bool,
+) -> TokenStream {
 	let name = Ident::new(&argument_name.to_case(Case::Snake), Span::call_site());
 	match argument_type {
-		ArgumentType::Node {
-			_type,
-			return_id_parameter_name: _,
-		} => match optional {
-			true => quote!(#name.map(|n| n.get_id())),
-			false => quote!(#name.get_id()),
-		},
+		ArgumentType::Node { .. } => {
+			if is_return {
+				// For return values, the value is already an Id, just use it directly
+				quote!(#name)
+			} else {
+				// For arguments, the value is Arc<Node>, need to call get_id()
+				match optional {
+					true => quote!(#name.map(|n| n.get_id())),
+					false => quote!(#name.get_id()),
+				}
+			}
+		}
 		ArgumentType::Color => quote!([#name.c.r, #name.c.g, #name.c.b, #name.a]),
 		ArgumentType::Vec(v) => {
 			let mapping = generate_argument_serialize("a", v, false);
@@ -618,6 +640,13 @@ fn generate_argument_decl(argument: &Argument, owned_values: bool) -> TokenStrea
 	let name = Ident::new(&argument.name.to_case(Case::Snake), Span::call_site());
 	let mut _type = generate_argument_type(&argument._type, argument.optional, owned_values);
 	quote!(#name: #_type)
+}
+fn generate_return_type(argument_type: &ArgumentType) -> TokenStream {
+	// For return types, if it's a Node, we allow returning just Id instead of Arc<Node>
+	match argument_type {
+		ArgumentType::Node { .. } => quote!(crate::nodes::Id),
+		_ => generate_argument_type(argument_type, false, true),
+	}
 }
 fn argument_type_option_name(argument_type: &ArgumentType) -> String {
 	match argument_type {

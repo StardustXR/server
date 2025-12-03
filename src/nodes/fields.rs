@@ -368,8 +368,8 @@ impl InterfaceAspect for Interface {
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
 		uid: Id,
-	) -> Result<Arc<Node>> {
-		Ok(EXPORTED_FIELDS
+	) -> Result<Id> {
+		let node = EXPORTED_FIELDS
 			.lock()
 			.get(&uid.0)
 			.and_then(|s| s.upgrade())
@@ -382,7 +382,8 @@ impl InterfaceAspect for Interface {
 				)
 				.unwrap()
 			})
-			.ok_or_eyre("Couldn't import field with that ID")?)
+			.ok_or_eyre("Couldn't import field with that ID")?;
+		Ok(node.get_id())
 	}
 
 	fn create_field(
