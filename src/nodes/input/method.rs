@@ -5,6 +5,7 @@ use super::{
 };
 use crate::{
 	core::{
+		Id,
 		client::Client,
 		error::{Result, ServerError},
 		registry::Registry,
@@ -138,7 +139,7 @@ impl InputMethod {
 	}
 
 	#[tracing::instrument(level = "trace", skip(self, handler))]
-	pub(super) fn serialize(&self, alias_id: u64, handler: &Arc<InputHandler>) -> InputData {
+	pub(super) fn serialize(&self, alias_id: Id, handler: &Arc<InputHandler>) -> InputData {
 		let mut input = self.data.lock().clone();
 		input.transform(self, handler);
 

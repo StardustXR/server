@@ -1,6 +1,7 @@
 use super::camera::CameraItemAcceptor;
 use super::{create_item_acceptor_flex, register_item_ui_flex};
 use crate::bail;
+use crate::core::Id;
 use crate::nodes::{
 	Aspect, AspectIdentifier,
 	items::{ITEM_ACCEPTOR_ASPECT_ALIAS_INFO, ITEM_ASPECT_ALIAS_INFO, ITEM_UI_ASPECT_ALIAS_INFO},
@@ -78,7 +79,7 @@ pub trait Backend: Send + Sync + 'static {
 		scroll_steps: Option<Vector2<f32>>,
 	);
 
-	fn keyboard_key(&self, surface: &SurfaceId, keymap_id: u64, key: u32, pressed: bool);
+	fn keyboard_key(&self, surface: &SurfaceId, keymap_id: Id, key: u32, pressed: bool);
 
 	fn touch_down(&self, surface: &SurfaceId, id: u32, position: Vector2<f32>);
 	fn touch_move(&self, id: u32, position: Vector2<f32>);
@@ -139,7 +140,7 @@ impl<B: Backend> PanelItem<B> {
 // Remote signals
 #[allow(unused)]
 impl<B: Backend> PanelItem<B> {
-	pub fn toplevel_parent_changed(&self, parent: u64) {
+	pub fn toplevel_parent_changed(&self, parent: Id) {
 		let Some(node) = self.node.upgrade() else {
 			return;
 		};
@@ -193,19 +194,19 @@ impl<B: Backend> PanelItem<B> {
 		}
 	}
 
-	pub fn create_child(&self, id: u64, info: &ChildInfo) {
+	pub fn create_child(&self, id: Id, info: &ChildInfo) {
 		let Some(node) = self.node.upgrade() else {
 			return;
 		};
 		panel_item_client::create_child(&node, id, info);
 	}
-	pub fn reposition_child(&self, id: u64, geometry: &Geometry) {
+	pub fn reposition_child(&self, id: Id, geometry: &Geometry) {
 		let Some(node) = self.node.upgrade() else {
 			return;
 		};
 		panel_item_client::reposition_child(&node, id, geometry);
 	}
-	pub fn destroy_child(&self, id: u64) {
+	pub fn destroy_child(&self, id: Id) {
 		let Some(node) = self.node.upgrade() else {
 			return;
 		};
@@ -363,7 +364,7 @@ impl<B: Backend> PanelItemAspect for PanelItem<B> {
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		surface: SurfaceId,
-		keymap_id: u64,
+		keymap_id: Id,
 		key: u32,
 		pressed: bool,
 	) -> Result<()> {
@@ -475,7 +476,7 @@ impl InterfaceAspect for Interface {
 	fn create_panel_item_acceptor(
 		node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,
@@ -495,7 +496,7 @@ impl InterfaceAspect for Interface {
 		_node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		keymap: String,
-	) -> Result<u64> {
+	) -> Result<Id> {
 		let mut keymaps = KEYMAPS.lock();
 		if let Some(found_keymap_id) = keymaps
 			.iter()
@@ -503,20 +504,20 @@ impl InterfaceAspect for Interface {
 			.map(|(k, _v)| k)
 			.last()
 		{
-			return Ok(found_keymap_id.data().as_ffi());
+			return Ok(found_keymap_id.data().as_ffi().into());
 		}
 
 		let key = keymaps.insert(keymap);
-		Ok(key.data().as_ffi())
+		Ok(key.data().as_ffi().into())
 	}
 
 	async fn get_keymap(
 		_node: Arc<Node>,
 		_calling_client: Arc<Client>,
-		keymap_id: u64,
+		keymap_id: Id,
 	) -> Result<String> {
 		let keymaps = KEYMAPS.lock();
-		let Some(keymap) = keymaps.get(KeyData::from_ffi(keymap_id).into()) else {
+		let Some(keymap) = keymaps.get(KeyData::from_ffi(keymap_id.0).into()) else {
 			bail!("Could not find keymap. Try registering it");
 		};
 

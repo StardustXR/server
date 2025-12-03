@@ -1,4 +1,5 @@
 use super::{MODEL_PART_ASPECT_ALIAS_INFO, MaterialParameter, ModelAspect, ModelPartAspect};
+use crate::core::Id;
 use crate::core::bevy_channel::{BevyChannel, BevyChannelReader};
 use crate::core::client::Client;
 use crate::core::color::ColorConvert as _;
@@ -624,7 +625,7 @@ impl ModelAspect for Model {
 	fn bind_model_part(
 		node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		part_path: String,
 	) -> Result<()> {
 		let model = node.get_aspect::<Model>()?;

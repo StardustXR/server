@@ -1,5 +1,6 @@
 use super::spatial::SpatialNode;
 use super::{Aspect, AspectIdentifier, Node};
+use crate::core::Id;
 use crate::core::client::Client;
 use crate::core::entity_handle::EntityHandle;
 use crate::core::error::Result;
@@ -150,7 +151,7 @@ impl InterfaceAspect for Interface {
 	fn create_sound(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		resource: ResourceID,

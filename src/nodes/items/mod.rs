@@ -7,6 +7,7 @@ use super::alias::AliasList;
 use super::fields::{FIELD_ALIAS_INFO, Field};
 use super::spatial::Spatial;
 use super::{Alias, Aspect, AspectIdentifier, Node};
+use crate::core::Id;
 use crate::core::client::Client;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
@@ -44,7 +45,7 @@ fn release(item: &Item) {
 pub struct TypeInfo {
 	pub type_name: &'static str,
 	pub alias_info: AliasInfo,
-	pub ui_node_id: u64,
+	pub ui_node_id: Id,
 	pub ui: Mutex<Weak<ItemUI>>,
 	pub items: Registry<Item>,
 	pub acceptors: Registry<ItemAcceptor>,
@@ -381,7 +382,7 @@ pub fn register_item_ui_flex(
 }
 fn create_item_acceptor_flex(
 	calling_client: Arc<Client>,
-	id: u64,
+	id: Id,
 	parent: Arc<Node>,
 	transform: Transform,
 	type_info: &'static TypeInfo,

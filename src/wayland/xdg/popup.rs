@@ -2,8 +2,8 @@ use super::{
 	positioner::{Positioner, PositionerData},
 	surface::Surface,
 };
-use crate::nodes::items::panel::SurfaceId;
 use crate::wayland::WaylandResult;
+use crate::{core::Id, nodes::items::panel::SurfaceId};
 use parking_lot::Mutex;
 use rand::Rng;
 use std::sync::Arc;
@@ -24,7 +24,7 @@ impl Popup {
 		let _ = surface
 			.wl_surface
 			.surface_id
-			.set(SurfaceId::Child(rand::rng().random()));
+			.set(SurfaceId::Child(Id(rand::rng().random())));
 
 		let positioner_data = positioner.data();
 		Self {

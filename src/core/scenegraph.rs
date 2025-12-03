@@ -1,5 +1,6 @@
 use crate::{
 	core::{
+		Id,
 		client::Client,
 		error::{Result, ServerError},
 	},
@@ -78,7 +79,7 @@ impl std::fmt::Debug for MethodResponseSender {
 #[derive(Default)]
 pub struct Scenegraph {
 	pub(super) client: OnceLock<Weak<Client>>,
-	nodes: Mutex<FxHashMap<u64, Arc<Node>>>,
+	nodes: Mutex<FxHashMap<Id, Arc<Node>>>,
 }
 
 impl Scenegraph {
@@ -96,13 +97,13 @@ impl Scenegraph {
 		self.nodes.lock().insert(node.get_id(), node);
 	}
 
-	pub fn get_node(&self, node: u64) -> Option<Arc<Node>> {
+	pub fn get_node(&self, node: Id) -> Option<Arc<Node>> {
 		let node = self.nodes.lock().get(&node)?.clone();
 		get_original(node, true)
 	}
 
-	pub fn remove_node(&self, node: u64) -> Option<Arc<Node>> {
-		debug!(node, "Remove node");
+	pub fn remove_node(&self, node: Id) -> Option<Arc<Node>> {
+		debug!(node = node.0, "Remove node");
 		self.nodes.lock().remove(&node)
 	}
 }
@@ -119,7 +120,7 @@ impl scenegraph::Scenegraph for Scenegraph {
 			return Err(ScenegraphError::NodeNotFound);
 		};
 		debug_span!("Handle signal", aspect_id, node_id, method).in_scope(|| {
-			self.get_node(node_id)
+			self.get_node(Id(node_id))
 				.ok_or(ScenegraphError::NodeNotFound)?
 				.send_local_signal(
 					client,
@@ -146,7 +147,7 @@ impl scenegraph::Scenegraph for Scenegraph {
 			return;
 		};
 		debug!(aspect_id, node_id, method, "Handle method");
-		let Some(node) = self.get_node(node_id) else {
+		let Some(node) = self.get_node(Id(node_id)) else {
 			response.send(Err(ScenegraphError::NodeNotFound));
 			return;
 		};

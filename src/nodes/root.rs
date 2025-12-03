@@ -1,6 +1,7 @@
 use super::spatial::Spatial;
 use super::{Aspect, AspectIdentifier, Node};
 use crate::bail;
+use crate::core::Id;
 use crate::core::client::{CLIENTS, Client};
 use crate::core::client_state::ClientStateParsed;
 use crate::core::error::Result;
@@ -20,7 +21,7 @@ pub struct Root {
 }
 impl Root {
 	pub fn create(client: &Arc<Client>, transform: Mat4) -> Result<Arc<Self>> {
-		let node = Node::from_id(client, 0, false);
+		let node = Node::from_id(client, Id(0), false);
 		let node = node.add_to_scenegraph()?;
 		let _ = Spatial::add_to(&node, None, transform);
 		let root_aspect = node.add_aspect(Root {

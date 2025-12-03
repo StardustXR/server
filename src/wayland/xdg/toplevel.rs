@@ -1,5 +1,6 @@
 use super::backend::XdgBackend;
 use crate::{
+	core::Id,
 	nodes::{
 		Node,
 		items::panel::{PanelItem, SurfaceId},
@@ -35,7 +36,7 @@ impl MappedInner {
 
 #[derive(Debug, Clone)]
 struct ToplevelData {
-	parent: Option<u64>,
+	parent: Option<Id>,
 	app_id: Option<String>,
 	title: Option<String>,
 	activated: bool,
@@ -89,7 +90,7 @@ impl Toplevel {
 	pub fn app_id(&self) -> Option<String> {
 		self.data.lock().app_id.clone()
 	}
-	pub fn parent(&self) -> Option<u64> {
+	pub fn parent(&self) -> Option<Id> {
 		self.data.lock().parent
 	}
 

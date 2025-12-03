@@ -1,4 +1,5 @@
 use crate::{
+	core::Id,
 	nodes::items::panel::KEYMAPS,
 	wayland::{Client, WaylandResult, core::surface::Surface, util::ClientExt},
 };
@@ -74,7 +75,7 @@ pub struct Keyboard {
 	focused_surface: Mutex<Weak<Surface>>,
 	modifier_state: Mutex<ModifierState>,
 	pressed_keys: DashMap<ObjectId, DashSet<u32>>,
-	current_keymap_id: Mutex<u64>,
+	current_keymap_id: Mutex<Id>,
 }
 
 impl Keyboard {
@@ -84,7 +85,7 @@ impl Keyboard {
 			focused_surface: Mutex::new(Weak::new()),
 			modifier_state: Mutex::new(ModifierState::default()),
 			pressed_keys: DashMap::default(),
-			current_keymap_id: Mutex::new(0),
+			current_keymap_id: Mutex::new(Id(0)),
 		}
 	}
 
@@ -116,7 +117,7 @@ impl Keyboard {
 		&self,
 		client: &mut Client,
 		surface: Arc<Surface>,
-		keymap_id: u64,
+		keymap_id: Id,
 		key: u32,
 		pressed: bool,
 	) -> WaylandResult<()> {
@@ -125,7 +126,7 @@ impl Keyboard {
 			let mut old_keymap_id = self.current_keymap_id.lock().await;
 
 			if *old_keymap_id != keymap_id {
-				let keymap_key = DefaultKey::from(KeyData::from_ffi(keymap_id));
+				let keymap_key = DefaultKey::from(KeyData::from_ffi(keymap_id.0));
 
 				// Get keymap data and drop the lock immediately
 				let keymap_data = {

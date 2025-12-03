@@ -11,7 +11,7 @@ use self::alias::Alias;
 use crate::core::client::Client;
 use crate::core::error::{Result, ServerError};
 use crate::core::registry::Registry;
-use crate::core::scenegraph::MethodResponseSender;
+use crate::core::{Id, scenegraph::MethodResponseSender};
 use dashmap::DashMap;
 use serde::{Serialize, de::DeserializeOwned};
 use spatial::Spatial;
@@ -76,7 +76,7 @@ impl Drop for OwnedNode {
 
 pub struct Node {
 	enabled: AtomicBool,
-	id: u64,
+	id: Id,
 	client: Weak<Client>,
 	message_sender_handle: Option<MessageSenderHandle>,
 
@@ -88,14 +88,14 @@ impl Node {
 	pub fn get_client(&self) -> Option<Arc<Client>> {
 		self.client.upgrade()
 	}
-	pub fn get_id(&self) -> u64 {
+	pub fn get_id(&self) -> Id {
 		self.id
 	}
 
 	pub fn generate(client: &Arc<Client>, destroyable: bool) -> Self {
 		Self::from_id(client, client.generate_id(), destroyable)
 	}
-	pub fn from_id(client: &Arc<Client>, id: u64, destroyable: bool) -> Self {
+	pub fn from_id(client: &Arc<Client>, id: Id, destroyable: bool) -> Self {
 		let node = Node {
 			enabled: AtomicBool::new(true),
 			client: Arc::downgrade(client),
@@ -256,7 +256,7 @@ impl Node {
 				);
 			});
 		if let Some(handle) = self.message_sender_handle.as_ref() {
-			handle.signal(self.id, aspect_id, method, &message.data, message.fds)?;
+			handle.signal(self.id.0, aspect_id, method, &message.data, message.fds)?;
 		}
 		Ok(())
 	}
@@ -274,7 +274,7 @@ impl Node {
 
 		let serialized = serialize(input)?;
 		let result = message_sender_handle
-			.method(self.id, aspect_id, method, &serialized, fds)
+			.method(self.id.0, aspect_id, method, &serialized, fds)
 			.await?
 			.map_err(ServerError::RemoteMethodError)?;
 

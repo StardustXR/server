@@ -3,7 +3,7 @@ use super::{
 	scenegraph::Scenegraph,
 };
 use crate::{
-	core::{registry::OwnedRegistry, task},
+	core::{Id, registry::OwnedRegistry, task},
 	nodes::{
 		Node, audio, drawable, fields, input, items,
 		root::{ClientState, Root},
@@ -202,12 +202,12 @@ impl Client {
 		Some(ClientStateParsed::from_deserialized(self, internal))
 	}
 
-	pub fn generate_id(&self) -> u64 {
-		self.id_counter.inc() as u64
+	pub fn generate_id(&self) -> Id {
+		Id(self.id_counter.inc() as u64)
 	}
 
 	#[inline]
-	pub fn get_node(&self, name: &'static str, id: u64) -> Result<Arc<Node>> {
+	pub fn get_node(&self, name: &'static str, id: Id) -> Result<Arc<Node>> {
 		self.scenegraph
 			.get_node(id)
 			.ok_or_else(|| eyre!("{} not found", name))

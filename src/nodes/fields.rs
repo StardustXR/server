@@ -6,6 +6,7 @@ use super::spatial::{
 };
 use super::{Aspect, AspectIdentifier, Node};
 use crate::DbusConnection;
+use crate::core::Id;
 use crate::core::client::Client;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
@@ -268,10 +269,10 @@ impl FieldAspect for Field {
 		Ok(())
 	}
 
-	async fn export_field(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<u64> {
+	async fn export_field(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<Id> {
 		let id = rand::random();
 		EXPORTED_FIELDS.lock().insert(id, Arc::downgrade(&node));
-		Ok(id)
+		Ok(id.into())
 	}
 }
 impl FieldTrait for Field {
@@ -366,11 +367,11 @@ impl InterfaceAspect for Interface {
 	async fn import_field_ref(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		uid: u64,
+		uid: Id,
 	) -> Result<Arc<Node>> {
 		Ok(EXPORTED_FIELDS
 			.lock()
-			.get(&uid)
+			.get(&uid.0)
 			.and_then(|s| s.upgrade())
 			.map(|s| {
 				Alias::create(
@@ -387,7 +388,7 @@ impl InterfaceAspect for Interface {
 	fn create_field(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		shape: Shape,

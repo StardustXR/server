@@ -8,7 +8,7 @@ use super::{
 	Aspect, AspectIdentifier, Node,
 	spatial::{Spatial, Transform},
 };
-use crate::core::{client::Client, error::Result, resource::get_resource_file};
+use crate::core::{Id, client::Client, error::Result, resource::get_resource_file};
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use color_eyre::eyre::eyre;
 use model::ModelPart;
@@ -88,7 +88,7 @@ impl InterfaceAspect for Interface {
 	fn create_lines(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		lines: Vec<Line>,
@@ -106,7 +106,7 @@ impl InterfaceAspect for Interface {
 	fn load_model(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		model: ResourceID,
@@ -123,7 +123,7 @@ impl InterfaceAspect for Interface {
 	fn create_text(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		text: String,

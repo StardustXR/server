@@ -1,6 +1,7 @@
 use super::alias::Alias;
 use super::{Aspect, AspectIdentifier};
 use crate::bail;
+use crate::core::Id;
 use crate::core::client::Client;
 use crate::core::entity_handle::EntityHandle;
 use crate::core::error::Result;
@@ -383,10 +384,10 @@ impl SpatialAspect for Spatial {
 	}
 
 	// legit gotta find a way to remove old ones, this just keeps the node alive
-	async fn export_spatial(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<u64> {
+	async fn export_spatial(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<Id> {
 		let id = rand::random();
 		EXPORTED_SPATIALS.lock().insert(id, Arc::downgrade(&node));
-		Ok(id)
+		Ok(id.into())
 	}
 }
 impl PartialEq for Spatial {
@@ -476,7 +477,7 @@ impl InterfaceAspect for Interface {
 	fn create_spatial(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 	) -> Result<()> {
@@ -490,11 +491,11 @@ impl InterfaceAspect for Interface {
 	async fn import_spatial_ref(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		uid: u64,
+		uid: Id,
 	) -> Result<Arc<Node>> {
 		Ok(EXPORTED_SPATIALS
 			.lock()
-			.get(&uid)
+			.get(&uid.0)
 			.and_then(|s| s.upgrade())
 			.map(|s| {
 				Alias::create(

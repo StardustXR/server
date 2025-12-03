@@ -55,7 +55,7 @@ fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 		.map(|p| {
 			let node_id = p.node_id;
 			let node_id = quote! {
-				const INTERFACE_NODE_ID: u64 = #node_id;
+				const INTERFACE_NODE_ID: crate::nodes::Id = crate::nodes::Id(#node_id);
 			};
 			let aspect = generate_aspect(&Aspect {
 				name: "interface".to_string(),
@@ -698,7 +698,7 @@ fn generate_argument_type(
 				quote!(stardust_xr::values::Map<String, #t>)
 			}
 		}
-		ArgumentType::NodeID => quote!(u64),
+		ArgumentType::NodeID => quote!(crate::nodes::Id),
 		ArgumentType::Datamap => {
 			if !owned {
 				quote!(&stardust_xr::values::Datamap)

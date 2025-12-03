@@ -5,7 +5,10 @@ pub mod color;
 pub mod delta;
 pub mod entity_handle;
 pub mod error;
+mod id;
 pub mod registry;
 pub mod resource;
 pub mod scenegraph;
 pub mod task;
+
+pub use id::Id;

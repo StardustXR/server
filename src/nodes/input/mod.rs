@@ -16,6 +16,7 @@ use super::Aspect;
 use super::AspectIdentifier;
 use super::fields::Field;
 use super::spatial::Spatial;
+use crate::core::Id;
 use crate::core::error::Result;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
@@ -75,7 +76,7 @@ impl InterfaceAspect for Interface {
 	fn create_input_method(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		initial_data: InputDataType,
@@ -94,7 +95,7 @@ impl InterfaceAspect for Interface {
 	fn create_input_handler(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,

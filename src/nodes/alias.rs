@@ -1,6 +1,6 @@
 use super::{Aspect, AspectIdentifier, Node};
 use crate::core::{
-	client::Client, error::Result, registry::Registry, scenegraph::MethodResponseSender,
+	Id, client::Client, error::Result, registry::Registry, scenegraph::MethodResponseSender,
 };
 use std::{
 	ops::Add,
@@ -46,7 +46,7 @@ impl Alias {
 	pub fn create_with_id(
 		original: &Arc<Node>,
 		client: &Arc<Client>,
-		new_id: u64,
+		new_id: Id,
 		info: AliasInfo,
 		list: Option<&AliasList>,
 	) -> Result<Arc<Node>> {

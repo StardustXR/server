@@ -1,6 +1,6 @@
 use super::toplevel::Toplevel;
 use crate::{
-	core::{error::Result, task},
+	core::{Id, error::Result, task},
 	nodes::{
 		drawable::model::ModelPart,
 		items::panel::{
@@ -25,7 +25,7 @@ use tracing;
 pub struct XdgBackend {
 	seat: Weak<Seat>,
 	toplevel: Weak<Toplevel>,
-	children: DashMap<u64, (Weak<Surface>, ChildInfo)>,
+	children: DashMap<Id, (Weak<Surface>, ChildInfo)>,
 }
 
 impl XdgBackend {
@@ -237,7 +237,7 @@ impl Backend for XdgBackend {
 		}
 	}
 
-	fn keyboard_key(&self, surface: &SurfaceId, keymap_id: u64, key: u32, pressed: bool) {
+	fn keyboard_key(&self, surface: &SurfaceId, keymap_id: Id, key: u32, pressed: bool) {
 		tracing::debug!(
 			"Backend: Keyboard key {} {}",
 			key,

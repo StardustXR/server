@@ -1,3 +1,4 @@
+use crate::core::Id;
 use crate::wayland::Client;
 use crate::wayland::WaylandResult;
 use crate::wayland::core::{keyboard::Keyboard, pointer::Pointer, surface::Surface, touch::Touch};
@@ -26,7 +27,7 @@ pub enum SeatMessage {
 	},
 	KeyboardKey {
 		surface: Arc<Surface>,
-		keymap_id: u64,
+		keymap_id: Id,
 		key: u32,
 		pressed: bool,
 	},

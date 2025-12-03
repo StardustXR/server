@@ -1,5 +1,8 @@
 use super::client::{Client, get_env};
-use crate::nodes::{Node, root::ClientState, spatial::Spatial};
+use crate::{
+	core::Id,
+	nodes::{Node, root::ClientState, spatial::Spatial},
+};
 use glam::Mat4;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
@@ -51,7 +54,7 @@ impl ClientStateParsed {
 				.collect(),
 		}
 	}
-	fn spatial_transform(client: &Client, id: u64) -> Option<Mat4> {
+	fn spatial_transform(client: &Client, id: Id) -> Option<Mat4> {
 		let node = client.scenegraph.get_node(id)?;
 		let spatial = node.get_aspect::<Spatial>().ok()?;
 		Some(spatial.global_transform())
@@ -90,7 +93,7 @@ impl ClientStateParsed {
 		}
 		ClientState {
 			data: self.data.clone(),
-			root: 0,
+			root: Id(0),
 			spatial_anchors: self
 				.spatial_anchors
 				.iter()

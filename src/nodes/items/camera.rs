@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 use super::{Item, ItemType, create_item_acceptor_flex, register_item_ui_flex};
 use crate::bail;
+use crate::core::Id;
 use crate::core::error::Result;
 use crate::nodes::Aspect;
 use crate::nodes::AspectIdentifier;
@@ -144,7 +145,7 @@ impl InterfaceAspect for Interface {
 	fn create_camera_item(
 		_node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		proj_matrix: ColumnMatrix4<f32>,
@@ -169,7 +170,7 @@ impl InterfaceAspect for Interface {
 	fn create_camera_item_acceptor(
 		node: Arc<Node>,
 		calling_client: Arc<Client>,
-		id: u64,
+		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,
