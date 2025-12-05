@@ -6,8 +6,7 @@ use crate::{
 	},
 	nodes::{Message, Node, alias::get_original},
 };
-use parking_lot::Mutex;
-use rustc_hash::FxHashMap;
+use dashmap::DashMap;
 use serde::Serialize;
 use stardust_xr_wire::{
 	flex::serialize,
@@ -79,9 +78,8 @@ impl std::fmt::Debug for MethodResponseSender {
 #[derive(Default)]
 pub struct Scenegraph {
 	pub(super) client: OnceLock<Weak<Client>>,
-	nodes: Mutex<FxHashMap<Id, Arc<Node>>>,
+	nodes: DashMap<Id, Arc<Node>, rustc_hash::FxBuildHasher>,
 }
-
 impl Scenegraph {
 	pub fn get_client(&self) -> Option<Arc<Client>> {
 		self.client.get()?.upgrade()
@@ -94,17 +92,17 @@ impl Scenegraph {
 	}
 	pub fn add_node_raw(&self, node: Arc<Node>) {
 		debug!(node = ?&*node, "Add node");
-		self.nodes.lock().insert(node.get_id(), node);
+		self.nodes.insert(node.get_id(), node);
 	}
 
 	pub fn get_node(&self, node: Id) -> Option<Arc<Node>> {
-		let node = self.nodes.lock().get(&node)?.clone();
+		let node = self.nodes.get(&node)?.clone();
 		get_original(node, true)
 	}
 
 	pub fn remove_node(&self, node: Id) -> Option<Arc<Node>> {
 		debug!(node = node.0, "Remove node");
-		self.nodes.lock().remove(&node)
+		self.nodes.remove(&node).map(|(_, node)| node)
 	}
 }
 impl scenegraph::Scenegraph for Scenegraph {
