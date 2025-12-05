@@ -5480,6 +5480,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "2.0.0"
+source = "git+https://github.com/StardustXR/core.git#80a1c48a566856350797a1c48fcef65921e80855"
 dependencies = [
  "fnv",
  "kdl",
