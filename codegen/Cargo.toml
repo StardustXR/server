@@ -12,5 +12,5 @@ quote = "1.0.33"
 proc-macro2 = "1.0.71"
 
 [dependencies.stardust-xr-protocol]
-# git = "https://github.com/StardustXR/core.git"
-path = "../../core/protocol"
+git = "https://github.com/StardustXR/core.git"
+# path = "../../core/protocol"
