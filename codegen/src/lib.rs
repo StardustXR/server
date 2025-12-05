@@ -306,7 +306,7 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 					_node: std::sync::Arc<crate::nodes::Node>,
 					_method: u64,
 					_message: crate::nodes::Message,
-					_method_response: crate::core::scenegraph::MethodResponseSender,
+					_method_response: stardust_xr_server_foundation::MethodResponseSender,
 				) {
 					match _method {
 						#run_methods

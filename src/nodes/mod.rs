@@ -11,7 +11,7 @@ use self::alias::Alias;
 use crate::core::client::Client;
 use crate::core::error::{Result, ServerError};
 use crate::core::registry::Registry;
-use crate::core::{Id, scenegraph::MethodResponseSender};
+use crate::core::{Id, MethodResponseSender};
 use dashmap::DashMap;
 use serde::{Serialize, de::DeserializeOwned};
 use spatial::Spatial;

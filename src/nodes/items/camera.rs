@@ -7,7 +7,7 @@ use crate::nodes::AspectIdentifier;
 use crate::nodes::items::ITEM_ACCEPTOR_ASPECT_ALIAS_INFO;
 use crate::nodes::items::ITEM_ASPECT_ALIAS_INFO;
 use crate::{
-	core::{client::Client, registry::Registry, scenegraph::MethodResponseSender},
+	core::{MethodResponseSender, client::Client, registry::Registry},
 	nodes::{
 		Message, Node,
 		drawable::model::ModelPart,

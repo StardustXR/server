@@ -1,7 +1,5 @@
 use super::{Aspect, AspectIdentifier, Node};
-use crate::core::{
-	Id, client::Client, error::Result, registry::Registry, scenegraph::MethodResponseSender,
-};
+use crate::core::{Id, MethodResponseSender, client::Client, error::Result, registry::Registry};
 use std::{
 	ops::Add,
 	sync::{Arc, Weak},
