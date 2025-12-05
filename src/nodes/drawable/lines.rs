@@ -1,10 +1,8 @@
 use super::{Line, LinesAspect};
 use crate::{
 	BevyMaterial,
-	core::{
-		client::Client, color::ColorConvert, entity_handle::EntityHandle, error::Result,
-		registry::Registry,
-	},
+	bevy_int::{color::ColorConvert, entity_handle::EntityHandle},
+	core::{client::Client, error::Result, registry::Registry},
 	nodes::{Node, drawable::LinePoint, spatial::Spatial},
 };
 use bevy::{

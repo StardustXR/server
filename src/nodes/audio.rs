@@ -1,8 +1,8 @@
 use super::spatial::SpatialNode;
 use super::{Aspect, AspectIdentifier, Node};
+use crate::bevy_int::entity_handle::EntityHandle;
 use crate::core::Id;
 use crate::core::client::Client;
-use crate::core::entity_handle::EntityHandle;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;

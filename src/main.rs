@@ -2,6 +2,7 @@
 #![allow(clippy::empty_docs)]
 #![allow(clippy::too_many_arguments)]
 #![allow(clippy::type_complexity)]
+mod bevy_int;
 mod core;
 mod nodes;
 mod objects;
@@ -38,6 +39,7 @@ use bevy::scene::ScenePlugin;
 use bevy::window::{CompositeAlphaMode, PresentMode};
 use bevy::winit::{WakeUp, WinitPlugin};
 use bevy_dmabuf::import::DmabufImportPlugin;
+use bevy_int::entity_handle::EntityHandlePlugin;
 use bevy_mod_openxr::action_set_attaching::OxrActionAttachingPlugin;
 use bevy_mod_openxr::action_set_syncing::OxrActionSyncingPlugin;
 use bevy_mod_openxr::add_xr_plugins;
@@ -53,7 +55,6 @@ use bevy_mod_xr::camera::XrProjection;
 use bevy_mod_xr::session::{XrFirst, XrHandleEvents, XrSessionPlugin};
 use clap::Parser;
 use core::client::{Client, tick_internal_client};
-use core::entity_handle::EntityHandlePlugin;
 use core::task;
 use directories::ProjectDirs;
 use nodes::audio::AudioNodePlugin;

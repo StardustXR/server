@@ -1,32 +1,42 @@
 use super::{MODEL_PART_ASPECT_ALIAS_INFO, MaterialParameter, ModelAspect, ModelPartAspect};
-use crate::BevyMaterial;
-use crate::core::Id;
-use crate::core::bevy_channel::{BevyChannel, BevyChannelReader};
-use crate::core::client::Client;
-use crate::core::color::ColorConvert as _;
-use crate::core::entity_handle::EntityHandle;
-use crate::core::error::Result;
-use crate::core::registry::Registry;
-use crate::core::resource::get_resource_file;
-use crate::nodes::Node;
-use crate::nodes::alias::{Alias, AliasList};
-use crate::nodes::spatial::{Spatial, SpatialNode};
-use bevy::asset::{load_internal_asset, weak_handle};
-use bevy::gltf::GltfLoaderSettings;
-use bevy::pbr::{ExtendedMaterial, MaterialExtension};
-use bevy::prelude::*;
-use bevy::render::primitives::Aabb;
-use bevy::render::render_resource::{AsBindGroup, ShaderRef};
+use crate::{
+	BevyMaterial,
+	bevy_int::{
+		bevy_channel::{BevyChannel, BevyChannelReader},
+		color::ColorConvert as _,
+		entity_handle::EntityHandle,
+	},
+	core::{Id, client::Client, error::Result, registry::Registry, resource::get_resource_file},
+	nodes::{
+		Node,
+		alias::{Alias, AliasList},
+		spatial::{Spatial, SpatialNode},
+	},
+};
+use bevy::{
+	asset::{load_internal_asset, weak_handle},
+	gltf::GltfLoaderSettings,
+	pbr::{ExtendedMaterial, MaterialExtension},
+	prelude::*,
+	render::{
+		primitives::Aabb,
+		render_resource::{AsBindGroup, ShaderRef},
+	},
+};
 use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr_server_foundation::bail;
 use stardust_xr_wire::values::ResourceID;
-use std::ffi::OsStr;
-use std::hash::{Hash, Hasher};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock, Weak};
+use std::{
+	ffi::OsStr,
+	hash::{Hash, Hasher},
+	path::PathBuf,
+	sync::{
+		Arc, OnceLock, Weak,
+		atomic::{AtomicBool, Ordering},
+	},
+};
 use tokio::sync::Notify;
 
 static LOAD_MODEL: BevyChannel<(Arc<Model>, PathBuf)> = BevyChannel::new();

@@ -1,5 +1,5 @@
-use std::sync::Arc;
-
+use super::{ObjectHandle, SpatialRef, input::mouse_pointer::FlatscreenCam};
+use crate::{DbusConnection, PreFrameWait, get_time, nodes::spatial::Spatial};
 use bevy::prelude::*;
 use bevy_mod_openxr::{
 	helper_traits::{ToQuat as _, ToVec3 as _},
@@ -11,10 +11,7 @@ use bevy_mod_xr::{
 	spaces::{XrPrimaryReferenceSpace, XrSpace},
 };
 use openxr::SpaceLocationFlags;
-
-use crate::{DbusConnection, PreFrameWait, get_time, nodes::spatial::Spatial};
-
-use super::{ObjectHandle, SpatialRef, input::mouse_pointer::FlatscreenCam};
+use std::sync::Arc;
 
 pub struct HmdPlugin;
 impl Plugin for HmdPlugin {

@@ -1,5 +1,5 @@
-use std::sync::Arc;
-
+use super::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
+use crate::{DbusConnection, PreFrameWait, get_time, nodes::spatial::Spatial};
 use bevy::prelude::*;
 use bevy_mod_openxr::{
 	helper_traits::{ToQuat, ToVec3},
@@ -12,11 +12,8 @@ use bevy_mod_xr::{
 };
 use openxr::SpaceLocationFlags;
 use parking_lot::RwLock;
+use std::sync::Arc;
 use zbus::{Connection, ObjectServer, interface};
-
-use crate::{DbusConnection, PreFrameWait, get_time, nodes::spatial::Spatial};
-
-use super::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
 
 pub struct PlaySpacePlugin;
 impl Plugin for PlaySpacePlugin {

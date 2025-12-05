@@ -1,8 +1,8 @@
 use super::alias::Alias;
 use super::{Aspect, AspectIdentifier};
+use crate::bevy_int::entity_handle::EntityHandle;
 use crate::core::Id;
 use crate::core::client::Client;
-use crate::core::entity_handle::EntityHandle;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::{Node, OWNED_ASPECT_ALIAS_INFO};

@@ -1,14 +1,11 @@
 use crate::{
 	BevyMaterial,
-	core::{
+	bevy_int::{
 		bevy_channel::{BevyChannel, BevyChannelReader},
-		client::Client,
 		color::ColorConvert,
 		entity_handle::EntityHandle,
-		error::Result,
-		registry::Registry,
-		resource::get_resource_file,
 	},
+	core::{client::Client, error::Result, registry::Registry, resource::get_resource_file},
 	nodes::{
 		Node,
 		drawable::{TextFit, XAlign},
