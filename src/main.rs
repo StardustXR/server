@@ -7,14 +7,13 @@ mod core;
 mod nodes;
 mod objects;
 mod session;
-mod spectator_cam;
-pub mod tracking_offset;
 #[cfg(feature = "wayland")]
 mod wayland;
 
+use crate::bevy_int::spectator_cam::SpectatorCameraPlugin;
+use crate::bevy_int::tracking_offset::TrackingOffsetPlugin;
 use crate::nodes::drawable::sky::SkyPlugin;
 use crate::nodes::input;
-use crate::spectator_cam::SpectatorCameraPlugin;
 
 use bevy::MinimalPlugins;
 use bevy::a11y::AccessibilityPlugin;
@@ -83,7 +82,6 @@ use tracing::metadata::LevelFilter;
 use tracing::{error, info};
 use tracing_subscriber::filter::Directive;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
-use tracking_offset::TrackingOffsetPlugin;
 #[cfg(feature = "wayland")]
 use wayland::{Wayland, WaylandPlugin};
 use zbus::Connection;
