@@ -19,12 +19,11 @@ use crate::{
 	},
 };
 use glam::Mat4;
-use lazy_static::lazy_static;
 use mint::Vector2;
 use parking_lot::Mutex;
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
 use stardust_xr_server_foundation::bail;
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, LazyLock, Weak};
 use tracing::debug;
 
 stardust_xr_server_codegen::codegen_item_panel_protocol!();
@@ -38,26 +37,25 @@ impl Default for Geometry {
 }
 impl Copy for Geometry {}
 
-lazy_static! {
-	pub static ref KEYMAPS: Mutex<SlotMap<DefaultKey, String>> = Mutex::new(SlotMap::default());
-	pub static ref ITEM_TYPE_INFO_PANEL: TypeInfo = TypeInfo {
-		type_name: "panel",
-		alias_info: PANEL_ITEM_ASPECT_ALIAS_INFO.clone(),
-		ui_node_id: INTERFACE_NODE_ID,
-		ui: Default::default(),
-		items: Registry::new(),
-		acceptors: Registry::new(),
-		add_acceptor_aspect: |node| {
-			node.add_aspect(PanelItemUi);
-		},
-		add_ui_aspect: |node| {
-			node.add_aspect(PanelItemAcceptor);
-		},
-		new_acceptor_fn: |node, acceptor, acceptor_field| {
-			let _ = panel_item_ui_client::create_acceptor(node, acceptor, acceptor_field);
-		}
-	};
-}
+pub static KEYMAPS: LazyLock<Mutex<SlotMap<DefaultKey, String>>> =
+	LazyLock::new(|| Mutex::new(SlotMap::default()));
+pub static ITEM_TYPE_INFO_PANEL: LazyLock<TypeInfo> = LazyLock::new(|| TypeInfo {
+	type_name: "panel",
+	alias_info: PANEL_ITEM_ASPECT_ALIAS_INFO.clone(),
+	ui_node_id: INTERFACE_NODE_ID,
+	ui: Default::default(),
+	items: Registry::new(),
+	acceptors: Registry::new(),
+	add_acceptor_aspect: |node| {
+		node.add_aspect(PanelItemUi);
+	},
+	add_ui_aspect: |node| {
+		node.add_aspect(PanelItemAcceptor);
+	},
+	new_acceptor_fn: |node, acceptor, acceptor_field| {
+		let _ = panel_item_ui_client::create_acceptor(node, acceptor, acceptor_field);
+	},
+});
 
 pub trait Backend: Send + Sync + 'static {
 	fn start_data(&self) -> Result<PanelItemInitData>;

@@ -16,34 +16,32 @@ use crate::{
 	},
 };
 use glam::Mat4;
-use lazy_static::lazy_static;
 use mint::{ColumnMatrix4, Vector2};
 use parking_lot::Mutex;
 use stardust_xr_server_foundation::bail;
 
 use stardust_xr_wire::flex::{deserialize, serialize};
 use std::sync::Arc;
+use std::sync::LazyLock;
 
 stardust_xr_server_codegen::codegen_item_camera_protocol!();
-lazy_static! {
-	pub(super) static ref ITEM_TYPE_INFO_CAMERA: TypeInfo = TypeInfo {
-		type_name: "camera",
-		alias_info: CAMERA_ITEM_ASPECT_ALIAS_INFO.clone(),
-		ui_node_id: INTERFACE_NODE_ID,
-		ui: Default::default(),
-		items: Registry::new(),
-		acceptors: Registry::new(),
-		add_acceptor_aspect: |node| {
-			node.add_aspect(CameraItemAcceptor);
-		},
-		add_ui_aspect: |node| {
-			node.add_aspect(CameraItemUi);
-		},
-		new_acceptor_fn: |node, acceptor, acceptor_field| {
-			let _ = camera_item_ui_client::create_acceptor(node, acceptor, acceptor_field);
-		}
-	};
-}
+pub(super) static ITEM_TYPE_INFO_CAMERA: LazyLock<TypeInfo> = LazyLock::new(|| TypeInfo {
+	type_name: "camera",
+	alias_info: CAMERA_ITEM_ASPECT_ALIAS_INFO.clone(),
+	ui_node_id: INTERFACE_NODE_ID,
+	ui: Default::default(),
+	items: Registry::new(),
+	acceptors: Registry::new(),
+	add_acceptor_aspect: |node| {
+		node.add_aspect(CameraItemAcceptor);
+	},
+	add_ui_aspect: |node| {
+		node.add_aspect(CameraItemUi);
+	},
+	new_acceptor_fn: |node, acceptor, acceptor_field| {
+		let _ = camera_item_ui_client::create_acceptor(node, acceptor, acceptor_field);
+	},
+});
 
 struct FrameInfo {
 	proj_matrix: Mat4,

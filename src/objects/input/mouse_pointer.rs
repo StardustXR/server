@@ -401,7 +401,7 @@ impl MousePointer {
 						.await
 						.ok()?
 						.ok()?;
-					let field_node = EXPORTED_FIELDS.lock().get(&uid)?.upgrade()?;
+					let field_node = EXPORTED_FIELDS.get(&uid)?.upgrade()?;
 					let field = field_node.get_aspect::<Field>();
 					Some((field, keyboard_proxy))
 				}
@@ -410,7 +410,7 @@ impl MousePointer {
 						.await
 						.ok()?
 						.ok()?;
-					let field_node = EXPORTED_FIELDS.lock().get(&uid)?.upgrade()?;
+					let field_node = EXPORTED_FIELDS.get(&uid)?.upgrade()?;
 					let field = field_node.get_aspect::<Field>();
 					Some((field, keyboard_proxy))
 				}

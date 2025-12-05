@@ -12,7 +12,6 @@ use crate::{
 };
 use color_eyre::eyre::{Result, eyre};
 use global_counter::primitive::exact::CounterU32;
-use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use stardust_xr_wire::messenger::{self, MessageSenderHandle};
@@ -21,7 +20,7 @@ use std::{
 	fs,
 	iter::FromIterator,
 	path::PathBuf,
-	sync::{Arc, OnceLock},
+	sync::{Arc, LazyLock, OnceLock},
 	time::Instant,
 };
 use tokio::{net::UnixStream, sync::watch, task::JoinHandle};
@@ -29,9 +28,10 @@ use tracing::info;
 
 pub static CLIENTS: OwnedRegistry<Client> = OwnedRegistry::new();
 
-lazy_static! {
-	static ref INTERNAL_CLIENT_MESSAGE_TIMES: (watch::Sender<Instant>, watch::Receiver<Instant>) = watch::channel(Instant::now());
-	pub static ref INTERNAL_CLIENT: Arc<Client> = CLIENTS.add(Client {
+static INTERNAL_CLIENT_MESSAGE_TIMES: LazyLock<(watch::Sender<Instant>, watch::Receiver<Instant>)> =
+	LazyLock::new(|| watch::channel(Instant::now()));
+pub static INTERNAL_CLIENT: LazyLock<Arc<Client>> = LazyLock::new(|| {
+	CLIENTS.add(Client {
 		pid: None,
 		// env: None,
 		exe: None,
@@ -47,8 +47,8 @@ lazy_static! {
 		root: OnceLock::new(),
 		base_resource_prefixes: Default::default(),
 		state: OnceLock::default(),
-	});
-}
+	})
+});
 pub fn tick_internal_client() {
 	let _ = INTERNAL_CLIENT_MESSAGE_TIMES.0.send(Instant::now());
 }
@@ -63,7 +63,7 @@ pub fn get_env(pid: i32) -> Result<FxHashMap<String, String>, std::io::Error> {
 }
 pub fn state(env: &FxHashMap<String, String>) -> Option<Arc<ClientStateParsed>> {
 	let token = env.get("STARDUST_STARTUP_TOKEN")?;
-	CLIENT_STATES.lock().get(token).cloned()
+	CLIENT_STATES.get(token).as_deref().cloned()
 }
 
 pub struct Client {

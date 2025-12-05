@@ -5519,7 +5519,6 @@ dependencies = [
  "glam",
  "global_counter",
  "input-event-codes",
- "lazy_static",
  "memfd",
  "memmap2",
  "mint",

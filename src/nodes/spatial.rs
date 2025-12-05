@@ -11,15 +11,15 @@ use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
 use color_eyre::eyre::OptionExt;
+use dashmap::DashMap;
 use glam::{Mat4, Quat, Vec3};
 use mint::Vector3;
 use parking_lot::{Mutex, RwLock};
-use rustc_hash::FxHashMap;
 use stardust_xr_server_foundation::bail;
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, LazyLock, OnceLock, Weak};
 use std::{f32, ptr};
 
 pub struct SpatialNodePlugin;
@@ -107,9 +107,9 @@ impl Transform {
 		Mat4::from_scale_rotation_translation(scale.into(), rotation.into(), position.into())
 	}
 }
-lazy_static::lazy_static! {
-	pub static ref EXPORTED_SPATIALS: Mutex<FxHashMap<u64, Weak<Node>>> = Mutex::new(FxHashMap::default());
-}
+
+// uses dashmap because it's concurrent and doesn't use fxhash because exported
+pub static EXPORTED_SPATIALS: LazyLock<DashMap<u64, Weak<Node>>> = LazyLock::new(DashMap::new);
 
 pub struct Spatial {
 	pub node: Weak<Node>,
@@ -386,7 +386,7 @@ impl SpatialAspect for Spatial {
 	// legit gotta find a way to remove old ones, this just keeps the node alive
 	async fn export_spatial(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<Id> {
 		let id = rand::random();
-		EXPORTED_SPATIALS.lock().insert(id, Arc::downgrade(&node));
+		EXPORTED_SPATIALS.insert(id, Arc::downgrade(&node));
 		Ok(id.into())
 	}
 }
@@ -494,7 +494,6 @@ impl InterfaceAspect for Interface {
 		uid: Id,
 	) -> Result<Id> {
 		let node = EXPORTED_SPATIALS
-			.lock()
 			.get(&uid.0)
 			.and_then(|s| s.upgrade())
 			.map(|s| {

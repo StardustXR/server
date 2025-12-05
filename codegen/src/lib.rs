@@ -357,15 +357,15 @@ fn generate_alias_info(aspect: &Aspect) -> TokenStream {
 		.fold(quote!(), |a, b| quote!(#a + #b));
 
 	quote! {
-		lazy_static::lazy_static! {
-			#[allow(clippy::all)]
-			pub static ref #aspect_alias_info_name: crate::nodes::alias::AliasInfo = crate::nodes::alias::AliasInfo {
+		#[allow(clippy::all)]
+		pub static #aspect_alias_info_name: std::sync::LazyLock<crate::nodes::alias::AliasInfo> = std::sync::LazyLock::new(|| {
+			crate::nodes::alias::AliasInfo {
 				server_signals: vec![#local_signals],
 				server_methods: vec![#local_methods],
 				client_signals: vec![#remote_signals],
 			}
-			#inherits;
-		}
+			#inherits
+		});
 	}
 }
 

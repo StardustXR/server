@@ -3,19 +3,18 @@ use crate::{
 	core::Id,
 	nodes::{Node, root::ClientState, spatial::Spatial},
 };
+use dashmap::DashMap;
 use glam::Mat4;
-use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use std::{
 	path::{Path, PathBuf},
 	process::Command,
-	sync::Arc,
+	sync::{Arc, LazyLock},
 };
 
-lazy_static::lazy_static! {
-	pub static ref CLIENT_STATES: Mutex<FxHashMap<String, Arc<ClientStateParsed>>> = Default::default();
-}
+pub static CLIENT_STATES: LazyLock<DashMap<String, Arc<ClientStateParsed>>> =
+	LazyLock::new(Default::default);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LaunchInfo {
@@ -62,7 +61,7 @@ impl ClientStateParsed {
 
 	pub fn token(self) -> String {
 		let token = nanoid::nanoid!();
-		CLIENT_STATES.lock().insert(token.clone(), Arc::new(self));
+		CLIENT_STATES.insert(token.clone(), Arc::new(self));
 		token
 	}
 	pub fn from_file(file: &Path) -> Option<Self> {

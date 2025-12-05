@@ -22,9 +22,9 @@ use bevy::gizmos::gizmos::Gizmos;
 use bevy::gizmos::primitives::dim3::GizmoPrimitive3d;
 use bevy::math::primitives::{Cylinder, Torus};
 use color_eyre::eyre::OptionExt;
+use dashmap::DashMap;
 use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
 use parking_lot::Mutex;
-use rustc_hash::FxHashMap;
 use stardust_xr_wire::values::Vector3;
 use std::sync::{Arc, LazyLock, Weak};
 use zbus::interface;
@@ -135,9 +135,7 @@ static FIELD_REGISTRY_DEBUG_GIZMOS: Registry<Field> = Registry::new();
 
 stardust_xr_server_codegen::codegen_field_protocol!();
 
-lazy_static::lazy_static! {
-	pub static ref EXPORTED_FIELDS: Mutex<FxHashMap<u64, Weak<Node>>> = Mutex::new(FxHashMap::default());
-}
+pub static EXPORTED_FIELDS: LazyLock<DashMap<u64, Weak<Node>>> = LazyLock::new(DashMap::new);
 
 pub trait FieldTrait: Send + Sync + 'static {
 	fn spatial_ref(&self) -> &Spatial;
@@ -271,7 +269,7 @@ impl FieldAspect for Field {
 
 	async fn export_field(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<Id> {
 		let id = rand::random();
-		EXPORTED_FIELDS.lock().insert(id, Arc::downgrade(&node));
+		EXPORTED_FIELDS.insert(id, Arc::downgrade(&node));
 		Ok(id.into())
 	}
 }
@@ -370,7 +368,6 @@ impl InterfaceAspect for Interface {
 		uid: Id,
 	) -> Result<Id> {
 		let node = EXPORTED_FIELDS
-			.lock()
 			.get(&uid.0)
 			.and_then(|s| s.upgrade())
 			.map(|s| {
