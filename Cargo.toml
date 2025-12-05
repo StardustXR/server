@@ -38,11 +38,6 @@ profile_app = [
 ]
 bevy_debugging = ["bevy/bevy_remote", "bevy/track_location"]
 
-[package.metadata.appimage]
-auto_link = true
-auto_link_exclude_list = ["libc*", "libdl*", "libpthread*", "ld-linux*"]
-
-
 [profile.release]
 opt-level = "s"
 lto = true
