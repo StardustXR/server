@@ -103,9 +103,10 @@ pub struct Sound {
 }
 impl Sound {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Sound>> {
+		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
 		let pending_audio_path = get_resource_file(
 			&resource_id,
-			&*node.get_client().ok_or_else(|| eyre!("Client not found"))?,
+			client.base_resource_prefixes.lock().iter(),
 			&[OsStr::new("wav"), OsStr::new("mp3")],
 		)
 		.ok_or_else(|| eyre!("Resource not found"))?;

@@ -1,6 +1,5 @@
 use super::spatial::Spatial;
 use super::{Aspect, AspectIdentifier, Node};
-use crate::bail;
 use crate::core::Id;
 use crate::core::client::{CLIENTS, Client};
 use crate::core::client_state::ClientStateParsed;
@@ -8,6 +7,7 @@ use crate::core::error::Result;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::session::connection_env;
 use glam::Mat4;
+use stardust_xr_server_foundation::bail;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;

@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use super::{Item, ItemType, create_item_acceptor_flex, register_item_ui_flex};
-use crate::bail;
 use crate::core::Id;
 use crate::core::error::Result;
 use crate::nodes::Aspect;
@@ -20,6 +19,7 @@ use glam::Mat4;
 use lazy_static::lazy_static;
 use mint::{ColumnMatrix4, Vector2};
 use parking_lot::Mutex;
+use stardust_xr_server_foundation::bail;
 
 use stardust_xr_wire::flex::{deserialize, serialize};
 use std::sync::Arc;

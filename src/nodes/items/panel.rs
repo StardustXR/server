@@ -1,6 +1,5 @@
 use super::camera::CameraItemAcceptor;
 use super::{create_item_acceptor_flex, register_item_ui_flex};
-use crate::bail;
 use crate::core::Id;
 use crate::nodes::{
 	Aspect, AspectIdentifier,
@@ -24,6 +23,7 @@ use lazy_static::lazy_static;
 use mint::Vector2;
 use parking_lot::Mutex;
 use slotmap::{DefaultKey, Key, KeyData, SlotMap};
+use stardust_xr_server_foundation::bail;
 use std::sync::{Arc, Weak};
 use tracing::debug;
 

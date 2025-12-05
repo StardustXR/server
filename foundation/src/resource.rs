@@ -2,13 +2,14 @@ use stardust_xr_wire::values::ResourceID;
 use std::{
 	ffi::OsStr,
 	path::{Path, PathBuf},
+	sync::LazyLock,
 };
 
-use super::client::Client;
-
-lazy_static::lazy_static! {
-	static ref THEMES: Vec<PathBuf> = std::env::var("STARDUST_THEMES").map(|s| s.split(':').map(PathBuf::from).collect()).unwrap_or_default();
-}
+static THEMES: LazyLock<Vec<PathBuf>> = LazyLock::new(|| {
+	std::env::var("STARDUST_THEMES")
+		.map(|s| s.split(':').map(PathBuf::from).collect())
+		.unwrap_or_default()
+});
 
 fn has_extension(path: &Path, extensions: &[&OsStr]) -> bool {
 	if let Some(path_extension) = path.extension() {
@@ -18,9 +19,9 @@ fn has_extension(path: &Path, extensions: &[&OsStr]) -> bool {
 	}
 }
 
-pub fn get_resource_file(
+pub fn get_resource_file<'a>(
 	resource: &ResourceID,
-	client: &Client,
+	base_prefixes: impl Iterator<Item = &'a PathBuf>,
 	extensions: &[&OsStr],
 ) -> Option<PathBuf> {
 	match resource {
@@ -30,10 +31,9 @@ pub fn get_resource_file(
 		}
 		ResourceID::Namespaced { namespace, path } => {
 			let file_name = path.file_name()?;
-			let base_prefixes = client.base_resource_prefixes.lock().clone();
 			THEMES
 				.iter()
-				.chain(base_prefixes.iter())
+				.chain(base_prefixes)
 				.filter_map(|prefix| {
 					let prefixed_path = prefix.clone().join(namespace).join(path);
 					let parent = prefixed_path.parent()?;

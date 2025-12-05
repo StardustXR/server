@@ -1,4 +1,5 @@
 use super::{MODEL_PART_ASPECT_ALIAS_INFO, MaterialParameter, ModelAspect, ModelPartAspect};
+use crate::BevyMaterial;
 use crate::core::Id;
 use crate::core::bevy_channel::{BevyChannel, BevyChannelReader};
 use crate::core::client::Client;
@@ -10,7 +11,6 @@ use crate::core::resource::get_resource_file;
 use crate::nodes::Node;
 use crate::nodes::alias::{Alias, AliasList};
 use crate::nodes::spatial::{Spatial, SpatialNode};
-use crate::{BevyMaterial, bail};
 use bevy::asset::{load_internal_asset, weak_handle};
 use bevy::gltf::GltfLoaderSettings;
 use bevy::pbr::{ExtendedMaterial, MaterialExtension};
@@ -20,6 +20,7 @@ use bevy::render::render_resource::{AsBindGroup, ShaderRef};
 use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
+use stardust_xr_server_foundation::bail;
 use stardust_xr_wire::values::ResourceID;
 use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
@@ -444,9 +445,11 @@ impl MaterialParameter {
 				}
 			},
 			MaterialParameter::Texture(resource) => {
-				let Some(texture_path) =
-					get_resource_file(resource, client, &[OsStr::new("png"), OsStr::new("jpg")])
-				else {
+				let Some(texture_path) = get_resource_file(
+					resource,
+					client.base_resource_prefixes.lock().iter(),
+					&[OsStr::new("png"), OsStr::new("jpg")],
+				) else {
 					return;
 				};
 				let handle = asset_server.load(texture_path);
@@ -544,9 +547,10 @@ pub struct Model {
 }
 impl Model {
 	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Model>> {
+		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
 		let pending_model_path = get_resource_file(
 			&resource_id,
-			&*node.get_client().ok_or_else(|| eyre!("Client not found"))?,
+			client.base_resource_prefixes.lock().iter(),
 			&[OsStr::new("glb"), OsStr::new("gltf")],
 		)
 		.ok_or_else(|| eyre!("Resource not found"))?;

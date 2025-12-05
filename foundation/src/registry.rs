@@ -9,7 +9,6 @@ use std::sync::{Arc, LazyLock, Weak};
 
 #[derive(Debug)]
 pub struct Registry<T: Send + Sync + ?Sized>(MaybeLazy<DashMap<usize, Weak<T>>>);
-
 impl<T: Send + Sync + ?Sized> Registry<T> {
 	pub const fn new() -> Self {
 		Registry(MaybeLazy::Lazy(LazyLock::new(DashMap::default)))
@@ -91,7 +90,6 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 		self.0.iter().all(|v| v.value().strong_count() == 0)
 	}
 }
-
 impl<T: Send + Sync + ?Sized> Clone for Registry<T> {
 	fn clone(&self) -> Self {
 		Self(self.0.clone())
@@ -102,7 +100,6 @@ impl<T: Send + Sync + ?Sized> Default for Registry<T> {
 		Self::new()
 	}
 }
-
 impl<T: Send + Sync + Sized> FromIterator<Arc<T>> for Registry<T> {
 	fn from_iter<I: IntoIterator<Item = Arc<T>>>(iter: I) -> Self {
 		Registry(MaybeLazy::NonLazy(
@@ -173,6 +170,11 @@ impl<T: Send + Sync + ?Sized> OwnedRegistry<T> {
 	}
 	pub fn clear(&self) {
 		self.lock().clear();
+	}
+}
+impl<T: Send + Sync + ?Sized> Default for OwnedRegistry<T> {
+	fn default() -> Self {
+		Self::new()
 	}
 }
 impl<T: Send + Sync + ?Sized> Clone for OwnedRegistry<T> {

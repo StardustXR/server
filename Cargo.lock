@@ -5525,6 +5525,7 @@ dependencies = [
  "slotmap",
  "stardust-xr-gluon",
  "stardust-xr-server-codegen",
+ "stardust-xr-server-foundation",
  "stardust-xr-wire",
  "thiserror 2.0.17",
  "tokio",
@@ -5551,6 +5552,20 @@ dependencies = [
  "proc-macro2",
  "quote",
  "stardust-xr-protocol",
+]
+
+[[package]]
+name = "stardust-xr-server-foundation"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "dashmap",
+ "parking_lot 0.12.5",
+ "rustc-hash 2.1.1",
+ "serde",
+ "stardust-xr-wire",
+ "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]

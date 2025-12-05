@@ -1,6 +1,5 @@
 use super::alias::Alias;
 use super::{Aspect, AspectIdentifier};
-use crate::bail;
 use crate::core::Id;
 use crate::core::client::Client;
 use crate::core::entity_handle::EntityHandle;
@@ -16,6 +15,7 @@ use glam::{Mat4, Quat, Vec3};
 use mint::Vector3;
 use parking_lot::{Mutex, RwLock};
 use rustc_hash::FxHashMap;
+use stardust_xr_server_foundation::bail;
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;

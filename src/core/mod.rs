@@ -2,13 +2,7 @@ pub mod bevy_channel;
 pub mod client;
 pub mod client_state;
 pub mod color;
-pub mod delta;
 pub mod entity_handle;
-pub mod error;
-mod id;
-pub mod registry;
-pub mod resource;
 pub mod scenegraph;
-pub mod task;
 
-pub use id::Id;
+pub use stardust_xr_server_foundation::*;

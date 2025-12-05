@@ -36,13 +36,13 @@ pub enum ServerError {
 #[macro_export]
 macro_rules! bail {
     ($msg:literal $(,)?) => {
-        return Err($crate::core::error::ServerError::from(color_eyre::eyre::eyre!($msg)));
+        return Err($crate::error::ServerError::from(color_eyre::eyre::eyre!($msg)));
     };
     ($err:expr $(,)?) => {
-        return Err($crate::core::error::ServerError::from(color_eyre::eyre::eyre!($err)));
+        return Err($crate::error::ServerError::from(color_eyre::eyre::eyre!($err)));
     };
     ($fmt:expr, $($arg:tt)*) => {
-        return Err($crate::core::error::ServerError::from(color_eyre::eyre::eyre!($fmt, $($arg)*)));
+        return Err($crate::error::ServerError::from(color_eyre::eyre::eyre!($fmt, $($arg)*)));
     };
 }
 
@@ -55,17 +55,17 @@ macro_rules! ensure {
     };
     ($cond:expr, $msg:literal $(,)?) => {
         if !$cond {
-            return Err($crate::core::error::ServerError::from(color_eyre::eyre::eyre!($msg)));
+            return Err($crate::error::ServerError::from(color_eyre::eyre::eyre!($msg)));
         }
     };
     ($cond:expr, $err:expr $(,)?) => {
         if !$cond {
-            return Err($crate::core::error::ServerError::from(color_eyre::eyre::eyre!($err)));
+            return Err($crate::error::ServerError::from(color_eyre::eyre::eyre!($err)));
         }
     };
     ($cond:expr, $fmt:expr, $($arg:tt)*) => {
         if !$cond {
-            return Err($crate::core::error::ServerError::from(color_eyre::eyre::eyre!($fmt, $($arg)*)));
+            return Err($crate::error::ServerError::from(color_eyre::eyre::eyre!($fmt, $($arg)*)));
         }
     };
 }

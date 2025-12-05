@@ -10,7 +10,7 @@ repository = "https://github.com/StardustXR/stardust-xr-server/"
 homepage = "https://stardustxr.org"
 
 [workspace]
-members = ["codegen"]
+members = ["codegen", "foundation"]
 
 [[bin]]
 name = "stardust-xr-server"
@@ -176,3 +176,6 @@ git = "https://github.com/StardustXR/core.git"
 
 [dependencies.stardust-xr-server-codegen]
 path = "codegen"
+
+[dependencies.stardust-xr-server-foundation]
+path = "foundation"

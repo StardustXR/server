@@ -11,11 +11,11 @@ use crate::core::Id;
 use crate::core::client::Client;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
-use crate::ensure;
 use crate::nodes::alias::AliasInfo;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::Transform;
 use parking_lot::Mutex;
+use stardust_xr_server_foundation::ensure;
 use std::hash::Hash;
 use std::sync::{Arc, Weak};
 

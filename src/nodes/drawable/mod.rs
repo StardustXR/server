@@ -56,7 +56,7 @@ impl InterfaceAspect for Interface {
 			.map(|tex| {
 				get_resource_file(
 					&tex,
-					&calling_client,
+					calling_client.base_resource_prefixes.lock().iter(),
 					&[OsStr::new("hdr"), OsStr::new("png"), OsStr::new("jpg")],
 				)
 				.ok_or(eyre!("Could not find resource"))
@@ -75,7 +75,7 @@ impl InterfaceAspect for Interface {
 			.map(|light| {
 				get_resource_file(
 					&light,
-					&calling_client,
+					calling_client.base_resource_prefixes.lock().iter(),
 					&[OsStr::new("hdr"), OsStr::new("png"), OsStr::new("jpg")],
 				)
 				.ok_or(eyre!("Could not find resource"))

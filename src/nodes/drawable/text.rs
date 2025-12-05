@@ -188,7 +188,11 @@ impl Text {
 		let text = TEXT_REGISTRY.add(Text {
 			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
 			font_path: style.font.as_ref().and_then(|res| {
-				get_resource_file(res, &client, &[OsStr::new("ttf"), OsStr::new("otf")])
+				get_resource_file(
+					res,
+					client.base_resource_prefixes.lock().iter(),
+					&[OsStr::new("ttf"), OsStr::new("otf")],
+				)
 			}),
 
 			entity: Mutex::new(None),
