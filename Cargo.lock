@@ -5544,7 +5544,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "tracing-tracy",
- "tracy-client",
  "vulkano",
  "waynest",
  "waynest-protocols",
