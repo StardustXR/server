@@ -10,84 +10,92 @@ mod session;
 #[cfg(feature = "wayland")]
 mod wayland;
 
-use crate::bevy_int::spectator_cam::SpectatorCameraPlugin;
-use crate::bevy_int::tracking_offset::TrackingOffsetPlugin;
-use crate::nodes::drawable::sky::SkyPlugin;
-use crate::nodes::input;
-
-use bevy::MinimalPlugins;
-use bevy::a11y::AccessibilityPlugin;
-use bevy::app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin};
-use bevy::asset::{AssetMetaCheck, UnapprovedPathMode};
-use bevy::audio::AudioPlugin;
-use bevy::core_pipeline::CorePipelinePlugin;
-use bevy::core_pipeline::oit::OrderIndependentTransparencySettings;
-use bevy::core_pipeline::tonemapping::Tonemapping;
-use bevy::diagnostic::DiagnosticsPlugin;
-use bevy::ecs::schedule::{ExecutorKind, ScheduleLabel};
-use bevy::gizmos::GizmoPlugin;
-use bevy::gltf::GltfPlugin;
-use bevy::input::InputPlugin;
-use bevy::pbr::PbrPlugin;
-use bevy::render::pipelined_rendering::{
-	PipelinedRenderThreadOnCreateCallback, PipelinedRenderingPlugin,
+use bevy::{
+	MinimalPlugins,
+	a11y::AccessibilityPlugin,
+	app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin},
+	asset::{AssetMetaCheck, UnapprovedPathMode},
+	audio::AudioPlugin,
+	core_pipeline::{
+		CorePipelinePlugin, oit::OrderIndependentTransparencySettings, tonemapping::Tonemapping,
+	},
+	diagnostic::DiagnosticsPlugin,
+	ecs::schedule::{ExecutorKind, ScheduleLabel},
+	gizmos::GizmoPlugin,
+	gltf::GltfPlugin,
+	input::InputPlugin,
+	pbr::PbrPlugin,
+	prelude::*,
+	render::{
+		RenderDebugFlags, RenderPlugin,
+		pipelined_rendering::{PipelinedRenderThreadOnCreateCallback, PipelinedRenderingPlugin},
+		settings::{Backends, RenderCreation, WgpuSettings},
+	},
+	scene::ScenePlugin,
+	window::{CompositeAlphaMode, PresentMode},
+	winit::{WakeUp, WinitPlugin},
 };
-use bevy::render::settings::{Backends, RenderCreation, WgpuSettings};
-use bevy::render::{RenderDebugFlags, RenderPlugin};
-use bevy::scene::ScenePlugin;
-use bevy::window::{CompositeAlphaMode, PresentMode};
-use bevy::winit::{WakeUp, WinitPlugin};
 use bevy_dmabuf::import::DmabufImportPlugin;
-use bevy_int::entity_handle::EntityHandlePlugin;
-use bevy_mod_openxr::action_set_attaching::OxrActionAttachingPlugin;
-use bevy_mod_openxr::action_set_syncing::OxrActionSyncingPlugin;
-use bevy_mod_openxr::add_xr_plugins;
-use bevy_mod_openxr::exts::OxrExtensions;
-use bevy_mod_openxr::features::overlay::OxrOverlaySettings;
-use bevy_mod_openxr::graphics::{GraphicsBackend, OxrManualGraphicsConfig};
-use bevy_mod_openxr::init::{OxrInitPlugin, should_run_frame_loop};
-use bevy_mod_openxr::reference_space::OxrReferenceSpacePlugin;
-use bevy_mod_openxr::render::{OxrRenderPlugin, OxrWaitFrameSystem};
-use bevy_mod_openxr::resources::{OxrFrameState, OxrFrameWaiter, OxrSessionConfig};
-use bevy_mod_openxr::types::AppInfo;
-use bevy_mod_xr::camera::XrProjection;
-use bevy_mod_xr::session::{XrFirst, XrHandleEvents, XrSessionPlugin};
+use bevy_int::{
+	entity_handle::EntityHandlePlugin, spectator_cam::SpectatorCameraPlugin,
+	tracking_offset::TrackingOffsetPlugin,
+};
+use bevy_mod_openxr::{
+	action_set_attaching::OxrActionAttachingPlugin,
+	action_set_syncing::OxrActionSyncingPlugin,
+	add_xr_plugins,
+	exts::OxrExtensions,
+	features::overlay::OxrOverlaySettings,
+	graphics::{GraphicsBackend, OxrManualGraphicsConfig},
+	init::{OxrInitPlugin, should_run_frame_loop},
+	reference_space::OxrReferenceSpacePlugin,
+	render::{OxrRenderPlugin, OxrWaitFrameSystem},
+	resources::{OxrFrameState, OxrFrameWaiter, OxrSessionConfig},
+	types::AppInfo,
+};
+use bevy_mod_xr::{
+	camera::XrProjection,
+	session::{XrFirst, XrHandleEvents, XrSessionPlugin},
+};
 use clap::Parser;
-use core::client::{Client, tick_internal_client};
-use core::task;
+use core::{
+	client::{Client, tick_internal_client},
+	task,
+};
 use directories::ProjectDirs;
-use nodes::audio::AudioNodePlugin;
-use nodes::drawable::lines::LinesNodePlugin;
-use nodes::drawable::model::ModelNodePlugin;
-use nodes::drawable::text::TextNodePlugin;
-use nodes::fields::FieldDebugGizmoPlugin;
-use nodes::spatial::SpatialNodePlugin;
-use objects::hmd::HmdPlugin;
-use objects::input::mouse_pointer::FlatscreenInputPlugin;
-use objects::input::oxr_controller::ControllerPlugin;
-use objects::input::oxr_hand::HandPlugin;
-use objects::play_space::PlaySpacePlugin;
+use nodes::{
+	audio::AudioNodePlugin,
+	drawable::{
+		lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin,
+	},
+	fields::FieldDebugGizmoPlugin,
+	input,
+	spatial::SpatialNodePlugin,
+};
+use objects::{
+	hmd::HmdPlugin,
+	input::{
+		mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
+		oxr_hand::HandPlugin,
+	},
+	play_space::PlaySpacePlugin,
+};
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use session::{launch_start, save_session};
 use stardust_xr_gluon::object_registry::ObjectRegistry;
 use stardust_xr_wire::server::LockedSocket;
-use std::ops::DerefMut as _;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::{Arc, OnceLock};
-use tokio::net::UnixListener;
-use tokio::sync::Notify;
-use tokio::task::JoinError;
-use tracing::metadata::LevelFilter;
-use tracing::{error, info};
-use tracing_subscriber::filter::Directive;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use std::{
+	ops::DerefMut as _,
+	path::PathBuf,
+	str::FromStr,
+	sync::{Arc, OnceLock},
+};
+use tokio::{net::UnixListener, sync::Notify, task::JoinError};
+use tracing::{error, info, metadata::LevelFilter};
+use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*};
 #[cfg(feature = "wayland")]
 use wayland::{Wayland, WaylandPlugin};
-use zbus::Connection;
-use zbus::fdo::ObjectManager;
-
-use bevy::prelude::*;
+use zbus::{Connection, fdo::ObjectManager};
 
 #[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
