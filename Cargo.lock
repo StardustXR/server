@@ -2037,6 +2037,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "convert_case"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "633458d4ef8c78b72454de2d54fd6ab2e60f9e02be22f3c6104cdc8a4e0fceb9"
+dependencies = [
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5549,7 +5558,7 @@ dependencies = [
 name = "stardust-xr-server-codegen"
 version = "0.1.0"
 dependencies = [
- "convert_case",
+ "convert_case 0.10.0",
  "proc-macro2",
  "quote",
  "stardust-xr-protocol",
@@ -7424,7 +7433,7 @@ version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d346404312bc1badb468f2a9b2eeb8e61514eb5892ca8246488f53bac4e3fc8"
 dependencies = [
- "convert_case",
+ "convert_case 0.6.0",
  "phf",
  "phf_codegen",
  "regex",

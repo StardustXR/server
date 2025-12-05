@@ -1,6 +1,6 @@
 use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use stardust_xr_protocol::*;
 
 fn fold_tokens(a: TokenStream, b: TokenStream) -> TokenStream {
@@ -212,8 +212,8 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 		.members
 		.iter()
 		.map(|m| {
-			let aspect_name = aspect.name.to_case(Case::ScreamingSnake);
-			let member_name = m.name.to_case(Case::ScreamingSnake);
+			let aspect_name = aspect.name.to_case(Case::UpperSnake);
+			let member_name = m.name.to_case(Case::UpperSnake);
 			let name_type = if m.side == Side::Client {
 				"CLIENT"
 			} else {
@@ -336,7 +336,7 @@ fn generate_alias_info(aspect: &Aspect) -> TokenStream {
 	let aspect_alias_info_name = Ident::new(
 		&format!(
 			"{}_ASPECT_ALIAS_INFO",
-			aspect.name.to_case(Case::ScreamingSnake)
+			aspect.name.to_case(Case::UpperSnake)
 		),
 		Span::call_site(),
 	);
@@ -349,7 +349,7 @@ fn generate_alias_info(aspect: &Aspect) -> TokenStream {
 		.iter()
 		.map(|a| {
 			Ident::new(
-				&format!("{}_ASPECT_ALIAS_INFO", a.to_case(Case::ScreamingSnake)),
+				&format!("{}_ASPECT_ALIAS_INFO", a.to_case(Case::UpperSnake)),
 				Span::call_site(),
 			)
 		})

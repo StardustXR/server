@@ -1,5 +1,5 @@
 [package]
-edition = "2021"
+edition = "2024"
 name = "stardust-xr-server-codegen"
 version = "0.1.0"
 
@@ -7,7 +7,7 @@ version = "0.1.0"
 proc-macro = true
 
 [dependencies]
-convert_case = "0.6.0"
+convert_case = "0.10.0"
 quote = "1.0.33"
 proc-macro2 = "1.0.71"
 
