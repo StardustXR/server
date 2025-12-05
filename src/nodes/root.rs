@@ -73,7 +73,7 @@ impl RootAspect for Root {
 	async fn get_connection_environment(
 		_node: Arc<Node>,
 		_calling_client: Arc<Client>,
-	) -> Result<stardust_xr::values::Map<String, String>> {
+	) -> Result<stardust_xr_wire::values::Map<String, String>> {
 		Ok(connection_env())
 	}
 

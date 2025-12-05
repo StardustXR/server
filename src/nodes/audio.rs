@@ -13,7 +13,7 @@ use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::XrSpace;
 use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
-use stardust_xr::values::ResourceID;
+use stardust_xr_wire::values::ResourceID;
 
 use bevy::prelude::*;
 use bevy::transform::components::Transform as BevyTransform;

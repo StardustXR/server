@@ -10,7 +10,7 @@ use crate::{
 use color_eyre::eyre::Result;
 use glam::{Mat4, vec3};
 use serde::{Deserialize, Serialize};
-use stardust_xr::values::Datamap;
+use stardust_xr_wire::values::Datamap;
 use std::sync::Arc;
 
 #[derive(Default, Deserialize, Serialize)]

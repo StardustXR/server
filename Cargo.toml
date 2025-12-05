@@ -12,9 +12,6 @@ homepage = "https://stardustxr.org"
 [workspace]
 members = ["codegen"]
 
-[workspace.dependencies.stardust-xr]
-git = "https://github.com/StardustXR/core.git"
-
 [[bin]]
 name = "stardust-xr-server"
 path = "src/main.rs"
@@ -170,7 +167,12 @@ rustix = { version = "1.0.8", features = ["time"] }
 pin-project-lite = "0.2.16"
 futures-sink = "0.3.31"
 
-[dependencies.stardust-xr]
-workspace = true
+[dependencies.stardust-xr-wire]
+git = "https://github.com/StardustXR/core.git"
+# path = "../core/wire"
+[dependencies.stardust-xr-gluon]
+git = "https://github.com/StardustXR/core.git"
+# path = "../core/gluon"
+
 [dependencies.stardust-xr-server-codegen]
 path = "codegen"

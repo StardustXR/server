@@ -19,7 +19,7 @@ use crate::{
 };
 use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
-use stardust_xr::values::Datamap;
+use stardust_xr_wire::values::Datamap;
 use std::sync::{Arc, Weak};
 
 pub struct InputMethod {

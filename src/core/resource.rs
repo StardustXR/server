@@ -1,4 +1,4 @@
-use stardust_xr::values::ResourceID;
+use stardust_xr_wire::values::ResourceID;
 use std::{
 	ffi::OsStr,
 	path::{Path, PathBuf},

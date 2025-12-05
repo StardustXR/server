@@ -25,7 +25,7 @@ use color_eyre::eyre::OptionExt;
 use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use stardust_xr::values::Vector3;
+use stardust_xr_wire::values::Vector3;
 use std::sync::{Arc, LazyLock, Weak};
 use zbus::interface;
 

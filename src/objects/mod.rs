@@ -15,7 +15,7 @@ use input::{
 };
 use parking_lot::RwLock;
 use play_space::PlaySpaceBounds;
-use stardust_xr::schemas::dbus::object_registry::ObjectRegistry;
+use stardust_xr_gluon::object_registry::ObjectRegistry;
 use std::{
 	marker::PhantomData,
 	sync::{Arc, atomic::Ordering},

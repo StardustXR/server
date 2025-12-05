@@ -79,7 +79,7 @@ impl Aspect for Alias {
 		_node: Arc<Node>,
 		_signal: u64,
 		_message: super::Message,
-	) -> Result<(), stardust_xr::scenegraph::ScenegraphError> {
+	) -> Result<(), stardust_xr_wire::scenegraph::ScenegraphError> {
 		Ok(())
 	}
 	fn run_method(

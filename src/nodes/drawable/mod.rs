@@ -13,7 +13,7 @@ use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use color_eyre::eyre::eyre;
 use model::ModelPart;
 use parking_lot::Mutex;
-use stardust_xr::values::ResourceID;
+use stardust_xr_wire::values::ResourceID;
 use std::{ffi::OsStr, path::PathBuf, sync::Arc};
 
 static QUEUED_SKYLIGHT: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);

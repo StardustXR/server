@@ -1,13 +1,12 @@
-use std::any::TypeId;
-
 use color_eyre::eyre::Report;
-use stardust_xr::{
-	messenger::MessengerError,
-	schemas::flex::{
+use stardust_xr_wire::{
+	flex::{
 		FlexSerializeError,
 		flexbuffers::{DeserializationError, ReaderError},
 	},
+	messenger::MessengerError,
 };
+use std::any::TypeId;
 use thiserror::Error;
 
 pub type Result<T, E = ServerError> = std::result::Result<T, E>;

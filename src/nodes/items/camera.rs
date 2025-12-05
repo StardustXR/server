@@ -21,7 +21,7 @@ use lazy_static::lazy_static;
 use mint::{ColumnMatrix4, Vector2};
 use parking_lot::Mutex;
 
-use stardust_xr::schemas::flex::{deserialize, serialize};
+use stardust_xr_wire::flex::{deserialize, serialize};
 use std::sync::Arc;
 
 stardust_xr_server_codegen::codegen_item_camera_protocol!();

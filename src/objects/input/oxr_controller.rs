@@ -32,7 +32,7 @@ use color_eyre::eyre::Result;
 use glam::{Affine3A, Mat4, Vec2, Vec3};
 use openxr::{Action, ActiveActionSet, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
-use stardust_xr::values::{Datamap, ResourceID, color::Rgb};
+use stardust_xr_wire::values::{Datamap, ResourceID, color::Rgb};
 use std::{
 	borrow::Cow,
 	fs,
@@ -350,7 +350,7 @@ impl OxrControllerInput {
 				.set_material_parameter("roughness".to_string(), MaterialParameter::Float(1.0));
 			self.model_part.set_material_parameter(
 				"color".to_string(),
-				MaterialParameter::Color(stardust_xr::values::Color::new(
+				MaterialParameter::Color(stardust_xr_wire::values::Color::new(
 					if self.capture_manager.capture.upgrade().is_none() {
 						Rgb::new(1.0, 1.0, 1.0)
 					} else {

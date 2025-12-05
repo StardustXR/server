@@ -22,7 +22,7 @@ use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
 use crate::{core::client::Client, nodes::Node};
 use crate::{core::registry::Registry, nodes::spatial::Transform};
-use stardust_xr::values::Datamap;
+use stardust_xr_wire::values::Datamap;
 use std::sync::Arc;
 
 static INPUT_METHOD_REGISTRY: Registry<InputMethod> = Registry::new();

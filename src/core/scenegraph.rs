@@ -9,10 +9,10 @@ use crate::{
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use serde::Serialize;
-use stardust_xr::{
+use stardust_xr_wire::{
+	flex::serialize,
 	messenger::MethodResponse,
 	scenegraph::{self, ScenegraphError},
-	schemas::flex::serialize,
 };
 use std::{
 	os::fd::OwnedFd,
@@ -35,7 +35,7 @@ impl MethodResponseSender {
 				return;
 			}
 		};
-		let Ok(serialized) = stardust_xr::schemas::flex::serialize(data) else {
+		let Ok(serialized) = stardust_xr_wire::flex::serialize(data) else {
 			self.0.send(Err(ScenegraphError::MemberError {
 				error: "Internal: Failed to serialize".to_string(),
 			}));

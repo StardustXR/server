@@ -15,7 +15,7 @@ use global_counter::primitive::exact::CounterU32;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use stardust_xr::messenger::{self, MessageSenderHandle};
+use stardust_xr_wire::messenger::{self, MessageSenderHandle};
 use std::{
 	fmt::Debug,
 	fs,

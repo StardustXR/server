@@ -15,9 +15,9 @@ use crate::core::{Id, scenegraph::MethodResponseSender};
 use dashmap::DashMap;
 use serde::{Serialize, de::DeserializeOwned};
 use spatial::Spatial;
-use stardust_xr::messenger::MessageSenderHandle;
-use stardust_xr::scenegraph::ScenegraphError;
-use stardust_xr::schemas::flex::{deserialize, serialize};
+use stardust_xr_wire::flex::{deserialize, serialize};
+use stardust_xr_wire::messenger::MessageSenderHandle;
+use stardust_xr_wire::scenegraph::ScenegraphError;
 use std::any::{Any, TypeId};
 use std::fmt::Debug;
 use std::os::fd::OwnedFd;
@@ -307,7 +307,7 @@ pub trait Aspect: Any + Send + Sync + 'static {
 		node: Arc<Node>,
 		signal: u64,
 		message: Message,
-	) -> Result<(), stardust_xr::scenegraph::ScenegraphError>;
+	) -> Result<(), stardust_xr_wire::scenegraph::ScenegraphError>;
 	fn run_method(
 		&self,
 		calling_client: Arc<Client>,

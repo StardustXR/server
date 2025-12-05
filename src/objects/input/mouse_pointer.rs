@@ -27,16 +27,14 @@ use mint::Vector2;
 use rustc_hash::{FxHashMap, FxHasher};
 use serde::{Deserialize, Serialize};
 use slotmap::{DefaultKey, Key as SlotKey};
-use stardust_xr::{
-	schemas::dbus::{
-		ObjectInfo,
-		interfaces::FieldRefProxy,
-		list_query::{ListEvent, ObjectListQuery},
-		object_registry::ObjectRegistry,
-		query::{ObjectQuery, QueryContext, QueryEvent},
-	},
-	values::Datamap,
+use stardust_xr_gluon::{
+	ObjectInfo,
+	interfaces::FieldRefProxy,
+	list_query::{ListEvent, ObjectListQuery},
+	object_registry::ObjectRegistry,
+	query::{ObjectQuery, QueryContext, QueryEvent},
 };
+use stardust_xr_wire::values::Datamap;
 use std::sync::{Arc, Weak};
 use tokio::sync::{Notify, mpsc, watch};
 use tokio::task::{AbortHandle, JoinSet};
@@ -182,7 +180,7 @@ trait KeyboardHandler {
 }
 
 // Make KeyboardHandlerProxy queryable
-stardust_xr::schemas::impl_queryable_for_proxy!(KeyboardHandlerProxy);
+stardust_xr_gluon::impl_queryable_for_proxy!(KeyboardHandlerProxy);
 
 // Query context for keyboard handlers
 #[derive(Debug, Clone)]

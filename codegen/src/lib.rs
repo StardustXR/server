@@ -1,7 +1,7 @@
 use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{quote, ToTokens};
-use stardust_xr::schemas::protocol::*;
+use stardust_xr_protocol::*;
 
 fn fold_tokens(a: TokenStream, b: TokenStream) -> TokenStream {
 	quote!(#a #b)
@@ -105,7 +105,7 @@ fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 	let aspects = protocol
 		.aspects
 		.iter()
-		.map(|a| generate_aspect(&a.blocking_read()))
+		.map(generate_aspect)
 		.reduce(fold_tokens)
 		.unwrap_or_default();
 	quote!(#custom_enums #custom_unions #custom_structs #aspects #interface).into()
@@ -293,10 +293,10 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 					_node: std::sync::Arc<crate::nodes::Node>,
 					_signal: u64,
 					_message: crate::nodes::Message
-				) -> Result<(), stardust_xr::scenegraph::ScenegraphError> {
+				) -> Result<(), stardust_xr_wire::scenegraph::ScenegraphError> {
 					match _signal {
 						#run_signals
-						_ => Err(stardust_xr::scenegraph::ScenegraphError::MemberNotFound)
+						_ => Err(stardust_xr_wire::scenegraph::ScenegraphError::MemberNotFound)
 					}
 				}
 				#[allow(clippy::all)]
@@ -311,7 +311,7 @@ fn generate_aspect(aspect: &Aspect) -> TokenStream {
 					match _method {
 						#run_methods
 						_ => {
-							let _ = _method_response.send_err(stardust_xr::scenegraph::ScenegraphError::MemberNotFound);
+							let _ = _method_response.send_err(stardust_xr_wire::scenegraph::ScenegraphError::MemberNotFound);
 						}
 					}
 				}
@@ -422,7 +422,7 @@ fn generate_member(aspect_id: u64, aspect_name: &str, member: &Member) -> TokenS
 					let arguments = (#argument_uses);
 					let (#(#arguments),*) = &arguments;
 						::tracing::trace!(#argument_debug "sent signal to client: {}::{}", #aspect_name, #name_str);
-					let result = stardust_xr::schemas::flex::serialize(&arguments).map_err(|e|e.into()).and_then(|serialized|_node.send_remote_signal(#aspect_id, #opcode, serialized));
+					let result = stardust_xr_wire::flex::serialize(&arguments).map_err(|e|e.into()).and_then(|serialized|_node.send_remote_signal(#aspect_id, #opcode, serialized));
 
 					if let Err(err) = result.as_ref() {
 						::tracing::warn!(#argument_debug "failed to send signal to client : {}::{}, error: {}",#aspect_name,#name_str,err);
@@ -499,7 +499,7 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 		.map(|(argument_names, argument_types)| {
 			quote!{
 				#[allow(unused_parens)]
-				let (#argument_names): (#argument_types) = stardust_xr::schemas::flex::deserialize(_message.as_ref())?;
+				let (#argument_names): (#argument_types) = stardust_xr_wire::flex::deserialize(_message.as_ref())?;
 			}
 		})
 		.unwrap_or_default();
@@ -520,7 +520,7 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 				#deserialize
 				::tracing::trace!(#argument_debug "received local signal: {}::{}",#aspect_name_str,#member_name);
 				<Self as #aspect_name>::#member_name_ident(_node, _calling_client.clone(), #argument_uses)
-			})().map_err(|e: crate::core::error::ServerError| stardust_xr::scenegraph::ScenegraphError::MemberError { error: e.to_string() }),
+			})().map_err(|e: crate::core::error::ServerError| stardust_xr_wire::scenegraph::ScenegraphError::MemberError { error: e.to_string() }),
 		},
 		MemberType::Method => quote! {
 			#opcode => _method_response.wrap_async(async move {
@@ -687,15 +687,15 @@ fn generate_argument_type(
 		ArgumentType::Float => quote!(f32),
 		ArgumentType::Vec2(t) => {
 			let t = generate_argument_type(t, false, true);
-			quote!(stardust_xr::values::Vector2<#t>)
+			quote!(stardust_xr_wire::values::Vector2<#t>)
 		}
 		ArgumentType::Vec3(t) => {
 			let t = generate_argument_type(t, false, true);
-			quote!(stardust_xr::values::Vector3<#t>)
+			quote!(stardust_xr_wire::values::Vector3<#t>)
 		}
-		ArgumentType::Quat => quote!(stardust_xr::values::Quaternion),
-		ArgumentType::Mat4 => quote!(stardust_xr::values::Mat4),
-		ArgumentType::Color => quote!(stardust_xr::values::Color),
+		ArgumentType::Quat => quote!(stardust_xr_wire::values::Quaternion),
+		ArgumentType::Mat4 => quote!(stardust_xr_wire::values::Mat4),
+		ArgumentType::Color => quote!(stardust_xr_wire::values::Color),
 		ArgumentType::Bytes => {
 			if !owned {
 				quote!(&[u8])
@@ -722,24 +722,24 @@ fn generate_argument_type(
 			let t = generate_argument_type(t, false, true);
 
 			if !owned {
-				quote!(&stardust_xr::values::Map<String, #t>)
+				quote!(&stardust_xr_wire::values::Map<String, #t>)
 			} else {
-				quote!(stardust_xr::values::Map<String, #t>)
+				quote!(stardust_xr_wire::values::Map<String, #t>)
 			}
 		}
 		ArgumentType::NodeID => quote!(crate::nodes::Id),
 		ArgumentType::Datamap => {
 			if !owned {
-				quote!(&stardust_xr::values::Datamap)
+				quote!(&stardust_xr_wire::values::Datamap)
 			} else {
-				quote!(stardust_xr::values::Datamap)
+				quote!(stardust_xr_wire::values::Datamap)
 			}
 		}
 		ArgumentType::ResourceID => {
 			if !owned {
-				quote!(&stardust_xr::values::ResourceID)
+				quote!(&stardust_xr_wire::values::ResourceID)
 			} else {
-				quote!(stardust_xr::values::ResourceID)
+				quote!(stardust_xr_wire::values::ResourceID)
 			}
 		}
 		ArgumentType::Enum(e) => {

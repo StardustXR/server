@@ -11,4 +11,6 @@ convert_case = "0.6.0"
 quote = "1.0.33"
 proc-macro2 = "1.0.71"
 
-stardust-xr = { workspace = true }
+[dependencies.stardust-xr-protocol]
+# git = "https://github.com/StardustXR/core.git"
+path = "../../core/protocol"

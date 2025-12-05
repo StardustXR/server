@@ -20,7 +20,7 @@ use bevy::render::render_resource::{AsBindGroup, ShaderRef};
 use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
-use stardust_xr::values::ResourceID;
+use stardust_xr_wire::values::ResourceID;
 use std::ffi::OsStr;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
