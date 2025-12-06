@@ -4,6 +4,7 @@ mod dmabuf;
 mod mesa_drm;
 mod presentation;
 mod registry;
+mod relative_pointer;
 mod util;
 mod viewporter;
 mod vulkano_data;

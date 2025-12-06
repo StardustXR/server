@@ -5476,7 +5476,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-gluon"
 version = "2.0.0"
-source = "git+https://github.com/StardustXR/core.git#80a1c48a566856350797a1c48fcef65921e80855"
+source = "git+https://github.com/StardustXR/core.git#0e2451a8b3d766fe8d12c2522cfbb17cb5e4206b"
 dependencies = [
  "console-subscriber",
  "nanoid",
@@ -5489,7 +5489,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "2.0.0"
-source = "git+https://github.com/StardustXR/core.git#80a1c48a566856350797a1c48fcef65921e80855"
+source = "git+https://github.com/StardustXR/core.git#0e2451a8b3d766fe8d12c2522cfbb17cb5e4206b"
 dependencies = [
  "fnv",
  "kdl",
@@ -5579,7 +5579,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-wire"
 version = "0.50.0"
-source = "git+https://github.com/StardustXR/core.git#80a1c48a566856350797a1c48fcef65921e80855"
+source = "git+https://github.com/StardustXR/core.git#0e2451a8b3d766fe8d12c2522cfbb17cb5e4206b"
 dependencies = [
  "color-eyre",
  "dirs",

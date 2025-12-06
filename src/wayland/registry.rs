@@ -1,3 +1,4 @@
+use crate::wayland::relative_pointer::RelativePointerManager;
 use crate::wayland::{Client, WaylandResult};
 use crate::wayland::{
 	WaylandError,
@@ -24,6 +25,7 @@ use waynest_protocols::server::{
 		presentation_time::wp_presentation::WpPresentation,
 		viewporter::wp_viewporter::WpViewporter,
 	},
+	unstable::relative_pointer_unstable_v1::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
 };
 use waynest_server::Client as _;
 
@@ -39,6 +41,7 @@ impl RegistryGlobals {
 	pub const WL_DRM: u32 = 7;
 	pub const PRESENTATION: u32 = 8;
 	pub const VIEWPORTER: u32 = 9;
+	pub const RELATIVE_POINTER: u32 = 10;
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher, Default)]
@@ -141,6 +144,15 @@ impl Registry {
 		)
 		.await?;
 
+		self.global(
+			client,
+			sender_id,
+			RegistryGlobals::RELATIVE_POINTER,
+			RelativePointerManager::INTERFACE.to_string(),
+			RelativePointerManager::VERSION,
+		)
+		.await?;
+
 		Ok(())
 	}
 }
@@ -224,6 +236,11 @@ impl WlRegistry for Registry {
 				tracing::info!("Binding wp_viewporter");
 
 				client.insert(new_id.object_id, Viewporter::new(new_id.object_id))?;
+			}
+			RegistryGlobals::RELATIVE_POINTER => {
+				tracing::info!("Binding zwp_relative_pointer_manager_v1");
+
+				client.insert(new_id.object_id, RelativePointerManager(new_id.object_id))?;
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");

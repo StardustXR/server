@@ -1,11 +1,12 @@
 use super::surface::SurfaceRole;
 use crate::nodes::items::panel::Geometry;
 use crate::wayland::core::surface::Surface;
+use crate::wayland::relative_pointer::RelativePointer;
 use crate::wayland::{Client, WaylandResult};
 use mint::Vector2;
 use std::sync::Arc;
 use std::sync::Weak;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 use tracing;
 use waynest::ObjectId;
 use waynest_server::Client as _;
@@ -19,6 +20,7 @@ pub struct Pointer {
 	version: u32,
 	focused_surface: Mutex<Weak<Surface>>,
 	cursor_surface: Mutex<Option<Arc<Surface>>>,
+	pub relative_pointer: RwLock<Weak<RelativePointer>>,
 }
 impl Pointer {
 	pub fn new(id: ObjectId, version: u32) -> Self {
@@ -27,17 +29,18 @@ impl Pointer {
 			version,
 			focused_surface: Mutex::new(Weak::new()),
 			cursor_surface: Mutex::new(None),
+			relative_pointer: RwLock::new(Weak::new()),
 		}
 	}
 
-	pub async fn handle_pointer_motion(
+	pub async fn handle_absolute_pointer_motion(
 		&self,
 		client: &mut Client,
 		surface: Arc<Surface>,
 		position: Vector2<f32>,
 	) -> WaylandResult<()> {
 		tracing::debug!(
-			"Handling pointer motion at ({}, {})",
+			"Handling absolute pointer motion at ({}, {})",
 			position.x,
 			position.y
 		);
@@ -89,6 +92,24 @@ impl Pointer {
 		}
 
 		Ok(())
+	}
+
+	pub async fn handle_relative_pointer_motion(
+		&self,
+		client: &mut Client,
+		delta: Vector2<f32>,
+	) -> WaylandResult<()> {
+		tracing::debug!(
+			"Handling relative pointer motion of ({}, {})",
+			delta.x,
+			delta.y
+		);
+
+		let Some(relative_pointer) = self.relative_pointer.read().await.upgrade() else {
+			return Ok(());
+		};
+
+		relative_pointer.send_relative_motion(client, delta).await
 	}
 
 	pub async fn handle_pointer_button(

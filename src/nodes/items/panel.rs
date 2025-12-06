@@ -68,7 +68,8 @@ pub trait Backend: Send + Sync + 'static {
 	fn set_toplevel_size(&self, size: Vector2<u32>);
 	fn set_toplevel_focused_visuals(&self, focused: bool);
 
-	fn pointer_motion(&self, surface: &SurfaceId, position: Vector2<f32>);
+	fn absolute_pointer_motion(&self, surface: &SurfaceId, position: Vector2<f32>);
+	fn relative_pointer_motion(&self, surface: &SurfaceId, delta: Vector2<f32>);
 	fn pointer_button(&self, surface: &SurfaceId, button: u32, pressed: bool);
 	fn pointer_scroll(
 		&self,
@@ -297,7 +298,7 @@ impl<B: Backend> PanelItemAspect for PanelItem<B> {
 	}
 
 	#[doc = "Send an event to set the pointer's position (in pixels, relative to top-left of surface). This will activate the pointer."]
-	fn pointer_motion(
+	fn absolute_pointer_motion(
 		node: Arc<Node>,
 		_calling_client: Arc<Client>,
 		surface: SurfaceId,
@@ -306,7 +307,25 @@ impl<B: Backend> PanelItemAspect for PanelItem<B> {
 		let Some(panel_item) = panel_item_from_node(&node) else {
 			return Ok(());
 		};
-		panel_item.backend().pointer_motion(&surface, position);
+		panel_item
+			.backend()
+			.absolute_pointer_motion(&surface, position);
+		Ok(())
+	}
+
+	#[doc = "Send an event that the pointer moved a relative amount (in pixels)."]
+	fn relative_pointer_motion(
+		node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		surface: SurfaceId,
+		delta: Vector2<f32>,
+	) -> Result<()> {
+		let Some(panel_item) = panel_item_from_node(&node) else {
+			return Ok(());
+		};
+		panel_item
+			.backend()
+			.relative_pointer_motion(&surface, delta);
 		Ok(())
 	}
 

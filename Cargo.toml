@@ -144,6 +144,7 @@ waynest = { git = "https://github.com/verdiwm/waynest.git", default-features = f
 waynest-protocols = { git = "https://github.com/verdiwm/waynest.git", features = [
 	"server",
 	"stable",
+	"unstable",
 	"mesa",
 	"tracing",
 ], default-features = false, optional = true }

@@ -191,17 +191,26 @@ impl Backend for XdgBackend {
 			});
 	}
 
-	fn pointer_motion(&self, surface: &SurfaceId, position: Vector2<f32>) {
-		if let Some(surface) = self.surface_from_id(surface) {
-			let _ = self
-				.toplevel()
-				.wl_surface()
-				.message_sink
-				.send(Message::Seat(SeatMessage::PointerMotion {
-					surface,
-					position,
-				}));
-		}
+	fn absolute_pointer_motion(&self, surface: &SurfaceId, position: Vector2<f32>) {
+		let Some(surface) = self.surface_from_id(surface) else {
+			return;
+		};
+		let _ = self
+			.toplevel()
+			.wl_surface()
+			.message_sink
+			.send(Message::Seat(SeatMessage::AbsolutePointerMotion {
+				surface,
+				position,
+			}));
+	}
+
+	fn relative_pointer_motion(&self, _surface: &SurfaceId, delta: Vector2<f32>) {
+		let _ = self
+			.toplevel()
+			.wl_surface()
+			.message_sink
+			.send(Message::Seat(SeatMessage::RelativePointerMotion { delta }));
 	}
 
 	fn pointer_button(&self, surface: &SurfaceId, button: u32, pressed: bool) {
