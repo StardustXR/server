@@ -39,10 +39,9 @@ impl CaptureManager {
 		}
 	}
 	pub fn apply_capture(&self, method: &InputMethod) {
-		method.captures.clear();
-		if let Some(capture) = &self.capture.upgrade() {
-			method.set_handler_order([capture].into_iter());
-			method.captures.add_raw(capture);
+		if let Some(capture) = self.capture.upgrade() {
+			method.set_handler_order(vec![capture.clone()]);
+			method.set_captures(vec![capture]);
 		}
 	}
 }
@@ -58,7 +57,7 @@ pub fn find_closest_capture(
 		.get_valid_contents()
 		.into_iter()
 		.filter_map(|h| {
-			distance_calculator(&method.spatial, &method.data.lock(), &h.field)
+			distance_calculator(&method.spatial, &method.data(), &h.field)
 				.map(|dist| (h.clone(), dist))
 		})
 		.min_by(|(_, dist_a), (_, dist_b)| dist_a.partial_cmp(dist_b).unwrap())
@@ -83,7 +82,7 @@ pub fn get_sorted_handlers(
 				.is_some_and(|node| node.enabled())
 		})
 		.filter_map(|handler| {
-			distance_calculator(&method.spatial, &method.data.lock(), &handler.field)
+			distance_calculator(&method.spatial, &method.data(), &handler.field)
 				.map(|distance| (handler, distance))
 		})
 		.collect::<Vec<_>>();

@@ -116,7 +116,7 @@ pub fn links_to(alias: Arc<Node>, original: Weak<Node>) -> bool {
 #[derive(Debug, Default, Clone)]
 pub struct AliasList(Registry<Node>);
 impl AliasList {
-	fn add(&self, node: &Arc<Node>) {
+	pub fn add(&self, node: &Arc<Node>) {
 		self.0.add_raw(node);
 	}
 	#[tracing::instrument(level = "trace", skip_all)]
@@ -150,6 +150,9 @@ impl AliasList {
 			};
 			!std::ptr::eq(Arc::as_ptr(&aspect2), aspect)
 		})
+	}
+	pub fn remove_alias(&self, alias: &Arc<Node>) {
+		self.0.remove(alias);
 	}
 }
 impl Drop for AliasList {

@@ -393,7 +393,8 @@ impl OxrControllerInput {
 			grab: get(session, path, &actions.grip),
 			scroll: get(session, path, &actions.stick).to_vec2(),
 		};
-		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
+		let input = self.input.data().clone();
+		self.input.update_state(input, Datamap::from_typed(&self.datamap).unwrap());
 		drop(_span);
 
 		let distance_calculator = |space: &Arc<Spatial>, _data: &InputDataType, field: &Field| {
@@ -410,7 +411,10 @@ impl OxrControllerInput {
 		}
 
 		let sorted_handlers = get_sorted_handlers(&self.input, distance_calculator);
-		self.input
-			.set_handler_order(sorted_handlers.iter().map(|(handler, _)| handler));
+		let order: Vec<Arc<InputHandler>> = sorted_handlers
+			.into_iter()
+			.map(|(handler, _)| handler)
+			.collect();
+		self.input.set_handler_order(order);
 	}
 }

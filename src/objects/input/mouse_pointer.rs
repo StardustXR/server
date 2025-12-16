@@ -5,7 +5,7 @@ use crate::{
 	nodes::{
 		Node, OwnedNode,
 		fields::{EXPORTED_FIELDS, Field, FieldTrait, Ray},
-		input::{InputDataType, InputMethod, Pointer},
+		input::{InputDataType, InputHandler, InputMethod, Pointer},
 		items::panel::KEYMAPS,
 		spatial::Spatial,
 	},
@@ -316,7 +316,9 @@ impl MousePointer {
 					})
 					.collect(),
 			};
-			*self.pointer.datamap.lock() = Datamap::from_typed(&self.mouse_datamap).unwrap();
+			let input = self.pointer.data().clone();
+			self.pointer
+				.update_state(input, Datamap::from_typed(&self.mouse_datamap).unwrap());
 		}
 		self.target_pointer_input();
 
@@ -369,12 +371,12 @@ impl MousePointer {
 			.map(|(_, distance)| *distance)
 			.unwrap_or(f32::NEG_INFINITY);
 
-		self.pointer.set_handler_order(
-			handlers
-				.iter()
-				.filter(|(handler, distance)| (distance - first_distance).abs() <= 0.001)
-				.map(|(handler, _)| handler),
-		);
+		let order: Vec<Arc<InputHandler>> = handlers
+			.into_iter()
+			.filter(|(handler, distance)| (distance - first_distance).abs() <= 0.001)
+			.map(|(handler, _)| handler)
+			.collect();
+		self.pointer.set_handler_order(order);
 	}
 
 	async fn focus_tracking_task(

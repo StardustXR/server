@@ -69,7 +69,6 @@ use nodes::{
 		lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin,
 	},
 	fields::FieldDebugGizmoPlugin,
-	input,
 	spatial::SpatialNodePlugin,
 };
 use objects::{
@@ -518,7 +517,6 @@ fn cam_settings(
 fn xr_step(world: &mut World) {
 	// update things like the Xr input methods
 	world.run_schedule(PreFrameWait);
-	input::process_input();
 	let time = world.resource::<bevy::prelude::Time>().delta_secs_f64();
 	nodes::root::Root::send_frame_events(time);
 
