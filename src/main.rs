@@ -97,6 +97,10 @@ struct CliArgs {
 	#[clap(short, long, action)]
 	force_flatscreen: bool,
 
+	/// Force disable the flatscreen window
+	#[clap(short, long, action)]
+	xr_only: bool,
+
 	/// Replaces the flatscreen mode with a first person spectator camera
 	#[clap(short, long, action)]
 	spectator: bool,
@@ -340,8 +344,9 @@ fn bevy_loop(
 		.async_compute
 		.on_thread_spawn = Some(enter_runtime_context.clone());
 	plugins = plugins.set(task_pool_plugin);
-	if std::env::var("DISPLAY").is_ok_and(|s| !s.is_empty())
-		|| std::env::var("WAYLAND_DISPLAY").is_ok_and(|s| !s.is_empty())
+	if (std::env::var("DISPLAY").is_ok_and(|s| !s.is_empty())
+		|| std::env::var("WAYLAND_DISPLAY").is_ok_and(|s| !s.is_empty()))
+		&& !args.xr_only
 	{
 		let mut plugin = WinitPlugin::<WakeUp>::default();
 		plugin.run_on_any_thread = true;
