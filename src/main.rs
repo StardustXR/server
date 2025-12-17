@@ -381,6 +381,7 @@ fn bevy_loop(
 							exts.enable_extx_overlay();
 						}
 						exts.khr_convert_timespec_time = true;
+						exts.other.push("XR_KHR_generic_controller".to_string());
 						exts
 					},
 					..default()

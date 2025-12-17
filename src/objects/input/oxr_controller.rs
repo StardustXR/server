@@ -19,6 +19,7 @@ use bevy::{asset::Handle, ecs::resource::Resource};
 use bevy::{math::Affine3, prelude::*};
 use bevy_mod_openxr::{
 	action_binding::{OxrSendActionBindings, OxrSuggestActionBinding},
+	exts::OxrEnabledExtensions,
 	helper_traits::{ToIsometry3d, ToVec2},
 	resources::{OxrFrameState, OxrInstance, Pipelined},
 	session::OxrSession,
@@ -70,6 +71,7 @@ fn suggest_bindings(
 	instance: Res<OxrInstance>,
 	actions: Res<Actions>,
 	mut suggest: EventWriter<OxrSuggestActionBinding>,
+	enabled_exts: Res<OxrEnabledExtensions>,
 ) {
 	let mut bind_all = |interaction_profile: &'static str,
 	                    bindings: &[(openxr::sys::Action, &[&'static str])]| {
@@ -81,6 +83,61 @@ fn suggest_bindings(
 			});
 		}
 	};
+	if enabled_exts
+		.other
+		.iter()
+		.any(|s| s == "XR_KHR_generic_controller")
+	{
+		bind_all(
+			"/interaction_profiles/khr/generic_controller",
+			&[
+				(
+					actions.trigger.as_raw(),
+					&[
+						"/user/hand/left/input/trigger/value",
+						"/user/hand/right/input/trigger/value",
+					],
+				),
+				(
+					actions.stick_click.as_raw(),
+					&[
+						"/user/hand/left/input/thumbstick/click",
+						"/user/hand/right/input/thumbstick/click",
+					],
+				),
+				(
+					actions.button.as_raw(),
+					&[
+						"/user/hand/left/input/primary/click",
+						"/user/hand/left/input/secondary/click",
+						"/user/hand/right/input/primary/click",
+						"/user/hand/right/input/secondary/click",
+					],
+				),
+				(
+					actions.grip.as_raw(),
+					&[
+						"/user/hand/left/input/squeeze/value",
+						"/user/hand/right/input/squeeze/value",
+					],
+				),
+				(
+					actions.stick.as_raw(),
+					&[
+						"/user/hand/left/input/thumbstick",
+						"/user/hand/right/input/thumbstick",
+					],
+				),
+				(
+					actions.space.as_raw(),
+					&[
+						"/user/hand/left/input/aim/pose",
+						"/user/hand/right/input/aim/pose",
+					],
+				),
+			],
+		);
+	}
 	bind_all(
 		"/interaction_profiles/oculus/touch_controller",
 		&[
@@ -103,6 +160,55 @@ fn suggest_bindings(
 				&[
 					"/user/hand/left/input/x/click",
 					"/user/hand/left/input/y/click",
+					"/user/hand/right/input/a/click",
+					"/user/hand/right/input/b/click",
+				],
+			),
+			(
+				actions.grip.as_raw(),
+				&[
+					"/user/hand/left/input/squeeze/value",
+					"/user/hand/right/input/squeeze/value",
+				],
+			),
+			(
+				actions.stick.as_raw(),
+				&[
+					"/user/hand/left/input/thumbstick",
+					"/user/hand/right/input/thumbstick",
+				],
+			),
+			(
+				actions.space.as_raw(),
+				&[
+					"/user/hand/left/input/aim/pose",
+					"/user/hand/right/input/aim/pose",
+				],
+			),
+		],
+	);
+	bind_all(
+		"/interaction_profiles/valve/index_controller",
+		&[
+			(
+				actions.trigger.as_raw(),
+				&[
+					"/user/hand/left/input/trigger/value",
+					"/user/hand/right/input/trigger/value",
+				],
+			),
+			(
+				actions.stick_click.as_raw(),
+				&[
+					"/user/hand/left/input/thumbstick/click",
+					"/user/hand/right/input/thumbstick/click",
+				],
+			),
+			(
+				actions.button.as_raw(),
+				&[
+					"/user/hand/left/input/a/click",
+					"/user/hand/left/input/b/click",
 					"/user/hand/right/input/a/click",
 					"/user/hand/right/input/b/click",
 				],
@@ -369,6 +475,7 @@ impl OxrControllerInput {
 			})
 			.unwrap();
 		if let Ok(path) = session.current_interaction_profile(path)
+			&& path != openxr::Path::NULL
 			&& let Ok(path) = session.instance().path_to_string(path)
 			&& path == "/interaction_profiles/khr/simple_controller"
 		{
@@ -394,7 +501,8 @@ impl OxrControllerInput {
 			scroll: get(session, path, &actions.stick).to_vec2(),
 		};
 		let input = self.input.data().clone();
-		self.input.update_state(input, Datamap::from_typed(&self.datamap).unwrap());
+		self.input
+			.update_state(input, Datamap::from_typed(&self.datamap).unwrap());
 		drop(_span);
 
 		let distance_calculator = |space: &Arc<Spatial>, _data: &InputDataType, field: &Field| {
