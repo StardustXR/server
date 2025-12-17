@@ -188,6 +188,53 @@ fn suggest_bindings(
 		],
 	);
 	bind_all(
+		"/interaction_profiles/htc/vive_controller",
+		&[
+			(
+				actions.trigger.as_raw(),
+				&[
+					"/user/hand/left/input/trigger/value",
+					"/user/hand/right/input/trigger/value",
+				],
+			),
+			(
+				actions.stick_click.as_raw(),
+				&[
+					"/user/hand/left/input/trackpad/click",
+					"/user/hand/right/input/trackpad/click",
+				],
+			),
+			(
+				actions.button.as_raw(),
+				&[
+					"/user/hand/left/input/menu/click",
+					"/user/hand/right/input/menu/click",
+				],
+			),
+			(
+				actions.grip.as_raw(),
+				&[
+					"/user/hand/left/input/squeeze/click",
+					"/user/hand/right/input/squeeze/click",
+				],
+			),
+			(
+				actions.stick.as_raw(),
+				&[
+					"/user/hand/left/input/trackpad",
+					"/user/hand/right/input/trackpad",
+				],
+			),
+			(
+				actions.space.as_raw(),
+				&[
+					"/user/hand/left/input/aim/pose",
+					"/user/hand/right/input/aim/pose",
+				],
+			),
+		],
+	);
+	bind_all(
 		"/interaction_profiles/valve/index_controller",
 		&[
 			(
