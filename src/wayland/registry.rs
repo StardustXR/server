@@ -7,6 +7,7 @@ use crate::wayland::{
 		output::{Output, WlOutput},
 		seat::{Seat, WlSeat},
 		shm::{Shm, WlShm},
+		subcompositor::Subcompositor,
 	},
 	dmabuf::Dmabuf,
 	mesa_drm::MesaDrm,
@@ -17,7 +18,10 @@ use crate::wayland::{
 };
 use waynest::{NewId, ObjectId};
 use waynest_protocols::server::{
-	core::wayland::{wl_data_device_manager::WlDataDeviceManager, wl_registry::*},
+	core::wayland::{
+		wl_data_device_manager::WlDataDeviceManager, wl_registry::*,
+		wl_subcompositor::WlSubcompositor,
+	},
 	mesa::drm::wl_drm::WlDrm,
 	stable::{
 		linux_dmabuf_v1::zwp_linux_dmabuf_v1::ZwpLinuxDmabufV1,
@@ -39,6 +43,7 @@ impl RegistryGlobals {
 	pub const WL_DRM: u32 = 7;
 	pub const PRESENTATION: u32 = 8;
 	pub const VIEWPORTER: u32 = 9;
+	pub const SUBCOMPOSITOR: u32 = 11;
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher, Default)]
@@ -141,6 +146,15 @@ impl Registry {
 		)
 		.await?;
 
+		self.global(
+			client,
+			sender_id,
+			RegistryGlobals::SUBCOMPOSITOR,
+			Subcompositor::INTERFACE.to_string(),
+			Subcompositor::VERSION,
+		)
+		.await?;
+
 		Ok(())
 	}
 }
@@ -224,6 +238,11 @@ impl WlRegistry for Registry {
 				tracing::info!("Binding wp_viewporter");
 
 				client.insert(new_id.object_id, Viewporter::new(new_id.object_id))?;
+			}
+			RegistryGlobals::SUBCOMPOSITOR => {
+				tracing::info!("Binding wl_subcompositor");
+
+				client.insert(new_id.object_id, Subcompositor)?;
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");

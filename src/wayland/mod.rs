@@ -461,8 +461,7 @@ fn before_render(buffers: Res<UsedBuffers>) {
 	for buf in WL_SURFACE_REGISTRY
 		.get_valid_contents()
 		.into_iter()
-		.filter_map(|surface| surface.current_state().buffer)
-		.filter_map(|buffer| buffer.usage)
+		.filter_map(|surface| surface.current_buffer_usage())
 	{
 		buffers.add_raw(buf);
 	}

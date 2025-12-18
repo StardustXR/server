@@ -103,7 +103,8 @@ impl Toplevel {
 
 	// Helper to clamp size against constraints
 	fn clamp_size(&self, size: Vector2<u32>) -> Vector2<u32> {
-		let state = self.wl_surface().current_state();
+		let lock = self.wl_surface().state_lock();
+		let state = lock.current();
 		let mut clamped = size;
 
 		if let Some(min_size) = state.min_size {

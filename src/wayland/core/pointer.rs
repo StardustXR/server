@@ -216,11 +216,7 @@ impl WlPointer for Pointer {
 			&& let Some(panel_item) = focused_surface.panel_item.lock().upgrade()
 		{
 			panel_item.set_cursor(surface.and_then(|s| client.get::<Surface>(s)).map(|s| {
-				let size = s
-					.current_state()
-					.buffer
-					.map(|b| b.buffer.size())
-					.unwrap_or([16; 2].into());
+				let size = s.current_buffer_size().unwrap_or([16; 2].into());
 				Geometry {
 					origin: [hotspot_x, hotspot_y].into(),
 					size: [size.x as u32, size.y as u32].into(),

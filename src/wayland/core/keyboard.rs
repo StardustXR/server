@@ -162,7 +162,7 @@ impl Keyboard {
 			// Send leave to old surface if it exists and is still alive
 			if let Some(old_surface) = focused.upgrade() {
 				let serial = client.next_event_serial();
-				self.leave(client, old_surface.id, serial, self.id).await?;
+				self.leave(client, self.id, serial, old_surface.id).await?;
 				// println!("Left surface {}", old_surface.id);
 			}
 
