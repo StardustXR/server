@@ -25,7 +25,7 @@ use tracing;
 pub struct XdgBackend {
 	seat: Weak<Seat>,
 	toplevel: Weak<Toplevel>,
-	children: DashMap<Id, (Weak<Surface>, ChildInfo)>,
+	pub children: DashMap<Id, (Weak<Surface>, ChildInfo)>,
 }
 
 impl XdgBackend {
@@ -85,6 +85,24 @@ impl XdgBackend {
 		panel_item.reposition_child(*id, &geometry);
 	}
 
+	pub fn update_child_z_order(&self, surface: &Arc<Surface>, z_order: i32) {
+		let Some(SurfaceId::Child(id)) = surface.surface_id.get() else {
+			return;
+		};
+
+		if let Some(mut child) = self.children.get_mut(id) {
+			child.1.z_order = z_order;
+			let info = child.1.clone();
+			drop(child);
+
+			let Some(panel_item) = self.panel_item() else {
+				tracing::error!("Couldn't find panel item in update_child_z_order");
+				return;
+			};
+			panel_item.reposition_child(*id, &info.geometry);
+		}
+	}
+
 	pub fn remove_child(&self, surface: &Surface) {
 		let Some(SurfaceId::Child(id)) = surface.surface_id.get() else {
 			return;
@@ -100,10 +118,14 @@ impl XdgBackend {
 }
 impl Backend for XdgBackend {
 	fn start_data(&self) -> Result<PanelItemInitData> {
-		let surface_state = self.toplevel().wl_surface().current_state();
+		let top_level = self.toplevel();
+		let surface = top_level.wl_surface();
+		let state_lock = surface.state_lock();
+		let surface_state = state_lock.current();
 
 		let size = surface_state
 			.buffer
+			.as_ref()
 			.map(|b| [b.buffer.size().x as u32, b.buffer.size().y as u32].into())
 			.unwrap_or([0; 2].into());
 		let toplevel = ToplevelInfo {

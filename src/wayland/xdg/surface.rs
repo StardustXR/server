@@ -79,7 +79,7 @@ impl XdgSurface for Surface {
 		let configured = self.configured.clone();
 		let mut first_commit = true;
 		let message_tx = client.message_sink().clone();
-		self.wl_surface.add_commit_handler(move |surface, state| {
+		self.wl_surface.add_commit_handler(move |surface| {
 			let Some(toplevel) = toplevel_weak.upgrade() else {
 				return true;
 			};
@@ -92,7 +92,7 @@ impl XdgSurface for Surface {
 			let mut mapped_lock = toplevel.mapped.lock();
 			if mapped_lock.is_none()
 				&& configured.load(std::sync::atomic::Ordering::SeqCst)
-				&& state.has_valid_buffer()
+				&& surface.currently_has_valid_buffer()
 			{
 				let mapped_inner = MappedInner::create(&seat.upgrade().unwrap(), &toplevel, pid);
 				*surface.panel_item.lock() = Arc::downgrade(&mapped_inner.panel_item);
@@ -174,7 +174,7 @@ impl XdgSurface for Surface {
 
 		let popup_weak = Arc::downgrade(&popup);
 		let configured = self.configured.clone();
-		self.wl_surface.add_commit_handler(move |surface, state| {
+		self.wl_surface.add_commit_handler(move |surface| {
 			let Some(popup) = popup_weak.upgrade() else {
 				return true;
 			};
@@ -182,7 +182,9 @@ impl XdgSurface for Surface {
 				return true;
 			};
 
-			if configured.load(std::sync::atomic::Ordering::SeqCst) && state.has_valid_buffer() {
+			if configured.load(std::sync::atomic::Ordering::SeqCst)
+				&& surface.currently_has_valid_buffer()
+			{
 				panel_item
 					.backend
 					.add_child(&popup.surface.wl_surface, child_info.clone());

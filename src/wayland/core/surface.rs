@@ -10,7 +10,9 @@ use crate::{
 		Client, Message, MessageSink, WaylandError, WaylandResult,
 		core::buffer::BufferUsage,
 		presentation::{MonotonicTimestamp, PresentationFeedback},
-		util::{ClientExt, DoubleBuffer},
+		util::{
+			BufferedState, ClientExt, SurfaceCommitAwareBuffer, SurfaceCommitAwareBufferManager,
+		},
 		xdg::backend::XdgBackend,
 	},
 };
@@ -26,6 +28,7 @@ use std::{
 	fmt::Display,
 	sync::{Arc, OnceLock, Weak},
 };
+use tracing::info;
 use waynest::ObjectId;
 use waynest_protocols::server::{
 	core::wayland::{wl_output::Transform, wl_surface::*},
@@ -59,7 +62,7 @@ pub struct BufferState {
 	pub usage: Option<Arc<BufferUsage>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SurfaceState {
 	pub buffer: Option<BufferState>,
 	pub density: f32,
@@ -80,6 +83,28 @@ impl Default for SurfaceState {
 		}
 	}
 }
+impl BufferedState for SurfaceState {
+	fn apply(&mut self, pending: &mut Self) {
+		self.buffer = pending.buffer.clone();
+		self.density = pending.density.clone();
+		self.geometry = pending.geometry.clone();
+		self.min_size = pending.min_size.clone();
+		self.max_size = pending.max_size.clone();
+		self.frame_callbacks
+			.extend(pending.frame_callbacks.drain(..));
+	}
+
+	fn get_initial_pending(&self) -> Self {
+		Self {
+			buffer: self.buffer.clone(),
+			density: self.density.clone(),
+			geometry: self.geometry.clone(),
+			min_size: self.min_size.clone(),
+			max_size: self.max_size.clone(),
+			frame_callbacks: Vec::new(),
+		}
+	}
+}
 impl SurfaceState {
 	pub fn has_valid_buffer(&self) -> bool {
 		self.buffer
@@ -89,21 +114,29 @@ impl SurfaceState {
 }
 
 // if returning false, don't run this callback again... just remove it
-pub type OnCommitCallback = Box<dyn FnMut(&Surface, &SurfaceState) -> bool + Send + Sync>;
+pub type OnCommitCallback = Box<dyn FnMut(&Surface) -> bool + Send + Sync>;
+// Filter that decides whether to apply pending state. Returns true to allow commit, false to defer.
+pub type CommitFilter = Box<dyn Fn() -> bool + Send + Sync>;
+
 #[derive(waynest_server::RequestDispatcher)]
 #[waynest(error = crate::wayland::WaylandError, connection = crate::wayland::Client)]
 pub struct Surface {
 	pub id: ObjectId,
 	pub surface_id: OnceLock<SurfaceId>,
-	state: Mutex<DoubleBuffer<SurfaceState>>,
+	state: Arc<Mutex<SurfaceCommitAwareBuffer<SurfaceState>>>,
 	pub message_sink: MessageSink,
 	pub role: OnceLock<SurfaceRole>,
 	pub panel_item: Mutex<Weak<PanelItem<XdgBackend>>>,
+	/// Called before commit - if it returns false, state.apply() is skipped
+	requires_parent_sync: Mutex<Option<CommitFilter>>,
 	on_commit_handlers: Mutex<Vec<OnCommitCallback>>,
-	frame_callbacks: Mutex<Vec<Arc<Callback>>>,
+	on_updated_current_state_handlers: Mutex<Vec<OnCommitCallback>>,
 	material: OnceLock<Handle<BevyMaterial>>,
 	pending_material_applications: Registry<ModelPart>,
 	presentation_feedback: Mutex<Vec<Arc<PresentationFeedback>>>,
+	state_buffer_manager: Arc<SurfaceCommitAwareBufferManager>,
+	children: Registry<Surface>,
+	parent: OnceLock<Weak<Surface>>,
 }
 impl std::fmt::Debug for Surface {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -113,6 +146,7 @@ impl std::fmt::Debug for Surface {
 			.field("state", &self.state)
 			.field("message_sink", &self.message_sink)
 			.field("role", &self.role)
+			.field("commit_filter", &self.requires_parent_sync.lock().is_some())
 			.field(
 				"on_commit_handlers",
 				&format!("<{} handlers>", self.on_commit_handlers.lock().len()),
@@ -124,20 +158,30 @@ impl std::fmt::Debug for Surface {
 }
 impl Surface {
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn new(client: &Client, id: ObjectId) -> Self {
-		Surface {
-			id,
-			surface_id: OnceLock::new(),
-			state: Default::default(),
-			message_sink: client.message_sink(),
-			role: OnceLock::new(),
-			panel_item: Mutex::new(Weak::default()),
-			on_commit_handlers: Mutex::new(Vec::new()),
-			frame_callbacks: Mutex::new(Vec::new()),
-			material: OnceLock::new(),
-			pending_material_applications: Registry::new(),
-			presentation_feedback: Mutex::default(),
-		}
+	pub fn new(client: &Client, id: ObjectId) -> Arc<Self> {
+		Arc::new_cyclic(|surface| {
+			let manager = SurfaceCommitAwareBufferManager::new(surface.clone());
+			Surface {
+				id,
+				surface_id: OnceLock::new(),
+				state: SurfaceCommitAwareBuffer::new_from_manager(
+					Default::default(),
+					manager.clone(),
+				),
+				message_sink: client.message_sink(),
+				role: OnceLock::new(),
+				panel_item: Mutex::new(Weak::default()),
+				requires_parent_sync: Mutex::new(None),
+				on_commit_handlers: Mutex::new(Vec::new()),
+				on_updated_current_state_handlers: Mutex::new(Vec::new()),
+				material: OnceLock::new(),
+				pending_material_applications: Registry::new(),
+				presentation_feedback: Mutex::default(),
+				state_buffer_manager: manager,
+				children: Registry::new(),
+				parent: OnceLock::new(),
+			}
+		})
 	}
 
 	pub async fn try_set_role(
@@ -165,16 +209,54 @@ impl Surface {
 	}
 
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn state_lock(&self) -> parking_lot::MutexGuard<'_, DoubleBuffer<SurfaceState>> {
+	pub fn state_lock(
+		&self,
+	) -> parking_lot::MutexGuard<'_, SurfaceCommitAwareBuffer<SurfaceState>> {
 		self.state.lock()
+	}
+	pub fn currently_has_valid_buffer(&self) -> bool {
+		self.state.lock().current().has_valid_buffer()
+	}
+
+	/// Set a filter that controls whether current state in SurfaceCommitAwareBuffers is updated on
+	/// apply.
+	/// Only one filter can be set at a time (typically by the surface role).
+	/// The filter returns true if the current state needs to be updated on the parents commit.
+	#[tracing::instrument(level = "debug", skip_all)]
+	pub fn set_parent_syncronized_filter<F: Fn() -> bool + Send + Sync + 'static>(
+		&self,
+		filter: F,
+	) {
+		*self.requires_parent_sync.lock() = Some(Box::new(filter));
+	}
+
+	/// Remove the parent syncronized filter, allowing normal commit behavior
+	#[tracing::instrument(level = "debug", skip_all)]
+	pub fn clear_parent_syncronized_filter(&self) {
+		*self.requires_parent_sync.lock() = None;
+	}
+
+	/// Manually apply pending state (for use by roles that defer commits)
+	#[tracing::instrument(level = "debug", skip_all)]
+	pub fn apply_pending_state(&self) {
+		self.state.lock().apply();
 	}
 
 	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn add_commit_handler<F: FnMut(&Surface, &SurfaceState) -> bool + Send + Sync + 'static>(
+	pub fn add_commit_handler<F: FnMut(&Surface) -> bool + Send + Sync + 'static>(
 		&self,
 		handler: F,
 	) {
 		let mut handlers = self.on_commit_handlers.lock();
+		handlers.push(Box::new(handler));
+	}
+
+	#[tracing::instrument(level = "debug", skip_all)]
+	pub fn add_updated_current_state_handler<F: FnMut(&Surface) -> bool + Send + Sync + 'static>(
+		&self,
+		handler: F,
+	) {
+		let mut handlers = self.on_updated_current_state_handlers.lock();
 		handlers.push(Box::new(handler));
 	}
 
@@ -236,44 +318,31 @@ impl Surface {
 		self.pending_material_applications.clear();
 	}
 	#[tracing::instrument("debug", skip_all)]
-	pub fn current_state(&self) -> SurfaceState {
-		self.state.lock().current().clone()
+	pub fn current_buffer_size(&self) -> Option<Vector2<usize>> {
+		self.state
+			.lock()
+			.current()
+			.buffer
+			.as_ref()
+			.map(|b| b.buffer.size())
+	}
+	#[tracing::instrument("debug", skip_all)]
+	pub fn current_buffer_usage(&self) -> Option<Arc<BufferUsage>> {
+		self.state
+			.lock()
+			.current()
+			.buffer
+			.as_ref()
+			.map(|b| b.usage.clone())
+			.flatten()
 	}
 	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn frame_event(&self) {
-		let callbacks = std::mem::take(&mut *self.frame_callbacks.lock());
+		let callbacks = std::mem::take(&mut self.state_lock().current.frame_callbacks);
 		if !callbacks.is_empty() {
 			let _ = self.message_sink.send(Message::Frame(callbacks));
 		}
 	}
-	// pub fn size(&self) -> Option<Vector2<u32>> {
-	// 	self.state
-	// 		.lock()
-	// 		.current()
-	// 		.buffer
-	// 		.as_ref()
-	// 		.map(|b| [b.size.x as u32, b.size.y as u32].into())
-	// }
-
-	// pub async fn release_old_buffer(&self, client: &mut Self::Connection) -> Result<()> {
-	// 	let (old_buffer, object) = {
-	// 		let lock = self.state.lock();
-
-	// 		let Some(old_buffer) = lock.current().buffer.clone() else {
-	// 			return Ok(());
-	// 		};
-	// 		let new_buffer = lock.pending.buffer.as_ref();
-	// 		if new_buffer.map(Arc::as_ptr) == Some(Arc::as_ptr(&old_buffer)) {
-	// 			return Ok(());
-	// 		}
-	// 		drop(lock);
-
-	// 		(old_buffer.clone(), old_buffer.id)
-	// 	};
-	// 	old_buffer.release(client, object).await?;
-
-	// 	Ok(())
-	// }
 
 	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn add_presentation_feedback(&self, feedback: Arc<PresentationFeedback>) {
@@ -326,7 +395,60 @@ impl Surface {
 		}
 		Ok(())
 	}
+
+	pub fn set_parent(self: &Arc<Self>, parent: &Arc<Surface>) {
+		// Copy parent's panel_item to subsurface (like popups do)
+		*self.panel_item.lock() = parent.panel_item.lock().clone();
+		if self.parent.set(Arc::downgrade(parent)).is_ok() {
+			parent.children.add_raw(self);
+		}
+	}
+
+	pub fn requires_surface_syncronization(&self) -> bool {
+		if self.role.get() != Some(&SurfaceRole::Subsurface) {
+			return false;
+		};
+		self.requires_parent_sync
+			.lock()
+			.as_ref()
+			.map(|v| v())
+			.unwrap_or(false)
+	}
+	pub fn get_state_buffer_manager(&self) -> Arc<SurfaceCommitAwareBufferManager> {
+		self.state_buffer_manager.clone()
+	}
+	pub fn parent(&self) -> Option<Arc<Surface>> {
+		self.parent.get()?.upgrade()
+	}
+	pub fn update_current_state_recursive(&self) {
+		info!("update current state");
+		self.state_buffer_manager.update_current();
+		self.run_updated_state_handlers();
+		for child in self.children.get_valid_contents() {
+			if child.requires_surface_syncronization() {
+				child.update_current_state_recursive();
+			}
+		}
+	}
 }
+impl Surface {
+	fn on_commit(&self) {
+		self.state.lock().apply();
+		let mut handlers = self.on_commit_handlers.lock();
+		handlers.retain_mut(|f| (f)(self));
+
+		if self.requires_surface_syncronization() {
+			self.update_current_state_recursive();
+		} else {
+			self.run_updated_state_handlers();
+		}
+	}
+	fn run_updated_state_handlers(&self) {
+		let mut handlers = self.on_updated_current_state_handlers.lock();
+		handlers.retain_mut(|f| (f)(self));
+	}
+}
+
 impl WlSurface for Surface {
 	type Connection = crate::wayland::Client;
 
@@ -409,15 +531,10 @@ impl WlSurface for Surface {
 		_client: &mut Self::Connection,
 		_sender_id: ObjectId,
 	) -> WaylandResult<()> {
-		self.state.lock().apply();
+		info!("commit started");
+		self.on_commit();
 
-		self.state.lock().pending.frame_callbacks.clear();
-		let current_state = self.current_state();
-		self.frame_callbacks
-			.lock()
-			.extend(current_state.frame_callbacks.iter().cloned());
-		let mut handlers = self.on_commit_handlers.lock();
-		handlers.retain_mut(|f| (f)(self, &current_state));
+		info!("commit done");
 		Ok(())
 	}
 

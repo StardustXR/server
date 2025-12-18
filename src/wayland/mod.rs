@@ -85,6 +85,7 @@ pub enum WaylandError {
 }
 impl<T: Clone> From<StoreError<T>> for WaylandError {
 	fn from(_value: StoreError<T>) -> Self {
+		panic!("a");
 		Self::FailedToInsertObject
 	}
 }
@@ -462,8 +463,7 @@ fn before_render(buffers: Res<UsedBuffers>) {
 	for buf in WL_SURFACE_REGISTRY
 		.get_valid_contents()
 		.into_iter()
-		.filter_map(|surface| surface.current_state().buffer)
-		.filter_map(|buffer| buffer.usage)
+		.filter_map(|surface| surface.current_buffer_usage())
 	{
 		buffers.add_raw(buf);
 	}
