@@ -19,8 +19,8 @@ use std::sync::{Arc, Weak};
 
 pub struct InputMethod {
 	pub spatial: Arc<Spatial>,
-	data: Mutex<InputDataType>,
-	datamap: Mutex<Datamap>,
+	pub(crate) data: Mutex<InputDataType>,
+	pub(crate) datamap: Mutex<Datamap>,
 
 	// All bidirectional aliases managed by links
 	handler_links: OwnedRegistry<InputMethodHandlerLink>,
@@ -141,7 +141,11 @@ impl InputMethod {
 		self.update_input();
 	}
 
-	pub fn set_handler_order(&self, handlers: Vec<Arc<InputHandler>>) {
+	pub fn set_handler_capture_order(
+		&self,
+		handlers: Vec<Arc<InputHandler>>,
+		captures: Vec<Arc<InputHandler>>,
+	) {
 		let mut handler_order_lock = self.handler_order.lock();
 
 		// Build hashmap of old order
@@ -200,7 +204,7 @@ impl InputMethod {
 			data.input.transform(self, &handler);
 			data.distance = self.distance(&handler.field);
 			data.order = i as u32;
-			data.captured = self.captures.contains(&handler);
+			data.captured = captures.contains(&handler);
 
 			// Find or create link
 			let link = self.find_link(&handler);
@@ -238,14 +242,11 @@ impl InputMethod {
 				}
 			}
 		}
-	}
 
-	pub fn set_captures(&self, handlers: Vec<Arc<InputHandler>>) {
 		self.captures.clear();
-		for handler in handlers {
-			self.captures.add_raw(&handler);
+		for capture in captures {
+			self.captures.add_raw(&capture);
 		}
-		self.update_input();
 	}
 
 	pub fn data(
@@ -278,7 +279,7 @@ impl InputMethodAspect for InputMethod {
 			.into_iter()
 			.filter_map(|h| h.get_aspect::<InputHandler>().ok())
 			.collect();
-		method.set_handler_order(handlers);
+		method.set_handler_capture_order(handlers, vec![]);
 		Ok(())
 	}
 
@@ -289,11 +290,19 @@ impl InputMethodAspect for InputMethod {
 		captures: Vec<Arc<Node>>,
 	) -> Result<()> {
 		let method = node.get_aspect::<InputMethod>()?;
-		let handlers: Vec<Arc<InputHandler>> = captures
+		let captures: Vec<Arc<InputHandler>> = captures
 			.into_iter()
 			.filter_map(|h| h.get_aspect::<InputHandler>().ok())
 			.collect();
-		method.set_captures(handlers);
+		method.set_handler_capture_order(
+			method
+				.handler_order
+				.lock()
+				.iter()
+				.filter_map(Weak::upgrade)
+				.collect(),
+			captures,
+		);
 		Ok(())
 	}
 }

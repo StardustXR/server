@@ -19,7 +19,11 @@ pub struct CaptureManager {
 	pub capture: Weak<InputHandler>,
 }
 impl CaptureManager {
-	pub fn update_capture(&mut self, method: &InputMethod) {
+	pub fn update(
+		&mut self,
+		method: &InputMethod,
+		distance_calculator: DistanceCalculator,
+	) -> bool {
 		if let Some(capture) = &self.capture.upgrade()
 			&& !method
 				.capture_attempts
@@ -28,21 +32,14 @@ impl CaptureManager {
 		{
 			self.capture = Weak::new();
 		}
-	}
-	pub fn set_new_capture(
-		&mut self,
-		method: &InputMethod,
-		distance_calculator: DistanceCalculator,
-	) {
 		if self.capture.upgrade().is_none() {
 			self.capture = find_closest_capture(method, distance_calculator);
 		}
-	}
-	pub fn apply_capture(&self, method: &InputMethod) {
 		if let Some(capture) = self.capture.upgrade() {
-			method.set_handler_order(vec![capture.clone()]);
-			method.set_captures(vec![capture]);
+			method.set_handler_capture_order(vec![capture.clone()], vec![capture]);
+			return true;
 		}
+		false
 	}
 }
 

@@ -192,7 +192,7 @@ pub struct MousePointer {
 	node: OwnedNode,
 	keymap: DefaultKey,
 	spatial: Arc<Spatial>,
-	pointer: Arc<InputMethod>,
+	input: Arc<InputMethod>,
 	capture_manager: CaptureManager,
 	mouse_datamap: MouseEvent,
 	// Task management
@@ -257,7 +257,7 @@ impl MousePointer {
 		Ok(MousePointer {
 			node,
 			spatial,
-			pointer,
+			input: pointer,
 			capture_manager: CaptureManager::default(),
 			mouse_datamap: Default::default(),
 			keymap,
@@ -316,8 +316,8 @@ impl MousePointer {
 					})
 					.collect(),
 			};
-			let input = self.pointer.data().clone();
-			self.pointer
+			let input = self.input.data().clone();
+			self.input
 				.update_state(input, Datamap::from_typed(&self.mouse_datamap).unwrap());
 		}
 		self.target_pointer_input();
@@ -356,16 +356,14 @@ impl MousePointer {
 			valid.then_some(result.deepest_point_distance)
 		};
 
-		self.capture_manager.update_capture(&self.pointer);
-		self.capture_manager
-			.set_new_capture(&self.pointer, distance_calculator);
-		self.capture_manager.apply_capture(&self.pointer);
-
-		if self.capture_manager.capture.upgrade().is_some() {
+		if self
+			.capture_manager
+			.update(&self.input, distance_calculator)
+		{
 			return;
 		}
 
-		let mut handlers = get_sorted_handlers(&self.pointer, distance_calculator);
+		let mut handlers = get_sorted_handlers(&self.input, distance_calculator);
 		let first_distance = handlers
 			.first()
 			.map(|(_, distance)| *distance)
@@ -376,7 +374,7 @@ impl MousePointer {
 			.filter(|(handler, distance)| (distance - first_distance).abs() <= 0.001)
 			.map(|(handler, _)| handler)
 			.collect();
-		self.pointer.set_handler_order(order);
+		self.input.set_handler_capture_order(order, vec![]);
 	}
 
 	async fn focus_tracking_task(

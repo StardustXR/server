@@ -365,7 +365,8 @@ impl OxrHandInput {
 			self.datamap.grab_strength =
 				pinch_between(&new_hand.ring.tip, &new_hand.ring.metacarpal);
 
-			self.input.update_state(InputDataType::Hand(new_hand), Datamap::from_typed(&self.datamap).unwrap());
+			*self.input.data.lock() = InputDataType::Hand(new_hand);
+			*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 
 			// Only change colors for normal materials (not holdout)
 			if let HandMaterial::Normal(material_handle) = &self.material {
@@ -398,12 +399,10 @@ impl OxrHandInput {
 			)
 		};
 
-		self.capture_manager.update_capture(&self.input);
-		self.capture_manager
-			.set_new_capture(&self.input, distance_calculator);
-		self.capture_manager.apply_capture(&self.input);
-
-		if self.capture_manager.capture.upgrade().is_some() {
+		if self
+			.capture_manager
+			.update(&self.input, distance_calculator)
+		{
 			return;
 		}
 
@@ -412,6 +411,6 @@ impl OxrHandInput {
 			.into_iter()
 			.map(|(handler, _)| handler)
 			.collect();
-		self.input.set_handler_order(order);
+		self.input.set_handler_capture_order(order, vec![]);
 	}
 }

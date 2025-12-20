@@ -548,20 +548,18 @@ impl OxrControllerInput {
 			scroll: get(session, path, &actions.stick).to_vec2(),
 		};
 		let input = self.input.data().clone();
-		self.input
-			.update_state(input, Datamap::from_typed(&self.datamap).unwrap());
+
+		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 		drop(_span);
 
 		let distance_calculator = |space: &Arc<Spatial>, _data: &InputDataType, field: &Field| {
 			Some(field.distance(space, [0.0; 3].into()).abs())
 		};
 
-		self.capture_manager.update_capture(&self.input);
-		self.capture_manager
-			.set_new_capture(&self.input, distance_calculator);
-		self.capture_manager.apply_capture(&self.input);
-
-		if self.capture_manager.capture.upgrade().is_some() {
+		if self
+			.capture_manager
+			.update(&self.input, distance_calculator)
+		{
 			return;
 		}
 
@@ -570,6 +568,6 @@ impl OxrControllerInput {
 			.into_iter()
 			.map(|(handler, _)| handler)
 			.collect();
-		self.input.set_handler_order(order);
+		self.input.set_handler_capture_order(order, vec![]);
 	}
 }
