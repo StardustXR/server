@@ -567,6 +567,7 @@ impl OxrControllerInput {
 		let order: Vec<Arc<InputHandler>> = sorted_handlers
 			.into_iter()
 			.map(|(handler, _)| handler)
+			.take(10)
 			.collect();
 		self.input.set_handler_capture_order(order, vec![]);
 	}

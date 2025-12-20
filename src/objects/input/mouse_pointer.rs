@@ -373,6 +373,7 @@ impl MousePointer {
 			.into_iter()
 			.filter(|(handler, distance)| (distance - first_distance).abs() <= 0.001)
 			.map(|(handler, _)| handler)
+			.take(10)
 			.collect();
 		self.input.set_handler_capture_order(order, vec![]);
 	}
