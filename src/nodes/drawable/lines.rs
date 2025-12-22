@@ -271,7 +271,7 @@ fn build_line_mesh(
 							base_color: Color::WHITE,
 							perceptual_roughness: 1.0,
 							alpha_mode: AlphaMode::Premultiplied,
-							emissive: Color::linear_rgba(0.25, 0.25, 0.25, 1.0).into(),
+							emissive: Color::linear_rgba(0.75, 0.75, 0.75, 1.0).into(),
 							..default()
 						},
 						extension: LineExtension {},
