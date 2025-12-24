@@ -85,7 +85,6 @@ pub enum WaylandError {
 }
 impl<T: Clone> From<StoreError<T>> for WaylandError {
 	fn from(_value: StoreError<T>) -> Self {
-		panic!("a");
 		Self::FailedToInsertObject
 	}
 }

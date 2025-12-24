@@ -1,7 +1,5 @@
-use crate::wayland::relative_pointer::RelativePointerManager;
-use crate::wayland::{Client, WaylandResult};
 use crate::wayland::{
-	WaylandError,
+	Client, WaylandError, WaylandResult,
 	core::{
 		compositor::{Compositor, WlCompositor},
 		data_device::DataDeviceManager,
@@ -13,9 +11,13 @@ use crate::wayland::{
 	dmabuf::Dmabuf,
 	mesa_drm::MesaDrm,
 	presentation::Presentation,
+	relative_pointer::RelativePointerManager,
 	util::ClientExt,
 	viewporter::Viewporter,
-	xdg::wm_base::{WmBase, XdgWmBase},
+	xdg::{
+		decoration::XdgDecorationManager,
+		wm_base::{WmBase, XdgWmBase},
+	},
 };
 use waynest::{NewId, ObjectId};
 use waynest_protocols::server::{
@@ -29,7 +31,10 @@ use waynest_protocols::server::{
 		presentation_time::wp_presentation::WpPresentation,
 		viewporter::wp_viewporter::WpViewporter,
 	},
-	unstable::relative_pointer_unstable_v1::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
+	unstable::{
+		relative_pointer_unstable_v1::zwp_relative_pointer_manager_v1::ZwpRelativePointerManagerV1,
+		xdg_decoration_unstable_v1::zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+	},
 };
 use waynest_server::Client as _;
 
@@ -47,6 +52,7 @@ impl RegistryGlobals {
 	pub const VIEWPORTER: u32 = 9;
 	pub const RELATIVE_POINTER: u32 = 10;
 	pub const SUBCOMPOSITOR: u32 = 11;
+	pub const XDG_DECORATION: u32 = 12;
 }
 
 #[derive(Debug, waynest_server::RequestDispatcher, Default)]
@@ -167,6 +173,15 @@ impl Registry {
 		)
 		.await?;
 
+		self.global(
+			client,
+			sender_id,
+			RegistryGlobals::XDG_DECORATION,
+			XdgDecorationManager::INTERFACE.to_string(),
+			XdgDecorationManager::VERSION,
+		)
+		.await?;
+
 		Ok(())
 	}
 }
@@ -260,6 +275,17 @@ impl WlRegistry for Registry {
 				tracing::info!("Binding wl_subcompositor");
 
 				client.insert(new_id.object_id, Subcompositor)?;
+			}
+			RegistryGlobals::XDG_DECORATION => {
+				tracing::info!("Binding xdg_decoration_manager");
+
+				client.insert(
+					new_id.object_id,
+					XdgDecorationManager {
+						_version: new_id.version,
+						id: new_id.object_id,
+					},
+				)?;
 			}
 			id => {
 				tracing::error!(id, "Wayland: failed to bind to registry global");
