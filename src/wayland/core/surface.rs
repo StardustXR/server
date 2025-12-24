@@ -86,21 +86,20 @@ impl Default for SurfaceState {
 impl BufferedState for SurfaceState {
 	fn apply(&mut self, pending: &mut Self) {
 		self.buffer = pending.buffer.clone();
-		self.density = pending.density.clone();
-		self.geometry = pending.geometry.clone();
-		self.min_size = pending.min_size.clone();
-		self.max_size = pending.max_size.clone();
-		self.frame_callbacks
-			.extend(pending.frame_callbacks.drain(..));
+		self.density = pending.density;
+		self.geometry = pending.geometry;
+		self.min_size = pending.min_size;
+		self.max_size = pending.max_size;
+		self.frame_callbacks.append(&mut pending.frame_callbacks);
 	}
 
 	fn get_initial_pending(&self) -> Self {
 		Self {
 			buffer: self.buffer.clone(),
-			density: self.density.clone(),
-			geometry: self.geometry.clone(),
-			min_size: self.min_size.clone(),
-			max_size: self.max_size.clone(),
+			density: self.density,
+			geometry: self.geometry,
+			min_size: self.min_size,
+			max_size: self.max_size,
 			frame_callbacks: Vec::new(),
 		}
 	}
@@ -236,12 +235,6 @@ impl Surface {
 		*self.requires_parent_sync.lock() = None;
 	}
 
-	/// Manually apply pending state (for use by roles that defer commits)
-	#[tracing::instrument(level = "debug", skip_all)]
-	pub fn apply_pending_state(&self) {
-		self.state.lock().apply();
-	}
-
 	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn add_commit_handler<F: FnMut(&Surface) -> bool + Send + Sync + 'static>(
 		&self,
@@ -333,8 +326,7 @@ impl Surface {
 			.current()
 			.buffer
 			.as_ref()
-			.map(|b| b.usage.clone())
-			.flatten()
+			.and_then(|b| b.usage.clone())
 	}
 	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn frame_event(&self) {

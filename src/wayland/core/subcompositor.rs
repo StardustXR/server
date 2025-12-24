@@ -71,27 +71,19 @@ impl WlSubcompositor for Subcompositor {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 struct SubsurfaceState {
 	position: (i32, i32),
 	z_order: i32,
 }
 
-impl Default for SubsurfaceState {
-	fn default() -> Self {
-		Self {
-			position: (0, 0),
-			z_order: 0, // Initially below parent (parent is 0)
-		}
-	}
-}
 impl BufferedState for SubsurfaceState {
 	fn apply(&mut self, pending: &mut Self) {
-		*self = pending.clone();
+		*self = *pending;
 	}
 
 	fn get_initial_pending(&self) -> Self {
-		self.clone()
+		*self
 	}
 }
 
@@ -126,12 +118,12 @@ impl Subsurface {
 	fn is_effectively_sync(&self) -> bool {
 		if !self.is_sync.load(Ordering::Acquire) {
 			// We're desync, but check if parent is a synchronized subsurface
-			if let Some(parent) = self.surface.parent() {
-				if parent.role.get() == Some(&SurfaceRole::Subsurface) {
-					// Parent is a subsurface - we inherit synchronized behavior
-					// TODO: Could walk the chain recursively for perfect correctness
-					return true;
-				}
+			if let Some(parent) = self.surface.parent()
+				&& parent.role.get() == Some(&SurfaceRole::Subsurface)
+			{
+				// Parent is a subsurface - we inherit synchronized behavior
+				// TODO: Could walk the chain recursively for perfect correctness
+				return true;
 			}
 			return false;
 		}
@@ -187,28 +179,29 @@ impl Subsurface {
 			};
 			let surface = subsurface.surface.clone();
 
-			if surface.currently_has_valid_buffer() {
-				if let Some(panel_item) = surface.panel_item.lock().upgrade() {
-					let state = subsurface.state.lock();
-					let subsurface_state = *state.current();
-					drop(state);
-					let size = surface
-						.current_buffer_size()
-						.map(|b| [b.x as u32, b.y as u32].into())
-						.unwrap_or([0; 2].into());
+			if surface.currently_has_valid_buffer()
+				&& let Some(panel_item) = surface.panel_item.lock().upgrade()
+			{
+				let state = subsurface.state.lock();
+				let subsurface_state = *state.current();
+				drop(state);
+				let size = surface
+					.current_buffer_size()
+					.map(|b| [b.x as u32, b.y as u32].into())
+					.unwrap_or([0; 2].into());
 
-					tracing::debug!("Updating backend after cached state apply: size={:?}", size);
+				tracing::debug!("Updating backend after cached state apply: size={:?}", size);
 
-					let geometry = Geometry {
-						origin: [subsurface_state.position.0, subsurface_state.position.1].into(),
-						size,
-					};
-					panel_item.backend.reposition_child(&surface, geometry);
-					panel_item
-						.backend
-						.update_child_z_order(&surface, subsurface_state.z_order);
-				}
+				let geometry = Geometry {
+					origin: [subsurface_state.position.0, subsurface_state.position.1].into(),
+					size,
+				};
+				panel_item.backend.reposition_child(&surface, geometry);
+				panel_item
+					.backend
+					.update_child_z_order(&surface, subsurface_state.z_order);
 			}
+
 			true
 		});
 	}

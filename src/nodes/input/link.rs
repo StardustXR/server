@@ -110,14 +110,6 @@ impl InputMethodHandlerLink {
 		self.handler_to_method_alias.set_enabled(false);
 	}
 
-	/// Check if this link is for the given handler
-	pub fn is_for_handler(&self, handler: &Arc<InputHandler>) -> bool {
-		self.handler
-			.upgrade()
-			.map(|h| Arc::ptr_eq(&h, handler))
-			.unwrap_or(false)
-	}
-
 	/// Get the handler if still alive
 	pub fn handler(&self) -> Option<Arc<InputHandler>> {
 		self.handler.upgrade()
