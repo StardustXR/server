@@ -24,17 +24,18 @@ use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 use std::vec::Vec;
+use tracing::error;
 
 #[derive(Default)]
 pub struct Message {
 	pub data: Vec<u8>,
 	pub fds: Vec<OwnedFd>,
 }
-impl From<Vec<u8>> for Message {
-	fn from(data: Vec<u8>) -> Self {
+impl From<(Vec<u8>, Vec<OwnedFd>)> for Message {
+	fn from(value: (Vec<u8>, Vec<OwnedFd>)) -> Self {
 		Message {
-			data,
-			fds: Vec::new(),
+			data: value.0,
+			fds: value.1,
 		}
 	}
 }
@@ -214,16 +215,7 @@ impl Node {
 				response.send_err(ScenegraphError::BrokenAlias);
 				return;
 			};
-			alias.execute_local_method(
-				calling_client,
-				aspect_id,
-				method,
-				Message {
-					data: message.data.clone(),
-					fds: Vec::new(),
-				},
-				response,
-			)
+			alias.execute_local_method(calling_client, aspect_id, method, message, response)
 		} else {
 			let Some(aspect) = self.aspects.0.get(&aspect_id).map(|v| v.clone()) else {
 				response.send_err(ScenegraphError::AspectNotFound);
@@ -251,7 +243,19 @@ impl Node {
 					method,
 					Message {
 						data: message.data.clone(),
-						fds: Vec::new(),
+						fds: message
+							.fds
+							.iter()
+							.filter_map(|f| {
+								f.try_clone()
+									.inspect_err(|err| {
+										error!(
+											"unable to clone fd, this might crash the client: {err}"
+										)
+									})
+									.ok()
+							})
+							.collect(),
 					},
 				);
 			});
@@ -265,22 +269,21 @@ impl Node {
 		aspect_id: u64,
 		method: u64,
 		input: S,
-		fds: Vec<OwnedFd>,
-	) -> Result<(D, Vec<OwnedFd>)> {
+	) -> Result<D> {
 		let message_sender_handle = self
 			.message_sender_handle
 			.as_ref()
 			.ok_or(ServerError::NoMessenger)?;
 
-		let serialized = serialize(input)?;
+		let (serialized, fds) = serialize(input)?;
 		let result = message_sender_handle
 			.method(self.id.0, aspect_id, method, &serialized, fds)
 			.await?
 			.map_err(ServerError::RemoteMethodError)?;
 
 		let (message, fds) = result.into_components();
-		let deserialized: D = deserialize(&message)?;
-		Ok((deserialized, fds))
+		let deserialized: D = deserialize(&message, fds)?;
+		Ok(deserialized)
 	}
 }
 impl Debug for Node {

@@ -138,4 +138,56 @@ impl InterfaceAspect for Interface {
 		Text::add_to(&node, text, style)?;
 		Ok(())
 	}
+
+	async fn import_dmatex(
+		_node: std::sync::Arc<crate::nodes::Node>,
+		_calling_client: std::sync::Arc<crate::core::client::Client>,
+		size: DmatexPlane,
+		format: u32,
+		srgb: bool,
+		array_layers: Option<u32>,
+		planes: Vec<DmatexPlane>,
+		timeline_syncobj_fd: stardust_xr_wire::fd::ProtocolFd,
+	) -> crate::core::error::Result<crate::nodes::Id> {
+		todo!()
+	}
+
+	async fn export_dmatex_uid(
+		_node: std::sync::Arc<crate::nodes::Node>,
+		_calling_client: std::sync::Arc<crate::core::client::Client>,
+		dmatex_id: crate::nodes::Id,
+	) -> crate::core::error::Result<crate::nodes::Id> {
+		todo!()
+	}
+
+	async fn import_dmatex_uid(
+		_node: std::sync::Arc<crate::nodes::Node>,
+		_calling_client: std::sync::Arc<crate::core::client::Client>,
+		dmatex_uid: crate::nodes::Id,
+	) -> crate::core::error::Result<crate::nodes::Id> {
+		todo!()
+	}
+
+	fn unregister_dmatex(
+		_node: std::sync::Arc<crate::nodes::Node>,
+		_calling_client: std::sync::Arc<crate::core::client::Client>,
+		dmatex_id: crate::nodes::Id,
+	) -> crate::core::error::Result<()> {
+		todo!()
+	}
+
+	async fn get_primary_render_device_id(
+		_node: std::sync::Arc<crate::nodes::Node>,
+		_calling_client: std::sync::Arc<crate::core::client::Client>,
+	) -> crate::core::error::Result<DrmNodeId> {
+		todo!()
+	}
+
+	async fn enumerate_dmatex_formats(
+		_node: std::sync::Arc<crate::nodes::Node>,
+		_calling_client: std::sync::Arc<crate::core::client::Client>,
+		device_id: DrmNodeId,
+	) -> crate::core::error::Result<Vec<DmatexFormatInfo>> {
+		todo!()
+	}
 }

@@ -158,15 +158,21 @@ futures-sink = "0.3.31"
 stardust-xr-wire.workspace = true
 
 [dependencies.stardust-xr-gluon]
-git = "https://github.com/StardustXR/core.git"
+# git = "https://github.com/StardustXR/core.git"
+git = "https://github.com/Schmarni-Dev/core.git"
+branch = "dmatex"
 # path = "../core/gluon"
 
 [workspace.dependencies.stardust-xr-protocol]
-git = "https://github.com/StardustXR/core.git"
+# git = "https://github.com/StardustXR/core.git"
+git = "https://github.com/Schmarni-Dev/core.git"
+branch = "dmatex"
 # path = "../core/protocol"
 
 [workspace.dependencies.stardust-xr-wire]
-git = "https://github.com/StardustXR/core.git"
+# git = "https://github.com/StardustXR/core.git"
+git = "https://github.com/Schmarni-Dev/core.git"
+branch = "dmatex"
 # path = "../core/wire"
 
 [dependencies.stardust-xr-server-codegen]

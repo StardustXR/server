@@ -1,3 +1,8 @@
+use std::{
+	collections::HashMap,
+	sync::{LazyLock, Mutex},
+};
+
 use convert_case::{Case, Casing};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::{ToTokens, quote};
@@ -50,6 +55,19 @@ pub fn codegen_item_panel_protocol(_input: proc_macro::TokenStream) -> proc_macr
 
 fn codegen_protocol(protocol: &'static str) -> proc_macro::TokenStream {
 	let protocol = Protocol::parse(protocol).unwrap();
+	protocol
+		.custom_structs
+		.iter()
+		.map(|v| ArgumentType::Struct(v.name.clone()))
+		.chain(
+			protocol
+				.custom_unions
+				.iter()
+				.map(|v| ArgumentType::Union(v.name.clone())),
+		)
+		.for_each(|v| {
+			setup_impl_clone_and_partial_eq(&protocol, &v);
+		});
 	let interface = protocol
 		.interface
 		.map(|p| {
@@ -129,6 +147,48 @@ fn generate_custom_enum(custom_enum: &CustomEnum) -> TokenStream {
 		pub enum #name {#argument_decls}
 	}
 }
+static CLONE_PARTIAL_EQ_CACHE: LazyLock<Mutex<HashMap<String, bool>>> =
+	LazyLock::new(Default::default);
+fn can_impl_clone_and_partial_eq(arg: &ArgumentType) -> bool {
+	match &arg {
+		ArgumentType::Union(name) => *CLONE_PARTIAL_EQ_CACHE.lock().unwrap().get(name).unwrap(),
+		ArgumentType::Struct(name) => *CLONE_PARTIAL_EQ_CACHE.lock().unwrap().get(name).unwrap(),
+		ArgumentType::Fd => false,
+		_ => true,
+	}
+}
+fn setup_impl_clone_and_partial_eq(protocol: &Protocol, arg: &ArgumentType) -> bool {
+	match &arg {
+		ArgumentType::Union(name) | ArgumentType::Struct(name) => {
+			if let Some(v) = CLONE_PARTIAL_EQ_CACHE.lock().unwrap().get(name) {
+				return *v;
+			};
+			let v = protocol
+				.custom_unions
+				.iter()
+				.filter(|v| &v.name == name)
+				.flat_map(|v| v.options.iter())
+				.map(|v| &v._type)
+				.chain(
+					protocol
+						.custom_structs
+						.iter()
+						.filter(|v| &v.name == name)
+						.flat_map(|v| v.fields.iter())
+						.map(|v| &v._type),
+				)
+				.all(|v| setup_impl_clone_and_partial_eq(protocol, v));
+			CLONE_PARTIAL_EQ_CACHE
+				.lock()
+				.unwrap()
+				.insert(name.clone(), v);
+			v
+		}
+		ArgumentType::Fd => false,
+		_ => true,
+	}
+}
+
 fn generate_custom_union(custom_union: &CustomUnion) -> TokenStream {
 	let name = Ident::new(&custom_union.name.to_case(Case::Pascal), Span::call_site());
 	let description = &custom_union.description;
@@ -140,9 +200,14 @@ fn generate_custom_union(custom_union: &CustomUnion) -> TokenStream {
 		.reduce(|a, b| quote!(#a, #b))
 		.unwrap_or_default();
 
+	let derive = if can_impl_clone_and_partial_eq(&ArgumentType::Union(custom_union.name.clone())) {
+		quote!(#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)])
+	} else {
+		quote!(#[derive(Debug,  serde::Deserialize, serde::Serialize)])
+	};
 	quote! {
 		#[doc = #description]
-		#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+		#derive
 		#[serde(tag = "t", content = "c")]
 		pub enum #name {#option_decls}
 	}
@@ -174,9 +239,16 @@ fn generate_custom_struct(custom_struct: &CustomStruct) -> TokenStream {
 		.reduce(|a, b| quote!(#a, #b))
 		.unwrap_or_default();
 
+	let derive = if can_impl_clone_and_partial_eq(&ArgumentType::Struct(custom_struct.name.clone()))
+	{
+		quote!(#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)])
+	} else {
+		quote!(#[derive(Debug,  serde::Deserialize, serde::Serialize)])
+	};
+
 	quote! {
 		#[doc = #description]
-		#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+		#derive
 		pub struct #name {#argument_decls}
 	}
 }
@@ -434,11 +506,11 @@ fn generate_member(aspect_id: u64, aspect_name: &str, member: &Member) -> TokenS
 		(Side::Client, MemberType::Method) => {
 			quote! {
 				#[doc = #description]
-				pub async fn #name(#argument_decls) -> crate::core::error::Result<(#return_type, Vec<std::os::fd::OwnedFd>)> {
+				pub async fn #name(#argument_decls) -> crate::core::error::Result<#return_type> {
 					let arguments = (#argument_uses);
 					let (#(#arguments),*) = &arguments;
 					::tracing::trace!(#argument_debug "called client method: {}::{}",#aspect_name,#name_str);
-					let result = _node.execute_remote_method_typed(#aspect_id, #opcode, &arguments, vec![]).await;
+					let result = _node.execute_remote_method_typed(#aspect_id, #opcode, &arguments).await;
 
 					match result.as_ref() {
 						Ok(value) => {
@@ -499,7 +571,7 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 		.map(|(argument_names, argument_types)| {
 			quote!{
 				#[allow(unused_parens)]
-				let (#argument_names): (#argument_types) = stardust_xr_wire::flex::deserialize(_message.as_ref())?;
+				let (#argument_names): (#argument_types) = stardust_xr_wire::flex::deserialize(&_message.data, _message.fds)?;
 			}
 		})
 		.unwrap_or_default();
@@ -537,7 +609,7 @@ fn generate_run_member(aspect_name: &Ident, _type: MemberType, member: &Member) 
 					}
 				}
 				let result = result?;
-				Ok((#serialize, Vec::<std::os::fd::OwnedFd>::new()))
+				Ok(#serialize)
 			}),
 		},
 	}
@@ -769,7 +841,7 @@ fn generate_argument_type(
 			}
 		}
 		ArgumentType::Fd => {
-			quote!(&std::os::fd::OwnedFd)
+			quote!(stardust_xr_wire::fd::ProtocolFd)
 		}
 	};
 
