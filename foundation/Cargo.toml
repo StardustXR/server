@@ -22,7 +22,4 @@ serde = { version = "1.0.205", features = ["derive"] }
 
 # mathy stuffs
 tokio = { version = "1.39.2", features = ["rt-multi-thread", "signal", "time"] }
-
-[dependencies.stardust-xr-wire]
-git = "https://github.com/StardustXR/core.git"
-# path = "../core/wire"
+stardust-xr-wire.workspace = true
