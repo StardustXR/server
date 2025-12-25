@@ -472,8 +472,8 @@ impl MaterialParameter {
 						error!("unknown param_name ({v}) for texture");
 					}
 				}
-				// mat.alpha_mode = AlphaMode::Blend;
 			}
+			MaterialParameter::Dmatex(param) => {}
 		}
 	}
 }

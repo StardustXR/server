@@ -52,7 +52,7 @@ impl Root {
 		spatial.set_local_transform(transform);
 	}
 	pub async fn save_state(&self) -> Result<ClientState> {
-		Ok(root_client::save_state(&self.node).await?.0)
+		Ok(root_client::save_state(&self.node).await?)
 	}
 }
 impl AspectIdentifier for Root {

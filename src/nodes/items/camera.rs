@@ -20,7 +20,7 @@ use mint::{ColumnMatrix4, Vector2};
 use parking_lot::Mutex;
 use stardust_xr_server_foundation::bail;
 
-use stardust_xr_wire::flex::{deserialize, serialize};
+use stardust_xr_wire::flex::deserialize;
 use std::sync::Arc;
 use std::sync::LazyLock;
 
@@ -81,7 +81,7 @@ impl CameraItem {
 			else {
 				bail!("Wrong item type?");
 			};
-			Ok(serialize(())?)
+			Ok(())
 		});
 	}
 
@@ -93,8 +93,10 @@ impl CameraItem {
 		let ItemType::Camera(camera) = &node.get_aspect::<Item>().unwrap().specialization else {
 			bail!("Wrong item type?");
 		};
-		let model_part_node =
-			calling_client.get_node("Model part", deserialize(&message.data).unwrap())?;
+		let model_part_node = calling_client.get_node(
+			"Model part",
+			deserialize(&message.data, message.fds).unwrap(),
+		)?;
 		let model_part = model_part_node.get_aspect::<ModelPart>()?;
 		camera.applied_to.add_raw(&model_part);
 		camera.apply_to.add_raw(&model_part);

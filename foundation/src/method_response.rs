@@ -1,7 +1,6 @@
 use crate::error::{Result, ServerError};
 use serde::Serialize;
 use stardust_xr_wire::{flex::serialize, messenger::MethodResponse, scenegraph::ScenegraphError};
-use std::os::fd::OwnedFd;
 
 pub struct MethodResponseSender(pub(crate) MethodResponse);
 impl MethodResponseSender {
@@ -18,23 +17,20 @@ impl MethodResponseSender {
 				return;
 			}
 		};
-		let Ok(serialized) = stardust_xr_wire::flex::serialize(data) else {
+		let Ok((serialized, fds)) = stardust_xr_wire::flex::serialize(data) else {
 			self.0.send(Err(ScenegraphError::MemberError {
 				error: "Internal: Failed to serialize".to_string(),
 			}));
 			return;
 		};
-		self.0.send(Ok((&serialized, Vec::<OwnedFd>::new())));
+		self.0.send(Ok((&serialized, fds)));
 	}
 	pub fn wrap<T: Serialize, F: FnOnce() -> Result<T>>(self, f: F) {
 		self.send(f())
 	}
-	pub fn wrap_async<T: Serialize>(
-		self,
-		f: impl Future<Output = Result<(T, Vec<OwnedFd>)>> + Send + 'static,
-	) {
+	pub fn wrap_async<T: Serialize>(self, f: impl Future<Output = Result<T>> + Send + 'static) {
 		tokio::task::spawn(async move {
-			let (value, fds) = match f.await {
+			let value = match f.await {
 				Ok(d) => d,
 				Err(e) => {
 					self.0.send(Err(ScenegraphError::MemberError {
@@ -43,7 +39,7 @@ impl MethodResponseSender {
 					return;
 				}
 			};
-			let Ok(serialized) = serialize(value) else {
+			let Ok((serialized, fds)) = serialize(value) else {
 				self.0.send(Err(ScenegraphError::MemberError {
 					error: "Internal: Failed to serialize".to_string(),
 				}));
