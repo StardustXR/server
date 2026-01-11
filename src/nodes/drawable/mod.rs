@@ -1,3 +1,4 @@
+pub mod dmatex;
 pub mod lines;
 pub mod model;
 pub mod sky;
@@ -8,13 +9,25 @@ use super::{
 	Aspect, AspectIdentifier, Node,
 	spatial::{Spatial, Transform},
 };
-use crate::core::{Id, client::Client, error::Result, resource::get_resource_file};
-use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
+use crate::{
+	core::vulkano_data::VULKANO_CONTEXT,
+	nodes::{drawable::dmatex::ALL_DRM_FOURCCS, spatial::SPATIAL_ASPECT_ALIAS_INFO},
+};
+use crate::{
+	core::{Id, client::Client, error::Result, resource::get_resource_file},
+	nodes::drawable::dmatex::ImportedDmatex,
+};
 use color_eyre::eyre::eyre;
 use model::ModelPart;
 use parking_lot::Mutex;
-use stardust_xr_wire::values::ResourceID;
-use std::{ffi::OsStr, path::PathBuf, sync::Arc};
+use stardust_xr_server_foundation::bail;
+use stardust_xr_wire::{fd::ProtocolFd, values::ResourceID};
+use std::{
+	ffi::OsStr,
+	path::PathBuf,
+	sync::{Arc, OnceLock},
+};
+use vulkano::format::Format;
 
 static QUEUED_SKYLIGHT: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
 static QUEUED_SKYTEX: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
@@ -139,55 +152,132 @@ impl InterfaceAspect for Interface {
 		Ok(())
 	}
 
-	async fn import_dmatex(
-		_node: std::sync::Arc<crate::nodes::Node>,
-		_calling_client: std::sync::Arc<crate::core::client::Client>,
-		size: DmatexPlane,
+	fn import_dmatex(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		dmatex_id: Id,
+		size: DmatexSize,
 		format: u32,
+		modifier: Id,
 		srgb: bool,
 		array_layers: Option<u32>,
 		planes: Vec<DmatexPlane>,
-		timeline_syncobj_fd: stardust_xr_wire::fd::ProtocolFd,
-	) -> crate::core::error::Result<crate::nodes::Id> {
-		todo!()
+		timeline_syncobj_fd: ProtocolFd,
+	) -> Result<()> {
+		let dmatex = ImportedDmatex::new(
+			size,
+			format,
+			modifier.0,
+			srgb,
+			array_layers,
+			planes,
+			timeline_syncobj_fd.0,
+		)?;
+		calling_client.dmatexes.insert(dmatex_id, dmatex);
+		Ok(())
 	}
 
 	async fn export_dmatex_uid(
-		_node: std::sync::Arc<crate::nodes::Node>,
-		_calling_client: std::sync::Arc<crate::core::client::Client>,
-		dmatex_id: crate::nodes::Id,
-	) -> crate::core::error::Result<crate::nodes::Id> {
-		todo!()
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		dmatex_id: Id,
+	) -> Result<Id> {
+		let Some(tex) = calling_client.dmatexes.get(&dmatex_id) else {
+			bail!("invalid dmatex id");
+		};
+		Ok(tex.export_uid().into())
 	}
 
-	async fn import_dmatex_uid(
-		_node: std::sync::Arc<crate::nodes::Node>,
-		_calling_client: std::sync::Arc<crate::core::client::Client>,
-		dmatex_uid: crate::nodes::Id,
-	) -> crate::core::error::Result<crate::nodes::Id> {
-		todo!()
+	fn import_dmatex_uid(
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		dmatex_id: Id,
+		dmatex_uid: Id,
+	) -> Result<()> {
+		let Some(tex) = ImportedDmatex::import_uid(dmatex_uid.0) else {
+			bail!("invalid dmatex id");
+		};
+		calling_client.dmatexes.insert(dmatex_id, tex);
+		Ok(())
 	}
 
 	fn unregister_dmatex(
-		_node: std::sync::Arc<crate::nodes::Node>,
-		_calling_client: std::sync::Arc<crate::core::client::Client>,
-		dmatex_id: crate::nodes::Id,
-	) -> crate::core::error::Result<()> {
-		todo!()
+		_node: Arc<Node>,
+		calling_client: Arc<Client>,
+		dmatex_id: Id,
+	) -> Result<()> {
+		calling_client.dmatexes.remove(&dmatex_id);
+		Ok(())
 	}
 
 	async fn get_primary_render_device_id(
-		_node: std::sync::Arc<crate::nodes::Node>,
-		_calling_client: std::sync::Arc<crate::core::client::Client>,
-	) -> crate::core::error::Result<DrmNodeId> {
-		todo!()
+		_node: Arc<Node>,
+		_calling_client: Arc<Client>,
+	) -> Result<Id> {
+		let vk = VULKANO_CONTEXT.wait();
+		let Some(id) = vk.get_drm_render_node_id() else {
+			bail!("unable to get render_node id");
+		};
+		Ok(id.into())
 	}
 
 	async fn enumerate_dmatex_formats(
-		_node: std::sync::Arc<crate::nodes::Node>,
-		_calling_client: std::sync::Arc<crate::core::client::Client>,
-		device_id: DrmNodeId,
-	) -> crate::core::error::Result<Vec<DmatexFormatInfo>> {
-		todo!()
+		_node: Arc<Node>,
+		_calling_client: Arc<Client>,
+		render_node_id: Id,
+	) -> Result<Vec<DmatexFormatInfo>> {
+		let vk = VULKANO_CONTEXT.wait();
+		if Some(render_node_id.0) != vk.get_drm_render_node_id() {
+			bail!(
+				"enumerating formats for devices other than the render_node used by the server is not implemented yet"
+			);
+		}
+		DMATEX_FORMAT_CACHE.get_or_init(|| {
+			// This is slow, but only runs once!
+			ALL_DRM_FOURCCS
+				.iter()
+				.filter_map(|fourcc| {
+					let f = Format::try_from(bevy_dmabuf::format_mapping::drm_fourcc_to_vk_format(
+						*fourcc,
+					)?)
+					.ok()?;
+					if bevy_dmabuf::format_mapping::vk_format_to_drm_fourcc(f.into())? != *fourcc {
+						return None;
+					}
+					let props = vk.phys_dev.format_properties(f).ok()?;
+					let can_do_srgb =
+						bevy_dmabuf::format_mapping::vk_format_to_srgb(f.into()).is_some();
+					Some(
+						if can_do_srgb {
+							props.drm_format_modifier_properties.clone()
+						} else {
+							Vec::new()
+						}
+						.into_iter()
+						.map(move |v| DmatexFormatInfo {
+							format: *fourcc as u32,
+							drm_modifier: v.drm_format_modifier.into(),
+							is_srgb: true,
+							planes: v.drm_format_modifier_plane_count,
+						})
+						.chain(
+							props
+								.drm_format_modifier_properties
+								.into_iter()
+								.map(move |v| DmatexFormatInfo {
+									format: *fourcc as u32,
+									drm_modifier: v.drm_format_modifier.into(),
+									is_srgb: false,
+									planes: v.drm_format_modifier_plane_count,
+								}),
+						),
+					)
+				})
+				.flatten()
+				.collect()
+		});
+		// not a fan of having to call clone here, not sure if theres a better solution
+		Ok(DMATEX_FORMAT_CACHE.get().unwrap().clone())
 	}
 }
+static DMATEX_FORMAT_CACHE: OnceLock<Vec<DmatexFormatInfo>> = OnceLock::new();
