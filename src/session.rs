@@ -90,20 +90,20 @@ pub fn run_client(mut command: Command, debug_launched_clients: bool) -> Option<
 pub fn connection_env() -> FxHashMap<String, String> {
 	let mut env: FxHashMap<String, String> = FxHashMap::default();
 	env.insert(
-		stringify!(STARDUST_INSTANCE).to_string(),
+		"STARDUST_INSTANCE".to_string(),
 		STARDUST_INSTANCE.get().unwrap().clone(),
 	);
 
 	if let Some(flat_wayland_display) = std::env::var_os("WAYLAND_DISPLAY") {
 		env.insert(
 			"FLAT_WAYLAND_DISPLAY".to_string(),
-			flat_wayland_display.to_string_lossy().into_owned(),
+			flat_wayland_display.to_string_lossy().to_string(),
 		);
 	}
 	#[cfg(feature = "wayland")]
 	{
 		env.insert(
-			stringify!(WAYLAND_DISPLAY).to_string(),
+			"WAYLAND_DISPLAY".to_string(),
 			WAYLAND_DISPLAY.get().unwrap().to_string_lossy().to_string(),
 		);
 		env.insert("XDG_SESSION_TYPE".to_string(), "wayland".to_string());
