@@ -1,5 +1,5 @@
 use super::Dmabuf;
-use crate::wayland::{Client, WaylandResult, vulkano_data::VULKANO_CONTEXT};
+use crate::{core::vulkano_data::VULKANO_CONTEXT, wayland::{Client, WaylandResult}};
 use memfd::MemfdOptions;
 use std::{
 	io::Write,

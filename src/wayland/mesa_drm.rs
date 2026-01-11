@@ -2,8 +2,8 @@ use crate::wayland::{
 	Client, WaylandResult,
 	core::buffer::{Buffer, BufferBacking},
 	dmabuf::{DMABUF_FORMATS, buffer_backing::DmabufBacking},
-	vulkano_data::VULKANO_CONTEXT,
 };
+use crate::core::vulkano_data::VULKANO_CONTEXT;
 use bevy_dmabuf::dmatex::{Dmatex, DmatexPlane, Resolution};
 use rustc_hash::FxHashSet;
 use std::os::fd::OwnedFd;

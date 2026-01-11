@@ -1,5 +1,6 @@
+use crate::nodes::drawable::dmatex::RENDER_DEV;
+
 use super::buffer_params::BufferParams;
-use crate::wayland::RENDER_DEVICE;
 use bevy::{
 	asset::{Assets, Handle},
 	image::Image,
@@ -37,7 +38,7 @@ impl std::fmt::Debug for DmabufBacking {
 impl DmabufBacking {
 	#[tracing::instrument(level = "debug", skip_all)]
 	pub fn new(dmatex: Dmatex) -> Result<Self, ImportError> {
-		let dev = RENDER_DEVICE.wait();
+		let dev = RENDER_DEV.wait();
 
 		Ok(Self {
 			size: [dmatex.res.x, dmatex.res.y].into(),

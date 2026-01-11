@@ -2,9 +2,8 @@ pub mod buffer_backing;
 pub mod buffer_params;
 pub mod feedback;
 
-use super::vulkano_data::VULKANO_CONTEXT;
 use crate::{
-	core::registry::Registry,
+	core::{registry::Registry, vulkano_data::VULKANO_CONTEXT},
 	wayland::{Client, WaylandError, WaylandResult},
 };
 use bevy_dmabuf::{

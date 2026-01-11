@@ -35,7 +35,7 @@ pub struct ImportedDmatex {
 	sync_obj: TimelineSyncObj,
 	bevy_image_handle: OnceLock<Handle<bevy::image::Image>>,
 }
-static RENDER_DEV: OnceLock<RenderDevice> = OnceLock::new();
+pub static RENDER_DEV: OnceLock<RenderDevice> = OnceLock::new();
 static DRM_RENDER_NODE: OnceLock<DrmRenderNode> = OnceLock::new();
 static EXPORTED_DMATEXES: LazyLock<DashMap<u64, Weak<ImportedDmatex>>> =
 	LazyLock::new(DashMap::new);

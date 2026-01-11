@@ -7,7 +7,6 @@ mod registry;
 mod relative_pointer;
 mod util;
 mod viewporter;
-mod vulkano_data;
 mod xdg;
 
 use crate::core::error::ServerError;
@@ -23,7 +22,6 @@ use bevy::app::{App, Plugin, Update};
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::{Local, Res, ResMut};
 use bevy::prelude::{Deref, DerefMut};
-use bevy::render::renderer::RenderDevice;
 use bevy::render::{Render, RenderApp};
 use bevy::{asset::Assets, ecs::resource::Resource, image::Image};
 use bevy_dmabuf::import::ImportedDmatexs;
@@ -47,7 +45,6 @@ use std::{
 use tokio::{net::UnixStream, sync::mpsc, task::AbortHandle};
 use tokio_stream::{Stream, StreamExt};
 use tracing::{debug_span, instrument};
-use vulkano_data::setup_vulkano_context;
 use waynest::{Connection, Socket};
 use waynest::{ObjectId, ProtocolError};
 use waynest_protocols::server::core::wayland::wl_display::WlDisplay;
@@ -418,23 +415,16 @@ impl Drop for Wayland {
 	}
 }
 
-static RENDER_DEVICE: OnceLock<RenderDevice> = OnceLock::new();
-
 pub struct WaylandPlugin;
 impl Plugin for WaylandPlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(Update, update_graphics.before(ModelNodeSystemSet));
 		app.init_resource::<UsedBuffers>();
 		app.sub_app_mut(RenderApp)
-			.init_resource::<UsedBuffers>()
-			.add_systems(
-				Render,
-				init_render_device.run_if(|| RENDER_DEVICE.get().is_none()),
-			);
+			.init_resource::<UsedBuffers>();
 	}
 	fn finish(&self, app: &mut App) {
 		app.sub_app_mut(RenderApp)
-			.add_systems(Render, setup_vulkano_context)
 			.add_systems(Render, before_render.in_set(XrRenderSet::PreRender))
 			.add_systems(Render, after_render.in_set(XrRenderSet::PostRender))
 			.add_systems(
@@ -444,10 +434,6 @@ impl Plugin for WaylandPlugin {
 					.after(end_frame),
 			);
 	}
-}
-
-fn init_render_device(dev: Res<RenderDevice>) {
-	_ = RENDER_DEVICE.set(dev.clone());
 }
 
 #[derive(Resource, Deref, DerefMut)]
