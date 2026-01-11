@@ -17,7 +17,7 @@ name = "stardust-xr-server"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["wayland"]
 wayland = [
 	"dep:waynest",
 	"dep:waynest-protocols",
