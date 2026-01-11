@@ -96,6 +96,8 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*};
 use wayland::{Wayland, WaylandPlugin};
 use zbus::{Connection, fdo::ObjectManager};
 
+use crate::{core::vulkano_data::VulkanoPlugin, nodes::drawable::dmatex::DmatexPlugin};
+
 #[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
 struct CliArgs {
@@ -330,11 +332,8 @@ fn bevy_loop(
 		// .add(AnimationPlugin)
 		.add(AudioPlugin::default())
 		.add(GizmoPlugin)
-		.add(WindowPlugin::default());
-	#[cfg(feature = "wayland")]
-	{
-		plugins = plugins.add(DmabufImportPlugin);
-	}
+		.add(WindowPlugin::default())
+		.add(DmabufImportPlugin);
 	let mut task_pool_plugin = TaskPoolPlugin::default();
 	// make tokio work
 	let handle = tokio::runtime::Handle::current();
@@ -450,7 +449,7 @@ fn bevy_loop(
 	}
 	// the Stardust server plugins
 	// infra plugins
-	app.add_plugins(EntityHandlePlugin);
+	app.add_plugins((EntityHandlePlugin, DmatexPlugin, VulkanoPlugin));
 	// node plugins
 	app.add_plugins((
 		SpatialNodePlugin,

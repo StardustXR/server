@@ -5,12 +5,13 @@ use super::{
 use crate::{
 	core::{Id, registry::OwnedRegistry, task},
 	nodes::{
-		Node, audio, drawable, fields, input, items,
+		Node, audio, drawable::{self, dmatex::ImportedDmatex}, fields, input, items,
 		root::{ClientState, Root},
 		spatial,
 	},
 };
 use color_eyre::eyre::{Result, eyre};
+use dashmap::DashMap;
 use global_counter::primitive::exact::CounterU32;
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
@@ -47,6 +48,7 @@ pub static INTERNAL_CLIENT: LazyLock<Arc<Client>> = LazyLock::new(|| {
 		root: OnceLock::new(),
 		base_resource_prefixes: Default::default(),
 		state: OnceLock::default(),
+		dmatexes: DashMap::new(),
 	})
 });
 pub fn tick_internal_client() {
@@ -81,6 +83,7 @@ pub struct Client {
 	pub root: OnceLock<Arc<Root>>,
 	pub base_resource_prefixes: Mutex<Vec<PathBuf>>,
 	pub state: OnceLock<ClientState>,
+	pub dmatexes: DashMap<Id, Arc<ImportedDmatex>>,
 }
 impl Client {
 	pub fn from_connection(connection: UnixStream) -> Result<Arc<Self>> {
@@ -119,6 +122,7 @@ impl Client {
 			root: OnceLock::new(),
 			base_resource_prefixes: Default::default(),
 			state: OnceLock::default(),
+			dmatexes: DashMap::new(),
 		});
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
 		let _ = client.root.set(Root::create(&client, state.root)?);

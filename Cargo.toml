@@ -17,18 +17,14 @@ name = "stardust-xr-server"
 path = "src/main.rs"
 
 [features]
-default = ["wayland"]
+default = []
 wayland = [
 	"dep:waynest",
 	"dep:waynest-protocols",
 	"dep:waynest-server",
 	"dep:tokio-stream",
 	"dep:memmap2",
-	"dep:drm-fourcc",
 	"dep:memfd",
-	"dep:vulkano",
-	"dep:wgpu-hal",
-	"dep:ash",
 ]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy", "bevy/trace_tracy", "bevy/trace"]
@@ -134,6 +130,7 @@ zbus = { version = "5.11.0", features = [
 directories = "6.0.0"
 xkbcommon-rs = "0.1.0"
 cosmic-text = "0.14.2"
+timeline_syncobj = { version = "0.1.0", features = ["tokio"] }
 
 # Wayland
 waynest = { git = "https://github.com/verdiwm/waynest.git", default-features = false, optional = true }
@@ -147,11 +144,11 @@ waynest-protocols = { git = "https://github.com/verdiwm/waynest.git", features =
 waynest-server = { git = "https://github.com/verdiwm/waynest.git", default-features = false, optional = true }
 tokio-stream = { version = "0.1.17", optional = true }
 memmap2 = { version = "0.9.5", optional = true }
-drm-fourcc = { version = "2.2.0", optional = true }
+drm-fourcc = "2.2.0"
 memfd = { version = "0.6.4", optional = true }
-vulkano = { git = "https://github.com/Schmarni-Dev/vulkano", branch = "0_35_dmabuf_fixes", default-features = false, optional = true }
-wgpu-hal = { version = "24", optional = true, features = ["vulkan"] }
-ash = { version = "0.38.0", optional = true, default-features = false }
+vulkano = { git = "https://github.com/Schmarni-Dev/vulkano", branch = "0_35_dmabuf_fixes", default-features = false }
+wgpu-hal = { version = "24", features = ["vulkan"] }
+ash = { version = "0.38.0", default-features = false }
 rustix = { version = "1.0.8", features = ["time"] }
 pin-project-lite = "0.2.16"
 futures-sink = "0.3.31"

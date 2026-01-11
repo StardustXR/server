@@ -10,6 +10,7 @@ use crate::{
 	nodes::{
 		Node,
 		alias::{Alias, AliasList},
+		drawable::dmatex::{ImportedDmatex, SignalOnDrop},
 		spatial::{Spatial, SpatialNode},
 	},
 };
@@ -26,18 +27,21 @@ use bevy::{
 use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
+use stardust_xr_gluon::AbortOnDrop;
 use stardust_xr_server_foundation::bail;
 use stardust_xr_wire::values::ResourceID;
 use std::{
+	collections::{HashMap, VecDeque},
 	ffi::OsStr,
 	hash::{Hash, Hasher},
 	path::PathBuf,
+	str::FromStr,
 	sync::{
 		Arc, OnceLock, Weak,
 		atomic::{AtomicBool, Ordering},
 	},
 };
-use tokio::sync::Notify;
+use tokio::sync::{Notify, oneshot};
 
 static LOAD_MODEL: BevyChannel<(Arc<Model>, PathBuf)> = BevyChannel::new();
 
@@ -162,9 +166,43 @@ fn apply_materials(
 			param.apply_to_material(
 				&model_part.spatial.node().unwrap().get_client().unwrap(),
 				&mut new_mat,
+				&mut model_part.textures.lock(),
 				&param_name,
 				&asset_server,
 			);
+			let handle = material_registry.get_handle(new_mat, &mut materials);
+			mesh_mat.0 = handle;
+		}
+		for (slot, queue) in model_part.pending_dmatexes.lock().iter_mut() {
+			while let Some((mut recv, _)) = queue.pop_front_if(|v| !v.0.is_empty()) {
+				let Ok((release_signal, tex)) = recv.try_recv() else {
+					error!("somehow the oneshot channel wasn't empty but also failed to try_recv");
+					continue;
+				};
+				// TODO: handle bevy handles possibly not existing yet
+				let Some(handle) = tex.try_get_bevy_handle() else {
+					error!("tried to apply dmatex before its bevy handle was created");
+					continue;
+				};
+				slot.get_part_texture(&mut model_part.textures.lock())
+					.replace((handle, Some(release_signal)));
+			}
+		}
+		{
+			let tex = model_part.textures.lock();
+			let mut new_mat = materials.get(&mesh_mat.0).unwrap().clone();
+			if let Some(tex) = &tex.diffuse {
+				new_mat.base_color_texture = Some(tex.0.clone());
+			}
+			if let Some(tex) = &tex.emission {
+				new_mat.emissive_texture = Some(tex.0.clone());
+			}
+			if let Some(tex) = &tex.metal {
+				new_mat.metallic_roughness_texture = Some(tex.0.clone());
+			}
+			if let Some(tex) = &tex.occlusion {
+				new_mat.occlusion_texture = Some(tex.0.clone());
+			}
 			let handle = material_registry.get_handle(new_mat, &mut materials);
 			mesh_mat.0 = handle;
 		}
@@ -232,6 +270,8 @@ fn gen_model_parts(
 									holdout: AtomicBool::new(false),
 									aliases: AliasList::default(),
 									bounds: OnceLock::new(),
+									pending_dmatexes: Mutex::default(),
+									textures: Mutex::default(),
 								});
 								(spatial, model_part)
 							}
@@ -414,6 +454,7 @@ impl MaterialParameter {
 		&self,
 		client: &Client,
 		mat: &mut BevyMaterial,
+		part_textures: &mut PartTextures,
 		parameter_name: &str,
 		asset_server: &AssetServer,
 	) {
@@ -463,18 +504,57 @@ impl MaterialParameter {
 					return;
 				};
 				let handle = asset_server.load(texture_path);
-				match parameter_name {
-					"diffuse" => mat.base_color_texture = Some(handle),
-					"emission" => mat.emissive_texture = Some(handle),
-					"metal" => mat.metallic_roughness_texture = Some(handle),
-					"occlusion" => mat.occlusion_texture = Some(handle),
-					v => {
-						error!("unknown param_name ({v}) for texture");
-					}
+				if let Ok(slot) = TextureSlot::from_str(parameter_name) {
+					slot.get_part_texture(part_textures).replace((handle, None));
+				} else {
+					error!("unknown param_name ({parameter_name}) for texture");
 				}
 			}
-			MaterialParameter::Dmatex(param) => {}
+			MaterialParameter::Dmatex(_) => {
+				error!("somehow trying to handle a dmatex in the main material param path");
+			}
 		}
+	}
+}
+
+#[derive(Default)]
+struct PartTextures {
+	diffuse: Option<(Handle<Image>, Option<SignalOnDrop>)>,
+	emission: Option<(Handle<Image>, Option<SignalOnDrop>)>,
+	metal: Option<(Handle<Image>, Option<SignalOnDrop>)>,
+	occlusion: Option<(Handle<Image>, Option<SignalOnDrop>)>,
+}
+#[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
+enum TextureSlot {
+	Diffuse,
+	Emission,
+	Metal,
+	Occlusion,
+}
+impl TextureSlot {
+	fn get_part_texture<'a>(
+		&self,
+		textures: &'a mut PartTextures,
+	) -> &'a mut Option<(Handle<Image>, Option<SignalOnDrop>)> {
+		match self {
+			TextureSlot::Diffuse => &mut textures.diffuse,
+			TextureSlot::Emission => &mut textures.emission,
+			TextureSlot::Metal => &mut textures.metal,
+			TextureSlot::Occlusion => &mut textures.occlusion,
+		}
+	}
+}
+impl FromStr for TextureSlot {
+	type Err = ();
+
+	fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+		Ok(match s {
+			"diffuse" => Self::Diffuse,
+			"emission" => Self::Emission,
+			"metal" => Self::Metal,
+			"occlusion" => Self::Occlusion,
+			_ => return Err(()),
+		})
 	}
 }
 
@@ -485,6 +565,16 @@ pub struct ModelPart {
 	spatial: Arc<Spatial>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Handle<BevyMaterial>>>,
+	pending_dmatexes: Mutex<
+		HashMap<
+			TextureSlot,
+			VecDeque<(
+				oneshot::Receiver<(SignalOnDrop, Arc<ImportedDmatex>)>,
+				AbortOnDrop,
+			)>,
+		>,
+	>,
+	textures: Mutex<PartTextures>,
 	holdout: AtomicBool,
 	aliases: AliasList,
 	bounds: OnceLock<Aabb>,
@@ -494,13 +584,53 @@ impl ModelPart {
 		self.pending_material_replacement
 			.lock()
 			.replace(replacement);
+		*self.textures.lock() = PartTextures::default();
 	}
 	pub fn set_material_parameter(&self, parameter_name: String, value: MaterialParameter) {
-		self.pending_material_parameters
-			.lock()
-			.insert(parameter_name, value);
+		debug!(
+			"setting material param: {parameter_name}: {value:?}, node_id: {:?}",
+			self.mesh_entity.get(),
+		);
+		if let MaterialParameter::Dmatex(param) = value {
+			let Ok(tex_slot) = TextureSlot::from_str(&parameter_name) else {
+				error!("invalid texture slot: {parameter_name}");
+				return;
+			};
+			let Some(client) = self.spatial.node().and_then(|v| v.get_client()) else {
+				error!("unable to get client for ModelPart while trying to set dmatex param");
+				return;
+			};
+			let Some(tex) = client.dmatexes.get(&param.dmatex_id) else {
+				error!("invalid dmatex id");
+				return;
+			};
+			let (tx, rx) = oneshot::channel();
+			let tex = tex.clone();
+			let task = tokio::spawn(async move {
+				let release = tex.signal_on_drop(param.release_point.0);
+				let Ok(future) = tex
+					.timeline_sync()
+					.wait_async(param.acquire_point.0)
+					.inspect_err(|err| error!("unable to async wait on dmatex timeline: {err}"))
+				else {
+					return;
+				};
+				future.await;
+				tx.send((release, tex)).unwrap();
+			});
+			self.pending_dmatexes
+				.lock()
+				.entry(tex_slot)
+				.or_default()
+				.push_back((rx, task.into()));
+		} else {
+			self.pending_material_parameters
+				.lock()
+				.insert(parameter_name, value);
+		}
 	}
 }
+
 impl ModelPartAspect for ModelPart {
 	#[doc = "Set this model part's material to one that cuts a hole in the world. Often used for overlays/passthrough where you want to show the background through an object."]
 	fn apply_holdout_material(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
@@ -626,6 +756,8 @@ impl Model {
 					holdout: AtomicBool::new(false),
 					aliases: AliasList::default(),
 					bounds: OnceLock::new(),
+					pending_dmatexes: Mutex::default(),
+					textures: Mutex::default(),
 				});
 				self.pre_bound_parts.lock().push(part.clone());
 				part
