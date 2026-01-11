@@ -174,7 +174,11 @@ fn apply_materials(
 			mesh_mat.0 = handle;
 		}
 		for (slot, queue) in model_part.pending_dmatexes.lock().iter_mut() {
-			while let Some((mut recv, _)) = queue.pop_front_if(|v| !v.0.is_empty()) {
+			while let Some((mut recv, _)) = if queue.front().is_some_and(|v| !v.0.is_empty()) {
+				queue.pop_front()
+			} else {
+				None
+			} {
 				let Ok((release_signal, tex)) = recv.try_recv() else {
 					error!("somehow the oneshot channel wasn't empty but also failed to try_recv");
 					continue;
