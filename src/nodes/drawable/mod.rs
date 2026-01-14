@@ -244,6 +244,7 @@ impl InterfaceAspect for Interface {
 					if bevy_dmabuf::format_mapping::vk_format_to_drm_fourcc(f.into())? != *fourcc {
 						return None;
 					}
+					bevy_dmabuf::wgpu_init::vulkan_to_wgpu(f.into())?;
 					let props = vk.phys_dev.format_properties(f).ok()?;
 					let can_do_srgb =
 						bevy_dmabuf::format_mapping::vk_format_to_srgb(f.into()).is_some();

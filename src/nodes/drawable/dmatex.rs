@@ -11,7 +11,11 @@ use bevy::{
 		system::{Res, ResMut},
 	},
 	image::Image,
-	render::{Render, RenderApp, renderer::RenderDevice},
+	render::{
+		Render, RenderApp,
+		camera::{ManualTextureView, ManualTextureViewHandle, ManualTextureViews},
+		renderer::RenderDevice,
+	},
 };
 use bevy_dmabuf::{
 	dmatex::DmatexPlane,
@@ -19,9 +23,13 @@ use bevy_dmabuf::{
 };
 use dashmap::DashMap;
 use drm_fourcc::DrmFourcc;
+use glam::UVec2;
 use stardust_xr_server_foundation::{bail, error::Result};
 use timeline_syncobj::{render_node::DrmRenderNode, timeline_syncobj::TimelineSyncObj};
 use tracing::{error, warn};
+use vulkano::sync::semaphore::{
+	ExternalSemaphoreHandleType, ImportSemaphoreFdInfo, Semaphore, SemaphoreImportFlags,
+};
 
 use crate::{
 	bevy_int::bevy_channel::{BevyChannel, BevyChannelReader},
@@ -34,12 +42,15 @@ pub struct ImportedDmatex {
 	tex: ImportedTexture,
 	sync_obj: TimelineSyncObj,
 	bevy_image_handle: OnceLock<Handle<bevy::image::Image>>,
+	// TODO: handle destruction
+	bevy_custom_view: OnceLock<ManualTextureViewHandle>,
 }
 pub static RENDER_DEV: OnceLock<RenderDevice> = OnceLock::new();
 static DRM_RENDER_NODE: OnceLock<DrmRenderNode> = OnceLock::new();
 static EXPORTED_DMATEXES: LazyLock<DashMap<u64, Weak<ImportedDmatex>>> =
 	LazyLock::new(DashMap::new);
 static NEW_DMATEXES: BevyChannel<Arc<ImportedDmatex>> = BevyChannel::new();
+static DESTROYED_MANUAL_VIEWS: BevyChannel<ManualTextureViewHandle> = BevyChannel::new();
 impl ImportedDmatex {
 	pub fn import_uid(uid: u64) -> Option<Arc<Self>> {
 		EXPORTED_DMATEXES.get(&uid)?.upgrade()
@@ -113,6 +124,7 @@ impl ImportedDmatex {
 			tex,
 			sync_obj,
 			bevy_image_handle: OnceLock::new(),
+			bevy_custom_view: OnceLock::new(),
 		});
 		NEW_DMATEXES.send(tex.clone());
 		Ok(tex)
@@ -122,6 +134,7 @@ impl ImportedDmatex {
 		SignalOnDrop {
 			point,
 			tex: self.clone(),
+			consumed: false,
 		}
 	}
 	pub fn timeline_sync(&self) -> &TimelineSyncObj {
@@ -130,20 +143,66 @@ impl ImportedDmatex {
 	pub fn try_get_bevy_handle(&self) -> Option<Handle<bevy::image::Image>> {
 		self.bevy_image_handle.get().cloned()
 	}
+	pub fn try_get_bevy_manual_view(&self) -> Option<ManualTextureViewHandle> {
+		self.bevy_custom_view.get().cloned()
+	}
+	pub fn get_acquire_semaphore(&self, point: u64) -> Semaphore {
+		let vk = VULKANO_CONTEXT.wait();
+		let sema = Semaphore::from_pool(vk.dev.clone()).unwrap();
+		let fd = self.timeline_sync().export_sync_file_point(point).unwrap();
+		unsafe {
+			sema.import_fd(ImportSemaphoreFdInfo {
+				flags: SemaphoreImportFlags::TEMPORARY,
+				file: Some(fd.into()),
+				..ImportSemaphoreFdInfo::handle_type(ExternalSemaphoreHandleType::SyncFd)
+			})
+			.unwrap();
+		}
+		sema
+	}
+}
+impl Drop for ImportedDmatex {
+	fn drop(&mut self) {
+		if let Some(view) = self.try_get_bevy_manual_view() {
+			_ = DESTROYED_MANUAL_VIEWS.send(view);
+		}
+	}
 }
 #[derive(Debug)]
 pub struct SignalOnDrop {
 	point: u64,
 	tex: Arc<ImportedDmatex>,
+	consumed: bool,
+}
+impl SignalOnDrop {
+	/// this semaphore has to already have a signal operation queued, or be signaled, and be
+	/// created with the SyncFD export flag
+	pub fn use_semaphore(mut self, semaphore: &Semaphore) {
+		self.consumed = true;
+		let fd = unsafe {
+			semaphore
+				.export_fd(ExternalSemaphoreHandleType::SyncFd)
+				.unwrap()
+		};
+		self.tex
+			.timeline_sync()
+			.import_sync_file_point(fd.as_fd(), self.point)
+			.unwrap();
+	}
+	pub fn tex_id(&self) -> u32 {
+		self.tex.try_get_bevy_manual_view().unwrap().0
+	}
 }
 impl Drop for SignalOnDrop {
 	fn drop(&mut self) {
-		unsafe {
-			_ = self
-				.tex
-				.sync_obj
-				.signal(self.point)
-				.inspect_err(|err| warn!("failed to signal semaphore on drop: {err}"));
+		if !self.consumed {
+			unsafe {
+				_ = self
+					.tex
+					.sync_obj
+					.signal(self.point)
+					.inspect_err(|err| warn!("failed to signal semaphore on drop: {err}"));
+			}
 		}
 	}
 }
@@ -151,22 +210,44 @@ pub struct DmatexPlugin;
 impl Plugin for DmatexPlugin {
 	fn build(&self, app: &mut bevy::app::App) {
 		NEW_DMATEXES.init(app);
+		DESTROYED_MANUAL_VIEWS.init(app);
 		app.add_systems(Update, add_dmatex_into_bevy.before(ModelNodeSystemSet));
+		app.add_systems(Update, cleanup_manual_texture_views);
 		app.sub_app_mut(RenderApp).add_systems(
 			Render,
 			init_render_device.run_if(|| RENDER_DEV.get().is_none()),
 		);
 	}
 }
+fn cleanup_manual_texture_views(
+	mut destroyed_handles: ResMut<BevyChannelReader<ManualTextureViewHandle>>,
+	mut custom_views: ResMut<ManualTextureViews>,
+) {
+	while let Some(e) = destroyed_handles.read() {
+		custom_views.remove(&e);
+	}
+}
 fn add_dmatex_into_bevy(
 	mut images: ResMut<Assets<Image>>,
 	texes: Res<ImportedDmatexs>,
 	mut new_texes: ResMut<BevyChannelReader<Arc<ImportedDmatex>>>,
+	mut custom_views: ResMut<ManualTextureViews>,
 ) {
 	while let Some(tex) = new_texes.read() {
 		if tex.bevy_image_handle.get().is_some() {
 			continue;
 		}
+		let handle = ManualTextureViewHandle(rand::random());
+		let wgpu_tex = tex.tex.texture();
+		custom_views.insert(
+			handle,
+			ManualTextureView {
+				texture_view: tex.tex.view(),
+				size: UVec2::new(wgpu_tex.size().width, wgpu_tex.size().height),
+				format: wgpu_tex.format(),
+			},
+		);
+		_ = tex.bevy_custom_view.set(handle);
 		let handle = texes.insert_imported_dmatex(&mut images, tex.tex.clone());
 		_ = tex.bevy_image_handle.set(handle);
 	}

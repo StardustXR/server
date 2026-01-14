@@ -20,8 +20,7 @@ use bevy::{
 	pbr::{ExtendedMaterial, MaterialExtension},
 	prelude::*,
 	render::{
-		primitives::Aabb,
-		render_resource::{AsBindGroup, ShaderRef},
+		Render, RenderApp, RenderSet, primitives::Aabb, render_resource::{AsBindGroup, ShaderRef}
 	},
 };
 use color_eyre::eyre::eyre;
@@ -42,6 +41,8 @@ use std::{
 	},
 };
 use tokio::sync::{Notify, oneshot};
+use vulkano::{VulkanObject, sync::semaphore::Semaphore};
+use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 
 static LOAD_MODEL: BevyChannel<(Arc<Model>, PathBuf)> = BevyChannel::new();
 
@@ -75,7 +76,21 @@ impl Plugin for ModelNodePlugin {
 				.chain()
 				.in_set(ModelNodeSystemSet),
 		);
+
+
+		app.sub_app_mut(RenderApp)
+			.add_systems(Render, queue_semaphores.in_set(RenderSet::Prepare))
+			.add_systems(Render, drop_semaphores.in_set(RenderSet::Cleanup));
 	}
+}
+
+fn queue_semaphores() {
+	WAIT_SEMAPHORES
+		.lock()
+		.extend(ACQUIRE_SEMAPHORES.lock().iter().map(|v| v.handle()));
+}
+fn drop_semaphores() {
+	ACQUIRE_SEMAPHORES.lock().drain(..);
 }
 
 // No extra data needed for a simple holdout
@@ -465,6 +480,7 @@ impl MaterialParameter {
 		match self {
 			MaterialParameter::Bool(val) => match parameter_name {
 				"double_sided" => mat.double_sided = *val,
+				"unlit" => mat.unlit = *val,
 				v => {
 					error!("unknown param_name ({v}) for color")
 				}
@@ -583,6 +599,7 @@ pub struct ModelPart {
 	aliases: AliasList,
 	bounds: OnceLock<Aabb>,
 }
+static ACQUIRE_SEMAPHORES: Mutex<Vec<Semaphore>> = Mutex::new(Vec::new());
 impl ModelPart {
 	pub fn replace_material(&self, replacement: Handle<BevyMaterial>) {
 		self.pending_material_replacement
@@ -620,6 +637,8 @@ impl ModelPart {
 					return;
 				};
 				future.await;
+				let sema = tex.get_acquire_semaphore(param.acquire_point.0);
+				ACQUIRE_SEMAPHORES.lock().push(sema);
 				tx.send((release, tex)).unwrap();
 			});
 			self.pending_dmatexes

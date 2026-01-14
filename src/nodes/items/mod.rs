@@ -1,7 +1,6 @@
 pub mod camera;
 pub mod panel;
 
-use self::camera::CameraItem;
 use self::panel::PanelItemTrait;
 use super::alias::AliasList;
 use super::fields::{FIELD_ALIAS_INFO, Field};
@@ -136,19 +135,16 @@ impl Drop for Item {
 
 #[cfg_attr(not(feature = "wayland"), allow(dead_code))]
 pub enum ItemType {
-	Camera(Arc<CameraItem>),
 	Panel(Arc<dyn PanelItemTrait>),
 }
 impl ItemType {
 	fn send_ui_item_created(&self, node: &Node, item: &Arc<Node>) {
 		match self {
-			ItemType::Camera(c) => c.send_ui_item_created(node, item),
 			ItemType::Panel(p) => p.send_ui_item_created(node, item),
 		}
 	}
 	fn send_acceptor_item_created(&self, node: &Node, item: &Arc<Node>) {
 		match self {
-			ItemType::Camera(c) => c.send_acceptor_item_created(node, item),
 			ItemType::Panel(p) => p.send_acceptor_item_created(node, item),
 		}
 	}

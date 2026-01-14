@@ -520,7 +520,7 @@ dependencies = [
  "miniz_oxide",
  "object",
  "rustc-demangle",
- "windows-link 0.2.1",
+ "windows-link",
 ]
 
 [[package]]
@@ -554,7 +554,7 @@ dependencies = [
 [[package]]
 name = "bevy-dmabuf"
 version = "0.2.0"
-source = "git+https://github.com/Schmarni-Dev/bevy-dmabuf#859cf22ea2278bf3e27b11f44c187941b81f4029"
+source = "git+https://github.com/Schmarni-Dev/bevy-dmabuf#7f0a4a35f7f84d34c0a604c41e3f382b8cebf0aa"
 dependencies = [
  "ash",
  "bevy",
@@ -2872,7 +2872,7 @@ dependencies = [
  "libc",
  "log",
  "rustversion",
- "windows 0.61.3",
+ "windows 0.58.0",
 ]
 
 [[package]]
@@ -2882,7 +2882,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1bd49230192a3797a9a4d6abe9b3eed6f7fa4c8a8a4947977c6f80025f92cbd8"
 dependencies = [
  "rustix 1.1.3",
- "windows-link 0.2.1",
+ "windows-link",
 ]
 
 [[package]]
@@ -3329,7 +3329,7 @@ dependencies = [
  "hyper",
  "libc",
  "pin-project-lite",
- "socket2 0.6.1",
+ "socket2 0.5.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -3579,7 +3579,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d7c4b02199fee7c5d21a5ae7d8cfa79a6ef5bb2fc834d6e9058e89c825efdc55"
 dependencies = [
  "cfg-if",
- "windows-link 0.2.1",
+ "windows-link",
 ]
 
 [[package]]
@@ -3901,7 +3901,7 @@ dependencies = [
 [[package]]
 name = "naga"
 version = "24.0.0"
-source = "git+https://github.com/Schmarni-Dev/wgpu?branch=bad_dmabuf_workaround#7830e47fd8359dff6a90ce15da51760bd039827d"
+source = "git+https://github.com/Schmarni-Dev/wgpu?branch=even_worse_explicit_sync#83250f5c204e0b4af5319296def13752e7c3baf2"
 dependencies = [
  "arrayvec",
  "bit-set 0.8.0",
@@ -4578,7 +4578,7 @@ dependencies = [
  "libc",
  "redox_syscall 0.5.18",
  "smallvec",
- "windows-link 0.2.1",
+ "windows-link",
 ]
 
 [[package]]
@@ -5539,7 +5539,6 @@ dependencies = [
 [[package]]
 name = "stardust-xr-gluon"
 version = "0.50.0"
-source = "git+https://github.com/StardustXR/core.git#f4494c94f105b2fee60fb69aa1ecc7889d089aff"
 dependencies = [
  "futures",
  "nanoid",
@@ -5552,7 +5551,6 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "0.50.0"
-source = "git+https://github.com/StardustXR/core.git#f4494c94f105b2fee60fb69aa1ecc7889d089aff"
 dependencies = [
  "fnv",
  "kdl",
@@ -5643,7 +5641,6 @@ dependencies = [
 [[package]]
 name = "stardust-xr-wire"
 version = "0.50.0"
-source = "git+https://github.com/StardustXR/core.git#f4494c94f105b2fee60fb69aa1ecc7889d089aff"
 dependencies = [
  "dirs",
  "flatbuffers",
@@ -6269,8 +6266,7 @@ dependencies = [
 [[package]]
 name = "tracing-tracy"
 version = "0.11.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0eaa1852afa96e0fe9e44caa53dc0bd2d9d05e0f2611ce09f97f8677af56e4ba"
+source = "git+https://github.com/nagisa/rust_tracy_client?tag=tracy-client-v0.18.4#baec2afb4bbcba18ef6afb6b9ff2b7ba26e577d8"
 dependencies = [
  "tracing-core",
  "tracing-subscriber",
@@ -6290,9 +6286,8 @@ dependencies = [
 
 [[package]]
 name = "tracy-client"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d90a2c01305b02b76fdd89ac8608bae27e173c829a35f7d76a345ab5d33836db"
+version = "0.18.4"
+source = "git+https://github.com/nagisa/rust_tracy_client?tag=tracy-client-v0.18.4#baec2afb4bbcba18ef6afb6b9ff2b7ba26e577d8"
 dependencies = [
  "loom",
  "once_cell",
@@ -6301,9 +6296,8 @@ dependencies = [
 
 [[package]]
 name = "tracy-client-sys"
-version = "0.24.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "69fff37da548239c3bf9e64a12193d261e8b22b660991c6fd2df057c168f435f"
+version = "0.28.0"
+source = "git+https://github.com/nagisa/rust_tracy_client?tag=tracy-client-v0.18.4#baec2afb4bbcba18ef6afb6b9ff2b7ba26e577d8"
 dependencies = [
  "cc",
  "windows-targets 0.52.6",
@@ -6775,7 +6769,7 @@ dependencies = [
 [[package]]
 name = "wgpu"
 version = "24.0.5"
-source = "git+https://github.com/Schmarni-Dev/wgpu?branch=bad_dmabuf_workaround#7830e47fd8359dff6a90ce15da51760bd039827d"
+source = "git+https://github.com/Schmarni-Dev/wgpu?branch=even_worse_explicit_sync#83250f5c204e0b4af5319296def13752e7c3baf2"
 dependencies = [
  "arrayvec",
  "bitflags 2.10.0",
@@ -6800,7 +6794,7 @@ dependencies = [
 [[package]]
 name = "wgpu-core"
 version = "24.0.5"
-source = "git+https://github.com/Schmarni-Dev/wgpu?branch=bad_dmabuf_workaround#7830e47fd8359dff6a90ce15da51760bd039827d"
+source = "git+https://github.com/Schmarni-Dev/wgpu?branch=even_worse_explicit_sync#83250f5c204e0b4af5319296def13752e7c3baf2"
 dependencies = [
  "arrayvec",
  "bit-vec 0.8.0",
@@ -6824,7 +6818,7 @@ dependencies = [
 [[package]]
 name = "wgpu-hal"
 version = "24.0.4"
-source = "git+https://github.com/Schmarni-Dev/wgpu?branch=bad_dmabuf_workaround#7830e47fd8359dff6a90ce15da51760bd039827d"
+source = "git+https://github.com/Schmarni-Dev/wgpu?branch=even_worse_explicit_sync#83250f5c204e0b4af5319296def13752e7c3baf2"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -6869,7 +6863,7 @@ dependencies = [
 [[package]]
 name = "wgpu-types"
 version = "24.0.0"
-source = "git+https://github.com/Schmarni-Dev/wgpu?branch=bad_dmabuf_workaround#7830e47fd8359dff6a90ce15da51760bd039827d"
+source = "git+https://github.com/Schmarni-Dev/wgpu?branch=even_worse_explicit_sync#83250f5c204e0b4af5319296def13752e7c3baf2"
 dependencies = [
  "bitflags 2.10.0",
  "js-sys",
@@ -6930,28 +6924,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "windows"
-version = "0.61.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9babd3a767a4c1aef6900409f85f5d53ce2544ccdfaa86dad48c91782c6d6893"
-dependencies = [
- "windows-collections",
- "windows-core 0.61.2",
- "windows-future",
- "windows-link 0.1.3",
- "windows-numerics",
-]
-
-[[package]]
-name = "windows-collections"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3beeceb5e5cfd9eb1d76b381630e82c4241ccd0d27f1a39ed41b2760b255c5e8"
-dependencies = [
- "windows-core 0.61.2",
-]
-
-[[package]]
 name = "windows-core"
 version = "0.54.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6967,35 +6939,11 @@ version = "0.58.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ba6d44ec8c2591c134257ce647b7ea6b20335bf6379a27dac5f1641fcf59f99"
 dependencies = [
- "windows-implement 0.58.0",
- "windows-interface 0.58.0",
+ "windows-implement",
+ "windows-interface",
  "windows-result 0.2.0",
- "windows-strings 0.1.0",
+ "windows-strings",
  "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-core"
-version = "0.61.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c0fdd3ddb90610c7638aa2b3a3ab2904fb9e5cdbecc643ddb3647212781c4ae3"
-dependencies = [
- "windows-implement 0.60.2",
- "windows-interface 0.59.3",
- "windows-link 0.1.3",
- "windows-result 0.3.4",
- "windows-strings 0.4.2",
-]
-
-[[package]]
-name = "windows-future"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fc6a41e98427b19fe4b73c550f060b59fa592d7d686537eebf9385621bfbad8e"
-dependencies = [
- "windows-core 0.61.2",
- "windows-link 0.1.3",
- "windows-threading",
 ]
 
 [[package]]
@@ -7003,17 +6951,6 @@ name = "windows-implement"
 version = "0.58.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bbd5b46c938e506ecbce286b6628a02171d56153ba733b6c741fc627ec9579b"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.110",
-]
-
-[[package]]
-name = "windows-implement"
-version = "0.60.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "053e2e040ab57b9dc951b72c264860db7eb3b0200ba345b4e4c3b14f67855ddf"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7032,37 +6969,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "windows-interface"
-version = "0.59.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f316c4a2570ba26bbec722032c4099d8c8bc095efccdc15688708623367e358"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.110",
-]
-
-[[package]]
-name = "windows-link"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e6ad25900d524eaabdbbb96d20b4311e1e7ae1699af4fb28c17ae66c80d798a"
-
-[[package]]
 name = "windows-link"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0805222e57f7521d6a62e36fa9163bc891acd422f971defe97d64e70d0a4fe5"
-
-[[package]]
-name = "windows-numerics"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9150af68066c4c5c07ddc0ce30421554771e528bde427614c61038bc2c92c2b1"
-dependencies = [
- "windows-core 0.61.2",
- "windows-link 0.1.3",
-]
 
 [[package]]
 name = "windows-result"
@@ -7083,15 +6993,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "windows-result"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56f42bd332cc6c8eac5af113fc0c1fd6a8fd2aa08a0119358686e5160d0586c6"
-dependencies = [
- "windows-link 0.1.3",
-]
-
-[[package]]
 name = "windows-strings"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7099,15 +7000,6 @@ checksum = "4cd9b125c486025df0eabcb585e62173c6c9eddcec5d117d3b6e8c30e2ee4d10"
 dependencies = [
  "windows-result 0.2.0",
  "windows-targets 0.52.6",
-]
-
-[[package]]
-name = "windows-strings"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56e6c93f3a0c3b36176cb1327a4958a0353d5d166c2a35cb268ace15e91d3b57"
-dependencies = [
- "windows-link 0.1.3",
 ]
 
 [[package]]
@@ -7152,7 +7044,7 @@ version = "0.61.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
- "windows-link 0.2.1",
+ "windows-link",
 ]
 
 [[package]]
@@ -7192,7 +7084,7 @@ version = "0.53.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4945f9f551b88e0d65f3db0bc25c33b8acea4d9e41163edf90dcd0b19f9069f3"
 dependencies = [
- "windows-link 0.2.1",
+ "windows-link",
  "windows_aarch64_gnullvm 0.53.1",
  "windows_aarch64_msvc 0.53.1",
  "windows_i686_gnu 0.53.1",
@@ -7201,15 +7093,6 @@ dependencies = [
  "windows_x86_64_gnu 0.53.1",
  "windows_x86_64_gnullvm 0.53.1",
  "windows_x86_64_msvc 0.53.1",
-]
-
-[[package]]
-name = "windows-threading"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b66463ad2e0ea3bbf808b7f1d371311c80e115c0b71d60efc142cafbcfb057a6"
-dependencies = [
- "windows-link 0.1.3",
 ]
 
 [[package]]
