@@ -45,8 +45,8 @@ pub fn codegen_item_protocol(_input: proc_macro::TokenStream) -> proc_macro::Tok
 	codegen_protocol(ITEM_PROTOCOL)
 }
 #[proc_macro]
-pub fn codegen_item_camera_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-	codegen_protocol(ITEM_CAMERA_PROTOCOL)
+pub fn codegen_camera_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+	codegen_protocol(CAMERA_PROTOCOL)
 }
 #[proc_macro]
 pub fn codegen_item_panel_protocol(_input: proc_macro::TokenStream) -> proc_macro::TokenStream {

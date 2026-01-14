@@ -17,7 +17,7 @@ name = "stardust-xr-server"
 path = "src/main.rs"
 
 [features]
-default = ["wayland"]
+default = []
 wayland = [
 	"dep:waynest",
 	"dep:waynest-protocols",
@@ -46,14 +46,19 @@ bevy_mod_openxr = { git = "https://github.com/awtterpip/bevy_oxr", rev = "9fd0c7
 bevy_mod_xr = { git = "https://github.com/awtterpip/bevy_oxr", rev = "9fd0c797" }
 bevy_gltf = { git = "https://github.com/Schmarni-Dev/bevy", branch = "gltf_backport" }
 # TODO: figure out how to not need this horrifing patch
-wgpu = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
-wgpu-types = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
-wgpu-core = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
-naga = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
-wgpu-hal = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "bad_dmabuf_workaround" }
+wgpu = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
+wgpu-types = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
+wgpu-core = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
+naga = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
+wgpu-hal = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
 bevy_pbr = { git = "https://github.com/Schmarni-Dev/bevy", branch = "premul_oit_016" }
 bevy_core_pipeline = { git = "https://github.com/Schmarni-Dev/bevy", branch = "premul_oit_016" }
 bevy_render = { git = "https://github.com/Schmarni-Dev/bevy", branch = "render_thread_init_callback" }
+
+tracing-tracy = { git = "https://github.com/nagisa/rust_tracy_client", tag = "tracy-client-v0.18.4", optional = false }
+tracy-client = { git = "https://github.com/nagisa/rust_tracy_client", tag = "tracy-client-v0.18.4", optional = false }
+tracy-client-sys = { git = "https://github.com/nagisa/rust_tracy_client", tag = "tracy-client-v0.18.4", optional = false }
+
 
 [dependencies]
 # small utility thingys
@@ -155,16 +160,16 @@ futures-sink = "0.3.31"
 stardust-xr-wire.workspace = true
 
 [dependencies.stardust-xr-gluon]
-git = "https://github.com/StardustXR/core.git"
-# path = "../core/gluon"
+# git = "https://github.com/StardustXR/core.git"
+path = "../core/gluon"
 
 [workspace.dependencies.stardust-xr-protocol]
-git = "https://github.com/StardustXR/core.git"
-# path = "../core/protocol"
+# git = "https://github.com/StardustXR/core.git"
+path = "../core/protocol"
 
 [workspace.dependencies.stardust-xr-wire]
-git = "https://github.com/StardustXR/core.git"
-# path = "../core/wire"
+# git = "https://github.com/StardustXR/core.git"
+path = "../core/wire"
 
 [dependencies.stardust-xr-server-codegen]
 path = "codegen"

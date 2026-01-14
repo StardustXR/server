@@ -20,6 +20,8 @@ use vulkano::{
 };
 use wgpu_hal::vulkan::Api as VulkanHal;
 
+use crate::vk_device_exts;
+
 pub static VULKANO_CONTEXT: OnceLock<VulkanoContext> = OnceLock::new();
 
 #[expect(dead_code)]
@@ -113,7 +115,7 @@ pub fn setup_vulkano_context(
 							.iter()
 							// TODO: remove this hack by telling wgpu about the actual exts used in
 							// bevy_mod_openxr
-							.chain(bevy_dmabuf::required_device_extensions().iter())
+							.chain(vk_device_exts().iter())
 							.map(|v| v.to_str().unwrap()),
 					),
 					// this is def wrong, lets hope it doesn't cause issues....

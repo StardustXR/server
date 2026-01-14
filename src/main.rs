@@ -96,7 +96,10 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*};
 use wayland::{Wayland, WaylandPlugin};
 use zbus::{Connection, fdo::ObjectManager};
 
-use crate::{core::vulkano_data::VulkanoPlugin, nodes::drawable::dmatex::DmatexPlugin};
+use crate::{
+	core::vulkano_data::VulkanoPlugin,
+	nodes::{drawable::dmatex::DmatexPlugin, items::camera::CameraNodePlugin},
+};
 
 #[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -279,6 +282,16 @@ pub struct ObjectRegistryRes(Arc<ObjectRegistry>);
 #[derive(Resource, Deref)]
 pub struct DbusConnection(Connection);
 
+pub fn vk_device_exts() -> Vec<&'static std::ffi::CStr> {
+	let mut exts = bevy_dmabuf::required_device_extensions();
+	if !exts.contains(&ash::khr::external_semaphore::NAME) {
+		exts.push(ash::khr::external_semaphore::NAME);
+	}
+	if !exts.contains(&ash::khr::external_semaphore_fd::NAME) {
+		exts.push(ash::khr::external_semaphore_fd::NAME);
+	}
+	exts
+}
 fn bevy_loop(
 	ready_notifier: Arc<Notify>,
 	_project_dirs: Option<ProjectDirs>,
@@ -291,7 +304,7 @@ fn bevy_loop(
 	app.insert_resource(OxrManualGraphicsConfig {
 		fallback_backend: GraphicsBackend::Vulkan(()),
 		vk_instance_exts: Vec::new(),
-		vk_device_exts: bevy_dmabuf::required_device_extensions(),
+		vk_device_exts: vk_device_exts(),
 	});
 	app.add_plugins(AssetPlugin {
 		meta_check: AssetMetaCheck::Never,
@@ -457,6 +470,7 @@ fn bevy_loop(
 		TextNodePlugin,
 		LinesNodePlugin,
 		AudioNodePlugin,
+		CameraNodePlugin,
 		// not really a node ig? at least for now
 		SkyPlugin,
 	));

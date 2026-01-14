@@ -1,4 +1,3 @@
-use super::camera::CameraItemAcceptor;
 use super::{create_item_acceptor_flex, register_item_ui_flex};
 use crate::core::Id;
 use crate::nodes::{
@@ -87,9 +86,7 @@ pub trait Backend: Send + Sync + 'static {
 }
 
 pub fn panel_item_from_node(node: &Node) -> Option<Arc<dyn PanelItemTrait>> {
-	let ItemType::Panel(panel_item) = &node.get_aspect::<Item>().ok()?.specialization else {
-		return None;
-	};
+	let ItemType::Panel(panel_item) = &node.get_aspect::<Item>().ok()?.specialization;
 	Some(panel_item.clone())
 }
 
@@ -484,8 +481,7 @@ impl<B: Backend> PanelItemTrait for PanelItem<B> {
 
 impl InterfaceAspect for Interface {
 	#[doc = "Register this client to manage the items of a certain type and create default 3D UI for them."]
-	fn register_panel_item_ui(node: Arc<Node>, calling_client: Arc<Client>) -> Result<()> {
-		node.add_aspect(CameraItemAcceptor);
+	fn register_panel_item_ui(_node: Arc<Node>, calling_client: Arc<Client>) -> Result<()> {
 		register_item_ui_flex(calling_client, &ITEM_TYPE_INFO_PANEL)
 	}
 
