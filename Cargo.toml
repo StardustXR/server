@@ -17,7 +17,7 @@ name = "stardust-xr-server"
 path = "src/main.rs"
 
 [features]
-default = []
+default = ["wayland"]
 wayland = [
 	"dep:waynest",
 	"dep:waynest-protocols",
@@ -160,16 +160,16 @@ futures-sink = "0.3.31"
 stardust-xr-wire.workspace = true
 
 [dependencies.stardust-xr-gluon]
-# git = "https://github.com/StardustXR/core.git"
-path = "../core/gluon"
+git = "https://github.com/StardustXR/core.git"
+# path = "../core/gluon"
 
 [workspace.dependencies.stardust-xr-protocol]
-# git = "https://github.com/StardustXR/core.git"
-path = "../core/protocol"
+git = "https://github.com/StardustXR/core.git"
+# path = "../core/protocol"
 
 [workspace.dependencies.stardust-xr-wire]
-# git = "https://github.com/StardustXR/core.git"
-path = "../core/wire"
+git = "https://github.com/StardustXR/core.git"
+# path = "../core/wire"
 
 [dependencies.stardust-xr-server-codegen]
 path = "codegen"

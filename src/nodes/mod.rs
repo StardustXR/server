@@ -6,6 +6,7 @@ pub mod input;
 pub mod items;
 pub mod root;
 pub mod spatial;
+pub mod camera;
 
 use self::alias::Alias;
 use crate::core::client::Client;

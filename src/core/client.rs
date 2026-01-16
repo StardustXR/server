@@ -5,9 +5,7 @@ use super::{
 use crate::{
 	core::{Id, registry::OwnedRegistry, task},
 	nodes::{
-		Node, audio, drawable::{self, dmatex::ImportedDmatex}, fields, input, items,
-		root::{ClientState, Root},
-		spatial,
+		Node, audio, camera, drawable::{self, dmatex::ImportedDmatex}, fields, input, items, root::{ClientState, Root}, spatial
 	},
 };
 use color_eyre::eyre::{Result, eyre};
@@ -131,7 +129,7 @@ impl Client {
 		drawable::create_interface(&client)?;
 		audio::create_interface(&client)?;
 		input::create_interface(&client)?;
-		items::camera::create_interface(&client)?;
+		camera::create_interface(&client)?;
 		items::panel::create_interface(&client)?;
 
 		let _ = client.state.set(state.apply_to(&client));

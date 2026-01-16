@@ -98,7 +98,7 @@ use zbus::{Connection, fdo::ObjectManager};
 
 use crate::{
 	core::vulkano_data::VulkanoPlugin,
-	nodes::{drawable::dmatex::DmatexPlugin, items::camera::CameraNodePlugin},
+	nodes::{camera::CameraNodePlugin, drawable::dmatex::DmatexPlugin},
 };
 
 #[derive(Debug, Clone, Parser)]

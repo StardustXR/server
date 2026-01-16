@@ -1,4 +1,3 @@
-pub mod camera;
 pub mod panel;
 
 use self::panel::PanelItemTrait;
