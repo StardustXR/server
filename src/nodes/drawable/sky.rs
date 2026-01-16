@@ -11,7 +11,6 @@ use bevy::{
 };
 use bevy_equirect::EquirectManager;
 use glam::Quat;
-use tracing::info;
 
 pub struct SkyPlugin;
 
