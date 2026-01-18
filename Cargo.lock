@@ -5475,8 +5475,8 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr"
-version = "0.45.0"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#90e9482681796e809664829f6de22df9efc3860d"
+version = "0.50.0"
+source = "git+https://github.com/StardustXR/core.git?tag=0.50.0#74a974d036d127fd8ff3c9d8778c747cc9606e16"
 dependencies = [
  "color-eyre",
  "dirs",
@@ -5494,8 +5494,8 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr-schemas"
-version = "1.5.3"
-source = "git+https://github.com/StardustXR/core.git?branch=dev#90e9482681796e809664829f6de22df9efc3860d"
+version = "2.0.0"
+source = "git+https://github.com/StardustXR/core.git?tag=0.50.0#74a974d036d127fd8ff3c9d8778c747cc9606e16"
 dependencies = [
  "console-subscriber",
  "flatbuffers",
@@ -5515,7 +5515,7 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr-server"
-version = "0.45.0"
+version = "0.50.0"
 dependencies = [
  "ash",
  "bevy",
