@@ -20,7 +20,9 @@ use bevy::{
 	pbr::{ExtendedMaterial, MaterialExtension},
 	prelude::*,
 	render::{
-		Render, RenderApp, RenderSet, primitives::Aabb, render_resource::{AsBindGroup, ShaderRef}
+		Render, RenderApp, RenderSet,
+		primitives::Aabb,
+		render_resource::{AsBindGroup, ShaderRef},
 	},
 };
 use color_eyre::eyre::eyre;
@@ -76,7 +78,6 @@ impl Plugin for ModelNodePlugin {
 				.chain()
 				.in_set(ModelNodeSystemSet),
 		);
-
 
 		app.sub_app_mut(RenderApp)
 			.add_systems(Render, queue_semaphores.in_set(RenderSet::Prepare))
@@ -481,6 +482,14 @@ impl MaterialParameter {
 			MaterialParameter::Bool(val) => match parameter_name {
 				"double_sided" => mat.double_sided = *val,
 				"unlit" => mat.unlit = *val,
+				"opaque" => {
+					mat.alpha_mode = if *val {
+						AlphaMode::Opaque
+					} else {
+						AlphaMode::Premultiplied
+					}
+				}
+
 				v => {
 					error!("unknown param_name ({v}) for color")
 				}
