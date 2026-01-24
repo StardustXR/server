@@ -1080,7 +1080,7 @@ dependencies = [
 [[package]]
 name = "bevy_mod_openxr"
 version = "0.3.0"
-source = "git+https://github.com/awtterpip/bevy_oxr?rev=9fd0c797#9fd0c797598e70e2ea36824bfc9c0d56c8c0eb63"
+source = "git+https://github.com/Schmarni-Dev/bevy_openxr?rev=cf129ade#cf129adefb14cc6711056831cea0e436894245bd"
 dependencies = [
  "android_system_properties",
  "ash",
@@ -1098,7 +1098,7 @@ dependencies = [
 [[package]]
 name = "bevy_mod_xr"
 version = "0.3.0"
-source = "git+https://github.com/awtterpip/bevy_oxr?rev=9fd0c797#9fd0c797598e70e2ea36824bfc9c0d56c8c0eb63"
+source = "git+https://github.com/Schmarni-Dev/bevy_openxr?rev=cf129ade#cf129adefb14cc6711056831cea0e436894245bd"
 dependencies = [
  "bevy",
 ]
@@ -6269,7 +6269,8 @@ dependencies = [
 [[package]]
 name = "tracing-tracy"
 version = "0.11.4"
-source = "git+https://github.com/nagisa/rust_tracy_client?tag=tracy-client-v0.18.4#baec2afb4bbcba18ef6afb6b9ff2b7ba26e577d8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0eaa1852afa96e0fe9e44caa53dc0bd2d9d05e0f2611ce09f97f8677af56e4ba"
 dependencies = [
  "tracing-core",
  "tracing-subscriber",
@@ -6290,7 +6291,8 @@ dependencies = [
 [[package]]
 name = "tracy-client"
 version = "0.18.4"
-source = "git+https://github.com/nagisa/rust_tracy_client?tag=tracy-client-v0.18.4#baec2afb4bbcba18ef6afb6b9ff2b7ba26e577d8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4f6fc3baeac5d86ab90c772e9e30620fc653bf1864295029921a15ef478e6a5"
 dependencies = [
  "loom",
  "once_cell",
@@ -6300,7 +6302,8 @@ dependencies = [
 [[package]]
 name = "tracy-client-sys"
 version = "0.28.0"
-source = "git+https://github.com/nagisa/rust_tracy_client?tag=tracy-client-v0.18.4#baec2afb4bbcba18ef6afb6b9ff2b7ba26e577d8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c5f7c95348f20c1c913d72157b3c6dee6ea3e30b3d19502c5a7f6d3f160dacbf"
 dependencies = [
  "cc",
  "windows-targets 0.52.6",

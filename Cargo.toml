@@ -42,8 +42,8 @@ debug = true
 opt-level = 3
 
 [patch.crates-io]
-bevy_mod_openxr = { git = "https://github.com/awtterpip/bevy_oxr", rev = "9fd0c797" }
-bevy_mod_xr = { git = "https://github.com/awtterpip/bevy_oxr", rev = "9fd0c797" }
+bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", rev = "cf129ade" }
+bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", rev = "cf129ade" }
 bevy_gltf = { git = "https://github.com/Schmarni-Dev/bevy", branch = "gltf_backport" }
 # TODO: figure out how to not need this horrifing patch
 wgpu = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
@@ -54,10 +54,6 @@ wgpu-hal = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_
 bevy_pbr = { git = "https://github.com/Schmarni-Dev/bevy", branch = "premul_oit_016" }
 bevy_core_pipeline = { git = "https://github.com/Schmarni-Dev/bevy", branch = "premul_oit_016" }
 bevy_render = { git = "https://github.com/Schmarni-Dev/bevy", branch = "render_thread_init_callback" }
-
-tracing-tracy = { git = "https://github.com/nagisa/rust_tracy_client", tag = "tracy-client-v0.18.4", optional = false }
-tracy-client = { git = "https://github.com/nagisa/rust_tracy_client", tag = "tracy-client-v0.18.4", optional = false }
-tracy-client-sys = { git = "https://github.com/nagisa/rust_tracy_client", tag = "tracy-client-v0.18.4", optional = false }
 
 
 [dependencies]
