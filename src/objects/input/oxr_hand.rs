@@ -25,7 +25,7 @@ use glam::{Mat4, Quat, Vec3};
 use openxr::{HandJointLocation, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_wire::values::Datamap;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use zbus::Connection;
 
 use super::{CaptureManager, get_sorted_handlers};
@@ -221,6 +221,7 @@ pub struct OxrHandInput {
 	tracker: Option<openxr::HandTracker>,
 	captured: bool,
 	material: HandMaterial,
+	was_enabled: bool,
 }
 impl OxrHandInput {
 	pub fn new(
@@ -283,6 +284,7 @@ impl OxrHandInput {
 			tracker: None,
 			material,
 			captured: false,
+			was_enabled: false,
 		})
 	}
 	pub fn set_enabled(&self, enabled: bool) {
@@ -398,6 +400,30 @@ impl OxrHandInput {
 					+ (ring_tip_distance * 0.15),
 			)
 		};
+
+		// Determine current enabled state from the node
+		let currently_enabled = self
+			.input
+			.spatial
+			.node()
+			.map(|n| n.enabled())
+			.unwrap_or(false);
+
+		// Handle enabled -> disabled transition
+		if self.was_enabled && !currently_enabled {
+			self.capture_manager.capture = Weak::new();
+			self.input.set_handler_capture_order(vec![], vec![]);
+			self.was_enabled = false;
+			return;
+		}
+
+		// Update was_enabled for next frame
+		self.was_enabled = currently_enabled;
+
+		// Skip handler routing if disabled
+		if !currently_enabled {
+			return;
+		}
 
 		if self
 			.capture_manager

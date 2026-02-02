@@ -39,7 +39,7 @@ use std::{
 	fs,
 	path::{Path, PathBuf},
 	str::FromStr,
-	sync::Arc,
+	sync::{Arc, Weak},
 };
 use tracing::instrument;
 use zbus::Connection;
@@ -425,6 +425,7 @@ pub struct OxrControllerInput {
 	tracked: AsyncTracked,
 	space: Option<XrSpace>,
 	_model_node: OwnedNode,
+	was_enabled: bool,
 }
 impl OxrControllerInput {
 	fn new(connection: &Connection, side: HandSide) -> Result<Self> {
@@ -463,6 +464,7 @@ impl OxrControllerInput {
 			tracked,
 			space: None,
 			_model_node: OwnedNode(model_node),
+			was_enabled: false,
 		})
 	}
 	#[instrument(level = "debug", skip(self))]
@@ -555,6 +557,30 @@ impl OxrControllerInput {
 		let distance_calculator = |space: &Arc<Spatial>, _data: &InputDataType, field: &Field| {
 			Some(field.distance(space, [0.0; 3].into()).abs())
 		};
+
+		// Determine current enabled state from the node
+		let currently_enabled = self
+			.input
+			.spatial
+			.node()
+			.map(|n| n.enabled())
+			.unwrap_or(false);
+
+		// Handle enabled -> disabled transition
+		if self.was_enabled && !currently_enabled {
+			self.capture_manager.capture = Weak::new();
+			self.input.set_handler_capture_order(vec![], vec![]);
+			self.was_enabled = false;
+			return;
+		}
+
+		// Update was_enabled for next frame
+		self.was_enabled = currently_enabled;
+
+		// Skip handler routing if disabled
+		if !currently_enabled {
+			return;
+		}
 
 		if self
 			.capture_manager
