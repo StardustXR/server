@@ -401,7 +401,6 @@ impl OxrHandInput {
 			)
 		};
 
-		// Determine current enabled state from the node
 		let currently_enabled = self
 			.input
 			.spatial
@@ -409,7 +408,6 @@ impl OxrHandInput {
 			.map(|n| n.enabled())
 			.unwrap_or(false);
 
-		// Handle enabled -> disabled transition
 		if self.was_enabled && !currently_enabled {
 			self.capture_manager.capture = Weak::new();
 			self.input.set_handler_capture_order(vec![], vec![]);
@@ -417,10 +415,8 @@ impl OxrHandInput {
 			return;
 		}
 
-		// Update was_enabled for next frame
 		self.was_enabled = currently_enabled;
 
-		// Skip handler routing if disabled
 		if !currently_enabled {
 			return;
 		}
