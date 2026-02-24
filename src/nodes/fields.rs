@@ -427,60 +427,6 @@ static FIELD_REGISTRY_DEBUG_GIZMOS: Registry<Field> = Registry::new();
 
 stardust_xr_server_codegen::codegen_field_protocol!();
 
-impl CubicControlPoint {
-	/// Exact SDF to a quadratic Bezier curve with variable radius in 3D.
-	/// a/b/c are control points, ra/rb/rc are their radii.
-	/// Returns signed distance (negative inside, positive outside).
-	/// Note: not a true Euclidean SDF when radii vary, but a conservative
-	/// underestimate — safe for sphere-tracing and fixed-step raymarching.
-	fn sd_quadratic_bezier_tube(
-		p: Vec3,
-		a: Vec3,
-		b: Vec3,
-		c: Vec3,
-		ra: f32,
-		rb: f32,
-		rc: f32,
-	) -> f32 {
-		let ab = b - a;
-		let bc = a - 2.0 * b + c;
-		let ca = ab * 2.0;
-		let d = a - p;
-
-		let kk = 1.0 / (1e-7 + bc.dot(bc));
-		let kx = kk * ab.dot(bc);
-		let ky = kk * (2.0 * ab.dot(ab) + d.dot(bc)) / 3.0;
-		let kz = kk * d.dot(ab);
-
-		let pp = ky - kx * kx;
-		let p3 = pp * pp * pp;
-		let q = kx * (2.0 * kx * kx - 3.0 * ky) + kz;
-		let h = q * q + 4.0 * p3;
-
-		let t_star = if h >= 0.0 {
-			let h_sqrt = h.sqrt();
-			let xv = glam::Vec2::new((h_sqrt - q) / 2.0, (-h_sqrt - q) / 2.0);
-			let uv = xv.signum() * xv.abs().powf(1.0 / 3.0);
-			(uv.x + uv.y - kx).clamp(0.0, 1.0)
-		} else {
-			let z = (-pp).sqrt();
-			let v = (q / (pp * z * 2.0)).acos() / 3.0;
-			let m = v.cos();
-			let n = v.sin() * 1.732_050_8;
-			let t0 = ((m + m) * z - kx).clamp(0.0, 1.0);
-			let t1 = ((-n - m) * z - kx).clamp(0.0, 1.0);
-			let pt0 = d + (ca + bc * t0) * t0;
-			let pt1 = d + (ca + bc * t1) * t1;
-			if pt0.dot(pt0) <= pt1.dot(pt1) { t0 } else { t1 }
-		};
-
-		let s = 1.0 - t_star;
-		let r = s * s * ra + 2.0 * s * t_star * rb + t_star * t_star * rc;
-		let closest = a + (ca + bc * t_star) * t_star;
-		(p - closest).length() - r
-	}
-}
-
 impl CubicSplineShape {
 	/// Iterate over cubic Bezier segments as (P0, P1, P2, P3, r0, r3).
 	fn segments(&self) -> impl Iterator<Item = (Vec3, Vec3, Vec3, Vec3, f32, f32)> + '_ {
@@ -501,47 +447,73 @@ impl CubicSplineShape {
 		})
 	}
 
-	/// Split a cubic Bezier segment at t=0.5 using de Casteljau subdivision,
-	/// interpolating radii with the same structure.
-	/// Returns (left, right) each as (P0, P1, P2, ra, rb, rc).
-	fn split_cubic(
-		p0: Vec3,
-		p1: Vec3,
-		p2: Vec3,
-		p3: Vec3,
-		r0: f32,
-		r3: f32,
-	) -> (
-		(Vec3, Vec3, Vec3, f32, f32, f32),
-		(Vec3, Vec3, Vec3, f32, f32, f32),
-	) {
-		// geometry — de Casteljau at t=0.5
-		let p01 = p0.lerp(p1, 0.5);
-		let p12 = p1.lerp(p2, 0.5);
-		let p23 = p2.lerp(p3, 0.5);
-		let p012 = p01.lerp(p12, 0.5);
-		let p123 = p12.lerp(p23, 0.5);
-		let mid = p012.lerp(p123, 0.5);
+	/// Evaluate cubic Bezier curve at parameter t.
+	fn eval_cubic(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, t: f32) -> Vec3 {
+		let it = 1.0 - t;
+		let it2 = it * it;
+		let it3 = it2 * it;
+		let t2 = t * t;
+		let t3 = t2 * t;
+		it3 * p0 + 3.0 * it2 * t * p1 + 3.0 * it * t2 * p2 + t3 * p3
+	}
 
-		// radii — linearly interpolated for phantom handle points
-		let rmid = (r0 + r3) * 0.5;
-		let r01 = (r0 + rmid) * 0.5;
-		let r23 = (rmid + r3) * 0.5;
+	/// First derivative of cubic Bezier at parameter t.
+	fn eval_cubic_deriv(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, t: f32) -> Vec3 {
+		let it = 1.0 - t;
+		3.0 * it * it * (p1 - p0) + 6.0 * it * t * (p2 - p1) + 3.0 * t * t * (p3 - p2)
+	}
 
-		// Approximate each cubic half as a quadratic by averaging the two inner
-		// control points (standard degree reduction). Using just p01 or p123 alone
-		// drops too much curvature and displaces the tube surface.
-		let left_mid_cp = p01.lerp(p012, 0.5);
-		let right_mid_cp = p123.lerp(p23, 0.5);
+	/// Second derivative of cubic Bezier at parameter t.
+	fn eval_cubic_deriv2(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, t: f32) -> Vec3 {
+		6.0 * (1.0 - t) * (p2 - 2.0 * p1 + p0) + 6.0 * t * (p3 - 2.0 * p2 + p1)
+	}
 
-		(
-			(p0, left_mid_cp, mid, r0, r01, rmid),
-			(mid, right_mid_cp, p3, rmid, r23, r3),
-		)
+	/// Find the parameter t that minimizes distance from point x to the cubic
+	/// Bezier curve (p0, p1, p2, p3) using multi-start Newton iteration on
+	/// the derivative of squared distance.
+	fn closest_t_on_cubic(p0: Vec3, p1: Vec3, p2: Vec3, p3: Vec3, x: Vec3) -> f32 {
+		let mut best_t = 0.0_f32;
+		let mut best_dist_sq = f32::INFINITY;
+
+		// Coarse sampling to find a good starting region
+		const N_SAMPLES: usize = 8;
+		for i in 0..=N_SAMPLES {
+			let t = i as f32 / N_SAMPLES as f32;
+			let pt = Self::eval_cubic(p0, p1, p2, p3, t);
+			let d2 = (pt - x).length_squared();
+			if d2 < best_dist_sq {
+				best_dist_sq = d2;
+				best_t = t;
+			}
+		}
+
+		// Newton iteration: find root of f(t) = (B(t)-x)·B'(t)
+		// using f'(t) = B'(t)·B'(t) + (B(t)-x)·B''(t)
+		let mut t = best_t;
+		for _ in 0..8 {
+			let b = Self::eval_cubic(p0, p1, p2, p3, t);
+			let b1 = Self::eval_cubic_deriv(p0, p1, p2, p3, t);
+			let b2 = Self::eval_cubic_deriv2(p0, p1, p2, p3, t);
+
+			let diff = b - x;
+			let f = diff.dot(b1);
+			let f_prime = b1.dot(b1) + diff.dot(b2);
+
+			if f_prime.abs() < 1e-12 {
+				break;
+			}
+			let dt = f / f_prime;
+			t = (t - dt).clamp(0.0, 1.0);
+			if dt.abs() < 1e-8 {
+				break;
+			}
+		}
+
+		t
 	}
 
 	/// SDF of the spline as a solid tube with per-control-point radii.
-	/// Returns signed distance (negative inside, positive outside).
+	/// Uses true cubic Bezier closest-point via Newton iteration.
 	pub fn sd_tube(&self, p: Vec3) -> f32 {
 		if self.control_points.len() < 2 {
 			return f32::INFINITY;
@@ -549,14 +521,10 @@ impl CubicSplineShape {
 
 		self.segments()
 			.map(|(p0, p1, p2, p3, r0, r3)| {
-				let (left, right) = Self::split_cubic(p0, p1, p2, p3, r0, r3);
-				let d_left = CubicControlPoint::sd_quadratic_bezier_tube(
-					p, left.0, left.1, left.2, left.3, left.4, left.5,
-				);
-				let d_right = CubicControlPoint::sd_quadratic_bezier_tube(
-					p, right.0, right.1, right.2, right.3, right.4, right.5,
-				);
-				d_left.min(d_right)
+				let t = Self::closest_t_on_cubic(p0, p1, p2, p3, p);
+				let closest = Self::eval_cubic(p0, p1, p2, p3, t);
+				let radius = r0 + (r3 - r0) * t;
+				(p - closest).length() - radius
 			})
 			.fold(f32::INFINITY, f32::min)
 	}
@@ -829,5 +797,77 @@ impl InterfaceAspect for Interface {
 		Spatial::add_to(&node, Some(parent.clone()), transform);
 		Field::add_to(&node, shape)?;
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	fn make_spline(points: &[([f32; 3], [f32; 3], [f32; 3], f32)], cyclic: bool) -> CubicSplineShape {
+		CubicSplineShape {
+			control_points: points
+				.iter()
+				.map(|(hi, a, ho, t)| CubicControlPoint {
+					handle_in: mint::Vector3::from(*hi),
+					anchor: mint::Vector3::from(*a),
+					handle_out: mint::Vector3::from(*ho),
+					thickness: *t,
+				})
+				.collect(),
+			cyclic,
+		}
+	}
+
+	#[test]
+	fn sd_tube_straight_line() {
+		let spline = make_spline(
+			&[
+				([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.33, 0.0, 0.0], 0.05),
+				([0.67, 0.0, 0.0], [1.0, 0.0, 0.0], [1.0, 0.0, 0.0], 0.05),
+			],
+			false,
+		);
+
+		let d = spline.sd_tube(Vec3::new(0.5, 0.05, 0.0));
+		eprintln!("surface point: {d}");
+		assert!(d.abs() < 0.01, "expected ~0 at surface, got {d}");
+
+		let d = spline.sd_tube(Vec3::new(0.5, 0.0, 0.0));
+		eprintln!("inside point: {d}");
+		assert!(d < 0.0, "expected negative inside tube, got {d}");
+
+		let d = spline.sd_tube(Vec3::new(0.5, 0.2, 0.0));
+		eprintln!("outside point: {d}");
+		assert!(d > 0.0, "expected positive outside tube, got {d}");
+
+		let d = spline.sd_tube(Vec3::new(0.0, 0.0, 0.0));
+		eprintln!("endpoint: {d}");
+		assert!(d < 0.0, "expected negative at anchor, got {d}");
+	}
+
+	#[test]
+	fn sd_tube_curved() {
+		let spline = make_spline(
+			&[
+				([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.1, 0.2, 0.0], 0.02),
+				([0.2, 0.2, 0.0], [0.3, 0.0, 0.0], [0.3, 0.0, 0.0], 0.02),
+			],
+			false,
+		);
+
+		for i in 0..=10 {
+			let t = i as f32 / 10.0;
+			let curve_pt = CubicSplineShape::eval_cubic(
+				Vec3::new(0.0, 0.0, 0.0),
+				Vec3::new(0.1, 0.2, 0.0),
+				Vec3::new(0.2, 0.2, 0.0),
+				Vec3::new(0.3, 0.0, 0.0),
+				t,
+			);
+			let d = spline.sd_tube(curve_pt);
+			eprintln!("t={t:.1} curve_pt={curve_pt} sd={d}");
+			assert!(d < 0.0, "point on curve should be inside tube, t={t}, sd={d}");
+		}
 	}
 }
