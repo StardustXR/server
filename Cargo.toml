@@ -2,7 +2,7 @@
 edition = "2024"
 rust-version = "1.89"
 name = "stardust-xr-server"
-version = "0.50.0"
+version = "0.51.0"
 authors = ["Nova King <technobaboo@proton.me>"]
 description = "Stardust XR reference display server"
 license = "GPLv2"
@@ -157,15 +157,12 @@ stardust-xr-wire.workspace = true
 
 [dependencies.stardust-xr-gluon]
 git = "https://github.com/StardustXR/core.git"
-# path = "../core/gluon"
 
 [workspace.dependencies.stardust-xr-protocol]
 git = "https://github.com/StardustXR/core.git"
-# path = "../core/protocol"
 
 [workspace.dependencies.stardust-xr-wire]
 git = "https://github.com/StardustXR/core.git"
-# path = "../core/wire"
 
 [dependencies.stardust-xr-server-codegen]
 path = "codegen"
