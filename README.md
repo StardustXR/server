@@ -4,7 +4,7 @@ Stardust XR is a display server for VR and AR headsets on Linux-based systems. [
 
 ![workflow](/img/workflow.png)
 
-## Instalation
+## Installation
 
 An install guide for a full working Stardust setup can found here: https://stardustxr.org/docs/telescope/install
 
