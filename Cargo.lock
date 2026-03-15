@@ -5561,7 +5561,7 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr-server"
-version = "0.50.0"
+version = "0.51.0"
 dependencies = [
  "ash",
  "bevy",
