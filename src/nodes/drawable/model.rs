@@ -399,6 +399,7 @@ impl HashedPbrMaterial {
 			AlphaMode::Multiply => state.write_u8(6),
 		}
 		state.write_u8(mat.double_sided as u8);
+		state.write_u8(mat.unlit as u8);
 		mat.base_color_texture.hash(state);
 		mat.emissive_texture.hash(state);
 		mat.metallic_roughness_texture.hash(state);
