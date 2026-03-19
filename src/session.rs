@@ -93,6 +93,7 @@ pub fn connection_env() -> FxHashMap<String, String> {
 		"STARDUST_INSTANCE".to_string(),
 		STARDUST_INSTANCE.get().unwrap().clone(),
 	);
+	env.insert("XDG_CURRENT_DESKTOP".to_string(), "Stardust".to_string());
 
 	if let Some(flat_wayland_display) = std::env::var_os("WAYLAND_DISPLAY") {
 		env.insert(
