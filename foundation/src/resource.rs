@@ -1,4 +1,4 @@
-use stardust_xr_wire::values::ResourceID;
+use stardust_xr_protocol::protocol::types::Resource;
 use std::{
 	ffi::OsStr,
 	path::{Path, PathBuf},
@@ -20,16 +20,18 @@ fn has_extension(path: &Path, extensions: &[&OsStr]) -> bool {
 }
 
 pub fn get_resource_file<'a>(
-	resource: &ResourceID,
+	resource: &Resource,
 	base_prefixes: impl Iterator<Item = &'a PathBuf>,
 	extensions: &[&OsStr],
 ) -> Option<PathBuf> {
 	match resource {
-		ResourceID::Direct(file) => {
-			(file.is_absolute() && file.exists() && has_extension(file, extensions))
+		Resource::Direct { path } => {
+			let file = Path::new(&path).to_path_buf();
+			(file.is_absolute() && file.exists() && has_extension(&file, extensions))
 				.then_some(file.clone())
 		}
-		ResourceID::Namespaced { namespace, path } => {
+		Resource::Namespaced { namespace, path } => {
+			let path = Path::new(&path);
 			let file_name = path.file_name()?;
 			THEMES
 				.iter()

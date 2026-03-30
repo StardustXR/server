@@ -1,11 +1,4 @@
 use color_eyre::eyre::Report;
-use stardust_xr_wire::{
-	flex::{
-		FlexSerializeError,
-		flexbuffers::{DeserializationError, ReaderError},
-	},
-	messenger::MessengerError,
-};
 use std::any::TypeId;
 use thiserror::Error;
 
@@ -17,16 +10,16 @@ pub enum ServerError {
 	NoClient,
 	#[error("Messenger does not exist for this node")]
 	NoMessenger,
-	#[error("Messenger error: {0}")]
-	MessengerError(#[from] MessengerError),
+	// #[error("Messenger error: {0}")]
+	// MessengerError(#[from] MessengerError),
 	#[error("Remote method error: {0}")]
 	RemoteMethodError(String),
-	#[error("Serialization error: {0}")]
-	SerializationError(#[from] FlexSerializeError),
-	#[error("Deserialization error: {0}")]
-	DeserializationError(#[from] DeserializationError),
-	#[error("Reader error: {0}")]
-	ReaderError(#[from] ReaderError),
+	// #[error("Serialization error: {0}")]
+	// SerializationError(#[from] FlexSerializeError),
+	// #[error("Deserialization error: {0}")]
+	// DeserializationError(#[from] DeserializationError),
+	// #[error("Reader error: {0}")]
+	// ReaderError(#[from] ReaderError),
 	#[error("Aspect {} does not exist for node", 0.to_string())]
 	NoAspect(TypeId),
 	#[error("{0}")]
