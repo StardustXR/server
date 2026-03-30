@@ -10,7 +10,7 @@ repository = "https://github.com/StardustXR/stardust-xr-server/"
 homepage = "https://stardustxr.org"
 
 [workspace]
-members = ["codegen", "foundation"]
+members = ["foundation"]
 
 [[bin]]
 name = "stardust-xr-server"
