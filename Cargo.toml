@@ -132,19 +132,11 @@ ash = { version = "0.38.0", default-features = false }
 rustix = { version = "1.0.8", features = ["time"] }
 pin-project-lite = "0.2.16"
 futures-sink = "0.3.31"
-stardust-xr-wire.workspace = true
-
-[dependencies.stardust-xr-gluon]
-git = "https://github.com/StardustXR/core.git"
+stardust-xr-protocol.workspace = true
 
 [workspace.dependencies.stardust-xr-protocol]
 git = "https://github.com/StardustXR/core.git"
-
-[workspace.dependencies.stardust-xr-wire]
-git = "https://github.com/StardustXR/core.git"
-
-[dependencies.stardust-xr-server-codegen]
-path = "codegen"
+branch = "binder"
 
 [dependencies.stardust-xr-server-foundation]
 path = "foundation"
