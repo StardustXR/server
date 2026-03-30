@@ -7,8 +7,6 @@ mod core;
 mod nodes;
 mod objects;
 mod session;
-#[cfg(feature = "wayland")]
-mod wayland;
 
 use bevy::{
 	MinimalPlugins,
@@ -92,8 +90,6 @@ use std::{
 use tokio::{net::UnixListener, sync::Notify, task::JoinError};
 use tracing::{error, info, metadata::LevelFilter};
 use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*};
-#[cfg(feature = "wayland")]
-use wayland::{Wayland, WaylandPlugin};
 use zbus::{Connection, fdo::ObjectManager};
 
 use crate::{
@@ -234,9 +230,6 @@ async fn main() -> Result<AppExit, JoinError> {
 		.expect("Couldn't add the object manager");
 
 	let object_registry = ObjectRegistry::new(&dbus_connection).await;
-
-	#[cfg(feature = "wayland")]
-	let _wayland = Wayland::new().expect("Couldn't create Wayland instance");
 
 	let ready_notifier = Arc::new(Notify::new());
 	let io_loop = tokio::task::spawn_blocking({
@@ -489,8 +482,6 @@ fn bevy_loop(
 	}
 
 	// feature plugins
-	#[cfg(feature = "wayland")]
-	app.add_plugins(WaylandPlugin);
 	app.add_plugins((TrackingOffsetPlugin, FieldDebugGizmoPlugin));
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
