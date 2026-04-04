@@ -18,8 +18,7 @@ use stardust_xr_protocol::protocol::spatial::{
 };
 use stardust_xr_server_foundation::bail;
 use std::fmt::Debug;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, OnceLock, Weak};
+use std::sync::{Arc, Weak};
 use std::{f32, ptr};
 use tokio::sync::RwLock;
 

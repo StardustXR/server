@@ -6,7 +6,7 @@ mod bevy_int;
 mod core;
 mod nodes;
 // mod objects;
-mod session;
+// mod session;
 
 use bevy::{
 	MinimalPlugins,
@@ -34,10 +34,7 @@ use bevy::{
 	winit::{WakeUp, WinitPlugin},
 };
 use bevy_dmabuf::import::DmabufImportPlugin;
-use bevy_int::{
-	entity_handle::EntityHandlePlugin, spectator_cam::SpectatorCameraPlugin,
-	tracking_offset::TrackingOffsetPlugin,
-};
+use bevy_int::{entity_handle::EntityHandlePlugin, spectator_cam::SpectatorCameraPlugin};
 use bevy_mod_openxr::{
 	action_set_attaching::OxrActionAttachingPlugin,
 	action_set_syncing::OxrActionSyncingPlugin,
@@ -56,19 +53,8 @@ use bevy_mod_xr::{
 	session::{XrFirst, XrHandleEvents, XrSessionPlugin},
 };
 use clap::Parser;
-use core::{
-	client::{ConnectedClient, tick_internal_client},
-	task,
-};
 use directories::ProjectDirs;
-use nodes::{
-	audio::AudioNodePlugin,
-	drawable::{
-		lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin,
-	},
-	fields::FieldDebugGizmoPlugin,
-	spatial::SpatialNodePlugin,
-};
+use nodes::spatial::SpatialNodePlugin;
 // use objects::{
 // 	hmd::HmdPlugin,
 // 	input::{
@@ -79,7 +65,6 @@ use nodes::{
 // };
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use pion_binder::PionBinderDevice;
-use session::{launch_start, save_session};
 // use stardust_xr_gluon::object_registry::ObjectRegistry;
 // use stardust_xr_wire::server::LockedSocket;
 use std::{
@@ -88,15 +73,10 @@ use std::{
 	str::FromStr,
 	sync::{Arc, LazyLock, OnceLock},
 };
-use tokio::{net::UnixListener, sync::Notify, task::JoinError};
+use tokio::{sync::Notify, task::JoinError};
 use tracing::{error, info, metadata::LevelFilter};
 use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*};
 use zbus::{Connection, fdo::ObjectManager};
-
-use crate::{
-	core::vulkano_data::VulkanoPlugin,
-	nodes::{camera::CameraNodePlugin, drawable::dmatex::DmatexPlugin},
-};
 
 #[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -233,35 +213,27 @@ async fn main() -> Result<AppExit, JoinError> {
 		.await
 		.expect("Couldn't add the object manager");
 
-
 	let ready_notifier = Arc::new(Notify::new());
 	let io_loop = tokio::task::spawn_blocking({
 		let ready_notifier = ready_notifier.clone();
 		let project_dirs = project_dirs.clone();
 		let cli_args = cli_args.clone();
 		let dbus_connection = dbus_connection.clone();
-		move || {
-			bevy_loop(
-				ready_notifier,
-				project_dirs,
-				cli_args,
-				dbus_connection,
-			)
-		}
+		move || bevy_loop(ready_notifier, project_dirs, cli_args, dbus_connection)
 	});
-	ready_notifier.notified().await;
-	let mut startup_children = project_dirs
-		.as_ref()
-		.map(|project_dirs| launch_start(&cli_args, project_dirs))
-		.unwrap_or_default();
+	// ready_notifier.notified().await;
+	// let mut startup_children = project_dirs
+	// 	.as_ref()
+	// 	.map(|project_dirs| launch_start(&cli_args, project_dirs))
+	// 	.unwrap_or_default();
 	let return_value = io_loop.await;
 	info!("Stopping...");
-	if let Some(project_dirs) = project_dirs {
-		save_session(&project_dirs).await;
-	}
-	for mut startup_child in startup_children.drain(..) {
-		let _ = startup_child.kill();
-	}
+	// if let Some(project_dirs) = project_dirs {
+	// 	save_session(&project_dirs).await;
+	// }
+	// for mut startup_child in startup_children.drain(..) {
+	// 	let _ = startup_child.kill();
+	// }
 
 	info!("Cleanly shut down Stardust");
 	return_value
@@ -364,7 +336,7 @@ fn bevy_loop(
 		plugins = plugins.add(plugin).disable::<ScheduleRunnerPlugin>();
 		plugins = match args.spectator {
 			true => plugins.add(SpectatorCameraPlugin),
-			false => plugins/* .add(FlatscreenInputPlugin) */,
+			false => plugins, /* .add(FlatscreenInputPlugin) */
 		};
 	}
 	app.insert_resource(PipelinedRenderThreadOnCreateCallback(
@@ -454,17 +426,21 @@ fn bevy_loop(
 	}
 	// the Stardust server plugins
 	// infra plugins
-	app.add_plugins((EntityHandlePlugin, DmatexPlugin, VulkanoPlugin));
+	app.add_plugins((
+		EntityHandlePlugin,
+		// DmatexPlugin,
+		// VulkanoPlugin,
+	));
 	// node plugins
 	app.add_plugins((
 		SpatialNodePlugin,
-		ModelNodePlugin,
-		TextNodePlugin,
-		LinesNodePlugin,
-		AudioNodePlugin,
-		CameraNodePlugin,
+		// ModelNodePlugin,
+		// TextNodePlugin,
+		// LinesNodePlugin,
+		// AudioNodePlugin,
+		// CameraNodePlugin,
 		// not really a node ig? at least for now
-		SkyPlugin,
+		// SkyPlugin,
 	));
 	// object plugins
 	// app.add_plugins((PlaySpacePlugin, HmdPlugin));
@@ -481,7 +457,7 @@ fn bevy_loop(
 	// }
 
 	// feature plugins
-	app.add_plugins((TrackingOffsetPlugin, FieldDebugGizmoPlugin));
+	// app.add_plugins((TrackingOffsetPlugin, FieldDebugGizmoPlugin));
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
@@ -527,8 +503,8 @@ fn xr_step(world: &mut World) {
 	// update things like the Xr input methods
 	world.run_schedule(PreFrameWait);
 	let time = world.resource::<bevy::prelude::Time>().delta_secs_f64();
-    // TODO: send new frame events for clients, 
-    // including the predicted display time if availabe
+	// TODO: send new frame events for clients,
+	// including the predicted display time if availabe
 	// nodes::root::Root::send_frame_events(time);
 
 	let should_wait = world
@@ -548,7 +524,7 @@ fn xr_step(world: &mut World) {
 		});
 	}
 
-	tick_internal_client();
+	// tick_internal_client();
 }
 
 pub fn get_time(pipelined: bool, state: &OxrFrameState) -> openxr::Time {

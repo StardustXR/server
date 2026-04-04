@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use binderbinder::{TransactionHandler, binder_object::BinderObject};
 
-pub mod audio;
-pub mod camera;
-pub mod drawable;
-pub mod fields;
+// pub mod audio;
+// pub mod camera;
+// pub mod drawable;
+// pub mod fields;
 // pub mod input;
 pub mod spatial;
 
@@ -42,7 +42,7 @@ macro_rules! interface {
 			}
 		}
 
-		crate::impl_transaction_handler!($type);
+		$crate::impl_transaction_handler!($type);
 	};
 }
 #[macro_export]
