@@ -1,17 +1,18 @@
-use super::{INPUT_HANDLER_REGISTRY, INPUT_METHOD_REGISTRY, InputHandlerAspect};
-use crate::nodes::{Node, fields::Field, spatial::Spatial};
+use super::{INPUT_HANDLER_REGISTRY, INPUT_METHOD_REGISTRY};
+use crate::nodes::{fields::Field, spatial::SpatialMut};
 use color_eyre::eyre::Result;
+use stardust_xr_protocol::protocol::input::InputHandlerHandler;
 use std::sync::Arc;
 
 pub struct InputHandler {
-	pub spatial: Arc<Spatial>,
+	pub spatial: Arc<SpatialMut>,
 	pub field: Arc<Field>,
 	// No alias storage needed - methods own the links!
 }
 impl InputHandler {
 	pub fn add_to(node: &Arc<Node>, field: &Arc<Field>) -> Result<()> {
 		let handler = InputHandler {
-			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
+			spatial: node.get_aspect::<SpatialMut>().unwrap().clone(),
 			field: field.clone(),
 		};
 		let handler_arc = INPUT_HANDLER_REGISTRY.add(handler);
@@ -22,7 +23,6 @@ impl InputHandler {
 		Ok(())
 	}
 }
-impl InputHandlerAspect for InputHandler {}
 impl PartialEq for InputHandler {
 	fn eq(&self, other: &Self) -> bool {
 		self.spatial == other.spatial

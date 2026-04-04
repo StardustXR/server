@@ -1,15 +1,16 @@
 use crate::{
-	BevyMaterial,
+	BevyMaterial, PION,
 	bevy_int::{
 		bevy_channel::{BevyChannel, BevyChannelReader},
 		color::ColorConvert,
 		entity_handle::EntityHandle,
 	},
-	core::{client::Client, error::Result, registry::Registry, resource::get_resource_file},
+	core::{error::Result, resource::get_resource_file},
+	impl_transaction_handler,
 	nodes::{
-		Node,
-		drawable::{TextFit, XAlign},
-		spatial::{Spatial, SpatialNode},
+		drawable::model::MaterialRegistry,
+		ref_owned,
+		spatial::{SpatialMut, SpatialNode},
 	},
 };
 use bevy::{platform::collections::HashMap, prelude::*};
@@ -17,9 +18,10 @@ use bevy_mesh_text_3d::{
 	Align, Attrs, HorizontalAnchorPoint, MeshTextPlugin, Settings as FontSettings, VerticalAlign,
 	VerticalAnchorPoint, generate_meshes,
 };
-use color_eyre::eyre::eyre;
+use binderbinder::binder_object::BinderObject;
 use core::f32;
 use parking_lot::Mutex;
+use stardust_xr_protocol::protocol::text::{TextFit, TextHandler, TextStyle, XAlign, YAlign};
 use std::{ffi::OsStr, mem, path::PathBuf, sync::Arc};
 
 static SPAWN_TEXT: BevyChannel<Arc<Text>> = BevyChannel::new();
@@ -63,14 +65,14 @@ fn spawn_text(
 		});
 		let attrs = Attrs::new().weight(cosmic_text::Weight::BOLD);
 		let alignment = Some(match style.text_align_x {
-			super::XAlign::Left => Align::Right,
-			super::XAlign::Center => Align::Center,
-			super::XAlign::Right => Align::Left,
+			XAlign::Left => Align::Right,
+			XAlign::Center => Align::Center,
+			XAlign::Right => Align::Left,
 		});
 		let vertical_alignment = Some(match style.text_align_y {
-			super::YAlign::Top => VerticalAlign::Top,
-			super::YAlign::Center => VerticalAlign::Middle,
-			super::YAlign::Bottom => VerticalAlign::Bottom,
+			YAlign::Top => VerticalAlign::Top,
+			YAlign::Center => VerticalAlign::Middle,
+			YAlign::Bottom => VerticalAlign::Bottom,
 		});
 		let text_string = text.text.lock().clone();
 		let max_width = style.bounds.as_ref().map(|v| v.bounds.x);
@@ -168,61 +170,57 @@ impl FontDatabaseRegistry {
 	}
 }
 
-use super::{TextAspect, TextStyle, YAlign, model::MaterialRegistry};
-
-static TEXT_REGISTRY: Registry<Text> = Registry::new();
-
+#[derive(Debug)]
 pub struct Text {
-	spatial: Arc<Spatial>,
+	spatial: Arc<BinderObject<SpatialMut>>,
 	font_path: Option<PathBuf>,
 	entity: Mutex<Option<EntityHandle>>,
 	text: Mutex<String>,
 	data: Mutex<TextStyle>,
 }
-impl Text {
-	pub fn add_to(node: &Arc<Node>, text: String, style: TextStyle) -> Result<Arc<Text>> {
-		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
-		let text = TEXT_REGISTRY.add(Text {
-			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
+/// only exists so we can send an Arc<Text> into SPAWN_TEXT
+#[derive(Debug)]
+struct TextRef(Arc<Text>);
+impl TextRef {
+	pub fn new(
+		spatial: Arc<BinderObject<SpatialMut>>,
+		text: String,
+		style: TextStyle,
+		prefixes: &[PathBuf],
+	) -> Result<Arc<BinderObject<TextRef>>> {
+		let text = Arc::new(Text {
+			spatial,
 			font_path: style.font.as_ref().and_then(|res| {
-				get_resource_file(
-					res,
-					client.base_resource_prefixes.lock().iter(),
-					&[OsStr::new("ttf"), OsStr::new("otf")],
-				)
+				get_resource_file(res, &prefixes, &[OsStr::new("ttf"), OsStr::new("otf")])
 			}),
 
 			entity: Mutex::new(None),
 			text: Mutex::new(text),
 			data: Mutex::new(style),
 		});
-		node.add_aspect_raw(text.clone());
 		_ = SPAWN_TEXT.send(text.clone());
+		let text = PION.register_object(TextRef(text));
+		ref_owned(&text);
 
 		Ok(text)
 	}
 }
-impl TextAspect for Text {
-	fn set_character_height(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		height: f32,
-	) -> Result<()> {
-		let this_text = node.get_aspect::<Text>()?;
-		this_text.data.lock().character_height = height;
-		_ = SPAWN_TEXT.send(this_text);
-		Ok(())
+impl TextHandler for TextRef {
+	fn set_character_height(&self, _ctx: gluon_wire::GluonCtx, height: f32) {
+		self.0.data.lock().character_height = height;
+		_ = SPAWN_TEXT.send(self.0.clone());
 	}
 
-	fn set_text(node: Arc<Node>, _calling_client: Arc<Client>, text: String) -> Result<()> {
-		let this_text = node.get_aspect::<Text>()?;
-		*this_text.text.lock() = text;
-		_ = SPAWN_TEXT.send(this_text);
-		Ok(())
+	fn set_text(&self, _ctx: gluon_wire::GluonCtx, text: String) {
+		*self.0.text.lock() = text;
+		_ = SPAWN_TEXT.send(self.0.clone());
+	}
+
+	fn drop_notification_requested(
+		&self,
+		notifier: gluon_wire::drop_tracking::DropNotifier,
+	) -> impl Future<Output = ()> + Send + Sync {
+		todo!()
 	}
 }
-impl Drop for Text {
-	fn drop(&mut self) {
-		TEXT_REGISTRY.remove(self);
-	}
-}
+impl_transaction_handler!(TextRef);

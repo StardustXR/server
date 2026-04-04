@@ -1,9 +1,12 @@
-use super::{Line, LinesAspect};
 use crate::{
-	BevyMaterial,
+	BevyMaterial, PION,
 	bevy_int::{color::ColorConvert, entity_handle::EntityHandle},
-	core::{client::Client, error::Result, registry::Registry},
-	nodes::{Node, drawable::LinePoint, spatial::Spatial},
+	core::{error::Result, registry::Registry},
+	impl_transaction_handler, interface,
+	nodes::{
+		ProxyExt, ref_owned,
+		spatial::{BoundingBoxCalc, SpatialMut},
+	},
 };
 use bevy::{
 	asset::{AssetEvents, RenderAssetUsages, weak_handle},
@@ -16,13 +19,17 @@ use bevy::{
 		view::VisibilitySystems,
 	},
 };
+use binderbinder::binder_object::BinderObject;
 use glam::Vec3;
+use gluon_wire::drop_tracking::DropNotifier;
 use parking_lot::Mutex;
+use stardust_xr_protocol::protocol::lines::Lines as LinesProxy;
+use stardust_xr_protocol::protocol::lines::{Line, LinePoint, LinesHandler, LinesInterfaceHandler};
 use std::sync::{
 	Arc, OnceLock, Weak,
 	atomic::{AtomicBool, Ordering},
 };
-use tokio::sync::Notify;
+use tokio::sync::{Notify, RwLock};
 
 type LineMaterial = ExtendedMaterial<BevyMaterial, LineExtension>;
 const LINE_SHADER_HANDLE: Handle<Shader> = weak_handle!("7d28aa5a-3abd-43bb-b0e9-0de8b81b650d");
@@ -335,55 +342,57 @@ fn cyclic_indices(start_set: u32, end_set: u32) -> [u32; INDICES.len()] {
 
 static LINES_REGISTRY: Registry<Lines> = Registry::new();
 
+#[derive(Debug)]
 pub struct Lines {
-	spatial: Arc<Spatial>,
+	spatial: Arc<BinderObject<SpatialMut>>,
 	data: Mutex<Vec<Line>>,
 	gen_mesh: AtomicBool,
 	entity: OnceLock<EntityHandle>,
 	bounds: Mutex<Option<Aabb>>,
+	bounding_calc: OnceLock<BoundingBoxCalc>,
 	setup_complete: Notify,
+	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl Lines {
-	pub fn add_to(node: &Arc<Node>, lines: Vec<Line>) -> Result<Arc<Lines>> {
-		let _ = node
-			.get_aspect::<Spatial>()
-			.unwrap()
-			.bounding_box_calc
-			.set(|node| {
-				Box::pin(async {
-					let Ok(lines) = node.get_aspect::<Lines>() else {
-						return Default::default();
-					};
-					let bounds = *lines.bounds.lock();
-					match bounds {
-						Some(aabb) => aabb,
-						None => {
-							lines.setup_complete.notified().await;
-							lines.bounds.lock().unwrap_or_default()
-						}
-					}
-				})
-			});
-
-		let lines = LINES_REGISTRY.add(Lines {
-			spatial: node.get_aspect::<Spatial>()?.clone(),
+	pub fn new(
+		spatial: Arc<BinderObject<SpatialMut>>,
+		lines: Vec<Line>,
+	) -> Arc<BinderObject<Lines>> {
+		let lines = PION.register_object(Lines {
+			spatial: spatial.clone(),
 			data: Mutex::new(lines),
 			gen_mesh: AtomicBool::new(true),
 			entity: OnceLock::new(),
 			bounds: Mutex::new(Some(Aabb::default())),
+			bounding_calc: OnceLock::new(),
 			setup_complete: Notify::new(),
+			drop_notifs: RwLock::default(),
 		});
-		node.add_aspect_raw(lines.clone());
+		let lines_weak = Arc::downgrade(&lines);
+		let bounding_calc = spatial.custom_bounding_box(move || {
+			let Some(lines) = lines_weak.upgrade() else {
+				return Default::default();
+			};
+			let bounds = *lines.bounds.lock();
+			match bounds {
+				Some(aabb) => aabb,
+				None => lines.bounds.lock().unwrap_or_default(),
+			}
+		});
+        lines.bounding_calc.set(bounding_calc);
+		ref_owned(&lines);
 
 		Ok(lines)
 	}
 }
-impl LinesAspect for Lines {
-	fn set_lines(node: Arc<Node>, _calling_client: Arc<Client>, lines: Vec<Line>) -> Result<()> {
-		let lines_aspect = node.get_aspect::<Lines>()?;
-		*lines_aspect.data.lock() = lines;
-		lines_aspect.gen_mesh.store(true, Ordering::Relaxed);
-		Ok(())
+impl LinesHandler for Lines {
+	fn set_lines(&self, _ctx: gluon_wire::GluonCtx, lines: Vec<Line>) {
+		*self.data.lock() = lines;
+		self.gen_mesh.store(true, Ordering::Relaxed);
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl Drop for Lines {
@@ -391,3 +400,25 @@ impl Drop for Lines {
 		LINES_REGISTRY.remove(self);
 	}
 }
+interface!(LinesInterface);
+impl LinesInterfaceHandler for LinesInterface {
+	async fn create_lines(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		spatial: stardust_xr_protocol::protocol::spatial::Spatial,
+		lines: Vec<Line>,
+	) -> LinesProxy {
+		let Some(spatial) = spatial.owned() else {
+			// TODO: replace with proper error returning
+			panic!("invalid spatial in lines creation");
+		};
+		let lines = Lines::new(spatial, lines);
+		lines.setup_complete.notified().await;
+		LinesProxy::from_handler(&lines)
+	}
+
+	async fn drop_notification_requested(&self, notifier: gluon_wire::drop_tracking::DropNotifier) {
+		todo!()
+	}
+}
+impl_transaction_handler!(Lines);

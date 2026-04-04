@@ -1,61 +1,12 @@
-use super::{Finger, Hand, InputDataTrait, InputHandler, InputMethod, Joint, Thumb};
+use super::{InputDataTrait, InputHandler, InputMethod};
 use crate::nodes::fields::{Field, FieldTrait};
-use crate::nodes::spatial::Spatial;
-use glam::{Mat4, Quat, vec3a};
+use crate::nodes::spatial::SpatialMut;
+use glam::{Mat4, vec3a};
+use stardust_xr_protocol::protocol::input::{Hand, Joint};
 use std::sync::Arc;
 
-impl Default for Joint {
-	fn default() -> Self {
-		Joint {
-			position: [0.0; 3].into(),
-			rotation: Quat::IDENTITY.into(),
-			radius: 0.0,
-			distance: 0.0,
-		}
-	}
-}
-#[allow(clippy::derivable_impls)]
-impl Default for Finger {
-	fn default() -> Self {
-		Finger {
-			tip: Default::default(),
-			distal: Default::default(),
-			intermediate: Default::default(),
-			proximal: Default::default(),
-			metacarpal: Default::default(),
-		}
-	}
-}
-#[allow(clippy::derivable_impls)]
-impl Default for Thumb {
-	fn default() -> Self {
-		Thumb {
-			tip: Default::default(),
-			distal: Default::default(),
-			proximal: Default::default(),
-			metacarpal: Default::default(),
-		}
-	}
-}
-#[allow(clippy::derivable_impls)]
-impl Default for Hand {
-	fn default() -> Self {
-		Hand {
-			right: Default::default(),
-			thumb: Default::default(),
-			index: Default::default(),
-			middle: Default::default(),
-			ring: Default::default(),
-			little: Default::default(),
-			palm: Default::default(),
-			wrist: Default::default(),
-			elbow: Default::default(),
-		}
-	}
-}
-
 impl InputDataTrait for Hand {
-	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+	fn distance(&self, space: &Arc<SpatialMut>, field: &Field) -> f32 {
 		let mut min_distance = f32::MAX;
 
 		for tip in [
@@ -72,7 +23,7 @@ impl InputDataTrait for Hand {
 	}
 	fn transform(&mut self, method: &InputMethod, handler: &InputHandler) {
 		let local_to_handler_matrix =
-			Spatial::space_to_space_matrix(Some(&method.spatial), Some(&handler.spatial));
+			SpatialMut::space_to_space_matrix(Some(&method.spatial), Some(&handler.spatial));
 		let mut joints: Vec<&mut Joint> = Vec::new();
 
 		joints.extend([&mut self.palm, &mut self.wrist]);

@@ -6,7 +6,7 @@ pub mod oxr_hand;
 use crate::nodes::{
 	fields::{Field, FieldTrait, Ray},
 	input::{INPUT_HANDLER_REGISTRY, InputDataTrait, InputDataType, InputHandler, InputMethod},
-	spatial::Spatial,
+	spatial::SpatialMut,
 };
 use glam::vec3;
 use std::{
@@ -43,7 +43,7 @@ impl CaptureManager {
 	}
 }
 
-type DistanceCalculator = fn(&Arc<Spatial>, &InputDataType, &Field) -> Option<f32>;
+type DistanceCalculator = fn(&Arc<SpatialMut>, &InputDataType, &Field) -> Option<f32>;
 
 pub fn find_closest_capture(
 	method: &InputMethod,

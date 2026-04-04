@@ -1,7 +1,5 @@
 use crate::core::client::CLIENTS;
 use crate::core::client_state::ClientStateParsed;
-#[cfg(feature = "wayland")]
-use crate::wayland::WAYLAND_DISPLAY;
 use crate::{CliArgs, STARDUST_INSTANCE};
 use directories::ProjectDirs;
 use rustc_hash::FxHashMap;
@@ -67,6 +65,7 @@ pub fn restore_session(session_dir: &Path, debug_launched_clients: bool) -> Vec<
 }
 
 pub fn run_script(script_path: &Path, debug_launched_clients: bool) -> Vec<Child> {
+	// TODO: do we really want to set the perms here?
 	let _ = std::fs::set_permissions(script_path, std::fs::Permissions::from_mode(0o755));
 	let startup_command = Command::new(script_path);
 	run_client(startup_command, debug_launched_clients)
@@ -100,14 +99,6 @@ pub fn connection_env() -> FxHashMap<String, String> {
 			"FLAT_WAYLAND_DISPLAY".to_string(),
 			flat_wayland_display.to_string_lossy().to_string(),
 		);
-	}
-	#[cfg(feature = "wayland")]
-	{
-		env.insert(
-			"WAYLAND_DISPLAY".to_string(),
-			WAYLAND_DISPLAY.get().unwrap().to_string_lossy().to_string(),
-		);
-		env.insert("XDG_SESSION_TYPE".to_string(), "wayland".to_string());
 	}
 	env
 }

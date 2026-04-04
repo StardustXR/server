@@ -21,7 +21,7 @@ fn has_extension(path: &Path, extensions: &[&OsStr]) -> bool {
 
 pub fn get_resource_file<'a>(
 	resource: &Resource,
-	base_prefixes: impl Iterator<Item = &'a PathBuf>,
+	base_prefixes: impl IntoIterator<Item = &'a PathBuf>,
 	extensions: &[&OsStr],
 ) -> Option<PathBuf> {
 	match resource {

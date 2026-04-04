@@ -1,16 +1,13 @@
 #![allow(dead_code)]
-use crate::core::client::Client;
-use crate::core::error::Result;
+use crate::PION;
 use crate::core::vulkano_data::VULKANO_CONTEXT;
-use crate::nodes::Aspect;
-use crate::nodes::AspectIdentifier;
-use crate::nodes::Id;
-use crate::nodes::Node;
-use crate::nodes::drawable::DmatexSubmitInfo;
-use crate::nodes::drawable::dmatex::ImportedDmatex;
+use crate::impl_transaction_handler;
+use crate::interface;
+use crate::nodes::ProxyExt;
+use crate::nodes::drawable::dmatex::Dmatex;
 use crate::nodes::drawable::dmatex::SignalOnDrop;
-use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
-use crate::nodes::spatial::{Spatial, Transform};
+use crate::nodes::ref_owned;
+use crate::nodes::spatial::SpatialMut;
 use bevy::app::App;
 use bevy::app::Plugin;
 use bevy::app::Update;
@@ -29,10 +26,18 @@ use bevy::render::camera::RenderTarget;
 use bevy::render::extract_component::ExtractComponent;
 use bevy::render::extract_component::ExtractComponentPlugin;
 use bevy_mod_xr::camera::XrProjection;
+use binderbinder::binder_object::BinderObject;
 use glam::Mat4;
+use gluon_wire::drop_tracking::DropNotifier;
 use parking_lot::Mutex;
+use stardust_xr_protocol::protocol::camera::Camera as CameraProxy;
+use stardust_xr_protocol::protocol::camera::CameraHandler;
+use stardust_xr_protocol::protocol::camera::CameraInterfaceHandler;
+use stardust_xr_protocol::protocol::camera::View;
+use stardust_xr_protocol::protocol::dmatex::DmatexRef;
 use stardust_xr_server_foundation::registry::Registry;
 use std::sync::Arc;
+use tokio::sync::RwLock;
 use tokio::sync::mpsc;
 use tracing::error;
 use tracing::warn;
@@ -43,61 +48,59 @@ use vulkano::sync::semaphore::SemaphoreCreateInfo;
 use wgpu_hal::vulkan::SIGNAL_SEMAPHORES;
 use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 
-stardust_xr_server_codegen::codegen_camera_protocol!();
-
+#[derive(Debug)]
 pub struct Camera {
-	spatial: Arc<Spatial>,
+	spatial: Arc<BinderObject<SpatialMut>>,
 	queued_render_targets:
-		Mutex<mpsc::UnboundedReceiver<(u64, Vec<View>, Arc<ImportedDmatex>, SignalOnDrop)>>,
-	render_target_queue: mpsc::UnboundedSender<(u64, Vec<View>, Arc<ImportedDmatex>, SignalOnDrop)>,
+		Mutex<mpsc::UnboundedReceiver<(u64, Vec<View>, Arc<Dmatex>, SignalOnDrop)>>,
+	render_target_queue: mpsc::UnboundedSender<(u64, Vec<View>, Arc<Dmatex>, SignalOnDrop)>,
+	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
-#[allow(unused)]
 impl Camera {
-	pub fn add_to(node: &Arc<Node>) -> Arc<Camera> {
+	pub fn new(spatial: Arc<BinderObject<SpatialMut>>) -> Arc<BinderObject<Camera>> {
 		let (tx, rx) = mpsc::unbounded_channel();
-		let cam = node.add_aspect(Camera {
-			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
+		let cam = PION.register_object(Camera {
+			spatial,
 			queued_render_targets: Mutex::new(rx),
 			render_target_queue: tx,
+			drop_notifs: RwLock::default(),
 		});
+		ref_owned(&cam);
 		CAMERA_REGISTRY.add_raw(&cam);
 		cam
 	}
 }
-impl AspectIdentifier for Camera {
-	impl_aspect_for_camera_aspect_id! {}
-}
-impl Aspect for Camera {
-	impl_aspect_for_camera_aspect! {}
-}
-impl CameraAspect for Camera {
+impl CameraHandler for Camera {
 	fn request_draw(
-		node: Arc<Node>,
-		calling_client: Arc<Client>,
-		render_target: DmatexSubmitInfo,
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		render_target: DmatexRef,
+		acquire_point: u64,
+		release_point: u64,
 		views: Vec<View>,
-	) -> Result<()> {
-		let cam = node.get_aspect::<Camera>()?;
-		let Some(tex) = calling_client.dmatexes.get(&render_target.dmatex_id) else {
-			error!("invalid dmatex id: {}", render_target.dmatex_id);
-			return Ok(());
+	) {
+		let Some(tex) = render_target.owned() else {
+			error!("tried to render to an unknown dmatex");
+			return;
 		};
-		let tex = tex.clone();
-		let tx = cam.render_target_queue.clone();
-		let release_on_drop = tex.signal_on_drop(render_target.release_point.0);
+		let tx = self.render_target_queue.clone();
+		let release_on_drop = tex.signal_on_drop(release_point);
 		tokio::spawn(async move {
 			let Ok(future) = tex
 				.timeline_sync()
-				.wait_async(render_target.acquire_point.0)
+				.wait_async(acquire_point.0)
 				.inspect_err(|err| error!("unable to async wait on dmatex timeline: {err}"))
 			else {
 				return;
 			};
 			future.await;
-			tx.send((render_target.acquire_point.0, views, tex, release_on_drop))
+			tx.send((acquire_point, views, tex, release_on_drop))
 				.unwrap();
 		});
-		Ok(())
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl Drop for Camera {
@@ -105,25 +108,26 @@ impl Drop for Camera {
 		CAMERA_REGISTRY.remove(self);
 	}
 }
-static CAMERA_REGISTRY: Registry<Camera> = Registry::new();
+static CAMERA_REGISTRY: Registry<BinderObject<Camera>> = Registry::new();
 
-impl InterfaceAspect for Interface {
-	fn create_camera(
-		_node: Arc<Node>,
-		calling_client: Arc<Client>,
-		id: Id,
-		parent: Arc<Node>,
-		transform: Transform,
-	) -> Result<()> {
-		let node = Node::from_id(&calling_client, id, true);
-		let parent = parent.get_aspect::<Spatial>()?;
-		let transform = transform.to_mat4(true, true, true);
-		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform);
-		Camera::add_to(&node);
-		Ok(())
+// TODO: figure out where to mount this
+interface!(CameraInterface);
+impl CameraInterfaceHandler for CameraInterface {
+	async fn create_camera(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		spatial: stardust_xr_protocol::protocol::spatial::Spatial,
+	) -> CameraProxy {
+		let Some(spatial) = spatial.owned() else {
+			// TODO: just return an error
+			panic!("Invalid Spatial use to create camera");
+		};
+		CameraProxy::from_handler(&Camera::new(spatial))
 	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {}
 }
+impl_transaction_handler!(Camera);
 pub struct CameraNodePlugin;
 impl Plugin for CameraNodePlugin {
 	fn build(&self, app: &mut App) {

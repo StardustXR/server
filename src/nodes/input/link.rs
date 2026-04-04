@@ -1,11 +1,5 @@
-use super::{
-	INPUT_METHOD_REF_ASPECT_ALIAS_INFO, InputHandler, InputMethod, input_handler_client,
-	input_method_client,
-};
-use crate::{
-	core::{Id, error::Result},
-	nodes::{Node, alias::Alias, fields::FIELD_ALIAS_INFO},
-};
+use super::{InputHandler, InputMethod};
+use crate::core::{Id, error::Result};
 use std::sync::{Arc, Weak};
 
 /// RAII type that manages the bidirectional alias relationship between a method and handler.

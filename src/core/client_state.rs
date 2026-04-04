@@ -1,13 +1,12 @@
-use super::client::{Client, get_env};
-use crate::{
-	core::Id,
-	nodes::{Node, root::ClientState, spatial::Spatial},
-};
+use super::client::{ConnectedClient, get_env};
+use crate::{core::Id, nodes::spatial::SpatialMut};
 use dashmap::DashMap;
 use glam::Mat4;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
+use stardust_xr_protocol::protocol::{client::ClientState, spatial::SpatialRef};
 use std::{
+	collections::HashMap,
 	path::{Path, PathBuf},
 	process::Command,
 	sync::{Arc, LazyLock},
@@ -23,7 +22,7 @@ pub struct LaunchInfo {
 	pub env: FxHashMap<String, String>,
 }
 impl LaunchInfo {
-	fn from_client(client: &Client) -> Option<Self> {
+	fn from_client(client: &ConnectedClient) -> Option<Self> {
 		Some(LaunchInfo {
 			cmdline: client.get_cmdline()?,
 			cwd: client.get_cwd()?,
@@ -41,7 +40,7 @@ pub struct ClientStateParsed {
 	pub spatial_anchors: FxHashMap<String, Mat4>,
 }
 impl ClientStateParsed {
-	pub fn from_deserialized(client: &Client, state: ClientState) -> Self {
+	pub fn from_deserialized(client: &ConnectedClient, state: ClientState) -> Self {
 		ClientStateParsed {
 			launch_info: LaunchInfo::from_client(client),
 			data: state.data,
@@ -53,9 +52,9 @@ impl ClientStateParsed {
 				.collect(),
 		}
 	}
-	fn spatial_transform(client: &Client, id: Id) -> Option<Mat4> {
+	fn spatial_transform(client: &ConnectedClient, id: Id) -> Option<Mat4> {
 		let node = client.scenegraph.get_node(id)?;
-		let spatial = node.get_aspect::<Spatial>().ok()?;
+		let spatial = node.get_aspect::<SpatialMut>().ok()?;
 		Some(spatial.global_transform())
 	}
 
@@ -86,22 +85,21 @@ impl ClientStateParsed {
 		}
 	}
 
-	pub fn apply_to(&self, client: &Arc<Client>) -> ClientState {
-		if let Some(root) = client.root.get() {
-			root.set_transform(self.root)
+	pub fn apply_to(&self, client: &Arc<ConnectedClient>) -> ClientState {
+		let root_spatial = SpatialMut::new(None, self.root);
+		let root = root_spatial.get_ref();
+		let mut spatial_anchors = HashMap::new();
+		for (k, v) in self.spatial_anchors.iter() {
+			let spatial = SpatialMut::new(Some(root.clone()), *v);
+			spatial_anchors.insert(
+				k.clone(),
+				SpatialRef::from_handler(spatial.get_ref()),
+			);
 		}
 		ClientState {
 			data: self.data.clone(),
-			root: Id(0),
-			spatial_anchors: self
-				.spatial_anchors
-				.iter()
-				.map(|(k, v)| {
-					let node = Node::generate(client, true).add_to_scenegraph().unwrap();
-					Spatial::add_to(&node, None, *v);
-					(k.clone(), node.get_id())
-				})
-				.collect(),
+			root: SpatialRef::from_handler(root),
+			spatial_anchors,
 		}
 	}
 	pub fn launch_command(self) -> Option<Command> {

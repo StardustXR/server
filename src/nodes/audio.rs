@@ -1,24 +1,27 @@
 use super::spatial::SpatialNode;
-use super::{Aspect, AspectIdentifier, Node};
 use crate::bevy_int::entity_handle::EntityHandle;
-use crate::core::Id;
-use crate::core::client::Client;
-use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
-use crate::nodes::spatial::{SPATIAL_ASPECT_ALIAS_INFO, Spatial, Transform};
+use crate::nodes::ProxyExt;
+use crate::nodes::spatial::{SpatialMut};
+use crate::{PION, impl_transaction_handler};
 use bevy::audio::{PlaybackMode, Volume};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::XrSpace;
-use color_eyre::eyre::eyre;
+use binderbinder::binder_object::BinderObject;
+use gluon_wire::drop_tracking::DropNotifier;
 use parking_lot::Mutex;
-use stardust_xr_wire::values::ResourceID;
 
 use bevy::prelude::*;
 use bevy::transform::components::Transform as BevyTransform;
+use stardust_xr_protocol::protocol::audio::{
+	AudioInterfaceHandler, Sound as SoundProxy, SoundHandler,
+};
+use stardust_xr_protocol::protocol::types::Resource;
 use std::sync::{Arc, OnceLock};
 use std::{ffi::OsStr, path::PathBuf};
+use tokio::sync::RwLock;
 
 pub struct AudioNodePlugin;
 impl Plugin for AudioNodePlugin {
@@ -91,54 +94,52 @@ fn update_sound_event(
 
 static SOUND_REGISTRY: Registry<Sound> = Registry::new();
 
-stardust_xr_server_codegen::codegen_audio_protocol!();
+#[derive(Debug)]
 pub struct Sound {
-	spatial: Arc<Spatial>,
+	spatial: Arc<BinderObject<SpatialMut>>,
 
 	volume: f32,
 	pending_audio_path: PathBuf,
 	entity: OnceLock<EntityHandle>,
+	// Why isn't this an atomic bool or mpsc or something?
 	stop: Mutex<Option<()>>,
 	play: Mutex<Option<()>>,
+	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl Sound {
-	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Sound>> {
-		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
+	pub fn new(
+		spatial: Arc<BinderObject<SpatialMut>>,
+		resource_id: Resource,
+	) -> Option<Arc<BinderObject<Sound>>> {
+		let client = todo!();
 		let pending_audio_path = get_resource_file(
 			&resource_id,
 			client.base_resource_prefixes.lock().iter(),
 			&[OsStr::new("wav"), OsStr::new("mp3")],
-		)
-		.ok_or_else(|| eyre!("Resource not found"))?;
-		let sound = Sound {
-			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
+		)?;
+		let sound = PION.register_object(Sound {
+			spatial,
 			volume: 1.0,
 			pending_audio_path,
 			entity: OnceLock::new(),
 			stop: Mutex::new(None),
 			play: Mutex::new(None),
-		};
-		let sound_arc = SOUND_REGISTRY.add(sound);
-		node.add_aspect_raw(sound_arc.clone());
-		Ok(sound_arc)
+			drop_notifs: RwLock::default(),
+		});
+		Ok(sound)
 	}
 }
-impl AspectIdentifier for Sound {
-	impl_aspect_for_sound_aspect_id! {}
-}
-impl Aspect for Sound {
-	impl_aspect_for_sound_aspect! {}
-}
-impl SoundAspect for Sound {
-	fn play(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
-		let sound = node.get_aspect::<Sound>().unwrap();
-		sound.play.lock().replace(());
-		Ok(())
+impl SoundHandler for Sound {
+	fn play(&self, _ctx: gluon_wire::GluonCtx) {
+		self.play.lock().replace(());
 	}
-	fn stop(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
-		let sound = node.get_aspect::<Sound>().unwrap();
-		sound.stop.lock().replace(());
-		Ok(())
+
+	fn stop(&self, _ctx: gluon_wire::GluonCtx) {
+		self.stop.lock().replace(());
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl Drop for Sound {
@@ -147,22 +148,32 @@ impl Drop for Sound {
 	}
 }
 
-impl InterfaceAspect for Interface {
-	#[doc = "Create a sound node. WAV and MP3 are supported."]
-	fn create_sound(
-		_node: Arc<Node>,
-		calling_client: Arc<Client>,
-		id: Id,
-		parent: Arc<Node>,
-		transform: Transform,
-		resource: ResourceID,
-	) -> Result<()> {
-		let node = Node::from_id(&calling_client, id, true);
-		let parent = parent.get_aspect::<Spatial>()?;
-		let transform = transform.to_mat4(true, true, true);
-		let node = node.add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform);
-		Sound::add_to(&node, resource)?;
-		Ok(())
+#[derive(Debug, Default)]
+pub struct AudioInterface {
+	drop_notifs: RwLock<Vec<DropNotifier>>,
+}
+impl AudioInterfaceHandler for AudioInterface {
+	async fn create_sound(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		spatial: stardust_xr_protocol::protocol::spatial::Spatial,
+		sound: Resource,
+	) -> SoundProxy {
+		let Some(spatial) = spatial.owned() else {
+			// TODO: replace with error
+			panic!("tried to create sound with invalid spatial");
+		};
+		let Some(sound) = Sound::new(spatial, sound) else {
+			// TODO: replace with error
+			panic!("sound resource not found");
+		};
+		SoundProxy::from_handler(&sound)
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifs.write().await.push(notifier);
 	}
 }
+
+impl_transaction_handler!(Sound);
+impl_transaction_handler!(AudioInterface);

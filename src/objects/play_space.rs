@@ -1,5 +1,5 @@
 use super::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
-use crate::{DbusConnection, PreFrameWait, get_time, nodes::spatial::Spatial};
+use crate::{DbusConnection, PreFrameWait, get_time, nodes::spatial::SpatialMut};
 use bevy::prelude::*;
 use bevy_mod_openxr::{
 	helper_traits::{ToQuat, ToVec3},
@@ -126,7 +126,7 @@ fn update(
 
 #[derive(Resource)]
 pub struct PlaySpace {
-	spatial: Arc<Spatial>,
+	spatial: Arc<SpatialMut>,
 	_spatial_handle: ObjectHandle<SpatialRef>,
 	tracked_handle: AsyncTracked,
 	bounds: Arc<RwLock<Vec<(f64, f64)>>>,
