@@ -1,17 +1,18 @@
-use super::{MODEL_PART_ASPECT_ALIAS_INFO, MaterialParameter, ModelAspect, ModelPartAspect};
 use crate::{
-	BevyMaterial,
+	BevyMaterial, PION,
 	bevy_int::{
 		bevy_channel::{BevyChannel, BevyChannelReader},
 		color::ColorConvert as _,
 		entity_handle::EntityHandle,
 	},
-	core::{Id, client::Client, error::Result, registry::Registry, resource::get_resource_file},
+	core::{
+		Id, client::ConnectedClient, error::Result, registry::Registry, resource::get_resource_file,
+	},
+	impl_transaction_handler,
 	nodes::{
-		Node,
-		alias::{Alias, AliasList},
-		drawable::dmatex::{ImportedDmatex, SignalOnDrop},
-		spatial::{Spatial, SpatialNode},
+		drawable::dmatex::{Dmatex, SignalOnDrop},
+		ref_owned,
+		spatial::{BoundingBoxCalc, Spatial, SpatialMut, SpatialNode},
 	},
 };
 use bevy::{
@@ -25,12 +26,21 @@ use bevy::{
 		render_resource::{AsBindGroup, ShaderRef},
 	},
 };
+use binderbinder::binder_object::BinderObject;
 use color_eyre::eyre::eyre;
+use gluon_wire::{GluonCtx, drop_tracking::DropNotifier};
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
-use stardust_xr_gluon::AbortOnDrop;
-use stardust_xr_server_foundation::bail;
-use stardust_xr_wire::values::ResourceID;
+use stardust_xr_protocol::protocol::{
+	model::{
+		MaterialParamError, MaterialParameter, Model as ModelProxy, ModelHandler,
+		ModelPart as ModelPartProxy, ModelPartHandler, NonUniformTransform,
+		PartialNonUniformTransform,
+	},
+	spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy},
+	types::{Resource, Vec3F},
+};
+use stardust_xr_server_foundation::{bail, on_drop::AbortOnDrop};
 use std::{
 	collections::{HashMap, VecDeque},
 	ffi::OsStr,
@@ -179,7 +189,8 @@ fn apply_materials(
 		}
 		for (param_name, param) in model_part.pending_material_parameters.lock().drain() {
 			let mut new_mat = materials.get(&mesh_mat.0).unwrap().clone();
-			param.apply_to_material(
+			apply_to_material(
+				&param,
 				&model_part.spatial.node().unwrap().get_client().unwrap(),
 				&mut new_mat,
 				&mut model_part.textures.lock(),
@@ -273,14 +284,11 @@ fn gen_model_parts(
 					let (spatial, model_part) =
 						match model.pre_bound_parts.lock().iter().find(|v| v.path == path) {
 							None => {
-								let node =
-									client.scenegraph.add_node(Node::generate(&client, false));
-								let spatial = Spatial::add_to(
-									&node,
+								let spatial = SpatialMut::new(
 									Some(parent_spatial.clone()),
 									transform.compute_matrix(),
 								);
-								let model_part = node.add_aspect(ModelPart {
+								let model_part = PION.register_object(ModelPart {
 									entity: OnceLock::new(),
 									mesh_entity: OnceLock::new(),
 									path,
@@ -288,10 +296,10 @@ fn gen_model_parts(
 									pending_material_parameters: Mutex::default(),
 									pending_material_replacement: Mutex::default(),
 									holdout: AtomicBool::new(false),
-									aliases: AliasList::default(),
 									bounds: OnceLock::new(),
 									pending_dmatexes: Mutex::default(),
 									textures: Mutex::default(),
+									bounding_calc: OnceLock::new(),
 								});
 								(spatial, model_part)
 							}
@@ -313,14 +321,14 @@ fn gen_model_parts(
 							}),
 					)
 					.unwrap_or_default();
-					_ = spatial.bounding_box_calc.set(move |n| {
-						Box::pin(async {
-							n.get_aspect::<ModelPart>()
-								.ok()
-								.and_then(|v| v.bounds.get().copied())
-								.unwrap_or_default()
-						})
+					let weak_part = Arc::downgrade(&model_part);
+					let calc = spatial.custom_bounding_box(move || {
+						weak_part
+							.upgrade()
+							.and_then(|v| v.bounds.get().copied())
+							.unwrap_or_default()
 					});
+					model_part.bounding_calc.set(calc);
 					let _ = spatial.set_spatial_parent(&parent_spatial);
 					spatial.set_local_transform(transform.compute_matrix());
 					let entity_handle = EntityHandle::new(entity);
@@ -470,79 +478,77 @@ fn hash_color<H: Hasher>(color: Color, state: &mut H) {
 }
 static MODEL_REGISTRY: Registry<Model> = Registry::new();
 
-impl MaterialParameter {
-	fn apply_to_material(
-		&self,
-		client: &Client,
-		mat: &mut BevyMaterial,
-		part_textures: &mut PartTextures,
-		parameter_name: &str,
-		asset_server: &AssetServer,
-	) {
-		match self {
-			MaterialParameter::Bool(val) => match parameter_name {
-				"double_sided" => mat.double_sided = *val,
-				"unlit" => mat.unlit = *val,
-				"opaque" => {
-					mat.alpha_mode = if *val {
-						AlphaMode::Opaque
-					} else {
-						AlphaMode::Premultiplied
-					}
-				}
-
-				v => {
-					error!("unknown param_name ({v}) for color")
-				}
-			},
-			MaterialParameter::Int(_val) => {
-				// nothing uses an int
-			}
-			MaterialParameter::UInt(_val) => {
-				// nothing uses an uint
-			}
-			MaterialParameter::Float(val) => {
-				match parameter_name {
-					"metallic" => mat.metallic = *val,
-					"roughness" => mat.perceptual_roughness = *val,
-					// we probably don't want to expose tex_scale
-					// "tex_scale" => mat.tex_scale = *val,
-					v => {
-						error!("unknown param_name ({v}) for float")
-					}
-				}
-			}
-			MaterialParameter::Vec2(_val) => {
-				// nothing uses a Vec2
-			}
-			MaterialParameter::Vec3(_val) => {
-				// nothing uses a Vec3
-			}
-			MaterialParameter::Color(color) => match parameter_name {
-				"color" => mat.base_color = color.to_bevy(),
-				"emission_factor" => mat.emissive = color.to_bevy().to_linear(),
-				v => {
-					error!("unknown param_name ({v}) for color")
-				}
-			},
-			MaterialParameter::Texture(resource) => {
-				let Some(texture_path) = get_resource_file(
-					resource,
-					client.base_resource_prefixes.lock().iter(),
-					&[OsStr::new("png"), OsStr::new("jpg")],
-				) else {
-					return;
-				};
-				let handle = asset_server.load(texture_path);
-				if let Ok(slot) = TextureSlot::from_str(parameter_name) {
-					slot.get_part_texture(part_textures).replace((handle, None));
+fn apply_to_material(
+	param: &MaterialParameter,
+	client: &ConnectedClient,
+	mat: &mut BevyMaterial,
+	part_textures: &mut PartTextures,
+	parameter_name: &str,
+	asset_server: &AssetServer,
+) {
+	match param {
+		MaterialParameter::Bool { value } => match parameter_name {
+			"double_sided" => mat.double_sided = *value,
+			"unlit" => mat.unlit = *value,
+			"opaque" => {
+				mat.alpha_mode = if *value {
+					AlphaMode::Opaque
 				} else {
-					error!("unknown param_name ({parameter_name}) for texture");
+					AlphaMode::Premultiplied
 				}
 			}
-			MaterialParameter::Dmatex(_) => {
-				error!("somehow trying to handle a dmatex in the main material param path");
+
+			v => {
+				error!("unknown param_name ({v}) for color")
 			}
+		},
+		MaterialParameter::Int { value: _ } => {
+			// nothing uses an int
+		}
+		MaterialParameter::UInt { value: _ } => {
+			// nothing uses an uint
+		}
+		MaterialParameter::Float { value } => {
+			match parameter_name {
+				"metallic" => mat.metallic = *value,
+				"roughness" => mat.perceptual_roughness = *value,
+				// we probably don't want to expose tex_scale
+				// "tex_scale" => mat.tex_scale = *val,
+				v => {
+					error!("unknown param_name ({v}) for float")
+				}
+			}
+		}
+		MaterialParameter::Vec2 { value: _ } => {
+			// nothing uses a Vec2
+		}
+		MaterialParameter::Vec3 { value: _ } => {
+			// nothing uses a Vec3
+		}
+		MaterialParameter::Color { value: color } => match parameter_name {
+			"color" => mat.base_color = color.to_bevy(),
+			"emission_factor" => mat.emissive = color.to_bevy().to_linear(),
+			v => {
+				error!("unknown param_name ({v}) for color")
+			}
+		},
+		MaterialParameter::Texture(resource) => {
+			let Some(texture_path) = get_resource_file(
+				resource,
+				client.base_resource_prefixes.lock().iter(),
+				&[OsStr::new("png"), OsStr::new("jpg")],
+			) else {
+				return;
+			};
+			let handle = asset_server.load(texture_path);
+			if let Ok(slot) = TextureSlot::from_str(parameter_name) {
+				slot.get_part_texture(part_textures).replace((handle, None));
+			} else {
+				error!("unknown param_name ({parameter_name}) for texture");
+			}
+		}
+		MaterialParameter::Dmatex(_) => {
+			error!("somehow trying to handle a dmatex in the main material param path");
 		}
 	}
 }
@@ -588,26 +594,24 @@ impl FromStr for TextureSlot {
 	}
 }
 
+#[derive(Debug)]
 pub struct ModelPart {
 	entity: OnceLock<EntityHandle>,
 	mesh_entity: OnceLock<EntityHandle>,
 	path: String,
-	spatial: Arc<Spatial>,
+	spatial: Arc<BinderObject<SpatialMut>>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Handle<BevyMaterial>>>,
 	pending_dmatexes: Mutex<
 		HashMap<
 			TextureSlot,
-			VecDeque<(
-				oneshot::Receiver<(SignalOnDrop, Arc<ImportedDmatex>)>,
-				AbortOnDrop,
-			)>,
+			VecDeque<(oneshot::Receiver<(SignalOnDrop, Arc<Dmatex>)>, AbortOnDrop)>,
 		>,
 	>,
 	textures: Mutex<PartTextures>,
 	holdout: AtomicBool,
-	aliases: AliasList,
 	bounds: OnceLock<Aabb>,
+	bounding_calc: OnceLock<BoundingBoxCalc>,
 }
 static ACQUIRE_SEMAPHORES: Mutex<Vec<Semaphore>> = Mutex::new(Vec::new());
 impl ModelPart {
@@ -664,24 +668,64 @@ impl ModelPart {
 	}
 }
 
-impl ModelPartAspect for ModelPart {
-	#[doc = "Set this model part's material to one that cuts a hole in the world. Often used for overlays/passthrough where you want to show the background through an object."]
-	fn apply_holdout_material(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<()> {
-		let model_part = node.get_aspect::<ModelPart>()?;
-		model_part.holdout.store(true, Ordering::Relaxed);
-		Ok(())
+impl ModelPartHandler for ModelPart {
+	async fn get_part_path(&self, _ctx: GluonCtx) -> String {
+		todo!()
 	}
 
-	#[doc = "Set the material parameter with `parameter_name` to `value`"]
-	fn set_material_parameter(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
+	async fn get_model_transform(&self, _ctx: GluonCtx) -> NonUniformTransform {
+		todo!()
+	}
+
+	async fn get_local_transform(&self, _ctx: GluonCtx) -> NonUniformTransform {
+		todo!()
+	}
+
+	async fn get_relative_transform(
+		&self,
+		_ctx: GluonCtx,
+		relative_to: ModelPartProxy,
+	) -> NonUniformTransform {
+		todo!()
+	}
+
+	fn set_model_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
+		todo!()
+	}
+
+	fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
+		todo!()
+	}
+
+	fn set_relative_transform(
+		&self,
+		_ctx: GluonCtx,
+		relative_to: ModelPartProxy,
+		transform: PartialNonUniformTransform,
+	) {
+		todo!()
+	}
+
+	async fn set_material_parameter(
+		&self,
+		_ctx: GluonCtx,
 		parameter_name: String,
 		value: MaterialParameter,
-	) -> Result<()> {
-		let model_part = node.get_aspect::<ModelPart>()?;
-		model_part.set_material_parameter(parameter_name, value);
-		Ok(())
+	) -> Option<MaterialParamError> {
+		if self.holdout.load(Ordering::Relaxed) {
+			return Some(MaterialParamError::Holdout);
+		}
+		// TODO: return other errors
+		self.set_material_parameter(parameter_name, value);
+		None
+	}
+
+	fn apply_holdout_material(&self, _ctx: GluonCtx) {
+		self.holdout.store(true, Ordering::Relaxed);
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		todo!()
 	}
 }
 #[derive(Default, Resource)]
@@ -709,128 +753,134 @@ impl MaterialRegistry {
 	}
 }
 
+#[derive(Debug)]
 pub struct Model {
-	spatial: Arc<Spatial>,
-	_resource_id: ResourceID,
+	spatial: Arc<BinderObject<SpatialMut>>,
+	_resource_id: Resource,
 	bevy_scene_entity: OnceLock<EntityHandle>,
-	parts: OnceLock<Vec<Arc<ModelPart>>>,
+	parts: OnceLock<Vec<Arc<BinderObject<ModelPart>>>>,
 	pre_bound_parts: Mutex<Vec<Arc<ModelPart>>>,
-	setup_complete: AtomicBool,
 	setup_complete_notify: Notify,
 }
 impl Model {
-	pub fn add_to(node: &Arc<Node>, resource_id: ResourceID) -> Result<Arc<Model>> {
-		let client = node.get_client().ok_or_else(|| eyre!("Client not found"))?;
+	pub async fn new(
+		spatial: Arc<BinderObject<SpatialMut>>,
+		resource_id: Resource,
+		base_prefixes: &[PathBuf],
+	) -> Result<Arc<BinderObject<Model>>> {
 		let pending_model_path = get_resource_file(
 			&resource_id,
-			client.base_resource_prefixes.lock().iter(),
+			base_prefixes,
 			&[OsStr::new("glb"), OsStr::new("gltf")],
 		)
 		.ok_or_else(|| eyre!("Resource not found"))?;
 
-		let model = Arc::new(Model {
-			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
+		let model = PION.register_object(Model {
+			spatial,
 			_resource_id: resource_id,
 			bevy_scene_entity: OnceLock::new(),
 			pre_bound_parts: Mutex::default(),
 			parts: OnceLock::new(),
 			setup_complete_notify: Notify::new(),
-			setup_complete: AtomicBool::new(false),
-		});
-		_ = model.spatial.bounding_box_calc.set(|n| {
-			Box::pin(async {
-				if let Ok(model) = n.get_aspect::<Model>()
-					&& !model.setup_complete.load(Ordering::Relaxed)
-				{
-					model.setup_complete_notify.notified().await;
-				}
-				Aabb::default()
-			})
 		});
 		LOAD_MODEL
 			.send((model.clone(), pending_model_path))
 			.unwrap();
 		MODEL_REGISTRY.add_raw(&model);
+		ref_owned(&model);
+		model.setup_complete_notify.notified().await;
 
-		node.add_aspect_raw(model.clone());
 		Ok(model)
 	}
-	pub fn get_model_part(self: &Arc<Self>, part_path: String) -> Result<Arc<ModelPart>> {
-		let part = match self
-			.parts
-			.get()
-			.map(|v| v.iter().find(|p| p.path == part_path))
-		{
-			Some(Some(part)) => part.clone(),
-			Some(None) => {
-				let paths = self
-					.parts
-					.get()
-					.unwrap()
-					.iter()
-					.map(|p| &p.path)
-					.collect::<Vec<_>>();
-				bail!(
-					"Couldn't find model part at path {part_path}, all available paths: {paths:?}",
-				);
-			}
-			None => {
-				let client = self.spatial.node().unwrap().get_client().unwrap();
-				let part_node = client.scenegraph.add_node(Node::generate(&client, false));
-				let spatial =
-					Spatial::add_to(&part_node, Some(self.spatial.clone()), Mat4::IDENTITY);
-				let part = part_node.add_aspect(ModelPart {
-					entity: OnceLock::new(),
-					mesh_entity: OnceLock::new(),
-					path: part_path,
-					spatial,
-					pending_material_parameters: Mutex::default(),
-					pending_material_replacement: Mutex::default(),
-					holdout: AtomicBool::new(false),
-					aliases: AliasList::default(),
-					bounds: OnceLock::new(),
-					pending_dmatexes: Mutex::default(),
-					textures: Mutex::default(),
-				});
-				self.pre_bound_parts.lock().push(part.clone());
-				part
-			}
-		};
-		Ok(part)
-	}
+	// pub fn get_model_part(self: &Arc<Self>, part_path: String) -> Result<Arc<ModelPart>> {
+	// 	let part = match self
+	// 		.parts
+	// 		.get()
+	// 		.map(|v| v.iter().find(|p| p.path == part_path))
+	// 	{
+	// 		Some(Some(part)) => part.clone(),
+	// 		Some(None) => {
+	// 			let paths = self
+	// 				.parts
+	// 				.get()
+	// 				.unwrap()
+	// 				.iter()
+	// 				.map(|p| &p.path)
+	// 				.collect::<Vec<_>>();
+	// 			bail!(
+	// 				"Couldn't find model part at path {part_path}, all available paths: {paths:?}",
+	// 			);
+	// 		}
+	// 		None => {
+	// 			let client = self.spatial.node().unwrap().get_client().unwrap();
+	// 			let part_node = client.scenegraph.add_node(Node::generate(&client, false));
+	// 			let spatial =
+	// 				SpatialMut::add_to(&part_node, Some(self.spatial.clone()), Mat4::IDENTITY);
+	// 			let part = part_node.add_aspect(ModelPart {
+	// 				entity: OnceLock::new(),
+	// 				mesh_entity: OnceLock::new(),
+	// 				path: part_path,
+	// 				spatial,
+	// 				pending_material_parameters: Mutex::default(),
+	// 				pending_material_replacement: Mutex::default(),
+	// 				holdout: AtomicBool::new(false),
+	// 				bounds: OnceLock::new(),
+	// 				pending_dmatexes: Mutex::default(),
+	// 				textures: Mutex::default(),
+	// 				bounding_calc: todo!(),
+	// 			});
+	// 			self.pre_bound_parts.lock().push(part.clone());
+	// 			part
+	// 		}
+	// 	};
+	// 	Ok(part)
+	// }
 }
-impl ModelAspect for Model {
-	#[doc = "Bind a model part to the node with the ID input."]
-	fn bind_model_part(
-		node: Arc<Node>,
-		calling_client: Arc<Client>,
-		id: Id,
-		part_path: String,
-	) -> Result<()> {
-		let model = node.get_aspect::<Model>()?;
-		let part = model.get_model_part(part_path)?;
-		Alias::create_with_id(
-			&part.spatial.node().unwrap(),
-			&calling_client,
-			id,
-			MODEL_PART_ASPECT_ALIAS_INFO.clone(),
-			Some(&part.aliases),
-		)?;
-		Ok(())
+impl ModelHandler for Model {
+	async fn get_spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
+		todo!()
+	}
+
+	async fn get_part(&self, _ctx: GluonCtx, path: String) -> Option<ModelPartProxy> {
+		if let Some(parts) = self.parts.get() {
+			parts
+				.iter()
+				.find(|p| p.path == path)
+				.map(ModelPartProxy::from_handler)
+		} else {
+			error!(
+				"somehow called get_part before model parts were initialized, should be unreachable"
+			);
+			None
+		}
+	}
+
+	async fn enumerate_parts(&self, _ctx: GluonCtx) -> Vec<ModelPartProxy> {
+		if let Some(parts) = self.parts.get() {
+			parts.iter().map(ModelPartProxy::from_handler).collect()
+		} else {
+			error!(
+				"somehow called enumerate_parts before model parts were initialized, should be unreachable"
+			);
+			Vec::new()
+		}
+	}
+
+	fn set_model_scale(&self, _ctx: GluonCtx, scale: Vec3F) {
+		todo!()
+	}
+
+	fn drop_notification_requested(
+		&self,
+		notifier: gluon_wire::drop_tracking::DropNotifier,
+	) -> impl Future<Output = ()> + Send + Sync {
+		todo!()
 	}
 }
 impl Drop for Model {
 	fn drop(&mut self) {
-		for p in self.parts.get().iter().flat_map(|v| v.iter()) {
-			if let Some(node) = p.spatial.node() {
-				node.destroy();
-			}
-		}
-		for p in self.pre_bound_parts.lock().iter() {
-			if let Some(node) = p.spatial.node() {
-				node.destroy();
-			}
-		}
 		MODEL_REGISTRY.remove(self);
 	}
 }
+impl_transaction_handler!(Model);
+impl_transaction_handler!(ModelPart);

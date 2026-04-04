@@ -1,5 +1,5 @@
 use super::{ObjectHandle, SpatialRef, input::mouse_pointer::FlatscreenCam};
-use crate::{DbusConnection, PreFrameWait, get_time, nodes::spatial::Spatial};
+use crate::{DbusConnection, PreFrameWait, get_time, nodes::spatial::SpatialMut};
 use bevy::prelude::*;
 use bevy_mod_openxr::{
 	helper_traits::{ToQuat as _, ToVec3 as _},
@@ -50,7 +50,7 @@ fn destroy_view_space(session: Res<OxrSession>, mut cmds: Commands, mut hmd: Res
 
 #[derive(Resource)]
 struct Hmd {
-	spatial: Arc<Spatial>,
+	spatial: Arc<SpatialMut>,
 	_spatial_handle: ObjectHandle<SpatialRef>,
 	space: Option<XrSpace>,
 }

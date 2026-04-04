@@ -14,12 +14,12 @@ pub use method::*;
 use super::Aspect;
 use super::AspectIdentifier;
 use super::fields::Field;
-use super::spatial::Spatial;
+use super::spatial::SpatialMut;
 use crate::core::Id;
 use crate::core::error::Result;
 use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
 use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
-use crate::{core::client::Client, nodes::Node};
+use crate::{core::client::ConnectedClient, nodes::Node};
 use crate::{core::registry::Registry, nodes::spatial::Transform};
 use stardust_xr_wire::values::Datamap;
 use std::sync::Arc;
@@ -50,7 +50,7 @@ impl Aspect for InputMethodRef {
 
 pub trait InputDataTrait {
 	fn transform(&mut self, method: &InputMethod, handler: &InputHandler);
-	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32;
+	fn distance(&self, space: &Arc<SpatialMut>, field: &Field) -> f32;
 }
 impl InputDataTrait for InputDataType {
 	fn transform(&mut self, method: &InputMethod, handler: &InputHandler) {
@@ -61,7 +61,7 @@ impl InputDataTrait for InputDataType {
 		}
 	}
 
-	fn distance(&self, space: &Arc<Spatial>, field: &Field) -> f32 {
+	fn distance(&self, space: &Arc<SpatialMut>, field: &Field) -> f32 {
 		match self {
 			InputDataType::Pointer(i) => i.distance(space, field),
 			InputDataType::Hand(i) => i.distance(space, field),
@@ -74,18 +74,18 @@ impl InterfaceAspect for Interface {
 	#[doc = "Create an input method node"]
 	fn create_input_method(
 		_node: Arc<Node>,
-		calling_client: Arc<Client>,
+		calling_client: Arc<ConnectedClient>,
 		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		initial_data: InputDataType,
 		datamap: Datamap,
 	) -> Result<()> {
-		let parent = parent.get_aspect::<Spatial>()?;
+		let parent = parent.get_aspect::<SpatialMut>()?;
 		let transform = transform.to_mat4(true, true, true);
 
 		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform);
+		SpatialMut::add_to(&node, Some(parent.clone()), transform);
 		InputMethod::add_to(&node, initial_data, datamap)?;
 		Ok(())
 	}
@@ -93,18 +93,18 @@ impl InterfaceAspect for Interface {
 	#[doc = "Create an input handler node"]
 	fn create_input_handler(
 		_node: Arc<Node>,
-		calling_client: Arc<Client>,
+		calling_client: Arc<ConnectedClient>,
 		id: Id,
 		parent: Arc<Node>,
 		transform: Transform,
 		field: Arc<Node>,
 	) -> Result<()> {
-		let parent = parent.get_aspect::<Spatial>()?;
+		let parent = parent.get_aspect::<SpatialMut>()?;
 		let transform = transform.to_mat4(true, true, true);
 		let field = field.get_aspect::<Field>()?;
 
 		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform);
+		SpatialMut::add_to(&node, Some(parent.clone()), transform);
 		InputHandler::add_to(&node, &field)?;
 		Ok(())
 	}

@@ -5,7 +5,7 @@
 mod bevy_int;
 mod core;
 mod nodes;
-mod objects;
+// mod objects;
 mod session;
 
 use bevy::{
@@ -57,7 +57,7 @@ use bevy_mod_xr::{
 };
 use clap::Parser;
 use core::{
-	client::{Client, tick_internal_client},
+	client::{ConnectedClient, tick_internal_client},
 	task,
 };
 use directories::ProjectDirs;
@@ -69,23 +69,24 @@ use nodes::{
 	fields::FieldDebugGizmoPlugin,
 	spatial::SpatialNodePlugin,
 };
-use objects::{
-	hmd::HmdPlugin,
-	input::{
-		mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
-		oxr_hand::HandPlugin,
-	},
-	play_space::PlaySpacePlugin,
-};
+// use objects::{
+// 	hmd::HmdPlugin,
+// 	input::{
+// 		mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
+// 		oxr_hand::HandPlugin,
+// 	},
+// 	play_space::PlaySpacePlugin,
+// };
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
+use pion_binder::PionBinderDevice;
 use session::{launch_start, save_session};
-use stardust_xr_gluon::object_registry::ObjectRegistry;
-use stardust_xr_wire::server::LockedSocket;
+// use stardust_xr_gluon::object_registry::ObjectRegistry;
+// use stardust_xr_wire::server::LockedSocket;
 use std::{
 	ops::DerefMut as _,
 	path::PathBuf,
 	str::FromStr,
-	sync::{Arc, OnceLock},
+	sync::{Arc, LazyLock, OnceLock},
 };
 use tokio::{net::UnixListener, sync::Notify, task::JoinError};
 use tracing::{error, info, metadata::LevelFilter};
@@ -151,6 +152,7 @@ struct CliArgs {
 pub type BevyMaterial = StandardMaterial;
 
 static STARDUST_INSTANCE: OnceLock<String> = OnceLock::new();
+pub static PION: LazyLock<PionBinderDevice> = LazyLock::new(PionBinderDevice::default);
 
 // #[tokio::main(flavor = "current_thread")]
 #[tokio::main]
@@ -182,26 +184,28 @@ async fn main() -> Result<AppExit, JoinError> {
 
 	let cli_args = CliArgs::parse();
 
-	let locked_socket =
-		LockedSocket::get_free().expect("Unable to find a free stardust socket path");
-	STARDUST_INSTANCE.set(locked_socket.socket_path.file_name().unwrap().to_string_lossy().into_owned()).expect("Someone hasn't done their job, yell at Nova because how is this set multiple times what the hell");
-	info!(
-		socket_path = ?locked_socket.socket_path.display(),
-		"Stardust socket created"
-	);
-	let socket = UnixListener::bind(locked_socket.socket_path)
-		.expect("Couldn't spawn stardust server at {socket_path}");
-	task::new(|| "Stardust socket accept loop", async move {
-		loop {
-			let Ok((stream, _)) = socket.accept().await else {
-				continue;
-			};
-			if let Err(e) = Client::from_connection(stream) {
-				error!(?e, "Unable to create client from connection");
-			}
-		}
-	})
-	.unwrap();
+	// let pion =PION;
+
+	// let locked_socket =
+	// 	LockedSocket::get_free().expect("Unable to find a free stardust socket path");
+	// STARDUST_INSTANCE.set(locked_socket.socket_path.file_name().unwrap().to_string_lossy().into_owned()).expect("Someone hasn't done their job, yell at Nova because how is this set multiple times what the hell");
+	// info!(
+	// 	socket_path = ?locked_socket.socket_path.display(),
+	// 	"Stardust socket created"
+	// );
+	// let socket = UnixListener::bind(locked_socket.socket_path)
+	// 	.expect("Couldn't spawn stardust server at {socket_path}");
+	// task::new(|| "Stardust socket accept loop", async move {
+	// 	loop {
+	// 		let Ok((stream, _)) = socket.accept().await else {
+	// 			continue;
+	// 		};
+	// 		if let Err(e) = ConnectedClient::from_connection(stream) {
+	// 			error!(?e, "Unable to create client from connection");
+	// 		}
+	// 	}
+	// })
+	// .unwrap();
 	info!("Init client join loop");
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");
@@ -229,7 +233,6 @@ async fn main() -> Result<AppExit, JoinError> {
 		.await
 		.expect("Couldn't add the object manager");
 
-	let object_registry = ObjectRegistry::new(&dbus_connection).await;
 
 	let ready_notifier = Arc::new(Notify::new());
 	let io_loop = tokio::task::spawn_blocking({
@@ -243,7 +246,6 @@ async fn main() -> Result<AppExit, JoinError> {
 				project_dirs,
 				cli_args,
 				dbus_connection,
-				object_registry,
 			)
 		}
 	});
@@ -271,8 +273,6 @@ async fn main() -> Result<AppExit, JoinError> {
 #[derive(ScheduleLabel, Hash, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct PreFrameWait;
 #[derive(Resource, Deref)]
-pub struct ObjectRegistryRes(Arc<ObjectRegistry>);
-#[derive(Resource, Deref)]
 pub struct DbusConnection(Connection);
 
 pub fn vk_device_exts() -> Vec<&'static std::ffi::CStr> {
@@ -290,7 +290,7 @@ fn bevy_loop(
 	_project_dirs: Option<ProjectDirs>,
 	args: CliArgs,
 	dbus_connection: Connection,
-	object_registry: Arc<ObjectRegistry>,
+	// object_registry: Arc<ObjectRegistry>,
 ) -> AppExit {
 	let mut app = App::new();
 	app.insert_resource(DbusConnection(dbus_connection));
@@ -364,7 +364,7 @@ fn bevy_loop(
 		plugins = plugins.add(plugin).disable::<ScheduleRunnerPlugin>();
 		plugins = match args.spectator {
 			true => plugins.add(SpectatorCameraPlugin),
-			false => plugins.add(FlatscreenInputPlugin),
+			false => plugins/* .add(FlatscreenInputPlugin) */,
 		};
 	}
 	app.insert_resource(PipelinedRenderThreadOnCreateCallback(
@@ -447,7 +447,6 @@ fn bevy_loop(
 	pre_frame_wait.set_executor_kind(ExecutorKind::MultiThreaded);
 	app.add_schedule(pre_frame_wait);
 	app.insert_resource(ClearColor(Color::BLACK.with_alpha(0.0)));
-	app.insert_resource(ObjectRegistryRes(object_registry));
 	#[cfg(feature = "bevy_debugging")]
 	{
 		use bevy::remote::{RemotePlugin, http::RemoteHttpPlugin};
@@ -468,18 +467,18 @@ fn bevy_loop(
 		SkyPlugin,
 	));
 	// object plugins
-	app.add_plugins((PlaySpacePlugin, HmdPlugin));
-	if !args.disable_hands {
-		app.add_plugins((
-			HandPlugin {
-				transparent_hands: args.transparent_hands,
-			},
-			bevy_sk::hand::HandPlugin,
-		));
-	}
-	if !args.disable_controllers {
-		app.add_plugins(ControllerPlugin);
-	}
+	// app.add_plugins((PlaySpacePlugin, HmdPlugin));
+	// if !args.disable_hands {
+	// 	app.add_plugins((
+	// 		HandPlugin {
+	// 			transparent_hands: args.transparent_hands,
+	// 		},
+	// 		bevy_sk::hand::HandPlugin,
+	// 	));
+	// }
+	// if !args.disable_controllers {
+	// 	app.add_plugins(ControllerPlugin);
+	// }
 
 	// feature plugins
 	app.add_plugins((TrackingOffsetPlugin, FieldDebugGizmoPlugin));
@@ -528,7 +527,9 @@ fn xr_step(world: &mut World) {
 	// update things like the Xr input methods
 	world.run_schedule(PreFrameWait);
 	let time = world.resource::<bevy::prelude::Time>().delta_secs_f64();
-	nodes::root::Root::send_frame_events(time);
+    // TODO: send new frame events for clients, 
+    // including the predicted display time if availabe
+	// nodes::root::Root::send_frame_events(time);
 
 	let should_wait = world
 		.run_system_cached(should_run_frame_loop)

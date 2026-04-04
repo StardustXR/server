@@ -18,40 +18,51 @@ use bevy::{
 	},
 };
 use bevy_dmabuf::{
-	dmatex::DmatexPlane,
+	dmatex::DmatexPlane as BevyDmatexPlane,
 	import::{ImportedDmatexs, ImportedTexture, import_texture},
 };
+use binderbinder::binder_object::BinderObject;
 use dashmap::DashMap;
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
+use gluon_wire::{GluonCtx, drop_tracking::DropNotifier};
+use stardust_xr_protocol::protocol::dmatex::{
+	DmatexFormat, DmatexInterfaceHandler, DmatexPlane, DmatexRef, DmatexRefHandler, DmatexSize,
+};
 use stardust_xr_server_foundation::{bail, error::Result};
 use timeline_syncobj::{render_node::DrmRenderNode, timeline_syncobj::TimelineSyncObj};
+use tokio::sync::RwLock;
 use tracing::{error, warn};
-use vulkano::sync::semaphore::{
-	ExternalSemaphoreHandleType, ImportSemaphoreFdInfo, Semaphore, SemaphoreImportFlags,
+use vulkano::{
+	format::Format,
+	sync::semaphore::{
+		ExternalSemaphoreHandleType, ImportSemaphoreFdInfo, Semaphore, SemaphoreImportFlags,
+	},
 };
 
 use crate::{
+	PION,
 	bevy_int::bevy_channel::{BevyChannel, BevyChannelReader},
 	core::vulkano_data::VULKANO_CONTEXT,
-	nodes::drawable::{DmatexSize, model::ModelNodeSystemSet},
+	impl_proxy, impl_transaction_handler, interface,
+	nodes::{drawable::model::ModelNodeSystemSet, ref_owned},
 };
 
 #[derive(Debug)]
-pub struct ImportedDmatex {
+pub struct Dmatex {
 	tex: ImportedTexture,
 	sync_obj: TimelineSyncObj,
 	bevy_image_handle: OnceLock<Handle<bevy::image::Image>>,
 	// TODO: handle destruction
 	bevy_custom_view: OnceLock<ManualTextureViewHandle>,
+	drop_notifiers: RwLock<Vec<DropNotifier>>,
 }
 pub static RENDER_DEV: OnceLock<RenderDevice> = OnceLock::new();
 static DRM_RENDER_NODE: OnceLock<DrmRenderNode> = OnceLock::new();
-static EXPORTED_DMATEXES: LazyLock<DashMap<u64, Weak<ImportedDmatex>>> =
-	LazyLock::new(DashMap::new);
-static NEW_DMATEXES: BevyChannel<Arc<ImportedDmatex>> = BevyChannel::new();
+static EXPORTED_DMATEXES: LazyLock<DashMap<u64, Weak<Dmatex>>> = LazyLock::new(DashMap::new);
+static NEW_DMATEXES: BevyChannel<Arc<BinderObject<Dmatex>>> = BevyChannel::new();
 static DESTROYED_MANUAL_VIEWS: BevyChannel<ManualTextureViewHandle> = BevyChannel::new();
-impl ImportedDmatex {
+impl Dmatex {
 	pub fn import_uid(uid: u64) -> Option<Arc<Self>> {
 		EXPORTED_DMATEXES.get(&uid)?.upgrade()
 	}
@@ -67,9 +78,9 @@ impl ImportedDmatex {
 		srgb: bool,
 		// TODO: impl
 		array_layers: Option<u32>,
-		planes: Vec<super::DmatexPlane>,
+		planes: Vec<DmatexPlane>,
 		timeline_syncobj_fd: OwnedFd,
-	) -> Result<Arc<Self>> {
+	) -> Result<Arc<BinderObject<Self>>> {
 		let DmatexSize::Dim2D(res) = size else {
 			bail!("non 2d dmatex are not implemented yet");
 		};
@@ -97,7 +108,7 @@ impl ImportedDmatex {
 			bevy_dmabuf::dmatex::Dmatex {
 				planes: planes
 					.into_iter()
-					.map(|p| DmatexPlane {
+					.map(|p| BevyDmatexPlane {
 						dmabuf_fd: p.dmabuf_fd.0.into(),
 						modifier: modifier,
 						offset: p.offset,
@@ -120,12 +131,14 @@ impl ImportedDmatex {
 		else {
 			bail!("unable to import timiline syncobj");
 		};
-		let tex = Arc::new(Self {
+		let tex = PION.register_object(Self {
 			tex,
 			sync_obj,
 			bevy_image_handle: OnceLock::new(),
 			bevy_custom_view: OnceLock::new(),
+			drop_notifiers: RwLock::default(),
 		});
+		ref_owned(&tex);
 		NEW_DMATEXES.send(tex.clone());
 		Ok(tex)
 	}
@@ -161,7 +174,12 @@ impl ImportedDmatex {
 		sema
 	}
 }
-impl Drop for ImportedDmatex {
+impl DmatexRefHandler for Dmatex {
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifiers.write().await.push(notifier);
+	}
+}
+impl Drop for Dmatex {
 	fn drop(&mut self) {
 		if let Some(view) = self.try_get_bevy_manual_view() {
 			_ = DESTROYED_MANUAL_VIEWS.send(view);
@@ -171,7 +189,7 @@ impl Drop for ImportedDmatex {
 #[derive(Debug)]
 pub struct SignalOnDrop {
 	point: u64,
-	tex: Arc<ImportedDmatex>,
+	tex: Arc<Dmatex>,
 	consumed: bool,
 }
 impl SignalOnDrop {
@@ -206,6 +224,97 @@ impl Drop for SignalOnDrop {
 		}
 	}
 }
+interface!(DmatexInterface);
+impl_proxy!(DmatexRef, Dmatex);
+impl DmatexInterfaceHandler for DmatexInterface {
+	async fn import_dmatex(
+		&self,
+		_ctx: GluonCtx,
+		size: DmatexSize,
+		format: DmatexFormat,
+		array_layers: u32,
+		planes: Vec<DmatexPlane>,
+		timeline_syncobj_fd: OwnedFd,
+	) -> DmatexRef {
+		DmatexRef::from_handler(
+			&Dmatex::new(
+				size,
+				format.drm_fourcc,
+				format.drm_modifier,
+				format.is_srgb,
+				Some(array_layers),
+				planes,
+				timeline_syncobj_fd,
+			)
+			.unwrap(),
+		)
+	}
+
+	async fn enumerate_formats(&self, _ctx: GluonCtx, render_node: u64) -> Vec<DmatexFormat> {
+		let vk = VULKANO_CONTEXT.wait();
+		if Some(render_node) != vk.get_drm_render_node_id() {
+			error!(
+				"enumerating formats for devices other than the render_node used by the server is not implemented yet"
+			);
+			return Vec::new();
+		}
+		DMATEX_FORMAT_CACHE.get_or_init(|| {
+			// This is slow, but only runs once!
+			ALL_DRM_FOURCCS
+				.iter()
+				.filter_map(|fourcc| {
+					let f = Format::try_from(bevy_dmabuf::format_mapping::drm_fourcc_to_vk_format(
+						*fourcc,
+					)?)
+					.ok()?;
+					if bevy_dmabuf::format_mapping::vk_format_to_drm_fourcc(f.into())? != *fourcc {
+						return None;
+					}
+					bevy_dmabuf::wgpu_init::vulkan_to_wgpu(f.into())?;
+					let props = vk.phys_dev.format_properties(f).ok()?;
+					let can_do_srgb =
+						bevy_dmabuf::format_mapping::vk_format_to_srgb(f.into()).is_some();
+					Some(
+						if can_do_srgb {
+							props.drm_format_modifier_properties.clone()
+						} else {
+							Vec::new()
+						}
+						.into_iter()
+						.map(move |v| DmatexFormat {
+							drm_fourcc: *fourcc as u32,
+							drm_modifier: v.drm_format_modifier.into(),
+							is_srgb: true,
+						})
+						.chain(
+							props
+								.drm_format_modifier_properties
+								.into_iter()
+								.map(move |v| DmatexFormat {
+									drm_fourcc: *fourcc as u32,
+									drm_modifier: v.drm_format_modifier.into(),
+									is_srgb: false,
+								}),
+						),
+					)
+				})
+				.flatten()
+				.collect()
+		});
+		// not a huge fan of having to call clone here, not sure if theres a better solution
+		DMATEX_FORMAT_CACHE.get().unwrap().clone()
+	}
+
+	async fn primary_render_node_id(&self, _ctx: GluonCtx) -> u64 {
+		// TODO: replace this unwrap? but when would we ever not have an id?
+		VULKANO_CONTEXT.wait().get_drm_render_node_id().unwrap()
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifs.write().await.push(notifier);
+	}
+}
+static DMATEX_FORMAT_CACHE: OnceLock<Vec<DmatexFormat>> = OnceLock::new();
 pub struct DmatexPlugin;
 impl Plugin for DmatexPlugin {
 	fn build(&self, app: &mut bevy::app::App) {
@@ -230,7 +339,7 @@ fn cleanup_manual_texture_views(
 fn add_dmatex_into_bevy(
 	mut images: ResMut<Assets<Image>>,
 	texes: Res<ImportedDmatexs>,
-	mut new_texes: ResMut<BevyChannelReader<Arc<ImportedDmatex>>>,
+	mut new_texes: ResMut<BevyChannelReader<Arc<Dmatex>>>,
 	mut custom_views: ResMut<ManualTextureViews>,
 ) {
 	while let Some(tex) = new_texes.read() {
@@ -255,6 +364,7 @@ fn add_dmatex_into_bevy(
 fn init_render_device(dev: Res<RenderDevice>) {
 	_ = RENDER_DEV.set(dev.clone());
 }
+impl_transaction_handler!(Dmatex);
 pub const ALL_DRM_FOURCCS: [DrmFourcc; 105] = [
 	DrmFourcc::Abgr1555,
 	DrmFourcc::Abgr16161616f,

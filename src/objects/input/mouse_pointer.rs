@@ -7,7 +7,7 @@ use crate::{
 		fields::{EXPORTED_FIELDS, Field, FieldTrait, Ray},
 		input::{InputDataType, InputHandler, InputMethod, Pointer},
 		items::panel::KEYMAPS,
-		spatial::Spatial,
+		spatial::SpatialMut,
 	},
 	objects::FieldRef,
 };
@@ -191,7 +191,7 @@ impl QueryContext for KeyboardQueryContext {}
 pub struct MousePointer {
 	node: OwnedNode,
 	keymap: DefaultKey,
-	spatial: Arc<Spatial>,
+	spatial: Arc<SpatialMut>,
 	input: Arc<InputMethod>,
 	capture_manager: CaptureManager,
 	mouse_datamap: MouseEvent,
@@ -206,7 +206,7 @@ pub struct MousePointer {
 impl MousePointer {
 	pub fn new(object_registry: Arc<ObjectRegistry>) -> Result<Self> {
 		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
-		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY);
+		let spatial = SpatialMut::add_to(&node.0, None, Mat4::IDENTITY);
 		let pointer = InputMethod::add_to(
 			&node.0,
 			InputDataType::Pointer(Pointer::default()),
@@ -381,7 +381,7 @@ impl MousePointer {
 	async fn focus_tracking_task(
 		object_registry: Arc<ObjectRegistry>,
 		focus_notify: Arc<Notify>,
-		spatial: Arc<Spatial>,
+		spatial: Arc<SpatialMut>,
 		pointer: Arc<InputMethod>,
 		focused_handler_tx: watch::Sender<Option<HandlerInfo>>,
 	) {

@@ -11,7 +11,7 @@ use crate::{
 		},
 		fields::{Field, FieldTrait},
 		input::{INPUT_HANDLER_REGISTRY, InputDataType, InputHandler, InputMethod, Tip},
-		spatial::Spatial,
+		spatial::SpatialMut,
 	},
 	objects::{AsyncTracked, ObjectHandle, SpatialRef, Tracked},
 };
@@ -440,7 +440,7 @@ impl OxrControllerInput {
 		let node = spatial.node().unwrap();
 		node.set_enabled(false);
 		let model_node = Arc::new(Node::generate(&INTERNAL_CLIENT, true));
-		let model_spatial = Spatial::add_to(
+		let model_spatial = SpatialMut::add_to(
 			&model_node,
 			Some(spatial.clone()),
 			Mat4::from_scale(Vec3::splat(0.02)),
@@ -554,7 +554,7 @@ impl OxrControllerInput {
 		*self.input.datamap.lock() = Datamap::from_typed(&self.datamap).unwrap();
 		drop(_span);
 
-		let distance_calculator = |space: &Arc<Spatial>, _data: &InputDataType, field: &Field| {
+		let distance_calculator = |space: &Arc<SpatialMut>, _data: &InputDataType, field: &Field| {
 			Some(field.distance(space, [0.0; 3].into()).abs())
 		};
 

@@ -6,7 +6,7 @@ use crate::nodes::input::{Finger, INPUT_HANDLER_REGISTRY, InputDataType, InputHa
 use crate::nodes::{
 	Node,
 	input::{Hand, InputMethod, Joint},
-	spatial::Spatial,
+	spatial::SpatialMut,
 };
 use crate::objects::{AsyncTracked, ObjectHandle, SpatialRef, Tracked};
 use crate::{BevyMaterial, DbusConnection, ObjectRegistryRes, PreFrameWait, get_time};
@@ -211,7 +211,7 @@ enum HandMaterial {
 
 pub struct OxrHandInput {
 	_node: OwnedNode,
-	palm_spatial: Arc<Spatial>,
+	palm_spatial: Arc<SpatialMut>,
 	palm_object: ObjectHandle<SpatialRef>,
 	side: HandSide,
 	input: Arc<InputMethod>,
@@ -248,7 +248,7 @@ impl OxrHandInput {
 				}),
 		);
 		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
-		Spatial::add_to(&node.0, None, Mat4::IDENTITY);
+		SpatialMut::add_to(&node.0, None, Mat4::IDENTITY);
 		let hand = InputDataType::Hand(Hand {
 			right: matches!(side, HandSide::Right),
 			..Default::default()
@@ -384,7 +384,7 @@ impl OxrHandInput {
 			}
 		}
 
-		let distance_calculator = |space: &Arc<Spatial>, data: &InputDataType, field: &Field| {
+		let distance_calculator = |space: &Arc<SpatialMut>, data: &InputDataType, field: &Field| {
 			let InputDataType::Hand(hand) = data else {
 				return None;
 			};

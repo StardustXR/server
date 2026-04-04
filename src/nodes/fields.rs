@@ -1,18 +1,8 @@
-use super::alias::{Alias, AliasInfo};
-use super::spatial::{
-	SPATIAL_REF_GET_LOCAL_BOUNDING_BOX_SERVER_OPCODE,
-	SPATIAL_REF_GET_RELATIVE_BOUNDING_BOX_SERVER_OPCODE, SPATIAL_REF_GET_TRANSFORM_SERVER_OPCODE,
-	Spatial,
-};
-use super::{Aspect, AspectIdentifier, Node};
-use crate::DbusConnection;
-use crate::core::Id;
-use crate::core::client::Client;
-use crate::core::error::Result;
+use super::spatial::SpatialMut;
 use crate::core::registry::Registry;
-use crate::nodes::spatial::SPATIAL_ASPECT_ALIAS_INFO;
-use crate::nodes::spatial::SPATIAL_REF_ASPECT_ALIAS_INFO;
-use crate::nodes::spatial::Transform;
+use crate::nodes::spatial::Spatial;
+use crate::nodes::{ProxyExt, ref_owned};
+use crate::{DbusConnection, PION, impl_proxy, impl_transaction_handler, interface};
 use bevy::app::{Plugin, Update};
 use bevy::asset::Assets;
 use bevy::color::Color;
@@ -23,29 +13,24 @@ use bevy::ecs::resource::Resource;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::gizmos::GizmoAsset;
 use bevy::gizmos::retained::Gizmo;
-use color_eyre::eyre::OptionExt;
-use dashmap::DashMap;
+use binderbinder::binder_object::BinderObject;
 use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
-use parking_lot::Mutex;
-use stardust_xr_wire::values::Vector3;
+use gluon_wire::GluonCtx;
+use gluon_wire::drop_tracking::DropNotifier;
+use stardust_xr_protocol::protocol::field::{
+	CubicBezierControlPoint, Field as FieldProxy, FieldHandler, FieldInterfaceHandler,
+	FieldRef as FieldRefProxy, FieldRefHandler, RayMarchResult, Shape,
+};
+use stardust_xr_protocol::protocol::spatial::{
+	Spatial as SpatialProxy, SpatialRef as SpatialRefProxy,
+};
+use stardust_xr_protocol::protocol::types::Vec3F;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, LazyLock, Weak};
-use zbus::interface;
+use std::sync::{Arc, Weak};
+use tokio::sync::RwLock;
+use tokio::task::block_in_place;
 
 // TODO: get SDFs working properly with non-uniform scale and so on, output distance relative to the spatial it's compared against
-
-pub static FIELD_ALIAS_INFO: LazyLock<AliasInfo> = LazyLock::new(|| AliasInfo {
-	server_methods: vec![
-		SPATIAL_REF_GET_TRANSFORM_SERVER_OPCODE,
-		SPATIAL_REF_GET_LOCAL_BOUNDING_BOX_SERVER_OPCODE,
-		SPATIAL_REF_GET_RELATIVE_BOUNDING_BOX_SERVER_OPCODE,
-		FIELD_REF_DISTANCE_SERVER_OPCODE,
-		FIELD_REF_NORMAL_SERVER_OPCODE,
-		FIELD_REF_CLOSEST_POINT_SERVER_OPCODE,
-		FIELD_REF_RAY_MARCH_SERVER_OPCODE,
-	],
-	..Default::default()
-});
 
 pub struct FieldDebugGizmoPlugin;
 impl Plugin for FieldDebugGizmoPlugin {
@@ -109,7 +94,9 @@ fn sync_field_gizmos(
 		let ptr = Arc::as_ptr(f) as usize;
 		let field_transform =
 			bevy::transform::components::Transform::from_matrix(f.spatial.global_transform());
-		let cache = f.polyline_cache.lock();
+		let Ok(cache) = f.polyline_cache.try_read() else {
+			continue;
+		};
 		let current_gen = cache.0;
 
 		let entry = state.0.entry(ptr).or_insert((u64::MAX, vec![]));
@@ -211,20 +198,12 @@ fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3>> {
 	all_chains
 }
 
-fn spawn_field_polylines(field: Arc<Field>) {
-	let generation = {
-		let mut cache = field.polyline_cache.lock();
-		cache.0 += 1;
-		cache.1 = None;
-		cache.0
-	};
-	tokio::task::spawn_blocking(move || {
-		let chains = compute_field_polylines(&field);
-		let mut cache = field.polyline_cache.lock();
-		if cache.0 == generation {
-			cache.1 = Some(chains);
-		}
-	});
+/// this needs to be called from a blocking context, else it panics
+fn spawn_field_polylines(field: &Field) {
+	let mut cache = field.polyline_cache.blocking_write();
+	cache.0 += 1;
+	let chains = compute_field_polylines(&field);
+	cache.1 = Some(chains);
 }
 
 /// Sample the SDF on a 2D grid over the given bounds and run standard marching squares
@@ -413,7 +392,7 @@ struct FieldDebugGizmos {
 	state: tokio::sync::watch::Sender<bool>,
 }
 
-#[interface(name = "org.stardustxr.debug.FieldDebugGizmos")]
+#[zbus::interface(name = "org.stardustxr.debug.FieldDebugGizmos")]
 impl FieldDebugGizmos {
 	fn enable(&mut self) {
 		_ = self.state.send(true);
@@ -425,9 +404,12 @@ impl FieldDebugGizmos {
 
 static FIELD_REGISTRY_DEBUG_GIZMOS: Registry<Field> = Registry::new();
 
-stardust_xr_server_codegen::codegen_field_protocol!();
+struct CubicBezierSplineRef<'a> {
+	control_points: &'a [CubicBezierControlPoint],
+	cyclic: bool,
+}
 
-impl CubicSplineShape {
+impl CubicBezierSplineRef<'_> {
 	/// Iterate over cubic Bezier segments as (P0, P1, P2, P3, r0, r3).
 	fn segments(&self) -> impl Iterator<Item = (Vec3, Vec3, Vec3, Vec3, f32, f32)> + '_ {
 		let n = self.control_points.len();
@@ -530,10 +512,8 @@ impl CubicSplineShape {
 	}
 }
 
-pub static EXPORTED_FIELDS: LazyLock<DashMap<u64, Weak<Node>>> = LazyLock::new(DashMap::new);
-
 pub trait FieldTrait: Send + Sync + 'static {
-	fn spatial_ref(&self) -> &Spatial;
+	fn spatial_ref(&self) -> &Arc<Spatial>;
 
 	fn local_distance(&self, p: Vec3A) -> f32;
 	fn local_normal(&self, p: Vec3A, r: f32) -> Vec3A {
@@ -555,13 +535,13 @@ pub trait FieldTrait: Send + Sync + 'static {
 
 	fn distance(&self, reference_space: &Spatial, p: Vec3A) -> f32 {
 		let reference_to_local_space =
-			Spatial::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
+			SpatialMut::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
 		let local_p = reference_to_local_space.transform_point3a(p);
 		self.local_distance(local_p)
 	}
 	fn normal(&self, reference_space: &Spatial, p: Vec3A, r: f32) -> Vec3A {
 		let reference_to_local_space =
-			Spatial::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
+			SpatialMut::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
 		let local_p = reference_to_local_space.transform_point3a(p);
 		reference_to_local_space
 			.inverse()
@@ -569,7 +549,7 @@ pub trait FieldTrait: Send + Sync + 'static {
 	}
 	fn closest_point(&self, reference_space: &Spatial, p: Vec3A, r: f32) -> Vec3A {
 		let reference_to_local_space =
-			Spatial::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
+			SpatialMut::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
 		let local_p = reference_to_local_space.transform_point3a(p);
 		reference_to_local_space
 			.inverse()
@@ -578,8 +558,6 @@ pub trait FieldTrait: Send + Sync + 'static {
 
 	fn ray_march(&self, ray: Ray) -> RayMarchResult {
 		let mut result = RayMarchResult {
-			ray_origin: ray.origin.into(),
-			ray_direction: ray.direction.into(),
 			min_distance: f32::MAX,
 			deepest_point_distance: 0_f32,
 			ray_length: 0_f32,
@@ -587,7 +565,7 @@ pub trait FieldTrait: Send + Sync + 'static {
 		};
 
 		let ray_to_field_matrix =
-			Spatial::space_to_space_matrix(Some(&ray.space), Some(self.spatial_ref()));
+			SpatialMut::space_to_space_matrix(Some(&ray.space), Some(self.spatial_ref()));
 		let mut ray_point = ray_to_field_matrix.transform_point3a(ray.origin.into());
 		let ray_direction = ray_to_field_matrix
 			.transform_vector3a(ray.direction.into())
@@ -627,24 +605,46 @@ const MAX_RAY_MARCH: f32 = f32::MAX;
 // const MIN_RAY_LENGTH: f32 = 0_f32;
 const MAX_RAY_LENGTH: f32 = 1000_f32;
 
-pub struct Field {
-	pub spatial: Arc<Spatial>,
-	pub shape: Mutex<Shape>,
-	polyline_cache: Mutex<(u64, Option<Vec<Vec<Vec3>>>)>,
+#[derive(Debug)]
+pub struct FieldMut {
+	data: Arc<Field>,
+	field_ref: Arc<BinderObject<FieldRef>>,
+	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
-impl Field {
-	pub fn add_to(node: &Arc<Node>, shape: Shape) -> Result<Arc<Field>> {
-		let spatial = node.get_aspect::<Spatial>()?;
-		let field = Field {
+#[derive(Debug)]
+pub struct Field {
+	pub spatial: Arc<BinderObject<SpatialMut>>,
+	pub shape: RwLock<Shape>,
+	polyline_cache: RwLock<(u64, Option<Vec<Vec<Vec3>>>)>,
+}
+impl FieldMut {
+	pub fn new(
+		spatial: Arc<BinderObject<SpatialMut>>,
+		shape: Shape,
+	) -> Arc<BinderObject<FieldMut>> {
+		let data = Arc::new(Field {
 			spatial,
-			shape: Mutex::new(shape),
-			polyline_cache: Mutex::new((0, None)),
-		};
-		let field = node.add_aspect(field);
+			shape: RwLock::new(shape),
+			polyline_cache: RwLock::new((0, None)),
+		});
+		let field_ref = PION.register_object(FieldRef {
+			data: data.clone(),
+			drop_notifs: RwLock::default(),
+		});
+		let field = PION.register_object(FieldMut {
+			field_ref: RwLock::new(Weak::new()),
+			drop_notifs: RwLock::default(),
+			data,
+		});
+		ref_owned(&field);
 		FIELD_REGISTRY_DEBUG_GIZMOS.add_raw(&field);
-		spawn_field_polylines(field.clone());
-		node.add_aspect(FieldRef);
-		Ok(field)
+		tokio::task::spawn_blocking({
+			let field = field.clone();
+			|| {
+				spawn_field_polylines(&field);
+			}
+		});
+		field
 	}
 }
 impl Drop for Field {
@@ -652,33 +652,13 @@ impl Drop for Field {
 		FIELD_REGISTRY_DEBUG_GIZMOS.remove(self);
 	}
 }
-impl AspectIdentifier for Field {
-	impl_aspect_for_field_aspect_id! {}
-}
-impl Aspect for Field {
-	impl_aspect_for_field_aspect! {}
-}
-impl FieldAspect for Field {
-	fn set_shape(node: Arc<Node>, _calling_client: Arc<Client>, shape: Shape) -> Result<()> {
-		let field = node.get_aspect::<Field>()?;
-		*field.shape.lock() = shape;
-		spawn_field_polylines(field.clone());
-		Ok(())
-	}
-
-	async fn export_field(node: Arc<Node>, _calling_client: Arc<Client>) -> Result<Id> {
-		let id = rand::random();
-		EXPORTED_FIELDS.insert(id, Arc::downgrade(&node));
-		Ok(id.into())
-	}
-}
 impl FieldTrait for Field {
-	fn spatial_ref(&self) -> &Spatial {
+	fn spatial_ref(&self) -> &Arc<Spatial> {
 		&self.spatial
 	}
 	fn local_distance(&self, p: Vec3A) -> f32 {
 		match self.shape.lock().clone() {
-			Shape::Box(size) => {
+			Shape::Box { size } => {
 				let q = vec3(
 					p.x.abs() - (size.x * 0.5_f32),
 					p.y.abs() - (size.y * 0.5_f32),
@@ -687,128 +667,192 @@ impl FieldTrait for Field {
 				let v = vec3a(q.x.max(0_f32), q.y.max(0_f32), q.z.max(0_f32));
 				v.length() + q.x.max(q.y.max(q.z)).min(0_f32)
 			}
-			Shape::Cylinder(CylinderShape { length, radius }) => {
+			Shape::Cylinder { length, radius } => {
 				let d = vec2(p.xz().length().abs() - radius, p.y.abs() - (length * 0.5));
 				d.x.max(d.y).min(0.0) + d.max(vec2(0.0, 0.0)).length()
 			}
-			Shape::Sphere(radius) => p.length() - radius,
-			Shape::Spline(spline) => spline.sd_tube(p.into()),
-			Shape::Torus(TorusShape { radius_a, radius_b }) => {
-				let q = vec2(p.xz().length() - radius_a, p.y);
-				q.length() - radius_b
+			Shape::Sphere { radius } => p.length() - radius,
+			Shape::CubicBezierSpline { points, cyclic } => CubicBezierSplineRef {
+				control_points: &points,
+				cyclic,
+			}
+			.sd_tube(p.into()),
+			Shape::Torus {
+				major_radius,
+				minor_radius,
+			} => {
+				let q = vec2(p.xz().length() - major_radius, p.y);
+				q.length() - minor_radius
 			}
 		}
 	}
 }
+impl FieldHandler for FieldMut {
+	async fn field_ref(&self, _ctx: GluonCtx) -> FieldRefProxy {
+		FieldRefProxy::from_handler(&self.field_ref)
+	}
 
-pub struct FieldRef;
-impl AspectIdentifier for FieldRef {
-	impl_aspect_for_field_ref_aspect_id! {}
-}
-impl Aspect for FieldRef {
-	impl_aspect_for_field_ref_aspect! {}
-}
-impl FieldRefAspect for FieldRef {
+	async fn spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
+		todo!()
+	}
+
 	async fn distance(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		space: Arc<Node>,
-		point: Vector3<f32>,
-	) -> Result<f32> {
-		let reference_space = space.get_aspect::<Spatial>()?;
-		let field = node.get_aspect::<Field>()?;
-		Ok(field.distance(&reference_space, point.into()))
+		&self,
+		_ctx: GluonCtx,
+		reference_space: SpatialRefProxy,
+		point: Vec3F,
+	) -> Option<f32> {
+		let ref_space = reference_space.owned()?;
+		Some(self.data.distance(&ref_space, point.mint()))
 	}
 
 	async fn normal(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		space: Arc<Node>,
-		point: Vector3<f32>,
-	) -> Result<Vector3<f32>> {
-		let reference_space = space.get_aspect::<Spatial>()?;
-		let field = node.get_aspect::<Field>()?;
-		Ok(field.normal(&reference_space, point.into(), 0.0001).into())
+		&self,
+		_ctx: GluonCtx,
+		reference_space: SpatialRefProxy,
+		point: Vec3F,
+	) -> Option<Vec3F> {
+		let ref_space = reference_space.owned()?;
+		Some(self.data.normal(&ref_space, point.mint(), 0.0001).into())
 	}
 
 	async fn closest_point(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		space: Arc<Node>,
-		point: Vector3<f32>,
-	) -> Result<Vector3<f32>> {
-		let reference_space = space.get_aspect::<Spatial>()?;
-		let field = node.get_aspect::<Field>()?;
-		Ok(field
-			.closest_point(&reference_space, point.into(), 0.0001)
-			.into())
+		&self,
+		_ctx: GluonCtx,
+		reference_space: SpatialRefProxy,
+		point: Vec3F,
+	) -> Option<Vec3F> {
+		let ref_space = reference_space.owned()?;
+		Some(
+			self.data
+				.closest_point(&ref_space, point.mint(), 0.0001)
+				.into(),
+		)
 	}
 
 	async fn ray_march(
-		node: Arc<Node>,
-		_calling_client: Arc<Client>,
-		space: Arc<Node>,
-		ray_origin: Vector3<f32>,
-		ray_direction: Vector3<f32>,
-	) -> Result<RayMarchResult> {
-		let space = space.get_aspect::<Spatial>()?;
-		let field = node.get_aspect::<Field>()?;
-		Ok(field.ray_march(Ray {
-			origin: ray_origin.into(),
-			direction: ray_direction.into(),
-			space,
+		&self,
+		_ctx: GluonCtx,
+		reference_space: SpatialRefProxy,
+		ray_origin: Vec3F,
+		ray_direction: Vec3F,
+	) -> Option<RayMarchResult> {
+		let ref_space = reference_space.owned()?;
+		Some(self.data.ray_march(Ray {
+			origin: ray_origin.mint(),
+			direction: ray_origin.mint(),
+			space: (***ref_space).clone(),
 		}))
 	}
-}
 
-impl InterfaceAspect for Interface {
-	async fn import_field_ref(
-		_node: Arc<Node>,
-		calling_client: Arc<Client>,
-		uid: Id,
-	) -> Result<Id> {
-		let node = EXPORTED_FIELDS
-			.get(&uid.0)
-			.and_then(|s| s.upgrade())
-			.map(|s| {
-				Alias::create(
-					&s,
-					&calling_client,
-					FIELD_REF_ASPECT_ALIAS_INFO.clone(),
-					None,
-				)
-				.unwrap()
-			})
-			.ok_or_eyre("Couldn't import field with that ID")?;
-		Ok(node.get_id())
+	fn set_shape(&self, _ctx: GluonCtx, shape: Shape) {
+		block_in_place(|| {
+			*self.shape.blocking_write() = shape;
+			spawn_field_polylines(self);
+		});
 	}
 
-	fn create_field(
-		_node: Arc<Node>,
-		calling_client: Arc<Client>,
-		id: Id,
-		parent: Arc<Node>,
-		transform: Transform,
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifs.write().await.push(notifier);
+	}
+}
+
+#[derive(Debug)]
+pub struct FieldRef {
+	data: Arc<Field>,
+	drop_notifs: RwLock<Vec<DropNotifier>>,
+}
+impl FieldRefHandler for FieldRef {
+	async fn spatial_ref(&self, _ctx: GluonCtx) -> SpatialRefProxy {
+		SpatialRefProxy::from_handler(&self.data.spatial.get_ref())
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifs.write().await.push(notifier);
+	}
+}
+
+interface!(FieldInterface);
+impl FieldInterfaceHandler for FieldInterface {
+	async fn distance(
+		&self,
+		_ctx: GluonCtx,
+		field: FieldRefProxy,
+		space: SpatialRefProxy,
+		point: Vec3F,
+	) -> Option<f32> {
+		let space = space.owned()?;
+		let field = field.owned()?;
+		todo!();
+	}
+
+	async fn normal(
+		&self,
+		_ctx: GluonCtx,
+		field: FieldRefProxy,
+		space: SpatialRefProxy,
+		point: Vec3F,
+	) -> Option<Vec3F> {
+		todo!()
+	}
+
+	async fn closest_point(
+		&self,
+		_ctx: GluonCtx,
+		field: FieldRefProxy,
+		space: SpatialRefProxy,
+		point: Vec3F,
+	) -> Option<Vec3F> {
+		todo!()
+	}
+
+	async fn ray_march(
+		&self,
+		_ctx: GluonCtx,
+		field: FieldRefProxy,
+		space: SpatialRefProxy,
+		ray_origin: Vec3F,
+		ray_direction: Vec3F,
+	) -> Option<RayMarchResult> {
+		todo!()
+	}
+
+	async fn create_field(
+		&self,
+		_ctx: GluonCtx,
+		spatial: SpatialProxy,
 		shape: Shape,
-	) -> Result<()> {
-		let transform = transform.to_mat4(true, true, false);
-		let parent = parent.get_aspect::<Spatial>()?;
-		let node = Node::from_id(&calling_client, id, true).add_to_scenegraph()?;
-		Spatial::add_to(&node, Some(parent.clone()), transform);
-		Field::add_to(&node, shape)?;
-		Ok(())
+	) -> FieldProxy {
+		let Some(spatial) = spatial.owned() else {
+			// TODO: replace with returned error
+			panic!("invalid spatial used for field creation");
+		};
+		let field = FieldMut::new(spatial, shape);
+		FieldProxy::from_handler(&field)
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		todo!()
 	}
 }
+
+impl_proxy!(FieldProxy, FieldMut);
+impl_proxy!(FieldRefProxy, FieldRef);
+impl_transaction_handler!(FieldMut);
+impl_transaction_handler!(FieldRef);
 
 #[cfg(test)]
 mod tests {
 	use super::*;
 
-	fn make_spline(points: &[([f32; 3], [f32; 3], [f32; 3], f32)], cyclic: bool) -> CubicSplineShape {
-		CubicSplineShape {
+	fn make_spline(
+		points: &[([f32; 3], [f32; 3], [f32; 3], f32)],
+		cyclic: bool,
+	) -> CubicBezierSplineRef {
+		CubicBezierSplineRef {
 			control_points: points
 				.iter()
-				.map(|(hi, a, ho, t)| CubicControlPoint {
+				.map(|(hi, a, ho, t)| CubicBezierControlPoint {
 					handle_in: mint::Vector3::from(*hi),
 					anchor: mint::Vector3::from(*a),
 					handle_out: mint::Vector3::from(*ho),
@@ -858,7 +902,7 @@ mod tests {
 
 		for i in 0..=10 {
 			let t = i as f32 / 10.0;
-			let curve_pt = CubicSplineShape::eval_cubic(
+			let curve_pt = CubicBezierSplineRef::eval_cubic(
 				Vec3::new(0.0, 0.0, 0.0),
 				Vec3::new(0.1, 0.2, 0.0),
 				Vec3::new(0.2, 0.2, 0.0),
@@ -867,7 +911,10 @@ mod tests {
 			);
 			let d = spline.sd_tube(curve_pt);
 			eprintln!("t={t:.1} curve_pt={curve_pt} sd={d}");
-			assert!(d < 0.0, "point on curve should be inside tube, t={t}, sd={d}");
+			assert!(
+				d < 0.0,
+				"point on curve should be inside tube, t={t}, sd={d}"
+			);
 		}
 	}
 }

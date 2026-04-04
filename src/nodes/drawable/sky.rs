@@ -1,3 +1,9 @@
+use std::{
+	ffi::OsStr,
+	path::PathBuf,
+	sync::atomic::{AtomicBool, Ordering},
+};
+
 use bevy::{
 	app::{Plugin, Update},
 	color::Color,
@@ -11,6 +17,16 @@ use bevy::{
 };
 use bevy_equirect::EquirectManager;
 use glam::Quat;
+use gluon_wire::drop_tracking::DropNotifier;
+use parking_lot::Mutex;
+use stardust_xr_protocol::protocol::{
+	sky::{SkyGuard as SkyGuardProxy, SkyGuardHandler, SkyInterfaceHandler},
+	types::Resource,
+};
+use stardust_xr_server_foundation::resource::get_resource_file;
+use tokio::sync::RwLock;
+
+use crate::{PION, impl_transaction_handler, interface, nodes::ref_owned};
 
 pub struct SkyPlugin;
 
@@ -20,6 +36,11 @@ impl Plugin for SkyPlugin {
 	}
 }
 
+static QUEUED_SKYLIGHT: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
+static QUEUED_SKYTEX: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
+static SKYLIGHT_SET: AtomicBool = AtomicBool::new(false);
+static SKYTEX_SET: AtomicBool = AtomicBool::new(false);
+
 // TODO: make this work with cameras spawned after setting the sky texture
 fn apply_sky(
 	mut equirect: ResMut<EquirectManager>,
@@ -27,7 +48,7 @@ fn apply_sky(
 	cameras: Query<Entity, With<Camera3d>>,
 	mut cmds: Commands,
 ) {
-	if let Some(tex) = super::QUEUED_SKYTEX.lock().take() {
+	if let Some(tex) = QUEUED_SKYTEX.lock().take() {
 		if let Some(path) = tex {
 			let image_handle = equirect.load_equirect_as_cubemap(path, 2048);
 			for cam in cameras {
@@ -43,7 +64,7 @@ fn apply_sky(
 			}
 		}
 	}
-	if let Some(light) = super::QUEUED_SKYLIGHT.lock().take() {
+	if let Some(light) = QUEUED_SKYLIGHT.lock().take() {
 		if let Some(path) = light {
 			let image_handle = equirect.load_equirect_as_cubemap(path, 2048);
 			for cam in cameras {
@@ -62,6 +83,80 @@ fn apply_sky(
 				cmds.entity(cam).remove::<EnvironmentMapLight>();
 			}
 			ambient_light.color = Color::WHITE;
+		}
+	}
+}
+
+interface!(SkyInterface);
+impl SkyInterfaceHandler for SkyInterface {
+	async fn set_sky_tex(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		tex: Resource,
+	) -> Option<SkyGuardProxy> {
+		if SKYTEX_SET.load(Ordering::Relaxed) {
+			return None;
+		}
+		let resource_path = get_resource_file(
+			&tex,
+			self.base_prefixes(),
+			&[OsStr::new("hdr"), OsStr::new("png"), OsStr::new("jpg")],
+		)?;
+		QUEUED_SKYTEX.lock().replace(Some(resource_path));
+		SKYTEX_SET.store(true, Ordering::Relaxed);
+		let guard = PION.register_object(SkyGuard {
+			is_sky_tex: true,
+			drop_nofifs: RwLock::default(),
+		});
+        ref_owned(&guard);
+        Some(SkyGuardProxy::from_handler(&guard))
+	}
+
+	async fn set_sky_light(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		tex: Resource,
+	) -> Option<SkyGuardProxy> {
+		if SKYLIGHT_SET.load(Ordering::Relaxed) {
+			return None;
+		}
+		let resource_path = get_resource_file(
+			&tex,
+			self.base_prefixes(),
+			&[OsStr::new("hdr"), OsStr::new("png"), OsStr::new("jpg")],
+		)?;
+		QUEUED_SKYLIGHT.lock().replace(Some(resource_path));
+		SKYLIGHT_SET.store(true, Ordering::Relaxed);
+		let guard = PION.register_object(SkyGuard {
+			is_sky_tex: false,
+			drop_nofifs: RwLock::default(),
+		});
+        ref_owned(&guard);
+        Some(SkyGuardProxy::from_handler(&guard))
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifs.write().await.push(notifier);
+	}
+}
+
+#[derive(Debug)]
+struct SkyGuard {
+	is_sky_tex: bool,
+	drop_nofifs: RwLock<Vec<DropNotifier>>,
+}
+impl SkyGuardHandler for SkyGuard {
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_nofifs.write().await.push(notifier);
+	}
+}
+impl_transaction_handler!(SkyGuard);
+impl Drop for SkyGuard {
+	fn drop(&mut self) {
+		if self.is_sky_tex {
+			QUEUED_SKYTEX.lock().replace(None);
+		} else {
+			QUEUED_SKYLIGHT.lock().replace(None);
 		}
 	}
 }

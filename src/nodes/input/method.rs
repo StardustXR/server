@@ -5,11 +5,11 @@ use super::{
 };
 use crate::{
 	core::{
-		client::Client,
+		client::ConnectedClient,
 		error::{Result, ServerError},
 		registry::{OwnedRegistry, Registry},
 	},
-	nodes::{Node, fields::Field, input::input_handler_client, spatial::Spatial},
+	nodes::{Node, fields::Field, input::input_handler_client, spatial::SpatialMut},
 };
 use color_eyre::eyre::eyre;
 use parking_lot::Mutex;
@@ -18,7 +18,7 @@ use stardust_xr_wire::values::Datamap;
 use std::sync::{Arc, Weak};
 
 pub struct InputMethod {
-	pub spatial: Arc<Spatial>,
+	pub spatial: Arc<SpatialMut>,
 	pub(crate) data: Mutex<InputDataType>,
 	pub(crate) datamap: Mutex<Datamap>,
 
@@ -35,7 +35,7 @@ impl InputMethod {
 		datamap: Datamap,
 	) -> Result<Arc<InputMethod>> {
 		let method = InputMethod {
-			spatial: node.get_aspect::<Spatial>().unwrap().clone(),
+			spatial: node.get_aspect::<SpatialMut>().unwrap().clone(),
 			data: Mutex::new(data),
 			datamap: Mutex::new(datamap),
 
@@ -259,7 +259,7 @@ impl InputMethodAspect for InputMethod {
 	#[doc = "Set the input data of this input method. You must keep the same input data type throughout the entire thing."]
 	fn update_state(
 		node: Arc<Node>,
-		_calling_client: Arc<Client>,
+		_calling_client: Arc<ConnectedClient>,
 		input: InputDataType,
 		datamap: Datamap,
 	) -> Result<()> {
@@ -271,7 +271,7 @@ impl InputMethodAspect for InputMethod {
 	#[doc = "Manually set the order of handlers to propagate input to, or else let the server decide."]
 	fn set_handler_order(
 		method_node: Arc<Node>,
-		_calling_client: Arc<Client>,
+		_calling_client: Arc<ConnectedClient>,
 		handlers: Vec<Arc<Node>>,
 	) -> Result<()> {
 		let method = method_node.get_aspect::<InputMethod>()?;
@@ -286,7 +286,7 @@ impl InputMethodAspect for InputMethod {
 	#[doc = "Set which handlers are captured."]
 	fn set_captures(
 		node: Arc<Node>,
-		_calling_client: Arc<Client>,
+		_calling_client: Arc<ConnectedClient>,
 		captures: Vec<Arc<Node>>,
 	) -> Result<()> {
 		let method = node.get_aspect::<InputMethod>()?;
@@ -317,7 +317,7 @@ impl InputMethodRefAspect for InputMethodRef {
 	#[doc = "Try to capture the input method with the given handler. When the handler does not get input from the method, it will be released."]
 	fn try_capture(
 		node: Arc<Node>,
-		_calling_client: Arc<Client>,
+		_calling_client: Arc<ConnectedClient>,
 		handler: Arc<Node>,
 	) -> Result<()> {
 		let input_method = node.get_aspect::<InputMethod>()?;
@@ -339,7 +339,7 @@ impl InputMethodRefAspect for InputMethodRef {
 	}
 
 	#[doc = "If captured by this handler, release it (e.g. the object is let go of after grabbing)."]
-	fn release(node: Arc<Node>, _calling_client: Arc<Client>, handler: Arc<Node>) -> Result<()> {
+	fn release(node: Arc<Node>, _calling_client: Arc<ConnectedClient>, handler: Arc<Node>) -> Result<()> {
 		let input_method = node.get_aspect::<InputMethod>()?;
 		let input_handler = handler.get_aspect::<InputHandler>()?;
 

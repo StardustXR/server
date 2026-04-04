@@ -1,19 +1,27 @@
-use super::{
-	client_state::{CLIENT_STATES, ClientStateParsed},
-	scenegraph::Scenegraph,
-};
+use super::client_state::{CLIENT_STATES, ClientStateParsed};
 use crate::{
-	core::{Id, registry::OwnedRegistry, task},
-	nodes::{
-		Node, audio, camera, drawable::{self, dmatex::ImportedDmatex}, fields, input, items, root::{ClientState, Root}, spatial
-	},
+	PION, core::{Id, registry::OwnedRegistry}, impl_transaction_handler, nodes::{audio, drawable, fields, spatial}
 };
-use color_eyre::eyre::{Result, eyre};
-use dashmap::DashMap;
+use binderbinder::TransactionHandler;
+use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
+use gluon_wire::{GluonCtx, GluonDataBuilder, GluonDataReader, drop_tracking::DropNotifier};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
-use stardust_xr_wire::messenger::{self, MessageSenderHandle};
+use rustix::process::RawPid;
+use stardust_xr_protocol::protocol::{
+	audio::AudioInterface,
+	client::{Client, ClientState},
+	dmatex::DmatexInterface,
+	field::FieldInterface,
+	lines::LinesInterface,
+	model::ModelInterface,
+	server::ServerHandler,
+	sky::SkyInterface,
+	spatial::SpatialInterface,
+	spatial_query::SpatialQueryInterface,
+	text::TextInterface,
+};
 use std::{
 	fmt::Debug,
 	fs,
@@ -22,38 +30,33 @@ use std::{
 	sync::{Arc, LazyLock, OnceLock},
 	time::Instant,
 };
-use tokio::{net::UnixStream, sync::watch, task::JoinHandle};
+use tokio::sync::{RwLock, watch};
 use tracing::info;
 
-pub static CLIENTS: OwnedRegistry<Client> = OwnedRegistry::new();
+pub static CLIENTS: OwnedRegistry<ConnectedClient> = OwnedRegistry::new();
 
 static INTERNAL_CLIENT_MESSAGE_TIMES: LazyLock<(watch::Sender<Instant>, watch::Receiver<Instant>)> =
 	LazyLock::new(|| watch::channel(Instant::now()));
-pub static INTERNAL_CLIENT: LazyLock<Arc<Client>> = LazyLock::new(|| {
-	CLIENTS.add(Client {
+pub static INTERNAL_CLIENT: LazyLock<Arc<ConnectedClient>> = LazyLock::new(|| {
+	CLIENTS.add(ConnectedClient {
 		pid: None,
 		// env: None,
 		exe: None,
 
-		dispatch_join_handle: OnceLock::new(),
-		flush_join_handle: OnceLock::new(),
 		disconnect_status: OnceLock::new(),
 
 		id_counter: CounterU32::new(0),
-		message_last_received: INTERNAL_CLIENT_MESSAGE_TIMES.1.clone(),
-		message_sender_handle: None,
-		scenegraph: Default::default(),
-		root: OnceLock::new(),
 		base_resource_prefixes: Default::default(),
 		state: OnceLock::default(),
-		dmatexes: DashMap::new(),
+		drop_notifs: Default::default(),
+		client: todo!(),
 	})
 });
 pub fn tick_internal_client() {
 	let _ = INTERNAL_CLIENT_MESSAGE_TIMES.0.send(Instant::now());
 }
 
-pub fn get_env(pid: i32) -> Result<FxHashMap<String, String>, std::io::Error> {
+pub fn get_env(pid: RawPid) -> Result<FxHashMap<String, String>, std::io::Error> {
 	let env = fs::read_to_string(format!("/proc/{pid}/environ"))?;
 	Ok(FxHashMap::from_iter(
 		env.split('\0')
@@ -66,28 +69,26 @@ pub fn state(env: &FxHashMap<String, String>) -> Option<Arc<ClientStateParsed>> 
 	CLIENT_STATES.get(token).as_deref().cloned()
 }
 
-pub struct Client {
+pub struct ConnectedClient {
 	pub pid: Option<i32>,
+	client: Client,
 	// env: Option<FxHashMap<String, String>>,
 	exe: Option<PathBuf>,
-	dispatch_join_handle: OnceLock<JoinHandle<Result<()>>>,
-	flush_join_handle: OnceLock<JoinHandle<Result<()>>>,
 	disconnect_status: OnceLock<Result<()>>,
 
 	id_counter: CounterU32,
-	message_last_received: watch::Receiver<Instant>,
-	pub message_sender_handle: Option<MessageSenderHandle>,
-	pub scenegraph: Arc<Scenegraph>,
-	pub root: OnceLock<Arc<Root>>,
-	pub base_resource_prefixes: Mutex<Vec<PathBuf>>,
+	pub base_resource_prefixes: Arc<Vec<PathBuf>>,
 	pub state: OnceLock<ClientState>,
-	pub dmatexes: DashMap<Id, Arc<ImportedDmatex>>,
+	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
-impl Client {
-	pub fn from_connection(connection: UnixStream) -> Result<Arc<Self>> {
-		let pid = connection.peer_cred().ok().and_then(|c| c.pid());
-		let env = pid.and_then(|pid| get_env(pid).ok());
-		let exe = pid.and_then(|pid| fs::read_link(format!("/proc/{pid}/exe")).ok());
+impl ConnectedClient {
+	pub async fn from_connection(
+		client: Client,
+		pid: RawPid,
+		base_resource_prefixes: Vec<PathBuf>,
+	) -> Result<Arc<Self>> {
+		let env = get_env(pid).ok();
+		let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
 		info!(
 			pid,
 			exe = exe
@@ -96,93 +97,34 @@ impl Client {
 			"New client connected"
 		);
 
-		let (mut messenger_tx, mut messenger_rx) = messenger::create(connection);
-		let scenegraph = Arc::new(Scenegraph::default());
 		let state = env
 			.as_ref()
 			.and_then(state)
 			.unwrap_or_else(|| Arc::new(ClientStateParsed::default()));
 
-		let (message_time_tx, message_last_received) = watch::channel(Instant::now());
-		let client = CLIENTS.add(Client {
+		let client = PION.register_object(ConnectedClient {
 			pid,
 			// env,
 			exe: exe.clone(),
 
-			dispatch_join_handle: OnceLock::new(),
-			flush_join_handle: OnceLock::new(),
 			disconnect_status: OnceLock::new(),
 
 			id_counter: CounterU32::new(256),
-			message_last_received,
-			message_sender_handle: Some(messenger_tx.handle()),
-			scenegraph: scenegraph.clone(),
-			root: OnceLock::new(),
 			base_resource_prefixes: Default::default(),
 			state: OnceLock::default(),
-			dmatexes: DashMap::new(),
+			drop_notifs: Default::default(),
+			client,
 		});
+		CLIENTS.add_raw(&client);
 		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
-		let _ = client.root.set(Root::create(&client, state.root)?);
-		spatial::create_interface(&client)?;
-		fields::create_interface(&client)?;
-		drawable::create_interface(&client)?;
-		audio::create_interface(&client)?;
-		input::create_interface(&client)?;
-		camera::create_interface(&client)?;
-		items::panel::create_interface(&client)?;
 
-		let _ = client.state.set(state.apply_to(&client));
-
-		let pid_printable = pid
-			.map(|pid| pid.to_string())
-			.unwrap_or_else(|| "??".to_string());
-		let exe_printable = exe
-			.and_then(|exe| {
-				exe.file_name()
-					.and_then(|exe| exe.to_str())
-					.map(|exe| exe.to_string())
-			})
-			.unwrap_or_else(|| "??".to_string());
-		let _ = client.dispatch_join_handle.get_or_init(|| {
-			task::new(
-				|| format!("Stardust client \"{exe_printable}\" dispatch, pid={pid_printable}"),
-				{
-					let client = client.clone();
-					async move {
-						loop {
-							if let Err(e) = messenger_rx.dispatch(&*scenegraph).await {
-								client.disconnect(Err(e.into()));
-							}
-							let _ = message_time_tx.send(Instant::now());
-						}
-					}
-				},
-			)
-			.unwrap()
-		});
-		let _ = client.flush_join_handle.get_or_init(|| {
-			task::new(
-				|| format!("Stardust client \"{exe_printable}\" flush, pid={pid_printable}"),
-				{
-					let client = client.clone();
-					async move {
-						loop {
-							if let Err(e) = messenger_tx.flush().await {
-								client.disconnect(Err(e.into()));
-							}
-						}
-					}
-				},
-			)
-			.unwrap()
-		});
+		let _ = client.state.set(state.apply_to(&client).await);
 
 		Ok(client)
 	}
 
 	pub fn get_cmdline(&self) -> Option<Vec<String>> {
-		let pid = self.pid?;
+		let pid = self.pid;
 		let exe_proc_path = format!("/proc/{pid}/exe");
 		let cmdline_proc_path = format!("/proc/{pid}/cmdline");
 		let exe = std::fs::read_link(exe_proc_path).ok()?;
@@ -198,21 +140,14 @@ impl Client {
 		std::fs::read_link(cwd_proc_path).ok()
 	}
 	pub async fn save_state(&self) -> Option<ClientStateParsed> {
-		println!("start save state");
+		info!("start save state");
 		let internal = self.root.get()?.save_state().await.ok()?;
-		println!("finished save state");
+		info!("finished save state");
 		Some(ClientStateParsed::from_deserialized(self, internal))
 	}
 
 	pub fn generate_id(&self) -> Id {
 		Id(self.id_counter.inc() as u64)
-	}
-
-	#[inline]
-	pub fn get_node(&self, name: &'static str, id: Id) -> Result<Arc<Node>> {
-		self.scenegraph
-			.get_node(id)
-			.ok_or_else(|| eyre!("{} not found", name))
 	}
 
 	pub fn unresponsive(&self) -> bool {
@@ -231,7 +166,7 @@ impl Client {
 		CLIENTS.remove(self);
 	}
 }
-impl Debug for Client {
+impl Debug for ConnectedClient {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Client")
 			.field("pid", &self.pid)
@@ -244,7 +179,52 @@ impl Debug for Client {
 			.finish()
 	}
 }
-impl Drop for Client {
+impl ServerHandler for ConnectedClient {
+	async fn spatial_interface(&self, _ctx: GluonCtx) -> SpatialInterface {
+		todo!()
+	}
+
+	async fn field_interface(&self, _ctx: GluonCtx) -> FieldInterface {
+		todo!()
+	}
+
+	async fn dmatex_interface(&self, _ctx: GluonCtx) -> DmatexInterface {
+		todo!()
+	}
+
+	async fn text_interface(&self, _ctx: GluonCtx) -> TextInterface {
+		todo!()
+	}
+
+	async fn model_interface(&self, _ctx: GluonCtx) -> ModelInterface {
+		todo!()
+	}
+
+	async fn lines_interface(&self, _ctx: GluonCtx) -> LinesInterface {
+		todo!()
+	}
+
+	async fn sky_interface(&self, _ctx: GluonCtx) -> SkyInterface {
+		todo!()
+	}
+
+	async fn audio_interface(&self, _ctx: GluonCtx) -> AudioInterface {
+		todo!()
+	}
+
+	async fn spatial_query_interface(&self, _ctx: GluonCtx) -> SpatialQueryInterface {
+		todo!()
+	}
+
+	async fn generate_state_token(&self, _ctx: GluonCtx, state: ClientState) -> String {
+		ClientStateParsed::from_deserialized(self, state).token()
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifs.write().await.push(notifier);
+	}
+}
+impl Drop for ConnectedClient {
 	fn drop(&mut self) {
 		info!(
 			pid = self.pid,
@@ -261,3 +241,4 @@ impl Drop for Client {
 		);
 	}
 }
+impl_transaction_handler!(ConnectedClient);

@@ -5,7 +5,7 @@ use crate::{
 	nodes::{
 		Node, OwnedNode,
 		fields::{EXPORTED_FIELDS, Field, Shape},
-		spatial::{EXPORTED_SPATIALS, Spatial},
+		spatial::{EXPORTED_SPATIALS, SpatialMut},
 	},
 };
 use glam::{Mat4, vec3};
@@ -88,9 +88,9 @@ impl Drop for AsyncTracked {
 
 pub struct SpatialRef(u64, OwnedNode);
 impl SpatialRef {
-	pub fn create(connection: &Connection, path: &str) -> (Arc<Spatial>, ObjectHandle<SpatialRef>) {
+	pub fn create(connection: &Connection, path: &str) -> (Arc<SpatialMut>, ObjectHandle<SpatialRef>) {
 		let node = OwnedNode(Arc::new(Node::generate(&INTERNAL_CLIENT, false)));
-		let spatial = Spatial::add_to(&node.0, None, Mat4::IDENTITY);
+		let spatial = SpatialMut::add_to(&node.0, None, Mat4::IDENTITY);
 		let uid: u64 = rand::random();
 		EXPORTED_SPATIALS.insert(uid, Arc::downgrade(&node.0));
 
@@ -177,7 +177,7 @@ impl FieldRef {
 		shape: Shape,
 	) -> (Arc<Field>, ObjectHandle<FieldRef>) {
 		let node = OwnedNode(Arc::new(Node::generate(&INTERNAL_CLIENT, false)));
-		Spatial::add_to(&node.0, None, Mat4::IDENTITY);
+		SpatialMut::add_to(&node.0, None, Mat4::IDENTITY);
 		let field = Field::add_to(&node.0, shape).unwrap();
 		let uid: u64 = rand::random();
 		EXPORTED_FIELDS.insert(uid, Arc::downgrade(&node.0));
