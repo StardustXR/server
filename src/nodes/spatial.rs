@@ -163,6 +163,7 @@ impl Spatial {
 				transform: RwLock::new(transform),
 				children: Registry::new(),
 				bounding_box_calc: Registry::new(),
+				drop_notifs: RwLock::default(),
 			}
 		});
 		ref_owned(&spatial);
