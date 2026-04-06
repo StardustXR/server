@@ -38,7 +38,7 @@ fn spawn_spatial_nodes(mut cmds: Commands) {
 	for spatial in SPATIAL_REGISTRY
 		.get_valid_contents()
 		.into_iter()
-		.filter(|v| v.entity.blocking_read().is_none())
+		.filter(|v| v.entity.lock().is_none())
 	{
 		let entity = cmds
 			.spawn((SpatialNode(Arc::downgrade(&spatial)), Name::new("Spatial")))
@@ -110,26 +110,35 @@ const EPSILON: f32 = 0.00001;
 pub type BoundingBoxCalc = Arc<dyn Fn() -> Aabb + Send + Sync + 'static>;
 
 pub struct Spatial {
-	entity: RwLock<Option<EntityHandle>>,
-	parent: RwLock<Option<Arc<Spatial>>>,
-	transform: RwLock<Mat4>,
+	entity: Mutex<Option<EntityHandle>>,
+	parent: Mutex<Option<Arc<Spatial>>>,
+	transform: Mutex<Mat4>,
 	children: Registry<Spatial>,
 	bounding_box_calc: Registry<dyn Fn() -> Aabb + Send + Sync + 'static>,
 }
+impl Debug for Spatial {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Spatial")
+			.field("parent", &self.parent)
+			.field("transform", &self.transform)
+			.field("children", &self.children)
+			.finish()
+	}
+}
 
 #[derive(Deref)]
-pub struct SpatialMut {
+pub struct SpatialObject {
 	#[deref]
 	data: Arc<Spatial>,
 	spatial_ref: Arc<BinderObject<SpatialRef>>,
 	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
-impl SpatialMut {
+impl SpatialObject {
 	pub fn new(parent: Option<&Arc<Spatial>>, transform: Mat4) -> Arc<BinderObject<Self>> {
 		let data = Arc::new(Spatial {
-			entity: RwLock::new(None),
-			parent: RwLock::new(parent.cloned()),
-			transform: RwLock::new(transform),
+			entity: Mutex::new(None),
+			parent: Mutex::new(parent.cloned()),
+			transform: Mutex::new(transform),
 			children: Registry::new(),
 			bounding_box_calc: Registry::new(),
 		});
@@ -139,7 +148,7 @@ impl SpatialMut {
 			drop_notifs: RwLock::default(),
 		});
 		ref_owned(&spatial_ref);
-		let spatial = PION.register_object(SpatialMut {
+		let spatial = PION.register_object(SpatialObject {
 			drop_notifs: RwLock::default(),
 			data,
 			spatial_ref,
@@ -154,7 +163,7 @@ impl SpatialMut {
 }
 
 impl Spatial {
-	pub async fn custom_bounding_box(
+	pub fn custom_bounding_box(
 		&self,
 		calc: impl Fn() -> Aabb + Send + Sync + 'static,
 	) -> BoundingBoxCalc {
@@ -162,15 +171,15 @@ impl Spatial {
 		self.bounding_box_calc.add_raw(&arc);
 		arc
 	}
-	pub async fn set_entity(&self, entity: EntityHandle) {
-		self.entity.write().await.replace(entity);
+	pub fn set_entity(&self, entity: EntityHandle) {
+		self.entity.lock().replace(entity);
 		self.mark_dirty();
 		for child in self.children.get_valid_contents() {
 			child.mark_dirty();
 		}
 	}
-	pub async fn get_entity(&self) -> Option<Entity> {
-		self.entity.read().await.as_ref().map(|v| v.get())
+	pub fn get_entity(&self) -> Option<Entity> {
+		self.entity.lock().as_ref().map(|v| v.get())
 	}
 
 	pub fn space_to_space_matrix(from: Option<&Spatial>, to: Option<&Spatial>) -> Mat4 {
@@ -180,7 +189,7 @@ impl Spatial {
 	}
 
 	// the output bounds are probably way bigger than they need to be
-	pub async fn get_bounding_box(&self) -> Aabb {
+	pub fn get_bounding_box(&self) -> Aabb {
 		// let Some(node) = self.node() else {
 		// 	return Aabb::default();
 		// };
@@ -199,8 +208,8 @@ impl Spatial {
 			.unwrap_or(bounds);
 		}
 		for child in self.children.get_valid_contents() {
-			let mat = child.local_transform().await;
-			let child_aabb = Box::pin(child.get_bounding_box()).await;
+			let mat = child.local_transform();
+			let child_aabb = Box::pin(child.get_bounding_box());
 			bounds = Aabb::enclosing([
 				bounds.min().into(),
 				bounds.max().into(),
@@ -211,18 +220,18 @@ impl Spatial {
 		}
 		bounds
 	}
-	pub(super) async fn mark_dirty(&self) {
-		let Some(entity) = self.entity.read().await.as_ref().map(|v| v.get()) else {
+	pub(super) fn mark_dirty(&self) {
+		let Some(entity) = self.entity.lock().as_ref().map(|v| v.get()) else {
 			return;
 		};
-		let enabled = self.local_visible().await;
+		let enabled = self.local_visible();
 		let transform = if enabled {
-			Some(BevyTransform::from_matrix(self.local_transform().await))
+			Some(BevyTransform::from_matrix(self.local_transform()))
 		} else {
 			None
 		};
 		let parent = if let Some(v) = self.get_parent() {
-			v.entity.read().await.as_ref().map(|v| v.get())
+			v.entity.lock().as_ref().map(|v| v.get())
 		} else {
 			None
 		};
@@ -231,13 +240,13 @@ impl Spatial {
 			.insert(entity, (transform, parent));
 	}
 
-	pub async fn local_transform(&self) -> Mat4 {
-		*self.transform.read().await
+	pub fn local_transform(&self) -> Mat4 {
+		*self.transform.lock()
 	}
 
-	async fn local_visible(&self) -> bool {
+	fn local_visible(&self) -> bool {
 		// Check our own scale by looking at matrix column lengths
-		let mat = self.local_transform().await;
+		let mat = self.local_transform();
 		let x_scale = mat.x_axis.length_squared();
 		let y_scale = mat.y_axis.length_squared();
 		let z_scale = mat.z_axis.length_squared();
@@ -245,16 +254,16 @@ impl Spatial {
 		x_scale > EPSILON || y_scale > EPSILON || z_scale > EPSILON
 	}
 	/// Check if this node or any ancestor has zero scale (for visibility culling)
-	pub async fn visible(&self) -> bool {
+	pub fn visible(&self) -> bool {
 		// Check parent chain
 		if let Some(parent) = self.get_parent()
-			&& !parent.local_visible().await
+			&& !parent.local_visible()
 		{
 			return false;
 		}
 
 		// Check our own scale by looking at matrix column lengths
-		self.local_visible().await
+		self.local_visible()
 	}
 	pub fn global_transform(&self) -> Mat4 {
 		let parent_transform = self
@@ -264,25 +273,22 @@ impl Spatial {
 			.unwrap_or_default();
 		parent_transform * self.local_transform()
 	}
-	pub async fn set_local_transform(&self, transform: Mat4) {
-		*self.transform.write().await = transform;
+	pub fn set_local_transform(&self, transform: Mat4) {
+		*self.transform.lock() = transform;
 		self.mark_dirty();
 	}
 	pub fn set_local_transform_components(
 		&self,
 		reference_space: Option<&Spatial>,
-		transform: Transform,
+		transform: PartialTransform,
 	) {
-		if reference_space == Some(self) {
+		if reference_space.is_some_and(|reference| reference as *const _ == self as *const _) {
 			self.set_local_transform(transform.to_mat4(true, true, true) * self.local_transform());
 			return;
 		}
 		let reference_to_parent_transform = reference_space
 			.map(|reference_space| {
-				SpatialMut::space_to_space_matrix(
-					Some(reference_space),
-					self.get_parent().as_deref(),
-				)
+				Spatial::space_to_space_matrix(Some(reference_space), self.get_parent().as_deref())
 			})
 			.unwrap_or(Mat4::IDENTITY);
 		let mut local_transform_in_reference_space =
@@ -312,7 +318,7 @@ impl Spatial {
 		);
 	}
 
-	pub fn is_ancestor_of(&self, spatial: Arc<SpatialMut>) -> bool {
+	pub fn is_ancestor_of(&self, spatial: Arc<Spatial>) -> bool {
 		let mut current_ancestor = spatial;
 		loop {
 			if Arc::as_ptr(&current_ancestor) == ptr::addr_of!(*self) {
@@ -327,16 +333,16 @@ impl Spatial {
 		}
 	}
 
-	async fn get_parent(&self) -> Option<Arc<Spatial>> {
-		self.parent.read().await.clone()
+	fn get_parent(&self) -> Option<Arc<Spatial>> {
+		self.parent.lock().clone()
 	}
-	async fn set_parent(self: &Arc<Self>, new_parent: &Arc<Spatial>) {
+	fn set_parent(self: &Arc<Self>, new_parent: &Arc<Spatial>) {
 		if let Some(parent) = self.get_parent() {
 			parent.children.remove(self);
 		}
 		new_parent.children.add_raw(self);
 
-		*self.parent.write().await = Some(new_parent.clone());
+		*self.parent.lock() = Some(new_parent.clone());
 		self.mark_dirty();
 	}
 
@@ -348,12 +354,12 @@ impl Spatial {
 
 		Ok(())
 	}
-	pub fn set_spatial_parent_in_place(self: &Arc<Self>, parent: &Arc<SpatialMut>) -> Result<()> {
+	pub fn set_spatial_parent_in_place(self: &Arc<Self>, parent: &Arc<Spatial>) -> Result<()> {
 		if self.is_ancestor_of(parent.clone()) {
 			bail!("Setting spatial parent would cause a loop");
 		}
 
-		self.set_local_transform(SpatialMut::space_to_space_matrix(Some(self), Some(parent)));
+		self.set_local_transform(Spatial::space_to_space_matrix(Some(self), Some(parent)));
 		self.set_parent(parent);
 
 		Ok(())
@@ -361,13 +367,13 @@ impl Spatial {
 }
 static UPDATED_SPATIALS_NODES: Mutex<EntityHashMap<(Option<BevyTransform>, Option<Entity>)>> =
 	Mutex::new(EntityHashMap::new());
-impl SpatialHandler for SpatialMut {
+impl SpatialHandler for SpatialObject {
 	async fn spatial_ref(&self, _ctx: GluonCtx) -> SpatialRefProxy {
 		SpatialRefProxy::from_handler(&self.spatial_ref)
 	}
 
 	async fn get_local_bounding_box(&self, _ctx: GluonCtx) -> BoundingBox {
-		let bounds = self.get_bounding_box().await;
+		let bounds = self.get_bounding_box();
 		BoundingBox {
 			center: bounds.center.into(),
 			extents: (bounds.half_extents * 2.0).into(),
@@ -385,7 +391,7 @@ impl SpatialHandler for SpatialMut {
 			// return;
 		};
 		let mat = Spatial::space_to_space_matrix(Some(self), Some(&relative_to));
-		let bb = self.get_bounding_box().await;
+		let bb = self.get_bounding_box();
 		let bounds = Aabb::enclosing([
 			mat.transform_point3(bb.min().into()),
 			mat.transform_point3(bb.max().into()),
@@ -433,7 +439,7 @@ impl SpatialHandler for SpatialMut {
 			error!("Invalid SpatialRef used as parent");
 			return;
 		};
-		self.set_spatial_parent_in_place(parent);
+		self.set_spatial_parent_in_place(&parent.data);
 	}
 
 	fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialTransform) {
@@ -457,7 +463,7 @@ impl SpatialHandler for SpatialMut {
 		self.drop_notifs.write().await.push(notifier);
 	}
 }
-impl Debug for SpatialMut {
+impl Debug for SpatialObject {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Spatial")
 			.field("parent", &self.parent)
@@ -490,8 +496,12 @@ impl SpatialInterfaceHandler for SpatialInterface {
 		parent: SpatialRefProxy,
 		transform: Transform,
 	) -> SpatialProxy {
-		// SpatialMut::new(parent, transform);
-		todo!()
+		let Some(parent) = parent.owned() else {
+			// TODO: return error instead
+			panic!("Invalid SpatialRef used");
+			// return;
+		};
+		SpatialProxy::from_handler(&SpatialObject::new(Some(&parent.data), transform))
 	}
 
 	async fn get_relative_bounding_box(
@@ -511,7 +521,7 @@ impl SpatialInterfaceHandler for SpatialInterface {
 			// return;
 		};
 		let mat = Spatial::space_to_space_matrix(Some(&spatial), Some(&relative_to));
-		let bb = spatial.get_bounding_box().await;
+		let bb = spatial.get_bounding_box();
 		let bounds = Aabb::enclosing([
 			mat.transform_point3(bb.min().into()),
 			mat.transform_point3(bb.max().into()),
@@ -557,7 +567,7 @@ impl SpatialInterfaceHandler for SpatialInterface {
 	}
 }
 
-impl_proxy!(SpatialProxy, SpatialMut);
+impl_proxy!(SpatialProxy, SpatialObject);
 impl_proxy!(SpatialRefProxy, SpatialRef);
-impl_transaction_handler!(SpatialMut);
+impl_transaction_handler!(SpatialObject);
 impl_transaction_handler!(SpatialRef);
