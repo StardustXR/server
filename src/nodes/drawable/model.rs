@@ -5,14 +5,16 @@ use crate::{
 		color::ColorConvert as _,
 		entity_handle::EntityHandle,
 	},
-	core::{
-		Id, client::ConnectedClient, error::Result, registry::Registry, resource::get_resource_file,
-	},
-	impl_transaction_handler,
+	core::{error::Result, registry::Registry, resource::get_resource_file},
+	impl_transaction_handler, interface,
 	nodes::{
-		drawable::dmatex::{Dmatex, SignalOnDrop},
+		ProxyExt,
+		drawable::{
+			ModelNodeSystemSet,
+			dmatex::{Dmatex, DmatexExt as _, SignalOnDrop},
+		},
 		ref_owned,
-		spatial::{BoundingBoxCalc, Spatial, SpatialMut, SpatialNode},
+		spatial::{BoundingBoxCalc, SpatialNode, SpatialObject},
 	},
 };
 use bevy::{
@@ -34,13 +36,13 @@ use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr_protocol::protocol::{
 	model::{
 		MaterialParamError, MaterialParameter, Model as ModelProxy, ModelHandler,
-		ModelPart as ModelPartProxy, ModelPartHandler, NonUniformTransform,
+		ModelInterfaceHandler, ModelPart as ModelPartProxy, ModelPartHandler, NonUniformTransform,
 		PartialNonUniformTransform,
 	},
-	spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy},
+	spatial::Spatial as SpatialProxy,
 	types::{Resource, Vec3F},
 };
-use stardust_xr_server_foundation::{bail, on_drop::AbortOnDrop};
+use stardust_xr_server_foundation::on_drop::AbortOnDrop;
 use std::{
 	collections::{HashMap, VecDeque},
 	ffi::OsStr,
@@ -56,7 +58,7 @@ use tokio::sync::{Notify, oneshot};
 use vulkano::{VulkanObject, sync::semaphore::Semaphore};
 use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 
-static LOAD_MODEL: BevyChannel<(Arc<Model>, PathBuf)> = BevyChannel::new();
+static LOAD_MODEL: BevyChannel<(Arc<BinderObject<Model>>, PathBuf)> = BevyChannel::new();
 
 type HoldoutMaterial = ExtendedMaterial<BevyMaterial, HoldoutExtension>;
 const HOLDOUT_SHADER_HANDLE: Handle<Shader> = weak_handle!("92b481b7-d3da-4188-b252-2335ec814ee2");
@@ -64,8 +66,6 @@ const HOLDOUT_MATERIAL_HANDLE: Handle<HoldoutMaterial> =
 	weak_handle!("d56f1d62-9121-434b-a34f-9f0bbd6b3390");
 
 pub struct ModelNodePlugin;
-#[derive(SystemSet, Hash, Debug, PartialEq, Eq, Clone, Copy)]
-pub struct ModelNodeSystemSet;
 impl Plugin for ModelNodePlugin {
 	fn build(&self, app: &mut App) {
 		LOAD_MODEL.init(app);
@@ -164,10 +164,10 @@ fn apply_materials(
 	asset_server: Res<AssetServer>,
 	mut materials: ResMut<Assets<BevyMaterial>>,
 ) -> bevy::prelude::Result {
-	for model_part in MODEL_REGISTRY
+	for (model, model_part) in MODEL_REGISTRY
 		.get_valid_contents()
 		.iter()
-		.filter_map(|p| p.parts.get())
+		.filter_map(|p| Some(p.parts.get()?.iter().map(move |v| (p, v))))
 		.flatten()
 	{
 		let entity = **model_part.mesh_entity.get().unwrap();
@@ -191,7 +191,7 @@ fn apply_materials(
 			let mut new_mat = materials.get(&mesh_mat.0).unwrap().clone();
 			apply_to_material(
 				&param,
-				&model_part.spatial.node().unwrap().get_client().unwrap(),
+				&model.resource_prefixes,
 				&mut new_mat,
 				&mut model_part.textures.lock(),
 				&param_name,
@@ -280,34 +280,21 @@ fn gen_model_parts(
 						.as_ref()
 						.map(|p| p.spatial.clone())
 						.unwrap_or_else(|| model.spatial.clone());
-					let client = model.spatial.node()?.get_client()?;
-					let (spatial, model_part) =
-						match model.pre_bound_parts.lock().iter().find(|v| v.path == path) {
-							None => {
-								let spatial = SpatialMut::new(
-									Some(parent_spatial.clone()),
-									transform.compute_matrix(),
-								);
-								let model_part = PION.register_object(ModelPart {
-									entity: OnceLock::new(),
-									mesh_entity: OnceLock::new(),
-									path,
-									spatial: spatial.clone(),
-									pending_material_parameters: Mutex::default(),
-									pending_material_replacement: Mutex::default(),
-									holdout: AtomicBool::new(false),
-									bounds: OnceLock::new(),
-									pending_dmatexes: Mutex::default(),
-									textures: Mutex::default(),
-									bounding_calc: OnceLock::new(),
-								});
-								(spatial, model_part)
-							}
-							Some(part) => {
-								part.spatial.set_spatial_parent(&parent_spatial).unwrap();
-								(part.spatial.clone(), part.clone())
-							}
-						};
+					let spatial =
+						SpatialObject::new(Some(&parent_spatial), transform.compute_matrix());
+					let model_part = PION.register_object(ModelPart {
+						entity: OnceLock::new(),
+						mesh_entity: OnceLock::new(),
+						path,
+						spatial: spatial.clone(),
+						pending_material_parameters: Mutex::default(),
+						pending_material_replacement: Mutex::default(),
+						holdout: AtomicBool::new(false),
+						bounds: OnceLock::new(),
+						pending_dmatexes: Mutex::default(),
+						textures: Mutex::default(),
+						bounding_calc: OnceLock::new(),
+					});
 					let aabb = Aabb::enclosing(
 						children
 							.iter()
@@ -328,7 +315,7 @@ fn gen_model_parts(
 							.and_then(|v| v.bounds.get().copied())
 							.unwrap_or_default()
 					});
-					model_part.bounding_calc.set(calc);
+					_ = model_part.bounding_calc.set(calc);
 					let _ = spatial.set_spatial_parent(&parent_spatial);
 					spatial.set_local_transform(transform.compute_matrix());
 					let entity_handle = EntityHandle::new(entity);
@@ -349,11 +336,9 @@ fn gen_model_parts(
 			);
 		}
 		_ = model.parts.set(parts);
-		model.pre_bound_parts.lock().clear();
 		model
 			.spatial
 			.set_entity(model.bevy_scene_entity.get().unwrap().clone());
-		model.setup_complete.store(true, Ordering::Relaxed);
 		model.setup_complete_notify.notify_waiters();
 	}
 }
@@ -361,14 +346,14 @@ fn gen_model_parts(
 fn gen_path(
 	current_entity: Entity,
 	part_query: &Query<(&Name, Option<&Children>, &Transform), Without<Mesh3d>>,
-	parent: Option<Arc<ModelPart>>,
+	parent: Option<Arc<BinderObject<ModelPart>>>,
 	func: &mut dyn FnMut(
 		Entity,
 		&Name,
 		&Transform,
-		Option<Arc<ModelPart>>,
+		Option<Arc<BinderObject<ModelPart>>>,
 		Option<&Children>,
-	) -> Option<Arc<ModelPart>>,
+	) -> Option<Arc<BinderObject<ModelPart>>>,
 ) {
 	let Ok((name, children, transform)) = part_query.get(current_entity) else {
 		return;
@@ -476,11 +461,11 @@ fn hash_color<H: Hasher>(color: Color, state: &mut H) {
 		}
 	}
 }
-static MODEL_REGISTRY: Registry<Model> = Registry::new();
+static MODEL_REGISTRY: Registry<BinderObject<Model>> = Registry::new();
 
 fn apply_to_material(
 	param: &MaterialParameter,
-	client: &ConnectedClient,
+	resource_prefixes: &[PathBuf],
 	mat: &mut BevyMaterial,
 	part_textures: &mut PartTextures,
 	parameter_name: &str,
@@ -505,7 +490,7 @@ fn apply_to_material(
 		MaterialParameter::Int { value: _ } => {
 			// nothing uses an int
 		}
-		MaterialParameter::UInt { value: _ } => {
+		MaterialParameter::Uint { value: _ } => {
 			// nothing uses an uint
 		}
 		MaterialParameter::Float { value } => {
@@ -532,10 +517,10 @@ fn apply_to_material(
 				error!("unknown param_name ({v}) for color")
 			}
 		},
-		MaterialParameter::Texture(resource) => {
+		MaterialParameter::Texture { value: resource } => {
 			let Some(texture_path) = get_resource_file(
 				resource,
-				client.base_resource_prefixes.lock().iter(),
+				resource_prefixes,
 				&[OsStr::new("png"), OsStr::new("jpg")],
 			) else {
 				return;
@@ -547,13 +532,17 @@ fn apply_to_material(
 				error!("unknown param_name ({parameter_name}) for texture");
 			}
 		}
-		MaterialParameter::Dmatex(_) => {
+		MaterialParameter::Dmatex {
+			dmatex: _,
+			acquire_point: _,
+			release_point: _,
+		} => {
 			error!("somehow trying to handle a dmatex in the main material param path");
 		}
 	}
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct PartTextures {
 	diffuse: Option<(Handle<Image>, Option<SignalOnDrop>)>,
 	emission: Option<(Handle<Image>, Option<SignalOnDrop>)>,
@@ -599,13 +588,16 @@ pub struct ModelPart {
 	entity: OnceLock<EntityHandle>,
 	mesh_entity: OnceLock<EntityHandle>,
 	path: String,
-	spatial: Arc<BinderObject<SpatialMut>>,
+	spatial: Arc<BinderObject<SpatialObject>>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Handle<BevyMaterial>>>,
 	pending_dmatexes: Mutex<
 		HashMap<
 			TextureSlot,
-			VecDeque<(oneshot::Receiver<(SignalOnDrop, Arc<Dmatex>)>, AbortOnDrop)>,
+			VecDeque<(
+				oneshot::Receiver<(SignalOnDrop, Arc<BinderObject<Dmatex>>)>,
+				AbortOnDrop,
+			)>,
 		>,
 	>,
 	textures: Mutex<PartTextures>,
@@ -626,32 +618,33 @@ impl ModelPart {
 			"setting material param: {parameter_name}: {value:?}, node_id: {:?}",
 			self.mesh_entity.get(),
 		);
-		if let MaterialParameter::Dmatex(param) = value {
+		if let MaterialParameter::Dmatex {
+			dmatex,
+			acquire_point,
+			release_point,
+		} = value
+		{
 			let Ok(tex_slot) = TextureSlot::from_str(&parameter_name) else {
 				error!("invalid texture slot: {parameter_name}");
 				return;
 			};
-			let Some(client) = self.spatial.node().and_then(|v| v.get_client()) else {
-				error!("unable to get client for ModelPart while trying to set dmatex param");
-				return;
-			};
-			let Some(tex) = client.dmatexes.get(&param.dmatex_id) else {
-				error!("invalid dmatex id");
+			let Some(tex) = dmatex.owned() else {
+				error!("invalid dmatex");
 				return;
 			};
 			let (tx, rx) = oneshot::channel();
 			let tex = tex.clone();
 			let task = tokio::spawn(async move {
-				let release = tex.signal_on_drop(param.release_point.0);
+				let release = tex.signal_on_drop(release_point);
 				let Ok(future) = tex
 					.timeline_sync()
-					.wait_async(param.acquire_point.0)
+					.wait_async(acquire_point)
 					.inspect_err(|err| error!("unable to async wait on dmatex timeline: {err}"))
 				else {
 					return;
 				};
 				future.await;
-				let sema = tex.get_acquire_semaphore(param.acquire_point.0);
+				let sema = tex.get_acquire_semaphore(acquire_point);
 				ACQUIRE_SEMAPHORES.lock().push(sema);
 				tx.send((release, tex)).unwrap();
 			});
@@ -755,22 +748,22 @@ impl MaterialRegistry {
 
 #[derive(Debug)]
 pub struct Model {
-	spatial: Arc<BinderObject<SpatialMut>>,
+	spatial: Arc<BinderObject<SpatialObject>>,
 	_resource_id: Resource,
 	bevy_scene_entity: OnceLock<EntityHandle>,
 	parts: OnceLock<Vec<Arc<BinderObject<ModelPart>>>>,
-	pre_bound_parts: Mutex<Vec<Arc<ModelPart>>>,
+	resource_prefixes: Arc<Vec<PathBuf>>,
 	setup_complete_notify: Notify,
 }
 impl Model {
 	pub async fn new(
-		spatial: Arc<BinderObject<SpatialMut>>,
+		spatial: Arc<BinderObject<SpatialObject>>,
 		resource_id: Resource,
-		base_prefixes: &[PathBuf],
+		base_prefixes: Arc<Vec<PathBuf>>,
 	) -> Result<Arc<BinderObject<Model>>> {
 		let pending_model_path = get_resource_file(
 			&resource_id,
-			base_prefixes,
+			base_prefixes.iter(),
 			&[OsStr::new("glb"), OsStr::new("gltf")],
 		)
 		.ok_or_else(|| eyre!("Resource not found"))?;
@@ -779,8 +772,8 @@ impl Model {
 			spatial,
 			_resource_id: resource_id,
 			bevy_scene_entity: OnceLock::new(),
-			pre_bound_parts: Mutex::default(),
 			parts: OnceLock::new(),
+			resource_prefixes: base_prefixes,
 			setup_complete_notify: Notify::new(),
 		});
 		LOAD_MODEL
@@ -870,16 +863,31 @@ impl ModelHandler for Model {
 		todo!()
 	}
 
-	fn drop_notification_requested(
-		&self,
-		notifier: gluon_wire::drop_tracking::DropNotifier,
-	) -> impl Future<Output = ()> + Send + Sync {
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
 		todo!()
 	}
 }
-impl Drop for Model {
-	fn drop(&mut self) {
-		MODEL_REGISTRY.remove(self);
+interface!(ModelInterface);
+impl ModelInterfaceHandler for ModelInterface {
+	async fn load_model(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		spatial: stardust_xr_protocol::protocol::spatial::Spatial,
+		model: stardust_xr_protocol::protocol::types::Resource,
+		model_scale: stardust_xr_protocol::protocol::types::Vec3F,
+	) -> ModelProxy {
+		let Some(spatial) = spatial.owned() else {
+			// TODO: replace with proper error returning
+			panic!("invalid spatial in model loading");
+		};
+
+        // TODO: handle
+        let model = Model::new(spatial, model, self.base_resource_prefixes.clone()).await.unwrap();
+        ModelProxy::from_handler(&model)
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+        self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl_transaction_handler!(Model);
