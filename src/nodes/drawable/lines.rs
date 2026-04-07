@@ -5,7 +5,7 @@ use crate::{
 	impl_transaction_handler, interface,
 	nodes::{
 		ProxyExt, ref_owned,
-		spatial::{BoundingBoxCalc, SpatialMut},
+		spatial::{BoundingBoxCalc, SpatialObject},
 	},
 };
 use bevy::{
@@ -153,8 +153,7 @@ fn build_line_mesh(
 				.points
 				.iter()
 				.map(|p: &LinePoint| LinePoint {
-					// point: transform.transform_point(p.point.into()).into(),
-					point: transform.transform_point(p.point.into()).into(),
+					point: transform.transform_point(p.point.mint()).into(),
 					thickness: p.thickness,
 					color: p.color,
 				})
@@ -171,7 +170,7 @@ fn build_line_mesh(
 				while let Some(curr) = peekable.next() {
 					// Skip this point if it has the same position as the previous point
 					if let Some(prev) = last
-						&& Vec3::from(prev.point) == Vec3::from(curr.point)
+						&& prev.point == curr.point
 					{
 						last = Some(curr);
 						continue;
@@ -201,13 +200,13 @@ fn build_line_mesh(
 				let last_quat = last.map(|v| {
 					Quat::from_rotation_arc(
 						Vec3::Y,
-						(Vec3::from(curr.point) - Vec3::from(v.point)).normalize(),
+						(curr.point.mint::<Vec3>() - v.point.mint::<Vec3>()).normalize(),
 					)
 				});
 				let next_quat = next.map(|v| {
 					Quat::from_rotation_arc(
 						Vec3::Y,
-						(Vec3::from(v.point) - Vec3::from(curr.point)).normalize(),
+						(v.point.mint::<Vec3>() - curr.point.mint::<Vec3>()).normalize(),
 					)
 				});
 				let quat = match (last_quat, next_quat) {
@@ -235,7 +234,7 @@ fn build_line_mesh(
 				]
 				.map(Vec3::normalize)
 				.map(|v| quat * v);
-				let points = normals.map(|v| (v * curr.thickness) + Vec3::from(curr.point));
+				let points = normals.map(|v| (v * curr.thickness) + curr.point.mint::<Vec3>());
 				vertex_normals.extend(normals);
 				vertex_positions.extend(points);
 				vertex_colors.extend([curr.color.to_bevy().to_linear().to_f32_array(); 8]);
@@ -344,7 +343,7 @@ static LINES_REGISTRY: Registry<Lines> = Registry::new();
 
 #[derive(Debug)]
 pub struct Lines {
-	spatial: Arc<BinderObject<SpatialMut>>,
+	spatial: Arc<BinderObject<SpatialObject>>,
 	data: Mutex<Vec<Line>>,
 	gen_mesh: AtomicBool,
 	entity: OnceLock<EntityHandle>,
@@ -355,7 +354,7 @@ pub struct Lines {
 }
 impl Lines {
 	pub fn new(
-		spatial: Arc<BinderObject<SpatialMut>>,
+		spatial: Arc<BinderObject<SpatialObject>>,
 		lines: Vec<Line>,
 	) -> Arc<BinderObject<Lines>> {
 		let lines = PION.register_object(Lines {
@@ -379,10 +378,10 @@ impl Lines {
 				None => lines.bounds.lock().unwrap_or_default(),
 			}
 		});
-        lines.bounding_calc.set(bounding_calc);
+		_ = lines.bounding_calc.set(bounding_calc);
 		ref_owned(&lines);
 
-		Ok(lines)
+		lines
 	}
 }
 impl LinesHandler for Lines {

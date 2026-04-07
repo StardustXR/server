@@ -142,7 +142,12 @@ impl TransformExt for PartialTransform {
 // 	}
 // }
 
-pub type BoundingBoxCalc = Arc<dyn Fn() -> Aabb + Send + Sync + 'static>;
+pub struct BoundingBoxCalc(Arc<dyn Fn() -> Aabb + Send + Sync + 'static>);
+impl Debug for BoundingBoxCalc {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_tuple("BoundingBoxCalc").finish()
+	}
+}
 
 pub struct Spatial {
 	entity: Mutex<Option<EntityHandle>>,
@@ -202,8 +207,8 @@ impl Spatial {
 		&self,
 		calc: impl Fn() -> Aabb + Send + Sync + 'static,
 	) -> BoundingBoxCalc {
-		let arc: BoundingBoxCalc = Arc::new(calc);
-		self.bounding_box_calc.add_raw(&arc);
+		let arc = BoundingBoxCalc(Arc::new(calc));
+		self.bounding_box_calc.add_raw(&arc.0);
 		arc
 	}
 	pub fn set_entity(&self, entity: EntityHandle) {
