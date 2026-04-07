@@ -15,10 +15,10 @@ use parking_lot::Mutex;
 
 use bevy::prelude::*;
 use bevy::transform::components::Transform as BevyTransform;
-use stardust_xr_protocol::protocol::audio::{
+use stardust_xr_protocol::audio::{
 	AudioInterfaceHandler, Sound as SoundProxy, SoundHandler,
 };
-use stardust_xr_protocol::protocol::types::Resource;
+use stardust_xr_protocol::types::Resource;
 use std::sync::{Arc, OnceLock};
 use std::{ffi::OsStr, path::PathBuf};
 use tokio::sync::RwLock;
@@ -153,7 +153,7 @@ impl AudioInterfaceHandler for AudioInterface {
 	async fn create_sound(
 		&self,
 		_ctx: gluon_wire::GluonCtx,
-		spatial: stardust_xr_protocol::protocol::spatial::Spatial,
+		spatial: stardust_xr_protocol::spatial::Spatial,
 		sound: Resource,
 	) -> SoundProxy {
 		let Some(spatial) = spatial.owned() else {

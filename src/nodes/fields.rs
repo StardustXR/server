@@ -17,14 +17,14 @@ use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
 use gluon_wire::GluonCtx;
 use gluon_wire::drop_tracking::DropNotifier;
 use parking_lot::RwLock;
-use stardust_xr_protocol::protocol::field::{
+use stardust_xr_protocol::field::{
 	CubicBezierControlPoint, Field as FieldProxy, FieldHandler, FieldInterfaceHandler,
 	FieldRef as FieldRefProxy, FieldRefHandler, RayMarchResult, Shape,
 };
-use stardust_xr_protocol::protocol::spatial::{
+use stardust_xr_protocol::spatial::{
 	Spatial as SpatialProxy, SpatialRef as SpatialRefProxy,
 };
-use stardust_xr_protocol::protocol::types::Vec3F;
+use stardust_xr_protocol::types::Vec3F;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 

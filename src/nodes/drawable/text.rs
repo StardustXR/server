@@ -21,7 +21,7 @@ use bevy_mesh_text_3d::{
 use binderbinder::binder_object::BinderObject;
 use core::f32;
 use parking_lot::Mutex;
-use stardust_xr_protocol::protocol::text::{TextFit, TextHandler, TextStyle, XAlign, YAlign};
+use stardust_xr_protocol::text::{TextFit, TextHandler, TextStyle, XAlign, YAlign};
 use std::{ffi::OsStr, mem, path::PathBuf, sync::Arc};
 
 static SPAWN_TEXT: BevyChannel<Arc<Text>> = BevyChannel::new();
@@ -191,7 +191,7 @@ impl TextRef {
 		let text = Arc::new(Text {
 			spatial,
 			font_path: style.font.as_ref().and_then(|res| {
-				get_resource_file(res, &prefixes, &[OsStr::new("ttf"), OsStr::new("otf")])
+				get_resource_file(res, prefixes, &[OsStr::new("ttf"), OsStr::new("otf")])
 			}),
 
 			entity: Mutex::new(None),
@@ -216,10 +216,10 @@ impl TextHandler for TextRef {
 		_ = SPAWN_TEXT.send(self.0.clone());
 	}
 
-	fn drop_notification_requested(
+	async fn drop_notification_requested(
 		&self,
 		notifier: gluon_wire::drop_tracking::DropNotifier,
-	) -> impl Future<Output = ()> + Send + Sync {
+	) {
 		todo!()
 	}
 }
