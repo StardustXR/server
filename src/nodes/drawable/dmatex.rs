@@ -45,7 +45,7 @@ use crate::{
 	bevy_int::bevy_channel::{BevyChannel, BevyChannelReader},
 	core::vulkano_data::VULKANO_CONTEXT,
 	impl_proxy, impl_transaction_handler, interface,
-	nodes::{drawable::model::ModelNodeSystemSet, ref_owned},
+	nodes::{drawable::ModelNodeSystemSet, ref_owned},
 };
 
 #[derive(Debug)]
@@ -81,7 +81,7 @@ impl Dmatex {
 		planes: Vec<DmatexPlane>,
 		timeline_syncobj_fd: OwnedFd,
 	) -> Result<Arc<BinderObject<Self>>> {
-		let DmatexSize::Dim2D(res) = size else {
+		let DmatexSize::Size2D { size } = size else {
 			bail!("non 2d dmatex are not implemented yet");
 		};
 		if array_layers.is_some_and(|v| v != 1) {
@@ -109,13 +109,16 @@ impl Dmatex {
 				planes: planes
 					.into_iter()
 					.map(|p| BevyDmatexPlane {
-						dmabuf_fd: p.dmabuf_fd.0.into(),
+						dmabuf_fd: p.dmabuf_fd.into(),
 						modifier: modifier,
-						offset: p.offset,
+						offset: p.offset as u32,
 						stride: p.row_size as i32,
 					})
 					.collect(),
-				res: bevy_dmabuf::dmatex::Resolution { x: res.x, y: res.y },
+				res: bevy_dmabuf::dmatex::Resolution {
+					x: size.x,
+					y: size.y,
+				},
 				format,
 				flip_y: false,
 				srgb,
