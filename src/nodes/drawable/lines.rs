@@ -23,8 +23,8 @@ use binderbinder::binder_object::BinderObject;
 use glam::Vec3;
 use gluon_wire::drop_tracking::DropNotifier;
 use parking_lot::Mutex;
-use stardust_xr_protocol::protocol::lines::Lines as LinesProxy;
-use stardust_xr_protocol::protocol::lines::{Line, LinePoint, LinesHandler, LinesInterfaceHandler};
+use stardust_xr_protocol::lines::Lines as LinesProxy;
+use stardust_xr_protocol::lines::{Line, LinePoint, LinesHandler, LinesInterfaceHandler};
 use std::sync::{
 	Arc, OnceLock, Weak,
 	atomic::{AtomicBool, Ordering},
@@ -404,7 +404,7 @@ impl LinesInterfaceHandler for LinesInterface {
 	async fn create_lines(
 		&self,
 		_ctx: gluon_wire::GluonCtx,
-		spatial: stardust_xr_protocol::protocol::spatial::Spatial,
+		spatial: stardust_xr_protocol::spatial::Spatial,
 		lines: Vec<Line>,
 	) -> LinesProxy {
 		let Some(spatial) = spatial.owned() else {

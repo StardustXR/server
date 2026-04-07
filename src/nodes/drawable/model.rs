@@ -33,7 +33,7 @@ use color_eyre::eyre::eyre;
 use gluon_wire::{GluonCtx, drop_tracking::DropNotifier};
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
-use stardust_xr_protocol::protocol::{
+use stardust_xr_protocol::{
 	model::{
 		MaterialParamError, MaterialParameter, Model as ModelProxy, ModelHandler,
 		ModelInterfaceHandler, ModelPart as ModelPartProxy, ModelPartHandler, NonUniformTransform,
@@ -872,9 +872,9 @@ impl ModelInterfaceHandler for ModelInterface {
 	async fn load_model(
 		&self,
 		_ctx: gluon_wire::GluonCtx,
-		spatial: stardust_xr_protocol::protocol::spatial::Spatial,
-		model: stardust_xr_protocol::protocol::types::Resource,
-		model_scale: stardust_xr_protocol::protocol::types::Vec3F,
+		spatial: stardust_xr_protocol::spatial::Spatial,
+		model: stardust_xr_protocol::types::Resource,
+		model_scale: stardust_xr_protocol::types::Vec3F,
 	) -> ModelProxy {
 		let Some(spatial) = spatial.owned() else {
 			// TODO: replace with proper error returning

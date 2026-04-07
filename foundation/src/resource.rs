@@ -1,4 +1,4 @@
-use stardust_xr_protocol::protocol::types::Resource;
+use stardust_xr_protocol::types::Resource;
 use std::{
 	ffi::OsStr,
 	path::{Path, PathBuf},

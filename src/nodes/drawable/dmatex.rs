@@ -26,7 +26,7 @@ use dashmap::DashMap;
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
 use gluon_wire::{GluonCtx, drop_tracking::DropNotifier};
-use stardust_xr_protocol::protocol::dmatex::{
+use stardust_xr_protocol::dmatex::{
 	DmatexFormat, DmatexInterfaceHandler, DmatexPlane, DmatexRef, DmatexRefHandler, DmatexSize,
 };
 use stardust_xr_server_foundation::{bail, error::Result};

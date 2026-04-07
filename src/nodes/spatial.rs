@@ -12,7 +12,7 @@ use glam::{Mat4, Quat};
 use gluon_wire::GluonCtx;
 use gluon_wire::drop_tracking::DropNotifier;
 use parking_lot::Mutex;
-use stardust_xr_protocol::protocol::spatial::{
+use stardust_xr_protocol::spatial::{
 	BoundingBox, PartialTransform, Spatial as SpatialProxy, SpatialHandler,
 	SpatialInterfaceHandler, SpatialRef as SpatialRefProxy, SpatialRefHandler, Transform,
 };

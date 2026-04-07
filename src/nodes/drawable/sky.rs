@@ -19,7 +19,7 @@ use bevy_equirect::EquirectManager;
 use glam::Quat;
 use gluon_wire::drop_tracking::DropNotifier;
 use parking_lot::Mutex;
-use stardust_xr_protocol::protocol::{
+use stardust_xr_protocol::{
 	sky::{SkyGuard as SkyGuardProxy, SkyGuardHandler, SkyInterfaceHandler},
 	types::Resource,
 };

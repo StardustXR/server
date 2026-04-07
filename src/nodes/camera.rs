@@ -30,11 +30,11 @@ use binderbinder::binder_object::BinderObject;
 use glam::Mat4;
 use gluon_wire::drop_tracking::DropNotifier;
 use parking_lot::Mutex;
-use stardust_xr_protocol::protocol::camera::Camera as CameraProxy;
-use stardust_xr_protocol::protocol::camera::CameraHandler;
-use stardust_xr_protocol::protocol::camera::CameraInterfaceHandler;
-use stardust_xr_protocol::protocol::camera::View;
-use stardust_xr_protocol::protocol::dmatex::DmatexRef;
+use stardust_xr_protocol::camera::Camera as CameraProxy;
+use stardust_xr_protocol::camera::CameraHandler;
+use stardust_xr_protocol::camera::CameraInterfaceHandler;
+use stardust_xr_protocol::camera::View;
+use stardust_xr_protocol::dmatex::DmatexRef;
 use stardust_xr_server_foundation::registry::Registry;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -52,8 +52,8 @@ use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 pub struct Camera {
 	spatial: Arc<BinderObject<SpatialMut>>,
 	queued_render_targets:
-		Mutex<mpsc::UnboundedReceiver<(u64, Vec<View>, Arc<Dmatex>, SignalOnDrop)>>,
-	render_target_queue: mpsc::UnboundedSender<(u64, Vec<View>, Arc<Dmatex>, SignalOnDrop)>,
+		Mutex<mpsc::UnboundedReceiver<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>>,
+	render_target_queue: mpsc::UnboundedSender<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>,
 	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl Camera {
@@ -88,7 +88,7 @@ impl CameraHandler for Camera {
 		tokio::spawn(async move {
 			let Ok(future) = tex
 				.timeline_sync()
-				.wait_async(acquire_point.0)
+				.wait_async(acquire_point)
 				.inspect_err(|err| error!("unable to async wait on dmatex timeline: {err}"))
 			else {
 				return;
@@ -103,11 +103,6 @@ impl CameraHandler for Camera {
 		self.drop_notifs.write().await.push(notifier);
 	}
 }
-impl Drop for Camera {
-	fn drop(&mut self) {
-		CAMERA_REGISTRY.remove(self);
-	}
-}
 static CAMERA_REGISTRY: Registry<BinderObject<Camera>> = Registry::new();
 
 // TODO: figure out where to mount this
@@ -116,7 +111,7 @@ impl CameraInterfaceHandler for CameraInterface {
 	async fn create_camera(
 		&self,
 		_ctx: gluon_wire::GluonCtx,
-		spatial: stardust_xr_protocol::protocol::spatial::Spatial,
+		spatial: stardust_xr_protocol::spatial::Spatial,
 	) -> CameraProxy {
 		let Some(spatial) = spatial.owned() else {
 			// TODO: just return an error
