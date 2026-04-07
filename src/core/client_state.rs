@@ -1,12 +1,11 @@
 use super::client::{ConnectedClient, get_env};
-use crate::{core::Id, nodes::spatial::SpatialMut};
+use crate::nodes::{ProxyExt, spatial::SpatialObject};
 use dashmap::DashMap;
 use glam::Mat4;
 use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
-use stardust_xr_protocol::protocol::{client::ClientState, spatial::SpatialRef};
+use stardust_xr_protocol::{client::ClientState, spatial::SpatialRef};
 use std::{
-	collections::HashMap,
 	path::{Path, PathBuf},
 	process::Command,
 	sync::{Arc, LazyLock},
@@ -26,7 +25,7 @@ impl LaunchInfo {
 		Some(LaunchInfo {
 			cmdline: client.get_cmdline()?,
 			cwd: client.get_cwd()?,
-			env: get_env(client.pid?).ok()?,
+			env: get_env(client.pid).ok()?,
 		})
 	}
 }
@@ -44,18 +43,17 @@ impl ClientStateParsed {
 		ClientStateParsed {
 			launch_info: LaunchInfo::from_client(client),
 			data: state.data,
-			root: Self::spatial_transform(client, state.root).unwrap_or_default(),
+			root: state
+				.root
+				.owned()
+				.map(|v| v.global_transform())
+				.unwrap_or_default(),
 			spatial_anchors: state
 				.spatial_anchors
 				.into_iter()
-				.filter_map(|(k, v)| Some((k, Self::spatial_transform(client, v)?)))
+				.filter_map(|(k, v)| Some((k, v.owned()?.global_transform())))
 				.collect(),
 		}
-	}
-	fn spatial_transform(client: &ConnectedClient, id: Id) -> Option<Mat4> {
-		let node = client.scenegraph.get_node(id)?;
-		let spatial = node.get_aspect::<SpatialMut>().ok()?;
-		Some(spatial.global_transform())
 	}
 
 	pub fn token(self) -> String {
@@ -85,21 +83,20 @@ impl ClientStateParsed {
 		}
 	}
 
-	pub fn apply_to(&self, client: &Arc<ConnectedClient>) -> ClientState {
-		let root_spatial = SpatialMut::new(None, self.root);
+	pub fn apply(&self) -> ClientState {
+		let root_spatial = SpatialObject::new(None, self.root);
 		let root = root_spatial.get_ref();
-		let mut spatial_anchors = HashMap::new();
-		for (k, v) in self.spatial_anchors.iter() {
-			let spatial = SpatialMut::new(Some(root.clone()), *v);
-			spatial_anchors.insert(
-				k.clone(),
-				SpatialRef::from_handler(spatial.get_ref()),
-			);
-		}
 		ClientState {
 			data: self.data.clone(),
 			root: SpatialRef::from_handler(root),
-			spatial_anchors,
+			spatial_anchors: self
+				.spatial_anchors
+				.iter()
+				.map(|(k, v)| {
+					let spatial = SpatialObject::new(Some(&root), *v);
+					(k.clone(), SpatialRef::from_handler(spatial.get_ref()))
+				})
+				.collect(),
 		}
 	}
 	pub fn launch_command(self) -> Option<Command> {
