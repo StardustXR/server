@@ -145,14 +145,6 @@ impl Dmatex {
 		NEW_DMATEXES.send(tex.clone());
 		Ok(tex)
 	}
-	/// only use for readonly uses, write operations should sync with a vulkan semaphore
-	pub fn signal_on_drop(self: &Arc<Self>, point: u64) -> SignalOnDrop {
-		SignalOnDrop {
-			point,
-			tex: self.clone(),
-			consumed: false,
-		}
-	}
 	pub fn timeline_sync(&self) -> &TimelineSyncObj {
 		&self.sync_obj
 	}
@@ -177,6 +169,19 @@ impl Dmatex {
 		sema
 	}
 }
+pub trait DmatexExt {
+	fn signal_on_drop(&self, point: u64) -> SignalOnDrop;
+}
+impl DmatexExt for Arc<BinderObject<Dmatex>> {
+	/// only use for readonly uses, write operations should sync with a vulkan semaphore
+	fn signal_on_drop(&self, point: u64) -> SignalOnDrop {
+		SignalOnDrop {
+			point,
+			tex: self.clone(),
+			consumed: false,
+		}
+	}
+}
 impl DmatexRefHandler for Dmatex {
 	async fn drop_notification_requested(&self, notifier: DropNotifier) {
 		self.drop_notifiers.write().await.push(notifier);
@@ -192,7 +197,7 @@ impl Drop for Dmatex {
 #[derive(Debug)]
 pub struct SignalOnDrop {
 	point: u64,
-	tex: Arc<Dmatex>,
+	tex: Arc<BinderObject<Dmatex>>,
 	consumed: bool,
 }
 impl SignalOnDrop {

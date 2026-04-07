@@ -52,6 +52,7 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 		(added, removed)
 	}
 	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
+		self.0.retain(|_, v| v.strong_count() > 0);
 		self.0
 			.iter()
 			.filter_map(|pair| pair.value().upgrade())
