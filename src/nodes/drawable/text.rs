@@ -10,7 +10,7 @@ use crate::{
 	nodes::{
 		drawable::model::MaterialRegistry,
 		ref_owned,
-		spatial::{SpatialMut, SpatialNode},
+		spatial::{SpatialObject, SpatialNode},
 	},
 };
 use bevy::{platform::collections::HashMap, prelude::*};
@@ -172,7 +172,7 @@ impl FontDatabaseRegistry {
 
 #[derive(Debug)]
 pub struct Text {
-	spatial: Arc<BinderObject<SpatialMut>>,
+	spatial: Arc<BinderObject<SpatialObject>>,
 	font_path: Option<PathBuf>,
 	entity: Mutex<Option<EntityHandle>>,
 	text: Mutex<String>,
@@ -183,7 +183,7 @@ pub struct Text {
 struct TextRef(Arc<Text>);
 impl TextRef {
 	pub fn new(
-		spatial: Arc<BinderObject<SpatialMut>>,
+		spatial: Arc<BinderObject<SpatialObject>>,
 		text: String,
 		style: TextStyle,
 		prefixes: &[PathBuf],
