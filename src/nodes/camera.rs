@@ -5,9 +5,11 @@ use crate::impl_transaction_handler;
 use crate::interface;
 use crate::nodes::ProxyExt;
 use crate::nodes::drawable::dmatex::Dmatex;
+use crate::nodes::drawable::dmatex::DmatexExt as _;
 use crate::nodes::drawable::dmatex::SignalOnDrop;
 use crate::nodes::ref_owned;
-use crate::nodes::spatial::SpatialMut;
+use crate::nodes::spatial::SpatialObject;
+use crate::nodes::spatial::TransformExt as _;
 use bevy::app::App;
 use bevy::app::Plugin;
 use bevy::app::Update;
@@ -50,14 +52,14 @@ use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 
 #[derive(Debug)]
 pub struct Camera {
-	spatial: Arc<BinderObject<SpatialMut>>,
+	spatial: Arc<BinderObject<SpatialObject>>,
 	queued_render_targets:
 		Mutex<mpsc::UnboundedReceiver<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>>,
 	render_target_queue: mpsc::UnboundedSender<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>,
 	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl Camera {
-	pub fn new(spatial: Arc<BinderObject<SpatialMut>>) -> Arc<BinderObject<Camera>> {
+	pub fn new(spatial: Arc<BinderObject<SpatialObject>>) -> Arc<BinderObject<Camera>> {
 		let (tx, rx) = mpsc::unbounded_channel();
 		let cam = PION.register_object(Camera {
 			spatial,
@@ -120,7 +122,9 @@ impl CameraInterfaceHandler for CameraInterface {
 		CameraProxy::from_handler(&Camera::new(spatial))
 	}
 
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {}
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+        self.drop_notifs.write().await.push(notifier);
+    }
 }
 impl_transaction_handler!(Camera);
 pub struct CameraNodePlugin;
@@ -225,7 +229,7 @@ fn update_cameras(mut query: Query<(&mut BevyCamera, &mut Projection)>, mut cmds
 			warn!("render task submitted without view");
 			continue;
 		};
-		let offset_mat = view.camera_relative_transform.to_mat4(true, true, true);
+		let offset_mat = view.camera_relative_transform.to_mat4();
 
 		let Projection::Custom(proj) = projection.as_mut() else {
 			warn!("incorrect proj");
@@ -236,7 +240,7 @@ fn update_cameras(mut query: Query<(&mut BevyCamera, &mut Projection)>, mut cmds
 			continue;
 		};
 		proj.projection_matrix =
-			Mat4::from(view.projection_matrix) * (Mat4::from(offset_mat).inverse());
+			view.projection_matrix.mint::<Mat4>() * (offset_mat.inverse());
 
 		let Some(view_handle) = tex.try_get_bevy_manual_view() else {
 			continue;
