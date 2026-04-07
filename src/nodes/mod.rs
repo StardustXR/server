@@ -4,7 +4,7 @@ use binderbinder::{TransactionHandler, binder_object::BinderObject};
 
 pub mod audio;
 // pub mod camera;
-// pub mod drawable;
+pub mod drawable;
 pub mod fields;
 // pub mod input;
 pub mod spatial;
