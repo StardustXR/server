@@ -1,15 +1,18 @@
 use super::client_state::{CLIENT_STATES, ClientStateParsed};
 use crate::{
-	PION, core::{Id, registry::OwnedRegistry}, impl_transaction_handler, nodes::{audio, drawable, fields, spatial}
+	PION,
+	core::{Id, registry::OwnedRegistry},
+	impl_transaction_handler,
+	nodes::{audio, drawable, fields, spatial},
 };
-use binderbinder::TransactionHandler;
+use binderbinder::{TransactionHandler, binder_object::BinderObject};
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
 use gluon_wire::{GluonCtx, GluonDataBuilder, GluonDataReader, drop_tracking::DropNotifier};
 use parking_lot::Mutex;
 use rustc_hash::FxHashMap;
 use rustix::process::RawPid;
-use stardust_xr_protocol::protocol::{
+use stardust_xr_protocol::{
 	audio::AudioInterface,
 	client::{Client, ClientState},
 	dmatex::DmatexInterface,
@@ -33,28 +36,28 @@ use std::{
 use tokio::sync::{RwLock, watch};
 use tracing::info;
 
-pub static CLIENTS: OwnedRegistry<ConnectedClient> = OwnedRegistry::new();
+pub static CLIENTS: OwnedRegistry<BinderObject<ConnectedClient>> = OwnedRegistry::new();
 
-static INTERNAL_CLIENT_MESSAGE_TIMES: LazyLock<(watch::Sender<Instant>, watch::Receiver<Instant>)> =
-	LazyLock::new(|| watch::channel(Instant::now()));
-pub static INTERNAL_CLIENT: LazyLock<Arc<ConnectedClient>> = LazyLock::new(|| {
-	CLIENTS.add(ConnectedClient {
-		pid: None,
-		// env: None,
-		exe: None,
-
-		disconnect_status: OnceLock::new(),
-
-		id_counter: CounterU32::new(0),
-		base_resource_prefixes: Default::default(),
-		state: OnceLock::default(),
-		drop_notifs: Default::default(),
-		client: todo!(),
-	})
-});
-pub fn tick_internal_client() {
-	let _ = INTERNAL_CLIENT_MESSAGE_TIMES.0.send(Instant::now());
-}
+// static INTERNAL_CLIENT_MESSAGE_TIMES: LazyLock<(watch::Sender<Instant>, watch::Receiver<Instant>)> =
+	// LazyLock::new(|| watch::channel(Instant::now()));
+// pub static INTERNAL_CLIENT: LazyLock<Arc<ConnectedClient>> = LazyLock::new(|| {
+// 	CLIENTS.add(ConnectedClient {
+// 		pid: None,
+// 		// env: None,
+// 		exe: None,
+//
+// 		disconnect_status: OnceLock::new(),
+//
+// 		id_counter: CounterU32::new(0),
+// 		base_resource_prefixes: Default::default(),
+// 		state: OnceLock::default(),
+// 		drop_notifs: Default::default(),
+// 		client: todo!(),
+// 	})
+// });
+// pub fn tick_internal_client() {
+// 	let _ = INTERNAL_CLIENT_MESSAGE_TIMES.0.send(Instant::now());
+// }
 
 pub fn get_env(pid: RawPid) -> Result<FxHashMap<String, String>, std::io::Error> {
 	let env = fs::read_to_string(format!("/proc/{pid}/environ"))?;
@@ -69,16 +72,16 @@ pub fn state(env: &FxHashMap<String, String>) -> Option<Arc<ClientStateParsed>> 
 	CLIENT_STATES.get(token).as_deref().cloned()
 }
 
+#[derive(Debug)]
 pub struct ConnectedClient {
-	pub pid: Option<i32>,
+	pub pid: RawPid,
 	client: Client,
-	// env: Option<FxHashMap<String, String>>,
 	exe: Option<PathBuf>,
 	disconnect_status: OnceLock<Result<()>>,
 
 	id_counter: CounterU32,
 	pub base_resource_prefixes: Arc<Vec<PathBuf>>,
-	pub state: OnceLock<ClientState>,
+	pub state: ClientState,
 	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl ConnectedClient {
@@ -86,7 +89,7 @@ impl ConnectedClient {
 		client: Client,
 		pid: RawPid,
 		base_resource_prefixes: Vec<PathBuf>,
-	) -> Result<Arc<Self>> {
+	) -> Result<Arc<BinderObject<Self>>> {
 		let env = get_env(pid).ok();
 		let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
 		info!(
@@ -110,15 +113,12 @@ impl ConnectedClient {
 			disconnect_status: OnceLock::new(),
 
 			id_counter: CounterU32::new(256),
-			base_resource_prefixes: Default::default(),
-			state: OnceLock::default(),
+			base_resource_prefixes: base_resource_prefixes.into(),
+			state: state.apply(),
 			drop_notifs: Default::default(),
 			client,
 		});
-		CLIENTS.add_raw(&client);
-		let _ = client.scenegraph.client.set(Arc::downgrade(&client));
-
-		let _ = client.state.set(state.apply_to(&client).await);
+		CLIENTS.add_raw(client.clone());
 
 		Ok(client)
 	}
@@ -135,13 +135,13 @@ impl ConnectedClient {
 		Some(cmdline_split)
 	}
 	pub fn get_cwd(&self) -> Option<PathBuf> {
-		let pid = self.pid?;
+		let pid = self.pid;
 		let cwd_proc_path = format!("/proc/{pid}/cwd");
 		std::fs::read_link(cwd_proc_path).ok()
 	}
 	pub async fn save_state(&self) -> Option<ClientStateParsed> {
 		info!("start save state");
-		let internal = self.root.get()?.save_state().await.ok()?;
+		let internal = self.client.get_state().await.ok()?;
 		info!("finished save state");
 		Some(ClientStateParsed::from_deserialized(self, internal))
 	}
@@ -151,34 +151,23 @@ impl ConnectedClient {
 	}
 
 	pub fn unresponsive(&self) -> bool {
-		let time_since_last_message = self.message_last_received.borrow().elapsed();
-		time_since_last_message.as_millis() > 500
+        // TODO: reimplement this somehow, probably either based in ping or the binder freeze stuff
+		// let time_since_last_message = self.message_last_received.borrow().elapsed();
+		// time_since_last_message.as_millis() > 500
+        false
 	}
 
-	pub fn disconnect(&self, reason: Result<()>) {
+}
+pub trait ConnectedClientExt {
+	fn disconnect(&self, reason: Result<()>);
+}
+impl ConnectedClientExt for BinderObject<ConnectedClient> {
+	fn disconnect(&self, reason: Result<()>) {
 		let _ = self.disconnect_status.set(reason);
-		if let Some(dispatch_join_handle) = self.dispatch_join_handle.get() {
-			dispatch_join_handle.abort();
-		}
-		if let Some(flush_join_handle) = self.flush_join_handle.get() {
-			flush_join_handle.abort();
-		}
 		CLIENTS.remove(self);
 	}
 }
-impl Debug for ConnectedClient {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_struct("Client")
-			.field("pid", &self.pid)
-			.field("exe", &self.exe)
-			.field("dispatch_join_handle", &self.dispatch_join_handle)
-			.field("flush_join_handle", &self.flush_join_handle)
-			.field("disconnect_status", &self.disconnect_status)
-			.field("base_resource_prefixes", &self.base_resource_prefixes)
-			.field("state", &self.state)
-			.finish()
-	}
-}
+
 impl ServerHandler for ConnectedClient {
 	async fn spatial_interface(&self, _ctx: GluonCtx) -> SpatialInterface {
 		todo!()
