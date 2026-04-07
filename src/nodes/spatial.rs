@@ -81,7 +81,7 @@ pub struct SpatialNode(pub Weak<Spatial>);
 
 const EPSILON: f32 = 0.00001;
 
-trait TransformExt {
+pub trait TransformExt {
 	fn to_mat4(&self) -> Mat4;
 }
 impl TransformExt for Transform {
