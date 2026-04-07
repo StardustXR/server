@@ -81,6 +81,41 @@ pub struct SpatialNode(pub Weak<Spatial>);
 
 const EPSILON: f32 = 0.00001;
 
+trait TransformExt {
+	fn to_mat4(&self) -> Mat4;
+}
+impl TransformExt for Transform {
+	fn to_mat4(&self) -> Mat4 {
+		// Zero scale values break everything
+		let scale = if self.scale == 0.0 {
+			EPSILON
+		} else {
+			self.scale
+		};
+
+		Mat4::from_scale_rotation_translation(
+			Vec3::splat(scale),
+			self.rotation.mint(),
+			self.translation.mint(),
+		)
+	}
+}
+impl TransformExt for PartialTransform {
+	fn to_mat4(&self) -> Mat4 {
+		// Zero scale values break everything
+		let scale = if self.scale.unwrap_or(1.0) == 0.0 {
+			EPSILON
+		} else {
+			self.scale.unwrap_or(1.0)
+		};
+
+		Mat4::from_scale_rotation_translation(
+			Vec3::splat(scale),
+			self.rotation.map(|v| v.mint()).unwrap_or(Quat::IDENTITY),
+			self.translation.map(|v| v.mint()).unwrap_or(Vec3::ZERO),
+		)
+	}
+}
 // impl Transform {
 // 	pub fn to_mat4(&self, position: bool, rotation: bool, scale: bool) -> Mat4 {
 // 		let position = position
@@ -283,7 +318,7 @@ impl Spatial {
 		transform: PartialTransform,
 	) {
 		if reference_space.is_some_and(|reference| reference as *const _ == self as *const _) {
-			self.set_local_transform(transform.to_mat4(true, true, true) * self.local_transform());
+			self.set_local_transform(transform.to_mat4() * self.local_transform());
 			return;
 		}
 		let reference_to_parent_transform = reference_space
@@ -297,15 +332,15 @@ impl Spatial {
 			local_transform_in_reference_space.to_scale_rotation_translation();
 
 		if let Some(pos) = transform.translation {
-			reference_space_pos = pos.into()
+			reference_space_pos = pos.mint()
 		}
 		if let Some(rot) = transform.rotation {
-			reference_space_rot = rot.into()
+			reference_space_rot = rot.mint()
 		} else if reference_space_rot.is_nan() {
 			reference_space_rot = Quat::IDENTITY;
 		}
 		if let Some(scl) = transform.scale {
-			reference_space_scl = scl.into()
+			reference_space_scl = Vec3::splat(scl)
 		}
 
 		local_transform_in_reference_space = Mat4::from_scale_rotation_translation(
@@ -431,7 +466,9 @@ impl SpatialHandler for SpatialObject {
 			error!("Invalid SpatialRef used as parent");
 			return;
 		};
-		self.set_spatial_parent(&parent)?;
+		_ = self
+			.set_spatial_parent(&parent)
+			.inspect_err(|err| error!("error while setting spatial parent: {err}"));
 	}
 
 	fn set_parent_in_place(&self, _ctx: GluonCtx, parent: SpatialRefProxy) {
@@ -439,7 +476,9 @@ impl SpatialHandler for SpatialObject {
 			error!("Invalid SpatialRef used as parent");
 			return;
 		};
-		self.set_spatial_parent_in_place(&parent.data);
+		_ = self
+			.set_spatial_parent_in_place(&parent.data)
+			.inspect_err(|err| error!("error while setting spatial parent in place: {err}"));
 	}
 
 	fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialTransform) {
@@ -501,7 +540,7 @@ impl SpatialInterfaceHandler for SpatialInterface {
 			panic!("Invalid SpatialRef used");
 			// return;
 		};
-		SpatialProxy::from_handler(&SpatialObject::new(Some(&parent.data), transform))
+		SpatialProxy::from_handler(&SpatialObject::new(Some(&parent.data), transform.to_mat4()))
 	}
 
 	async fn get_relative_bounding_box(
