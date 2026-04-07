@@ -3,8 +3,8 @@ use crate::bevy_int::entity_handle::EntityHandle;
 use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::ProxyExt;
-use crate::nodes::spatial::{SpatialMut};
-use crate::{PION, impl_transaction_handler};
+use crate::nodes::spatial::SpatialObject;
+use crate::{PION, impl_transaction_handler, interface};
 use bevy::audio::{PlaybackMode, Volume};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
@@ -96,7 +96,7 @@ static SOUND_REGISTRY: Registry<Sound> = Registry::new();
 
 #[derive(Debug)]
 pub struct Sound {
-	spatial: Arc<BinderObject<SpatialMut>>,
+	spatial: Arc<BinderObject<SpatialObject>>,
 
 	volume: f32,
 	pending_audio_path: PathBuf,
@@ -108,13 +108,13 @@ pub struct Sound {
 }
 impl Sound {
 	pub fn new(
-		spatial: Arc<BinderObject<SpatialMut>>,
+		spatial: Arc<BinderObject<SpatialObject>>,
 		resource_id: Resource,
+		resource_prefixes: &[PathBuf],
 	) -> Option<Arc<BinderObject<Sound>>> {
-		let client = todo!();
 		let pending_audio_path = get_resource_file(
 			&resource_id,
-			client.base_resource_prefixes.lock().iter(),
+			resource_prefixes,
 			&[OsStr::new("wav"), OsStr::new("mp3")],
 		)?;
 		let sound = PION.register_object(Sound {
@@ -126,7 +126,7 @@ impl Sound {
 			play: Mutex::new(None),
 			drop_notifs: RwLock::default(),
 		});
-		Ok(sound)
+		Some(sound)
 	}
 }
 impl SoundHandler for Sound {
@@ -148,10 +148,7 @@ impl Drop for Sound {
 	}
 }
 
-#[derive(Debug, Default)]
-pub struct AudioInterface {
-	drop_notifs: RwLock<Vec<DropNotifier>>,
-}
+interface!(AudioInterface);
 impl AudioInterfaceHandler for AudioInterface {
 	async fn create_sound(
 		&self,
@@ -163,7 +160,7 @@ impl AudioInterfaceHandler for AudioInterface {
 			// TODO: replace with error
 			panic!("tried to create sound with invalid spatial");
 		};
-		let Some(sound) = Sound::new(spatial, sound) else {
+		let Some(sound) = Sound::new(spatial, sound, self.base_prefixes()) else {
 			// TODO: replace with error
 			panic!("sound resource not found");
 		};
@@ -176,4 +173,3 @@ impl AudioInterfaceHandler for AudioInterface {
 }
 
 impl_transaction_handler!(Sound);
-impl_transaction_handler!(AudioInterface);
