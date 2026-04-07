@@ -78,6 +78,8 @@ use tracing::{error, info, metadata::LevelFilter};
 use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*};
 use zbus::{Connection, fdo::ObjectManager};
 
+use crate::nodes::{audio::AudioNodePlugin, camera::CameraNodePlugin, drawable::{lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin}};
+
 #[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
 struct CliArgs {
@@ -434,13 +436,13 @@ fn bevy_loop(
 	// node plugins
 	app.add_plugins((
 		SpatialNodePlugin,
-		// ModelNodePlugin,
-		// TextNodePlugin,
-		// LinesNodePlugin,
-		// AudioNodePlugin,
-		// CameraNodePlugin,
+		ModelNodePlugin,
+		TextNodePlugin,
+		LinesNodePlugin,
+		AudioNodePlugin,
+		CameraNodePlugin,
 		// not really a node ig? at least for now
-		// SkyPlugin,
+		SkyPlugin,
 	));
 	// object plugins
 	// app.add_plugins((PlaySpacePlugin, HmdPlugin));

@@ -5,12 +5,13 @@ use crate::{
 		color::ColorConvert,
 		entity_handle::EntityHandle,
 	},
-	core::{error::Result, resource::get_resource_file},
-	impl_transaction_handler,
+	core::resource::get_resource_file,
+	impl_transaction_handler, interface,
 	nodes::{
+		ProxyExt as _,
 		drawable::model::MaterialRegistry,
 		ref_owned,
-		spatial::{SpatialObject, SpatialNode},
+		spatial::{SpatialNode, SpatialObject},
 	},
 };
 use bevy::{platform::collections::HashMap, prelude::*};
@@ -20,9 +21,14 @@ use bevy_mesh_text_3d::{
 };
 use binderbinder::binder_object::BinderObject;
 use core::f32;
+use gluon_wire::drop_tracking::DropNotifier;
 use parking_lot::Mutex;
-use stardust_xr_protocol::text::{TextFit, TextHandler, TextStyle, XAlign, YAlign};
+use stardust_xr_protocol::text::Text as TextProxy;
+use stardust_xr_protocol::text::{
+	TextFit, TextHandler, TextInterfaceHandler, TextStyle, XAlign, YAlign,
+};
 use std::{ffi::OsStr, mem, path::PathBuf, sync::Arc};
+use tokio::sync::RwLock;
 
 static SPAWN_TEXT: BevyChannel<Arc<Text>> = BevyChannel::new();
 
@@ -180,14 +186,14 @@ pub struct Text {
 }
 /// only exists so we can send an Arc<Text> into SPAWN_TEXT
 #[derive(Debug)]
-struct TextRef(Arc<Text>);
-impl TextRef {
+struct TextObject(Arc<Text>, RwLock<Vec<DropNotifier>>);
+impl TextObject {
 	pub fn new(
 		spatial: Arc<BinderObject<SpatialObject>>,
 		text: String,
 		style: TextStyle,
 		prefixes: &[PathBuf],
-	) -> Result<Arc<BinderObject<TextRef>>> {
+	) -> Arc<BinderObject<TextObject>> {
 		let text = Arc::new(Text {
 			spatial,
 			font_path: style.font.as_ref().and_then(|res| {
@@ -199,13 +205,13 @@ impl TextRef {
 			data: Mutex::new(style),
 		});
 		_ = SPAWN_TEXT.send(text.clone());
-		let text = PION.register_object(TextRef(text));
+		let text = PION.register_object(TextObject(text, Default::default()));
 		ref_owned(&text);
 
-		Ok(text)
+		text
 	}
 }
-impl TextHandler for TextRef {
+impl TextHandler for TextObject {
 	fn set_character_height(&self, _ctx: gluon_wire::GluonCtx, height: f32) {
 		self.0.data.lock().character_height = height;
 		_ = SPAWN_TEXT.send(self.0.clone());
@@ -216,11 +222,29 @@ impl TextHandler for TextRef {
 		_ = SPAWN_TEXT.send(self.0.clone());
 	}
 
-	async fn drop_notification_requested(
-		&self,
-		notifier: gluon_wire::drop_tracking::DropNotifier,
-	) {
-		todo!()
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.1.write().await.push(notifier);
 	}
 }
-impl_transaction_handler!(TextRef);
+interface!(TextInterface);
+impl TextInterfaceHandler for TextInterface {
+	async fn create_text(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		spatial: stardust_xr_protocol::spatial::Spatial,
+		text: String,
+		style: TextStyle,
+	) -> TextProxy {
+		let Some(spatial) = spatial.owned() else {
+			// TODO: replace with proper error returning
+			panic!("invalid spatial in model loading");
+		};
+		let text = TextObject::new(spatial, text, style, self.base_prefixes());
+		TextProxy::from_handler(&text)
+	}
+
+	async fn drop_notification_requested(&self, notifier: DropNotifier) {
+		self.drop_notifs.write().await.push(notifier);
+	}
+}
+impl_transaction_handler!(TextObject);

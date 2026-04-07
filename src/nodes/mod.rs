@@ -31,12 +31,13 @@ macro_rules! interface {
 		}
 
 		impl $type {
-			pub fn new(base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>) -> $type {
-				$type {
+			pub fn new(base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>) -> std::sync::Arc<binderbinder::binder_object::BinderObject<$type>> {
+				crate::PION.register_object($type {
 					drop_notifs: tokio::sync::RwLock::default(),
 					base_resource_prefixes: base_resource_prefixes.clone(),
-				}
+				})
 			}
+            #[allow(unused)]
 			fn base_prefixes(&self) -> &[std::path::PathBuf] {
 				&self.base_resource_prefixes
 			}

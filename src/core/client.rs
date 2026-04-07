@@ -3,43 +3,49 @@ use crate::{
 	PION,
 	core::{Id, registry::OwnedRegistry},
 	impl_transaction_handler,
-	nodes::{audio, drawable, fields, spatial},
+	nodes::{
+		audio::AudioInterface,
+		drawable::{
+			dmatex::DmatexInterface, lines::LinesInterface, model::ModelInterface,
+			sky::SkyInterface, text::TextInterface,
+		},
+		fields::FieldInterface,
+		spatial::SpatialInterface,
+	},
 };
-use binderbinder::{TransactionHandler, binder_object::BinderObject};
+use binderbinder::binder_object::BinderObject;
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
-use gluon_wire::{GluonCtx, GluonDataBuilder, GluonDataReader, drop_tracking::DropNotifier};
-use parking_lot::Mutex;
+use gluon_wire::{GluonCtx, drop_tracking::DropNotifier};
 use rustc_hash::FxHashMap;
 use rustix::process::RawPid;
 use stardust_xr_protocol::{
-	audio::AudioInterface,
+	audio::AudioInterface as AudioInterfaceProxy,
 	client::{Client, ClientState},
-	dmatex::DmatexInterface,
-	field::FieldInterface,
-	lines::LinesInterface,
-	model::ModelInterface,
+	dmatex::DmatexInterface as DmatexInterfaceProxy,
+	field::FieldInterface as FieldInterfaceProxy,
+	lines::LinesInterface as LinesInterfaceProxy,
+	model::ModelInterface as ModelInterfaceProxy,
 	server::ServerHandler,
-	sky::SkyInterface,
-	spatial::SpatialInterface,
-	spatial_query::SpatialQueryInterface,
-	text::TextInterface,
+	sky::SkyInterface as SkyInterfaceProxy,
+	spatial::SpatialInterface as SpatialInterfaceProxy,
+	spatial_query::SpatialQueryInterface as SpatialQueryInterfaceProxy,
+	text::TextInterface as TextInterfaceProxy,
 };
 use std::{
 	fmt::Debug,
 	fs,
 	iter::FromIterator,
 	path::PathBuf,
-	sync::{Arc, LazyLock, OnceLock},
-	time::Instant,
+	sync::{Arc, OnceLock},
 };
-use tokio::sync::{RwLock, watch};
+use tokio::sync::RwLock;
 use tracing::info;
 
 pub static CLIENTS: OwnedRegistry<BinderObject<ConnectedClient>> = OwnedRegistry::new();
 
 // static INTERNAL_CLIENT_MESSAGE_TIMES: LazyLock<(watch::Sender<Instant>, watch::Receiver<Instant>)> =
-	// LazyLock::new(|| watch::channel(Instant::now()));
+// LazyLock::new(|| watch::channel(Instant::now()));
 // pub static INTERNAL_CLIENT: LazyLock<Arc<ConnectedClient>> = LazyLock::new(|| {
 // 	CLIENTS.add(ConnectedClient {
 // 		pid: None,
@@ -83,6 +89,16 @@ pub struct ConnectedClient {
 	pub base_resource_prefixes: Arc<Vec<PathBuf>>,
 	pub state: ClientState,
 	drop_notifs: RwLock<Vec<DropNotifier>>,
+
+	spatial_interface: SpatialInterfaceProxy,
+	field_interface: FieldInterfaceProxy,
+	dmatex_interface: DmatexInterfaceProxy,
+	text_interface: TextInterfaceProxy,
+	model_interface: ModelInterfaceProxy,
+	lines_interface: LinesInterfaceProxy,
+	sky_interface: SkyInterfaceProxy,
+	audio_interface: AudioInterfaceProxy,
+	// spatial_query_interface: SpatialQueryInterfaceProxy,
 }
 impl ConnectedClient {
 	pub async fn from_connection(
@@ -105,6 +121,7 @@ impl ConnectedClient {
 			.and_then(state)
 			.unwrap_or_else(|| Arc::new(ClientStateParsed::default()));
 
+		let p = Arc::new(base_resource_prefixes);
 		let client = PION.register_object(ConnectedClient {
 			pid,
 			// env,
@@ -113,10 +130,20 @@ impl ConnectedClient {
 			disconnect_status: OnceLock::new(),
 
 			id_counter: CounterU32::new(256),
-			base_resource_prefixes: base_resource_prefixes.into(),
+			base_resource_prefixes: p.clone(),
 			state: state.apply(),
 			drop_notifs: Default::default(),
 			client,
+
+			spatial_interface: SpatialInterfaceProxy::from_handler(&SpatialInterface::new(&p)),
+			field_interface: FieldInterfaceProxy::from_handler(&FieldInterface::new(&p)),
+			dmatex_interface: DmatexInterfaceProxy::from_handler(&DmatexInterface::new(&p)),
+			text_interface: TextInterfaceProxy::from_handler(&TextInterface::new(&p)),
+			model_interface: ModelInterfaceProxy::from_handler(&ModelInterface::new(&p)),
+			lines_interface: LinesInterfaceProxy::from_handler(&LinesInterface::new(&p)),
+			sky_interface: SkyInterfaceProxy::from_handler(&SkyInterface::new(&p)),
+			audio_interface: AudioInterfaceProxy::from_handler(&AudioInterface::new(&p)),
+			// spatial_query_interface: SpatialQueryInterfaceProxy::from_handler(&SpatialQueryInterface::new(&p)),
 		});
 		CLIENTS.add_raw(client.clone());
 
@@ -151,12 +178,11 @@ impl ConnectedClient {
 	}
 
 	pub fn unresponsive(&self) -> bool {
-        // TODO: reimplement this somehow, probably either based in ping or the binder freeze stuff
+		// TODO: reimplement this somehow, probably either based in ping or the binder freeze stuff
 		// let time_since_last_message = self.message_last_received.borrow().elapsed();
 		// time_since_last_message.as_millis() > 500
-        false
+		false
 	}
-
 }
 pub trait ConnectedClientExt {
 	fn disconnect(&self, reason: Result<()>);
@@ -169,39 +195,39 @@ impl ConnectedClientExt for BinderObject<ConnectedClient> {
 }
 
 impl ServerHandler for ConnectedClient {
-	async fn spatial_interface(&self, _ctx: GluonCtx) -> SpatialInterface {
-		todo!()
+	async fn spatial_interface(&self, _ctx: GluonCtx) -> SpatialInterfaceProxy {
+		self.spatial_interface.clone()
 	}
 
-	async fn field_interface(&self, _ctx: GluonCtx) -> FieldInterface {
-		todo!()
+	async fn field_interface(&self, _ctx: GluonCtx) -> FieldInterfaceProxy {
+		self.field_interface.clone()
 	}
 
-	async fn dmatex_interface(&self, _ctx: GluonCtx) -> DmatexInterface {
-		todo!()
+	async fn dmatex_interface(&self, _ctx: GluonCtx) -> DmatexInterfaceProxy {
+		self.dmatex_interface.clone()
 	}
 
-	async fn text_interface(&self, _ctx: GluonCtx) -> TextInterface {
-		todo!()
+	async fn text_interface(&self, _ctx: GluonCtx) -> TextInterfaceProxy {
+		self.text_interface.clone()
 	}
 
-	async fn model_interface(&self, _ctx: GluonCtx) -> ModelInterface {
-		todo!()
+	async fn model_interface(&self, _ctx: GluonCtx) -> ModelInterfaceProxy {
+		self.model_interface.clone()
 	}
 
-	async fn lines_interface(&self, _ctx: GluonCtx) -> LinesInterface {
-		todo!()
+	async fn lines_interface(&self, _ctx: GluonCtx) -> LinesInterfaceProxy {
+		self.lines_interface.clone()
 	}
 
-	async fn sky_interface(&self, _ctx: GluonCtx) -> SkyInterface {
-		todo!()
+	async fn sky_interface(&self, _ctx: GluonCtx) -> SkyInterfaceProxy {
+		self.sky_interface.clone()
 	}
 
-	async fn audio_interface(&self, _ctx: GluonCtx) -> AudioInterface {
-		todo!()
+	async fn audio_interface(&self, _ctx: GluonCtx) -> AudioInterfaceProxy {
+		self.audio_interface.clone()
 	}
 
-	async fn spatial_query_interface(&self, _ctx: GluonCtx) -> SpatialQueryInterface {
+	async fn spatial_query_interface(&self, _ctx: GluonCtx) -> SpatialQueryInterfaceProxy {
 		todo!()
 	}
 
