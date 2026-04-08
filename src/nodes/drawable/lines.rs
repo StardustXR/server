@@ -417,7 +417,7 @@ impl LinesInterfaceHandler for LinesInterface {
 	}
 
 	async fn drop_notification_requested(&self, notifier: gluon_wire::drop_tracking::DropNotifier) {
-		todo!()
+        self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl_transaction_handler!(Lines);

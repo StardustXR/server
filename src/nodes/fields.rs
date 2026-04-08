@@ -21,9 +21,7 @@ use stardust_xr_protocol::field::{
 	CubicBezierControlPoint, Field as FieldProxy, FieldHandler, FieldInterfaceHandler,
 	FieldRef as FieldRefProxy, FieldRefHandler, RayMarchResult, Shape,
 };
-use stardust_xr_protocol::spatial::{
-	Spatial as SpatialProxy, SpatialRef as SpatialRefProxy,
-};
+use stardust_xr_protocol::spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy};
 use stardust_xr_protocol::types::Vec3F;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -692,7 +690,7 @@ impl FieldHandler for FieldMut {
 	}
 
 	async fn spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
-		todo!()
+		SpatialProxy::from_handler(&self.data.spatial)
 	}
 
 	async fn distance(
@@ -739,7 +737,7 @@ impl FieldHandler for FieldMut {
 		let ref_space = reference_space.owned()?;
 		Some(self.data.ray_march(Ray {
 			origin: ray_origin.mint(),
-			direction: ray_origin.mint(),
+			direction: ray_direction.mint(),
 			space: (***ref_space).clone(),
 		}))
 	}
@@ -783,7 +781,7 @@ impl FieldInterfaceHandler for FieldInterface {
 	) -> Option<f32> {
 		let space = space.owned()?;
 		let field = field.owned()?;
-		todo!();
+		Some(field.data.distance(&space, point.mint()))
 	}
 
 	async fn normal(
@@ -793,7 +791,9 @@ impl FieldInterfaceHandler for FieldInterface {
 		space: SpatialRefProxy,
 		point: Vec3F,
 	) -> Option<Vec3F> {
-		todo!()
+		let space = space.owned()?;
+		let field = field.owned()?;
+		Some(field.data.normal(&space, point.mint(), 0.0001).into())
 	}
 
 	async fn closest_point(
@@ -803,7 +803,14 @@ impl FieldInterfaceHandler for FieldInterface {
 		space: SpatialRefProxy,
 		point: Vec3F,
 	) -> Option<Vec3F> {
-		todo!()
+		let space = space.owned()?;
+		let field = field.owned()?;
+		Some(
+			field
+				.data
+				.closest_point(&space, point.mint(), 0.0001)
+				.into(),
+		)
 	}
 
 	async fn ray_march(
@@ -814,7 +821,13 @@ impl FieldInterfaceHandler for FieldInterface {
 		ray_origin: Vec3F,
 		ray_direction: Vec3F,
 	) -> Option<RayMarchResult> {
-		todo!()
+		let space = space.owned()?;
+		let field = field.owned()?;
+		Some(field.data.ray_march(Ray {
+			origin: ray_origin.mint(),
+			direction: ray_direction.mint(),
+			space: (***space).clone(),
+		}))
 	}
 
 	async fn create_field(
@@ -832,7 +845,7 @@ impl FieldInterfaceHandler for FieldInterface {
 	}
 
 	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		todo!()
+        self.drop_notifs.write().await.push(notifier);
 	}
 }
 

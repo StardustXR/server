@@ -6,7 +6,7 @@ use crate::{
 		entity_handle::EntityHandle,
 	},
 	core::{error::Result, registry::Registry, resource::get_resource_file},
-	impl_transaction_handler, interface,
+	impl_proxy, impl_transaction_handler, interface,
 	nodes::{
 		ProxyExt,
 		drawable::{
@@ -14,7 +14,7 @@ use crate::{
 			dmatex::{Dmatex, DmatexExt as _, SignalOnDrop},
 		},
 		ref_owned,
-		spatial::{BoundingBoxCalc, SpatialNode, SpatialObject},
+		spatial::{BoundingBoxCalc, Spatial, SpatialNode, SpatialObject},
 	},
 };
 use bevy::{
@@ -54,7 +54,7 @@ use std::{
 		atomic::{AtomicBool, Ordering},
 	},
 };
-use tokio::sync::{Notify, oneshot};
+use tokio::sync::{Notify, RwLock, oneshot};
 use vulkano::{VulkanObject, sync::semaphore::Semaphore};
 use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 
@@ -294,6 +294,7 @@ fn gen_model_parts(
 						pending_dmatexes: Mutex::default(),
 						textures: Mutex::default(),
 						bounding_calc: OnceLock::new(),
+						drop_notifs: RwLock::default(),
 					});
 					let aabb = Aabb::enclosing(
 						children
@@ -588,6 +589,8 @@ pub struct ModelPart {
 	entity: OnceLock<EntityHandle>,
 	mesh_entity: OnceLock<EntityHandle>,
 	path: String,
+	// TODO: replace spatial in model part with a custom system so we can switch spatials to purely
+	// uniform scaling
 	spatial: Arc<BinderObject<SpatialObject>>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Handle<BevyMaterial>>>,
@@ -604,6 +607,7 @@ pub struct ModelPart {
 	holdout: AtomicBool,
 	bounds: OnceLock<Aabb>,
 	bounding_calc: OnceLock<BoundingBoxCalc>,
+	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 static ACQUIRE_SEMAPHORES: Mutex<Vec<Semaphore>> = Mutex::new(Vec::new());
 impl ModelPart {
@@ -663,15 +667,29 @@ impl ModelPart {
 
 impl ModelPartHandler for ModelPart {
 	async fn get_part_path(&self, _ctx: GluonCtx) -> String {
-		todo!()
+		self.path.clone()
 	}
 
 	async fn get_model_transform(&self, _ctx: GluonCtx) -> NonUniformTransform {
-		todo!()
+        // TODO: impl
+		warn!("tried getting model part transform relative to model, currently unimplemented");
+		NonUniformTransform {
+			translation: Vec3::ZERO.into(),
+			rotation: Quat::IDENTITY.into(),
+			scale: Vec3::ONE.into(),
+		}
 	}
 
 	async fn get_local_transform(&self, _ctx: GluonCtx) -> NonUniformTransform {
-		todo!()
+		let (scale, rotation, translation) = self
+			.spatial
+			.local_transform()
+			.to_scale_rotation_translation();
+		NonUniformTransform {
+			translation: translation.into(),
+			rotation: rotation.into(),
+			scale: scale.into(),
+		}
 	}
 
 	async fn get_relative_transform(
@@ -679,24 +697,43 @@ impl ModelPartHandler for ModelPart {
 		_ctx: GluonCtx,
 		relative_to: ModelPartProxy,
 	) -> NonUniformTransform {
-		todo!()
+        // TODO: make sure the 2 model parts are from the same model
+		let Some(relative) = relative_to.owned() else {
+			error!("unknown model part");
+			return NonUniformTransform {
+				translation: Vec3::ZERO.into(),
+				rotation: Quat::IDENTITY.into(),
+				scale: Vec3::ONE.into(),
+			};
+		};
+		let (scale, rotation, translation) =
+			Spatial::space_to_space_matrix(Some(&relative.spatial), Some(&self.spatial))
+				.to_scale_rotation_translation();
+		NonUniformTransform {
+			translation: translation.into(),
+			rotation: rotation.into(),
+			scale: scale.into(),
+		}
 	}
 
 	fn set_model_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
-		todo!()
+        // TODO: impl
+		warn!("tried setting model part transform relative to model, currently unimplemented");
 	}
 
 	fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
-		todo!()
+        // TODO: impl
+		warn!("tried setting model part transform, currently unimplemented");
 	}
 
 	fn set_relative_transform(
 		&self,
 		_ctx: GluonCtx,
-		relative_to: ModelPartProxy,
-		transform: PartialNonUniformTransform,
+		_relative_to: ModelPartProxy,
+		_transform: PartialNonUniformTransform,
 	) {
-		todo!()
+        // TODO: impl
+		warn!("tried setting model part transform relative to another model, currently unimplemented");
 	}
 
 	async fn set_material_parameter(
@@ -718,9 +755,10 @@ impl ModelPartHandler for ModelPart {
 	}
 
 	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		todo!()
+		self.drop_notifs.write().await.push(notifier);
 	}
 }
+impl_proxy!(ModelPartProxy, ModelPart);
 #[derive(Default, Resource)]
 pub struct MaterialRegistry(FxHashMap<HashedPbrMaterial, Handle<BevyMaterial>>);
 impl MaterialRegistry {
@@ -754,6 +792,7 @@ pub struct Model {
 	parts: OnceLock<Vec<Arc<BinderObject<ModelPart>>>>,
 	resource_prefixes: Arc<Vec<PathBuf>>,
 	setup_complete_notify: Notify,
+	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl Model {
 	pub async fn new(
@@ -775,6 +814,7 @@ impl Model {
 			parts: OnceLock::new(),
 			resource_prefixes: base_prefixes,
 			setup_complete_notify: Notify::new(),
+			drop_notifs: RwLock::default(),
 		});
 		LOAD_MODEL
 			.send((model.clone(), pending_model_path))
@@ -785,53 +825,10 @@ impl Model {
 
 		Ok(model)
 	}
-	// pub fn get_model_part(self: &Arc<Self>, part_path: String) -> Result<Arc<ModelPart>> {
-	// 	let part = match self
-	// 		.parts
-	// 		.get()
-	// 		.map(|v| v.iter().find(|p| p.path == part_path))
-	// 	{
-	// 		Some(Some(part)) => part.clone(),
-	// 		Some(None) => {
-	// 			let paths = self
-	// 				.parts
-	// 				.get()
-	// 				.unwrap()
-	// 				.iter()
-	// 				.map(|p| &p.path)
-	// 				.collect::<Vec<_>>();
-	// 			bail!(
-	// 				"Couldn't find model part at path {part_path}, all available paths: {paths:?}",
-	// 			);
-	// 		}
-	// 		None => {
-	// 			let client = self.spatial.node().unwrap().get_client().unwrap();
-	// 			let part_node = client.scenegraph.add_node(Node::generate(&client, false));
-	// 			let spatial =
-	// 				SpatialMut::add_to(&part_node, Some(self.spatial.clone()), Mat4::IDENTITY);
-	// 			let part = part_node.add_aspect(ModelPart {
-	// 				entity: OnceLock::new(),
-	// 				mesh_entity: OnceLock::new(),
-	// 				path: part_path,
-	// 				spatial,
-	// 				pending_material_parameters: Mutex::default(),
-	// 				pending_material_replacement: Mutex::default(),
-	// 				holdout: AtomicBool::new(false),
-	// 				bounds: OnceLock::new(),
-	// 				pending_dmatexes: Mutex::default(),
-	// 				textures: Mutex::default(),
-	// 				bounding_calc: todo!(),
-	// 			});
-	// 			self.pre_bound_parts.lock().push(part.clone());
-	// 			part
-	// 		}
-	// 	};
-	// 	Ok(part)
-	// }
 }
 impl ModelHandler for Model {
 	async fn get_spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
-		todo!()
+        SpatialProxy::from_handler(&self.spatial)
 	}
 
 	async fn get_part(&self, _ctx: GluonCtx, path: String) -> Option<ModelPartProxy> {
@@ -860,11 +857,12 @@ impl ModelHandler for Model {
 	}
 
 	fn set_model_scale(&self, _ctx: GluonCtx, scale: Vec3F) {
-		todo!()
+        // TODO: impl
+		warn!("tried setting model scale, currently unimplemented");
 	}
 
 	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		todo!()
+		self.drop_notifs.write().await.push(notifier);
 	}
 }
 interface!(ModelInterface);
@@ -881,13 +879,15 @@ impl ModelInterfaceHandler for ModelInterface {
 			panic!("invalid spatial in model loading");
 		};
 
-        // TODO: handle
-        let model = Model::new(spatial, model, self.base_resource_prefixes.clone()).await.unwrap();
-        ModelProxy::from_handler(&model)
+		// TODO: handle
+		let model = Model::new(spatial, model, self.base_resource_prefixes.clone())
+			.await
+			.unwrap();
+		ModelProxy::from_handler(&model)
 	}
 
 	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-        self.drop_notifs.write().await.push(notifier);
+		self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl_transaction_handler!(Model);

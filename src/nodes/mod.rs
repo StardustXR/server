@@ -112,10 +112,10 @@ macro_rules! impl_proxy {
 					BinderObjectOrRef::Object(obj) => obj.downcast(),
 					// TODO: allow sending weak refs
 					// should never happen with the rust version of gluon tho
-					BinderObjectOrRef::WeakObject(obj) => None,
+					BinderObjectOrRef::WeakObject(_obj) => None,
 					// spatial owned by different process, this is not allowed
-					BinderObjectOrRef::Ref(binder_ref) => None,
-					BinderObjectOrRef::WeakRef(weak_binder_ref) => None,
+					BinderObjectOrRef::Ref(_binder_ref) => None,
+					BinderObjectOrRef::WeakRef(_weak_binder_ref) => None,
 				}
 			}
 		}
