@@ -68,7 +68,6 @@ use stardust_xr_protocol::client::FrameInfo;
 // use stardust_xr_gluon::object_registry::ObjectRegistry;
 // use stardust_xr_wire::server::LockedSocket;
 use std::{
-	fs,
 	ops::DerefMut as _,
 	path::PathBuf,
 	str::FromStr,
@@ -80,13 +79,17 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*};
 use zbus::Connection;
 
 use crate::{
-	bevy_int::tracking_offset::TrackingOffsetPlugin, core::{client::CLIENTS, server_interface::ServerInterface}, nodes::{
+	bevy_int::tracking_offset::TrackingOffsetPlugin,
+	core::{client::CLIENTS, server_interface::ServerInterface},
+	nodes::{
 		audio::AudioNodePlugin,
 		camera::CameraNodePlugin,
 		drawable::{
 			lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin,
-		}, fields::FieldDebugGizmoPlugin,
-	}, session::{launch_start, save_session}
+		},
+		fields::FieldDebugGizmoPlugin,
+	},
+	session::{launch_start, save_session},
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -180,23 +183,16 @@ async fn main() -> Result<AppExit, JoinError> {
 	let instance = stardust_xr_protocol::dir::find_free_instace()
 		.expect("Unable to find a free stardust instance");
 	STARDUST_INSTANCE.set(instance.clone()).unwrap();
-	let (pion_path, lock) =
-		stardust_xr_protocol::dir::create_pion_file("stardust-server", &instance)
-			.expect("failed to establish self as server for fresh instance");
-	let pion_file = fs::OpenOptions::new()
-		.create(true)
-		.read(true)
-		.write(true)
-		.open(&pion_path)
-		.expect("failed to open file even tho we're holding a lock file for it");
+	let server_interface = ServerInterface::expose(&instance).await;
 	info!(
-		pion_file_path = ?pion_path.display(),
+		pion_file_path = ?server_interface.pion_path.display(),
 		"Stardust server pion file created"
 	);
-	let server_interface = PION.register_object(ServerInterface::default());
-	PION.bind_binder_ref_to_file(pion_file, &server_interface)
-		.await
-		.expect("failed to register server with pion");
+	let cam_interface = ServerInterface::expose(&instance).await;
+	info!(
+		pion_file_path = ?cam_interface.pion_path.display(),
+		"Stardust server camera pion file created"
+	);
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");
 	if project_dirs.is_none() {
@@ -234,13 +230,14 @@ async fn main() -> Result<AppExit, JoinError> {
 		save_session(&project_dirs).await;
 	}
 	for mut startup_child in startup_children.drain(..) {
-        // TODO: somehow send SIGTERM instead, we really don't want to send SIGKILL, as that doesn't
-        // allow for any cleanup
-        // only SIGKILL after a while
+		// TODO: somehow send SIGTERM instead, we really don't want to send SIGKILL, as that doesn't
+		// allow for any cleanup
+		// only SIGKILL after a while
 		let _ = startup_child.kill();
 	}
 
-    let _lock = lock;
+	drop(cam_interface);
+	drop(server_interface);
 	info!("Cleanly shut down Stardust");
 	return_value
 }

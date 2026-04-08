@@ -5,15 +5,10 @@ use stardust_xr_protocol::{
 	client::ClientState,
 	server::{Server, ServerInterfaceHandler},
 };
-use tokio::sync::RwLock;
 
-use crate::{core::client::ConnectedClient, impl_transaction_handler};
+use crate::{core::client::ConnectedClient, exposed_interface};
 
-#[derive(Debug, Default)]
-pub struct ServerInterface {
-	drop_notifs: RwLock<Vec<DropNotifier>>,
-}
-impl_transaction_handler!(ServerInterface);
+exposed_interface!(ServerInterface, "stardust-server");
 impl ServerInterfaceHandler for ServerInterface {
 	async fn connect(
 		&self,
