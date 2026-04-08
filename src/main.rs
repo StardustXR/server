@@ -80,12 +80,12 @@ use zbus::Connection;
 
 use crate::{
 	bevy_int::tracking_offset::TrackingOffsetPlugin,
-	core::{client::CLIENTS, server_interface::ServerInterface},
+	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
 	nodes::{
 		audio::AudioNodePlugin,
 		camera::CameraNodePlugin,
 		drawable::{
-			lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin,
+			dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin
 		},
 		fields::FieldDebugGizmoPlugin,
 	},
@@ -431,8 +431,8 @@ fn bevy_loop(
 	// infra plugins
 	app.add_plugins((
 		EntityHandlePlugin,
-		// DmatexPlugin,
-		// VulkanoPlugin,
+		DmatexPlugin,
+		VulkanoPlugin,
 	));
 	// node plugins
 	app.add_plugins((
