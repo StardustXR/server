@@ -13,6 +13,7 @@ use crate::{
 		spatial::SpatialInterface,
 	},
 };
+use bevy::prelude::Deref;
 use binderbinder::binder_object::BinderObject;
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
@@ -78,16 +79,16 @@ pub fn state(env: &FxHashMap<String, String>) -> Option<Arc<ClientStateParsed>> 
 	CLIENT_STATES.get(token).as_deref().cloned()
 }
 
-#[derive(Debug)]
+#[derive(Debug, Deref)]
 pub struct ConnectedClient {
 	pub pid: RawPid,
+	#[deref]
 	client: Client,
 	exe: Option<PathBuf>,
 	disconnect_status: OnceLock<Result<()>>,
 
 	id_counter: CounterU32,
 	pub base_resource_prefixes: Arc<Vec<PathBuf>>,
-	pub state: ClientState,
 	drop_notifs: RwLock<Vec<DropNotifier>>,
 
 	spatial_interface: SpatialInterfaceProxy,
@@ -105,7 +106,7 @@ impl ConnectedClient {
 		client: Client,
 		pid: RawPid,
 		base_resource_prefixes: Vec<PathBuf>,
-	) -> Result<Arc<BinderObject<Self>>> {
+	) -> Result<(Arc<BinderObject<Self>>, ClientState)> {
 		let env = get_env(pid).ok();
 		let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
 		info!(
@@ -131,7 +132,6 @@ impl ConnectedClient {
 
 			id_counter: CounterU32::new(256),
 			base_resource_prefixes: p.clone(),
-			state: state.apply(),
 			drop_notifs: Default::default(),
 			client,
 
@@ -147,7 +147,7 @@ impl ConnectedClient {
 		});
 		CLIENTS.add_raw(client.clone());
 
-		Ok(client)
+		Ok((client, state.apply()))
 	}
 
 	pub fn get_cmdline(&self) -> Option<Vec<String>> {

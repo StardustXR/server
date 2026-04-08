@@ -5,8 +5,7 @@
 mod bevy_int;
 mod core;
 mod nodes;
-// mod objects;
-// mod session;
+mod session;
 
 use bevy::{
 	MinimalPlugins,
@@ -65,9 +64,11 @@ use nodes::spatial::SpatialNodePlugin;
 // };
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use pion_binder::PionBinderDevice;
+use stardust_xr_protocol::client::FrameInfo;
 // use stardust_xr_gluon::object_registry::ObjectRegistry;
 // use stardust_xr_wire::server::LockedSocket;
 use std::{
+	fs,
 	ops::DerefMut as _,
 	path::PathBuf,
 	str::FromStr,
@@ -76,9 +77,17 @@ use std::{
 use tokio::{sync::Notify, task::JoinError};
 use tracing::{error, info, metadata::LevelFilter};
 use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*};
-use zbus::{Connection, fdo::ObjectManager};
+use zbus::Connection;
 
-use crate::nodes::{audio::AudioNodePlugin, camera::CameraNodePlugin, drawable::{lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin}};
+use crate::{
+	bevy_int::tracking_offset::TrackingOffsetPlugin, core::{client::CLIENTS, server_interface::ServerInterface}, nodes::{
+		audio::AudioNodePlugin,
+		camera::CameraNodePlugin,
+		drawable::{
+			lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin,
+		}, fields::FieldDebugGizmoPlugin,
+	}, session::{launch_start, save_session}
+};
 
 #[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -168,27 +177,26 @@ async fn main() -> Result<AppExit, JoinError> {
 
 	// let pion =PION;
 
-	// let locked_socket =
-	// 	LockedSocket::get_free().expect("Unable to find a free stardust socket path");
-	// STARDUST_INSTANCE.set(locked_socket.socket_path.file_name().unwrap().to_string_lossy().into_owned()).expect("Someone hasn't done their job, yell at Nova because how is this set multiple times what the hell");
-	// info!(
-	// 	socket_path = ?locked_socket.socket_path.display(),
-	// 	"Stardust socket created"
-	// );
-	// let socket = UnixListener::bind(locked_socket.socket_path)
-	// 	.expect("Couldn't spawn stardust server at {socket_path}");
-	// task::new(|| "Stardust socket accept loop", async move {
-	// 	loop {
-	// 		let Ok((stream, _)) = socket.accept().await else {
-	// 			continue;
-	// 		};
-	// 		if let Err(e) = ConnectedClient::from_connection(stream) {
-	// 			error!(?e, "Unable to create client from connection");
-	// 		}
-	// 	}
-	// })
-	// .unwrap();
-	info!("Init client join loop");
+	let instance = stardust_xr_protocol::dir::find_free_instace()
+		.expect("Unable to find a free stardust instance");
+	STARDUST_INSTANCE.set(instance.clone()).unwrap();
+	let (pion_path, lock) =
+		stardust_xr_protocol::dir::create_pion_file("stardust-server", &instance)
+			.expect("failed to establish self as server for fresh instance");
+	let pion_file = fs::OpenOptions::new()
+		.create(true)
+		.read(true)
+		.write(true)
+		.open(&pion_path)
+		.expect("failed to open file even tho we're holding a lock file for it");
+	info!(
+		pion_file_path = ?pion_path.display(),
+		"Stardust server pion file created"
+	);
+	let server_interface = PION.register_object(ServerInterface::default());
+	PION.bind_binder_ref_to_file(pion_file, &server_interface)
+		.await
+		.expect("failed to register server with pion");
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");
 	if project_dirs.is_none() {
@@ -197,23 +205,15 @@ async fn main() -> Result<AppExit, JoinError> {
 		);
 	}
 
-	let dbus_connection = Connection::session()
+	let dbus_connection = zbus::conn::Builder::session()
+		.unwrap()
+		.replace_existing_names(false)
+		.allow_name_replacements(false)
+		.name(format!("org.stardustxr.Server.{}", instance))
+		.expect("Another instance of the server is running with the same STARDUST_INSTANCE")
+		.build()
 		.await
 		.expect("Could not open dbus session");
-	// why is this requested here? should there be a specific server bus name that we check
-	// instead?
-	dbus_connection
-		.request_name("org.stardustxr.HMD")
-		.await
-		.expect(
-			"Another instance of the server is running. This is not supported currently (but is planned).",
-		);
-
-	dbus_connection
-		.object_server()
-		.at("/", ObjectManager)
-		.await
-		.expect("Couldn't add the object manager");
 
 	let ready_notifier = Arc::new(Notify::new());
 	let io_loop = tokio::task::spawn_blocking({
@@ -223,20 +223,24 @@ async fn main() -> Result<AppExit, JoinError> {
 		let dbus_connection = dbus_connection.clone();
 		move || bevy_loop(ready_notifier, project_dirs, cli_args, dbus_connection)
 	});
-	// ready_notifier.notified().await;
-	// let mut startup_children = project_dirs
-	// 	.as_ref()
-	// 	.map(|project_dirs| launch_start(&cli_args, project_dirs))
-	// 	.unwrap_or_default();
+	ready_notifier.notified().await;
+	let mut startup_children = project_dirs
+		.as_ref()
+		.map(|project_dirs| launch_start(&cli_args, project_dirs))
+		.unwrap_or_default();
 	let return_value = io_loop.await;
 	info!("Stopping...");
-	// if let Some(project_dirs) = project_dirs {
-	// 	save_session(&project_dirs).await;
-	// }
-	// for mut startup_child in startup_children.drain(..) {
-	// 	let _ = startup_child.kill();
-	// }
+	if let Some(project_dirs) = project_dirs {
+		save_session(&project_dirs).await;
+	}
+	for mut startup_child in startup_children.drain(..) {
+        // TODO: somehow send SIGTERM instead, we really don't want to send SIGKILL, as that doesn't
+        // allow for any cleanup
+        // only SIGKILL after a while
+		let _ = startup_child.kill();
+	}
 
+    let _lock = lock;
 	info!("Cleanly shut down Stardust");
 	return_value
 }
@@ -459,7 +463,7 @@ fn bevy_loop(
 	// }
 
 	// feature plugins
-	// app.add_plugins((TrackingOffsetPlugin, FieldDebugGizmoPlugin));
+	app.add_plugins((TrackingOffsetPlugin, FieldDebugGizmoPlugin));
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
@@ -505,9 +509,14 @@ fn xr_step(world: &mut World) {
 	// update things like the Xr input methods
 	world.run_schedule(PreFrameWait);
 	let time = world.resource::<bevy::prelude::Time>().delta_secs_f64();
-	// TODO: send new frame events for clients,
-	// including the predicted display time if availabe
-	// nodes::root::Root::send_frame_events(time);
+	for client in CLIENTS.get_vec() {
+		_ = client.frame(FrameInfo {
+			// TODO: ideally populate with openxr data instead of bevy
+			delta: time as f32,
+			// TODO: populate with openxr data
+			predicted_display_time: None,
+		});
+	}
 
 	let should_wait = world
 		.run_system_cached(should_run_frame_loop)
