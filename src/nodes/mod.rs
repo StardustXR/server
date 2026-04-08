@@ -47,6 +47,50 @@ macro_rules! interface {
 	};
 }
 #[macro_export]
+macro_rules! exposed_interface {
+	($type:ident, $service:literal) => {
+		#[derive(Debug)]
+		pub struct $type {
+			drop_notifs: tokio::sync::RwLock<Vec<gluon_wire::drop_tracking::DropNotifier>>,
+            lock: std::fs::File,
+            pub pion_path: std::path::PathBuf,
+		}
+
+		impl $type {
+            pub async fn expose(
+                instance: &str,
+            ) -> std::sync::Arc<binderbinder::binder_object::BinderObject<$type>> {
+                let (pion_path, lock) =
+                    stardust_xr_protocol::dir::create_pion_file($service, &instance).expect(
+                        &format!(
+                            "failed to create {} pion file for instance: {}",
+                            $service, 
+                            instance,
+                        ),
+                    );
+                let pion_file = std::fs::OpenOptions::new()
+                    .create(true)
+                    .read(true)
+                    .write(true)
+                    .open(&pion_path)
+                    .expect("failed to open file even tho we're holding a lock file for it");
+                let interface = crate::PION.register_object($type {
+					drop_notifs: tokio::sync::RwLock::default(),
+                    lock,
+                    pion_path,
+				});
+                crate::PION
+                    .bind_binder_ref_to_file(pion_file, &interface)
+                    .await
+                    .expect(&format!("failed to register {} with pion", stringify!($type)));
+                interface
+            }
+		}
+
+		$crate::impl_transaction_handler!($type);
+	};
+}
+#[macro_export]
 macro_rules! impl_transaction_handler {
 	($type:ty) => {
 		impl binderbinder::TransactionHandler for $type {

@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 use crate::PION;
 use crate::core::vulkano_data::VULKANO_CONTEXT;
+use crate::exposed_interface;
 use crate::impl_transaction_handler;
-use crate::interface;
 use crate::nodes::ProxyExt;
 use crate::nodes::drawable::dmatex::Dmatex;
 use crate::nodes::drawable::dmatex::DmatexExt as _;
@@ -55,7 +55,8 @@ pub struct Camera {
 	spatial: Arc<BinderObject<SpatialObject>>,
 	queued_render_targets:
 		Mutex<mpsc::UnboundedReceiver<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>>,
-	render_target_queue: mpsc::UnboundedSender<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>,
+	render_target_queue:
+		mpsc::UnboundedSender<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>,
 	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl Camera {
@@ -108,7 +109,7 @@ impl CameraHandler for Camera {
 static CAMERA_REGISTRY: Registry<BinderObject<Camera>> = Registry::new();
 
 // TODO: figure out where to mount this
-interface!(CameraInterface);
+exposed_interface!(CameraInterface, "stardust-camera");
 impl CameraInterfaceHandler for CameraInterface {
 	async fn create_camera(
 		&self,
@@ -123,8 +124,8 @@ impl CameraInterfaceHandler for CameraInterface {
 	}
 
 	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-        self.drop_notifs.write().await.push(notifier);
-    }
+		self.drop_notifs.write().await.push(notifier);
+	}
 }
 impl_transaction_handler!(Camera);
 pub struct CameraNodePlugin;
@@ -239,8 +240,7 @@ fn update_cameras(mut query: Query<(&mut BevyCamera, &mut Projection)>, mut cmds
 			warn!("incorrect custom proj");
 			continue;
 		};
-		proj.projection_matrix =
-			view.projection_matrix.mint::<Mat4>() * (offset_mat.inverse());
+		proj.projection_matrix = view.projection_matrix.mint::<Mat4>() * (offset_mat.inverse());
 
 		let Some(view_handle) = tex.try_get_bevy_manual_view() else {
 			continue;
