@@ -49,7 +49,7 @@ macro_rules! exposed_interface {
 	($type:ident, $service:literal) => {
 		#[derive(Debug)]
 		pub struct $type {
-            lock: std::fs::File,
+            _lock: std::fs::File,
             pub pion_path: std::path::PathBuf,
 		}
 
@@ -72,7 +72,7 @@ macro_rules! exposed_interface {
                     .open(&pion_path)
                     .expect("failed to open file even tho we're holding a lock file for it");
                 let interface = crate::PION.register_object($type {
-                    lock,
+                    _lock: lock,
                     pion_path,
 				});
                 crate::PION
