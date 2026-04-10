@@ -139,8 +139,9 @@ gluon-wire.git = "https://github.com/technobaboo/gluon"
 binderbinder.git = "https://github.com/technobaboo/binderbinder"
 
 [workspace.dependencies.stardust-xr-protocol]
-git = "https://github.com/StardustXR/core.git"
-branch = "binder"
+#git = "https://github.com/StardustXR/core.git"
+#branch = "binder"
+path = "../core/protocol"
 
 [dependencies.stardust-xr-server-foundation]
 path = "foundation"

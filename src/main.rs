@@ -83,7 +83,7 @@ use crate::{
 	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
 	nodes::{
 		audio::AudioNodePlugin,
-		camera::CameraNodePlugin,
+		camera::{CameraInterface, CameraNodePlugin},
 		drawable::{
 			dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin
 		},
@@ -188,7 +188,7 @@ async fn main() -> Result<AppExit, JoinError> {
 		pion_file_path = ?server_interface.pion_path.display(),
 		"Stardust server pion file created"
 	);
-	let cam_interface = ServerInterface::expose(&instance).await;
+	let cam_interface = CameraInterface::expose(&instance).await;
 	info!(
 		pion_file_path = ?cam_interface.pion_path.display(),
 		"Stardust server camera pion file created"

@@ -13,7 +13,7 @@ use crate::{
 	},
 };
 use bevy::prelude::Deref;
-use binderbinder::binder_object::BinderObject;
+use binderbinder::binder_object::{BinderObject, ToBinderObjectOrRef};
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
 use gluon_wire::{GluonCtx, impl_transaction_handler};
@@ -224,7 +224,8 @@ impl ServerHandler for ConnectedClient {
 	}
 
 	async fn spatial_query_interface(&self, _ctx: GluonCtx) -> SpatialQueryInterfaceProxy {
-		todo!()
+        // TODO: use the protper thingy here
+        SpatialQueryInterfaceProxy::from_object_or_ref(self.audio_interface.to_binder_object_or_ref())
 	}
 
 	async fn generate_state_token(&self, _ctx: GluonCtx, state: ClientState) -> String {
