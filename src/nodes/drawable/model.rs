@@ -14,7 +14,7 @@ use crate::{
 			dmatex::{Dmatex, DmatexExt as _, SignalOnDrop},
 		},
 		ref_owned,
-		spatial::{BoundingBoxCalc, Spatial, SpatialNode, SpatialObject},
+		spatial::{BoundingBoxCalc, Spatial, SpatialNode, SpatialObject, TransformExt},
 	},
 };
 use bevy::{
@@ -126,12 +126,12 @@ impl MaterialExtension for HoldoutExtension {
 }
 
 #[derive(Component)]
-struct ModelNode(Weak<Model>);
+struct ModelNode(Weak<BinderObject<Model>>);
 
 fn load_models(
 	asset_server: Res<AssetServer>,
 	mut cmds: Commands,
-	mut mpsc_receiver: ResMut<BevyChannelReader<(Arc<Model>, PathBuf)>>,
+	mut mpsc_receiver: ResMut<BevyChannelReader<(Arc<BinderObject<Model>>, PathBuf)>>,
 ) {
 	while let Some((model, path)) = mpsc_receiver.read() {
 		// idk of the asset label is the correct approach here
@@ -722,7 +722,9 @@ impl ModelPartHandler for ModelPart {
 
 	fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
 		// TODO: impl
-		warn!("tried setting model part transform, currently unimplemented");
+		// warn!("tried setting model part transform, currently unimplemented");
+        // TODO: only apply changes
+        self.spatial.set_local_transform(transform.to_mat4());
 	}
 
 	fn set_relative_transform(
@@ -753,6 +755,18 @@ impl ModelPartHandler for ModelPart {
 
 	fn apply_holdout_material(&self, _ctx: GluonCtx) {
 		self.holdout.store(true, Ordering::Relaxed);
+	}
+}
+impl TransformExt for PartialNonUniformTransform {
+	fn to_mat4(&self) -> Mat4 {
+		// Zero scale values break everything
+
+		Mat4::from_scale_rotation_translation(
+            // TODO: avoid scale of 0.0
+			self.scale.map(|v| v.mint()).unwrap_or(Vec3::ONE),
+			self.rotation.map(|v| v.mint()).unwrap_or(Quat::IDENTITY),
+			self.translation.map(|v| v.mint()).unwrap_or(Vec3::ZERO),
+		)
 	}
 }
 impl_proxy!(ModelPartProxy, ModelPart);

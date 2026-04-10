@@ -325,7 +325,7 @@ fn cleanup_manual_texture_views(
 fn add_dmatex_into_bevy(
 	mut images: ResMut<Assets<Image>>,
 	texes: Res<ImportedDmatexs>,
-	mut new_texes: ResMut<BevyChannelReader<Arc<Dmatex>>>,
+	mut new_texes: ResMut<BevyChannelReader<Arc<BinderObject<Dmatex>>>>,
 	mut custom_views: ResMut<ManualTextureViews>,
 ) {
 	while let Some(tex) = new_texes.read() {
