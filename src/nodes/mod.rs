@@ -9,15 +9,23 @@ pub mod fields;
 // pub mod input;
 pub mod spatial;
 
+// TODO: figure out how to make this task abort when the object as actually dropped
 /// keeps the object alive until all binder strong refs are dropped
 pub fn ref_owned<H: TransactionHandler>(obj: &Arc<BinderObject<H>>) {
 	let obj = obj.clone();
 	tokio::spawn(async move {
+		let mut obj = obj;
 		loop {
 			obj.strong_refs_hit_zero().await;
-			if Arc::downgrade(&obj).strong_count() == 1 {
+			let weak = Arc::downgrade(&obj);
+			if weak.strong_count() == 1 {
 				break;
 			}
+			let future = obj.strong_refs_not_zero();
+			drop(obj);
+			future.await;
+			let Some(new_obj) = weak.upgrade() else { break };
+			obj = new_obj;
 		}
 	});
 }
@@ -30,12 +38,14 @@ macro_rules! interface {
 		}
 
 		impl $type {
-			pub fn new(base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>) -> std::sync::Arc<binderbinder::binder_object::BinderObject<$type>> {
+			pub fn new(
+				base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>,
+			) -> std::sync::Arc<binderbinder::binder_object::BinderObject<$type>> {
 				crate::PION.register_object($type {
 					base_resource_prefixes: base_resource_prefixes.clone(),
 				})
 			}
-            #[allow(unused)]
+			#[allow(unused)]
 			fn base_prefixes(&self) -> &[std::path::PathBuf] {
 				&self.base_resource_prefixes
 			}
@@ -49,38 +59,40 @@ macro_rules! exposed_interface {
 	($type:ident, $service:literal) => {
 		#[derive(Debug)]
 		pub struct $type {
-            _lock: std::fs::File,
-            pub pion_path: std::path::PathBuf,
+			_lock: std::fs::File,
+			pub pion_path: std::path::PathBuf,
 		}
 
 		impl $type {
-            pub async fn expose(
-                instance: &str,
-            ) -> std::sync::Arc<binderbinder::binder_object::BinderObject<$type>> {
-                let (pion_path, lock) =
-                    stardust_xr_protocol::dir::create_pion_file($service, &instance).expect(
-                        &format!(
-                            "failed to create {} pion file for instance: {}",
-                            $service, 
-                            instance,
-                        ),
-                    );
-                let pion_file = std::fs::OpenOptions::new()
-                    .create(true)
-                    .read(true)
-                    .write(true)
-                    .open(&pion_path)
-                    .expect("failed to open file even tho we're holding a lock file for it");
-                let interface = crate::PION.register_object($type {
-                    _lock: lock,
-                    pion_path,
+			pub async fn expose(
+				instance: &str,
+			) -> std::sync::Arc<binderbinder::binder_object::BinderObject<$type>> {
+				let (pion_path, lock) = stardust_xr_protocol::dir::create_pion_file(
+					$service, &instance,
+				)
+				.expect(&format!(
+					"failed to create {} pion file for instance: {}",
+					$service, instance,
+				));
+				let pion_file = std::fs::OpenOptions::new()
+					.create(true)
+					.read(true)
+					.write(true)
+					.open(&pion_path)
+					.expect("failed to open file even tho we're holding a lock file for it");
+				let interface = crate::PION.register_object($type {
+					_lock: lock,
+					pion_path,
 				});
-                crate::PION
-                    .bind_binder_ref_to_file(pion_file, &interface)
-                    .await
-                    .expect(&format!("failed to register {} with pion", stringify!($type)));
-                interface
-            }
+				crate::PION
+					.bind_binder_ref_to_file(pion_file, &interface)
+					.await
+					.expect(&format!(
+						"failed to register {} with pion",
+						stringify!($type)
+					));
+				interface
+			}
 		}
 
 		gluon_wire::impl_transaction_handler!($type);
