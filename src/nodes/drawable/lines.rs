@@ -2,7 +2,7 @@ use crate::{
 	BevyMaterial, PION,
 	bevy_int::{color::ColorConvert, entity_handle::EntityHandle},
 	core::{error::Result, registry::Registry},
-	impl_transaction_handler, interface,
+	interface,
 	nodes::{
 		ProxyExt, ref_owned,
 		spatial::{BoundingBoxCalc, SpatialObject},
@@ -21,7 +21,7 @@ use bevy::{
 };
 use binderbinder::binder_object::BinderObject;
 use glam::Vec3;
-use gluon_wire::drop_tracking::DropNotifier;
+use gluon_wire::impl_transaction_handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::lines::Lines as LinesProxy;
 use stardust_xr_protocol::lines::{Line, LinePoint, LinesHandler, LinesInterfaceHandler};
@@ -29,7 +29,7 @@ use std::sync::{
 	Arc, OnceLock, Weak,
 	atomic::{AtomicBool, Ordering},
 };
-use tokio::sync::{Notify, RwLock};
+use tokio::sync::Notify;
 
 type LineMaterial = ExtendedMaterial<BevyMaterial, LineExtension>;
 const LINE_SHADER_HANDLE: Handle<Shader> = weak_handle!("7d28aa5a-3abd-43bb-b0e9-0de8b81b650d");
@@ -350,7 +350,6 @@ pub struct Lines {
 	bounds: Mutex<Option<Aabb>>,
 	bounding_calc: OnceLock<BoundingBoxCalc>,
 	setup_complete: Notify,
-	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl Lines {
 	pub fn new(
@@ -365,7 +364,6 @@ impl Lines {
 			bounds: Mutex::new(Some(Aabb::default())),
 			bounding_calc: OnceLock::new(),
 			setup_complete: Notify::new(),
-			drop_notifs: RwLock::default(),
 		});
 		let lines_weak = Arc::downgrade(&lines);
 		let bounding_calc = spatial.custom_bounding_box(move || {
@@ -389,10 +387,6 @@ impl LinesHandler for Lines {
 		*self.data.lock() = lines;
 		self.gen_mesh.store(true, Ordering::Relaxed);
 	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
-	}
 }
 impl Drop for Lines {
 	fn drop(&mut self) {
@@ -414,10 +408,6 @@ impl LinesInterfaceHandler for LinesInterface {
 		let lines = Lines::new(spatial, lines);
 		lines.setup_complete.notified().await;
 		LinesProxy::from_handler(&lines)
-	}
-
-	async fn drop_notification_requested(&self, notifier: gluon_wire::drop_tracking::DropNotifier) {
-        self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl_transaction_handler!(Lines);

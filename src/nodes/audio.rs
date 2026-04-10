@@ -4,24 +4,21 @@ use crate::core::registry::Registry;
 use crate::core::resource::get_resource_file;
 use crate::nodes::ProxyExt;
 use crate::nodes::spatial::SpatialObject;
-use crate::{PION, impl_transaction_handler, interface};
+use crate::{PION, interface};
 use bevy::audio::{PlaybackMode, Volume};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::XrSpace;
 use binderbinder::binder_object::BinderObject;
-use gluon_wire::drop_tracking::DropNotifier;
+use gluon_wire::impl_transaction_handler;
 use parking_lot::Mutex;
 
 use bevy::prelude::*;
 use bevy::transform::components::Transform as BevyTransform;
-use stardust_xr_protocol::audio::{
-	AudioInterfaceHandler, Sound as SoundProxy, SoundHandler,
-};
+use stardust_xr_protocol::audio::{AudioInterfaceHandler, Sound as SoundProxy, SoundHandler};
 use stardust_xr_protocol::types::Resource;
 use std::sync::{Arc, OnceLock};
 use std::{ffi::OsStr, path::PathBuf};
-use tokio::sync::RwLock;
 
 pub struct AudioNodePlugin;
 impl Plugin for AudioNodePlugin {
@@ -104,7 +101,6 @@ pub struct Sound {
 	// Why isn't this an atomic bool or mpsc or something?
 	stop: Mutex<Option<()>>,
 	play: Mutex<Option<()>>,
-	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl Sound {
 	pub fn new(
@@ -124,7 +120,6 @@ impl Sound {
 			entity: OnceLock::new(),
 			stop: Mutex::new(None),
 			play: Mutex::new(None),
-			drop_notifs: RwLock::default(),
 		});
 		Some(sound)
 	}
@@ -136,10 +131,6 @@ impl SoundHandler for Sound {
 
 	fn stop(&self, _ctx: gluon_wire::GluonCtx) {
 		self.stop.lock().replace(());
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl Drop for Sound {
@@ -165,10 +156,6 @@ impl AudioInterfaceHandler for AudioInterface {
 			panic!("sound resource not found");
 		};
 		SoundProxy::from_handler(&sound)
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
 

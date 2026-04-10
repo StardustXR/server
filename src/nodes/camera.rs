@@ -2,7 +2,6 @@
 use crate::PION;
 use crate::core::vulkano_data::VULKANO_CONTEXT;
 use crate::exposed_interface;
-use crate::impl_transaction_handler;
 use crate::nodes::ProxyExt;
 use crate::nodes::drawable::dmatex::Dmatex;
 use crate::nodes::drawable::dmatex::DmatexExt as _;
@@ -30,7 +29,7 @@ use bevy::render::extract_component::ExtractComponentPlugin;
 use bevy_mod_xr::camera::XrProjection;
 use binderbinder::binder_object::BinderObject;
 use glam::Mat4;
-use gluon_wire::drop_tracking::DropNotifier;
+use gluon_wire::impl_transaction_handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::camera::Camera as CameraProxy;
 use stardust_xr_protocol::camera::CameraHandler;
@@ -39,7 +38,6 @@ use stardust_xr_protocol::camera::View;
 use stardust_xr_protocol::dmatex::DmatexRef;
 use stardust_xr_server_foundation::registry::Registry;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use tokio::sync::mpsc;
 use tracing::error;
 use tracing::warn;
@@ -57,7 +55,6 @@ pub struct Camera {
 		Mutex<mpsc::UnboundedReceiver<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>>,
 	render_target_queue:
 		mpsc::UnboundedSender<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>,
-	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl Camera {
 	pub fn new(spatial: Arc<BinderObject<SpatialObject>>) -> Arc<BinderObject<Camera>> {
@@ -66,7 +63,6 @@ impl Camera {
 			spatial,
 			queued_render_targets: Mutex::new(rx),
 			render_target_queue: tx,
-			drop_notifs: RwLock::default(),
 		});
 		ref_owned(&cam);
 		CAMERA_REGISTRY.add_raw(&cam);
@@ -101,10 +97,6 @@ impl CameraHandler for Camera {
 				.unwrap();
 		});
 	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
-	}
 }
 static CAMERA_REGISTRY: Registry<BinderObject<Camera>> = Registry::new();
 
@@ -121,10 +113,6 @@ impl CameraInterfaceHandler for CameraInterface {
 			panic!("Invalid Spatial use to create camera");
 		};
 		CameraProxy::from_handler(&Camera::new(spatial))
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl_transaction_handler!(Camera);

@@ -1,7 +1,7 @@
 use crate::core::registry::Registry;
 use crate::nodes::spatial::{Spatial, SpatialObject};
 use crate::nodes::{ProxyExt, ref_owned};
-use crate::{DbusConnection, PION, impl_proxy, impl_transaction_handler, interface};
+use crate::{DbusConnection, PION, impl_proxy, interface};
 use bevy::app::{Plugin, Update};
 use bevy::asset::Assets;
 use bevy::color::Color;
@@ -15,7 +15,7 @@ use bevy::gizmos::retained::Gizmo;
 use binderbinder::binder_object::BinderObject;
 use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
 use gluon_wire::GluonCtx;
-use gluon_wire::drop_tracking::DropNotifier;
+use gluon_wire::impl_transaction_handler;
 use parking_lot::RwLock;
 use stardust_xr_protocol::field::{
 	CubicBezierControlPoint, Field as FieldProxy, FieldHandler, FieldInterfaceHandler,
@@ -605,7 +605,6 @@ const MAX_RAY_LENGTH: f32 = 1000_f32;
 pub struct FieldMut {
 	data: Arc<Field>,
 	field_ref: Arc<BinderObject<FieldRef>>,
-	drop_notifs: tokio::sync::RwLock<Vec<DropNotifier>>,
 }
 #[derive(Debug)]
 pub struct Field {
@@ -630,16 +629,9 @@ impl FieldMut {
 				spawn_field_polylines(&data);
 			}
 		});
-		let field_ref = PION.register_object(FieldRef {
-			data: data.clone(),
-			drop_notifs: Default::default(),
-		});
+		let field_ref = PION.register_object(FieldRef { data: data.clone() });
 		ref_owned(&field_ref);
-		let field = PION.register_object(FieldMut {
-			field_ref,
-			drop_notifs: Default::default(),
-			data,
-		});
+		let field = PION.register_object(FieldMut { field_ref, data });
 		ref_owned(&field);
 		field
 	}
@@ -749,24 +741,15 @@ impl FieldHandler for FieldMut {
 			spawn_field_polylines(&data);
 		});
 	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
-	}
 }
 
 #[derive(Debug)]
 pub struct FieldRef {
 	data: Arc<Field>,
-	drop_notifs: tokio::sync::RwLock<Vec<DropNotifier>>,
 }
 impl FieldRefHandler for FieldRef {
 	async fn spatial_ref(&self, _ctx: GluonCtx) -> SpatialRefProxy {
 		SpatialRefProxy::from_handler(&self.data.spatial.get_ref())
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
 
@@ -842,10 +825,6 @@ impl FieldInterfaceHandler for FieldInterface {
 		};
 		let field = FieldMut::new(spatial, shape);
 		FieldProxy::from_handler(&field)
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-        self.drop_notifs.write().await.push(notifier);
 	}
 }
 

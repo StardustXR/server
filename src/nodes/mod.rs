@@ -26,14 +26,12 @@ macro_rules! interface {
 	($type:ident) => {
 		#[derive(Debug)]
 		pub struct $type {
-			drop_notifs: tokio::sync::RwLock<Vec<gluon_wire::drop_tracking::DropNotifier>>,
 			base_resource_prefixes: std::sync::Arc<Vec<std::path::PathBuf>>,
 		}
 
 		impl $type {
 			pub fn new(base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>) -> std::sync::Arc<binderbinder::binder_object::BinderObject<$type>> {
 				crate::PION.register_object($type {
-					drop_notifs: tokio::sync::RwLock::default(),
 					base_resource_prefixes: base_resource_prefixes.clone(),
 				})
 			}
@@ -43,7 +41,7 @@ macro_rules! interface {
 			}
 		}
 
-		$crate::impl_transaction_handler!($type);
+		gluon_wire::impl_transaction_handler!($type);
 	};
 }
 #[macro_export]
@@ -51,7 +49,6 @@ macro_rules! exposed_interface {
 	($type:ident, $service:literal) => {
 		#[derive(Debug)]
 		pub struct $type {
-			drop_notifs: tokio::sync::RwLock<Vec<gluon_wire::drop_tracking::DropNotifier>>,
             lock: std::fs::File,
             pub pion_path: std::path::PathBuf,
 		}
@@ -75,7 +72,6 @@ macro_rules! exposed_interface {
                     .open(&pion_path)
                     .expect("failed to open file even tho we're holding a lock file for it");
                 let interface = crate::PION.register_object($type {
-					drop_notifs: tokio::sync::RwLock::default(),
                     lock,
                     pion_path,
 				});
@@ -87,57 +83,7 @@ macro_rules! exposed_interface {
             }
 		}
 
-		$crate::impl_transaction_handler!($type);
-	};
-}
-#[macro_export]
-macro_rules! impl_transaction_handler {
-	($type:ty) => {
-		impl binderbinder::TransactionHandler for $type {
-			async fn handle(
-				&self,
-				transaction: binderbinder::device::Transaction,
-			) -> binderbinder::payload::PayloadBuilder<'_> {
-				let mut gluon_data = gluon_wire::GluonDataReader::from_payload(transaction.payload);
-				self.dispatch_two_way(
-					transaction.code,
-					&mut gluon_data,
-					gluon_wire::GluonCtx {
-						sender_pid: transaction.sender_pid,
-						sender_euid: transaction.sender_euid,
-					},
-				)
-				.await
-				.inspect_err(|err| {
-					tracing::error!(
-						concat!("failed to dispatch two_way {} for ", stringify!($type)),
-						err
-					)
-				})
-				.unwrap_or_else(|_| gluon_wire::GluonDataBuilder::new())
-				.to_payload()
-			}
-
-			async fn handle_one_way(&self, transaction: binderbinder::device::Transaction) {
-				let mut gluon_data = gluon_wire::GluonDataReader::from_payload(transaction.payload);
-				_ = self
-					.dispatch_one_way(
-						transaction.code,
-						&mut gluon_data,
-						gluon_wire::GluonCtx {
-							sender_pid: transaction.sender_pid,
-							sender_euid: transaction.sender_euid,
-						},
-					)
-					.await
-					.inspect_err(|err| {
-						tracing::error!(
-							concat!("failed to dispatch one_way {} for ", stringify!($type)),
-							err
-						)
-					});
-			}
-		}
+		gluon_wire::impl_transaction_handler!($type);
 	};
 }
 pub trait ProxyExt {

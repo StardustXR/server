@@ -6,7 +6,7 @@ use crate::{
 		entity_handle::EntityHandle,
 	},
 	core::resource::get_resource_file,
-	impl_transaction_handler, interface,
+	interface,
 	nodes::{
 		ProxyExt as _,
 		drawable::model::MaterialRegistry,
@@ -21,14 +21,13 @@ use bevy_mesh_text_3d::{
 };
 use binderbinder::binder_object::BinderObject;
 use core::f32;
-use gluon_wire::drop_tracking::DropNotifier;
+use gluon_wire::impl_transaction_handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::text::Text as TextProxy;
 use stardust_xr_protocol::text::{
 	TextFit, TextHandler, TextInterfaceHandler, TextStyle, XAlign, YAlign,
 };
 use std::{ffi::OsStr, mem, path::PathBuf, sync::Arc};
-use tokio::sync::RwLock;
 
 static SPAWN_TEXT: BevyChannel<Arc<Text>> = BevyChannel::new();
 
@@ -186,7 +185,7 @@ pub struct Text {
 }
 /// only exists so we can send an Arc<Text> into SPAWN_TEXT
 #[derive(Debug)]
-struct TextObject(Arc<Text>, RwLock<Vec<DropNotifier>>);
+struct TextObject(Arc<Text>);
 impl TextObject {
 	pub fn new(
 		spatial: Arc<BinderObject<SpatialObject>>,
@@ -205,7 +204,7 @@ impl TextObject {
 			data: Mutex::new(style),
 		});
 		_ = SPAWN_TEXT.send(text.clone());
-		let text = PION.register_object(TextObject(text, Default::default()));
+		let text = PION.register_object(TextObject(text));
 		ref_owned(&text);
 
 		text
@@ -220,10 +219,6 @@ impl TextHandler for TextObject {
 	fn set_text(&self, _ctx: gluon_wire::GluonCtx, text: String) {
 		*self.0.text.lock() = text;
 		_ = SPAWN_TEXT.send(self.0.clone());
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.1.write().await.push(notifier);
 	}
 }
 interface!(TextInterface);
@@ -241,10 +236,6 @@ impl TextInterfaceHandler for TextInterface {
 		};
 		let text = TextObject::new(spatial, text, style, self.base_prefixes());
 		TextProxy::from_handler(&text)
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl_transaction_handler!(TextObject);

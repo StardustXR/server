@@ -25,13 +25,12 @@ use binderbinder::binder_object::BinderObject;
 use dashmap::DashMap;
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
-use gluon_wire::{GluonCtx, drop_tracking::DropNotifier};
+use gluon_wire::{GluonCtx, impl_transaction_handler};
 use stardust_xr_protocol::dmatex::{
 	DmatexFormat, DmatexInterfaceHandler, DmatexPlane, DmatexRef, DmatexRefHandler, DmatexSize,
 };
 use stardust_xr_server_foundation::{bail, error::Result};
 use timeline_syncobj::{render_node::DrmRenderNode, timeline_syncobj::TimelineSyncObj};
-use tokio::sync::RwLock;
 use tracing::{error, warn};
 use vulkano::{
 	format::Format,
@@ -44,7 +43,7 @@ use crate::{
 	PION,
 	bevy_int::bevy_channel::{BevyChannel, BevyChannelReader},
 	core::vulkano_data::VULKANO_CONTEXT,
-	impl_proxy, impl_transaction_handler, interface,
+	impl_proxy, interface,
 	nodes::{drawable::ModelNodeSystemSet, ref_owned},
 };
 
@@ -53,9 +52,7 @@ pub struct Dmatex {
 	tex: ImportedTexture,
 	sync_obj: TimelineSyncObj,
 	bevy_image_handle: OnceLock<Handle<bevy::image::Image>>,
-	// TODO: handle destruction
 	bevy_custom_view: OnceLock<ManualTextureViewHandle>,
-	drop_notifiers: RwLock<Vec<DropNotifier>>,
 }
 pub static RENDER_DEV: OnceLock<RenderDevice> = OnceLock::new();
 static DRM_RENDER_NODE: OnceLock<DrmRenderNode> = OnceLock::new();
@@ -139,7 +136,6 @@ impl Dmatex {
 			sync_obj,
 			bevy_image_handle: OnceLock::new(),
 			bevy_custom_view: OnceLock::new(),
-			drop_notifiers: RwLock::default(),
 		});
 		ref_owned(&tex);
 		NEW_DMATEXES.send(tex.clone());
@@ -182,11 +178,7 @@ impl DmatexExt for Arc<BinderObject<Dmatex>> {
 		}
 	}
 }
-impl DmatexRefHandler for Dmatex {
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifiers.write().await.push(notifier);
-	}
-}
+impl DmatexRefHandler for Dmatex {}
 impl Drop for Dmatex {
 	fn drop(&mut self) {
 		if let Some(view) = self.try_get_bevy_manual_view() {
@@ -316,10 +308,6 @@ impl DmatexInterfaceHandler for DmatexInterface {
 	async fn primary_render_node_id(&self, _ctx: GluonCtx) -> u64 {
 		// TODO: replace this unwrap? but when would we ever not have an id?
 		VULKANO_CONTEXT.wait().get_drm_render_node_id().unwrap()
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
 static DMATEX_FORMAT_CACHE: OnceLock<Vec<DmatexFormat>> = OnceLock::new();

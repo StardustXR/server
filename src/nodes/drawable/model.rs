@@ -6,7 +6,7 @@ use crate::{
 		entity_handle::EntityHandle,
 	},
 	core::{error::Result, registry::Registry, resource::get_resource_file},
-	impl_proxy, impl_transaction_handler, interface,
+	impl_proxy, interface,
 	nodes::{
 		ProxyExt,
 		drawable::{
@@ -30,7 +30,8 @@ use bevy::{
 };
 use binderbinder::binder_object::BinderObject;
 use color_eyre::eyre::eyre;
-use gluon_wire::{GluonCtx, drop_tracking::DropNotifier};
+use gluon_wire::GluonCtx;
+use gluon_wire::impl_transaction_handler;
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr_protocol::{
@@ -54,7 +55,7 @@ use std::{
 		atomic::{AtomicBool, Ordering},
 	},
 };
-use tokio::sync::{Notify, RwLock, oneshot};
+use tokio::sync::{Notify, oneshot};
 use vulkano::{VulkanObject, sync::semaphore::Semaphore};
 use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 
@@ -294,7 +295,6 @@ fn gen_model_parts(
 						pending_dmatexes: Mutex::default(),
 						textures: Mutex::default(),
 						bounding_calc: OnceLock::new(),
-						drop_notifs: RwLock::default(),
 					});
 					let aabb = Aabb::enclosing(
 						children
@@ -607,7 +607,6 @@ pub struct ModelPart {
 	holdout: AtomicBool,
 	bounds: OnceLock<Aabb>,
 	bounding_calc: OnceLock<BoundingBoxCalc>,
-	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 static ACQUIRE_SEMAPHORES: Mutex<Vec<Semaphore>> = Mutex::new(Vec::new());
 impl ModelPart {
@@ -671,7 +670,7 @@ impl ModelPartHandler for ModelPart {
 	}
 
 	async fn get_model_transform(&self, _ctx: GluonCtx) -> NonUniformTransform {
-        // TODO: impl
+		// TODO: impl
 		warn!("tried getting model part transform relative to model, currently unimplemented");
 		NonUniformTransform {
 			translation: Vec3::ZERO.into(),
@@ -697,7 +696,7 @@ impl ModelPartHandler for ModelPart {
 		_ctx: GluonCtx,
 		relative_to: ModelPartProxy,
 	) -> NonUniformTransform {
-        // TODO: make sure the 2 model parts are from the same model
+		// TODO: make sure the 2 model parts are from the same model
 		let Some(relative) = relative_to.owned() else {
 			error!("unknown model part");
 			return NonUniformTransform {
@@ -717,12 +716,12 @@ impl ModelPartHandler for ModelPart {
 	}
 
 	fn set_model_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
-        // TODO: impl
+		// TODO: impl
 		warn!("tried setting model part transform relative to model, currently unimplemented");
 	}
 
 	fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
-        // TODO: impl
+		// TODO: impl
 		warn!("tried setting model part transform, currently unimplemented");
 	}
 
@@ -732,8 +731,10 @@ impl ModelPartHandler for ModelPart {
 		_relative_to: ModelPartProxy,
 		_transform: PartialNonUniformTransform,
 	) {
-        // TODO: impl
-		warn!("tried setting model part transform relative to another model, currently unimplemented");
+		// TODO: impl
+		warn!(
+			"tried setting model part transform relative to another model, currently unimplemented"
+		);
 	}
 
 	async fn set_material_parameter(
@@ -752,10 +753,6 @@ impl ModelPartHandler for ModelPart {
 
 	fn apply_holdout_material(&self, _ctx: GluonCtx) {
 		self.holdout.store(true, Ordering::Relaxed);
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl_proxy!(ModelPartProxy, ModelPart);
@@ -792,7 +789,6 @@ pub struct Model {
 	parts: OnceLock<Vec<Arc<BinderObject<ModelPart>>>>,
 	resource_prefixes: Arc<Vec<PathBuf>>,
 	setup_complete_notify: Notify,
-	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl Model {
 	pub async fn new(
@@ -814,7 +810,6 @@ impl Model {
 			parts: OnceLock::new(),
 			resource_prefixes: base_prefixes,
 			setup_complete_notify: Notify::new(),
-			drop_notifs: RwLock::default(),
 		});
 		LOAD_MODEL
 			.send((model.clone(), pending_model_path))
@@ -828,7 +823,7 @@ impl Model {
 }
 impl ModelHandler for Model {
 	async fn get_spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
-        SpatialProxy::from_handler(&self.spatial)
+		SpatialProxy::from_handler(&self.spatial)
 	}
 
 	async fn get_part(&self, _ctx: GluonCtx, path: String) -> Option<ModelPartProxy> {
@@ -857,13 +852,10 @@ impl ModelHandler for Model {
 	}
 
 	fn set_model_scale(&self, _ctx: GluonCtx, scale: Vec3F) {
-        // TODO: impl
+		// TODO: impl
 		warn!("tried setting model scale, currently unimplemented");
 	}
 
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
-	}
 }
 interface!(ModelInterface);
 impl ModelInterfaceHandler for ModelInterface {
@@ -884,10 +876,6 @@ impl ModelInterfaceHandler for ModelInterface {
 			.await
 			.unwrap();
 		ModelProxy::from_handler(&model)
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl_transaction_handler!(Model);
