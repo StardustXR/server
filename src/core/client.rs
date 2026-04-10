@@ -2,7 +2,6 @@ use super::client_state::{CLIENT_STATES, ClientStateParsed};
 use crate::{
 	PION,
 	core::{Id, registry::OwnedRegistry},
-	impl_transaction_handler,
 	nodes::{
 		audio::AudioInterface,
 		drawable::{
@@ -17,7 +16,7 @@ use bevy::prelude::Deref;
 use binderbinder::binder_object::BinderObject;
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
-use gluon_wire::{GluonCtx, drop_tracking::DropNotifier};
+use gluon_wire::{GluonCtx, impl_transaction_handler};
 use rustc_hash::FxHashMap;
 use rustix::process::RawPid;
 use stardust_xr_protocol::{
@@ -40,7 +39,6 @@ use std::{
 	path::PathBuf,
 	sync::{Arc, OnceLock},
 };
-use tokio::sync::RwLock;
 use tracing::info;
 
 pub static CLIENTS: OwnedRegistry<BinderObject<ConnectedClient>> = OwnedRegistry::new();
@@ -89,7 +87,6 @@ pub struct ConnectedClient {
 
 	id_counter: CounterU32,
 	pub base_resource_prefixes: Arc<Vec<PathBuf>>,
-	drop_notifs: RwLock<Vec<DropNotifier>>,
 
 	spatial_interface: SpatialInterfaceProxy,
 	field_interface: FieldInterfaceProxy,
@@ -132,7 +129,6 @@ impl ConnectedClient {
 
 			id_counter: CounterU32::new(256),
 			base_resource_prefixes: p.clone(),
-			drop_notifs: Default::default(),
 			client,
 
 			spatial_interface: SpatialInterfaceProxy::from_handler(&SpatialInterface::new(&p)),
@@ -233,10 +229,6 @@ impl ServerHandler for ConnectedClient {
 
 	async fn generate_state_token(&self, _ctx: GluonCtx, state: ClientState) -> String {
 		ClientStateParsed::from_deserialized(self, state).token()
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
 impl Drop for ConnectedClient {

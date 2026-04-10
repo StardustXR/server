@@ -2,15 +2,14 @@ use crate::bevy_int::entity_handle::EntityHandle;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::{ProxyExt, ref_owned};
-use crate::{PION, impl_proxy, impl_transaction_handler, interface};
+use crate::{PION, impl_proxy, interface};
 use bevy::ecs::entity::EntityHashMap;
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
 use binderbinder::binder_object::BinderObject;
 use glam::{Mat4, Quat};
-use gluon_wire::GluonCtx;
-use gluon_wire::drop_tracking::DropNotifier;
+use gluon_wire::{GluonCtx, impl_transaction_handler};
 use parking_lot::Mutex;
 use stardust_xr_protocol::spatial::{
 	BoundingBox, PartialTransform, Spatial as SpatialProxy, SpatialHandler,
@@ -20,7 +19,6 @@ use stardust_xr_server_foundation::bail;
 use std::fmt::Debug;
 use std::sync::{Arc, Weak};
 use std::{f32, ptr};
-use tokio::sync::RwLock;
 
 pub struct SpatialNodePlugin;
 impl Plugin for SpatialNodePlugin {
@@ -171,7 +169,6 @@ pub struct SpatialObject {
 	#[deref]
 	data: Arc<Spatial>,
 	spatial_ref: Arc<BinderObject<SpatialRef>>,
-	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl SpatialObject {
 	pub fn new(parent: Option<&Arc<Spatial>>, transform: Mat4) -> Arc<BinderObject<Self>> {
@@ -185,11 +182,9 @@ impl SpatialObject {
 		SPATIAL_REGISTRY.add_raw(&data);
 		let spatial_ref = PION.register_object(SpatialRef {
 			data: data.clone(),
-			drop_notifs: RwLock::default(),
 		});
 		ref_owned(&spatial_ref);
 		let spatial = PION.register_object(SpatialObject {
-			drop_notifs: RwLock::default(),
 			data,
 			spatial_ref,
 		});
@@ -503,9 +498,6 @@ impl SpatialHandler for SpatialObject {
 		self.set_local_transform_components(Some(&relative_to), transform);
 	}
 
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
-	}
 }
 impl Debug for SpatialObject {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -525,12 +517,8 @@ impl Drop for Spatial {
 pub struct SpatialRef {
 	#[deref]
 	data: Arc<Spatial>,
-	drop_notifs: RwLock<Vec<DropNotifier>>,
 }
 impl SpatialRefHandler for SpatialRef {
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
-	}
 }
 interface!(SpatialInterface);
 impl SpatialInterfaceHandler for SpatialInterface {
@@ -604,10 +592,6 @@ impl SpatialInterfaceHandler for SpatialInterface {
 			// TODO: actually just store pos rot and a single scale float
 			scale: scale.max_element(),
 		}
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
 

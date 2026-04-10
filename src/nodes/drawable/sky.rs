@@ -17,16 +17,15 @@ use bevy::{
 };
 use bevy_equirect::EquirectManager;
 use glam::Quat;
-use gluon_wire::drop_tracking::DropNotifier;
+use gluon_wire::impl_transaction_handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::{
 	sky::{SkyGuard as SkyGuardProxy, SkyGuardHandler, SkyInterfaceHandler},
 	types::Resource,
 };
 use stardust_xr_server_foundation::resource::get_resource_file;
-use tokio::sync::RwLock;
 
-use crate::{PION, impl_transaction_handler, interface, nodes::ref_owned};
+use crate::{PION, interface, nodes::ref_owned};
 
 pub struct SkyPlugin;
 
@@ -104,12 +103,9 @@ impl SkyInterfaceHandler for SkyInterface {
 		)?;
 		QUEUED_SKYTEX.lock().replace(Some(resource_path));
 		SKYTEX_SET.store(true, Ordering::Relaxed);
-		let guard = PION.register_object(SkyGuard {
-			is_sky_tex: true,
-			drop_nofifs: RwLock::default(),
-		});
-        ref_owned(&guard);
-        Some(SkyGuardProxy::from_handler(&guard))
+		let guard = PION.register_object(SkyGuard { is_sky_tex: true });
+		ref_owned(&guard);
+		Some(SkyGuardProxy::from_handler(&guard))
 	}
 
 	async fn set_sky_light(
@@ -127,29 +123,17 @@ impl SkyInterfaceHandler for SkyInterface {
 		)?;
 		QUEUED_SKYLIGHT.lock().replace(Some(resource_path));
 		SKYLIGHT_SET.store(true, Ordering::Relaxed);
-		let guard = PION.register_object(SkyGuard {
-			is_sky_tex: false,
-			drop_nofifs: RwLock::default(),
-		});
-        ref_owned(&guard);
-        Some(SkyGuardProxy::from_handler(&guard))
-	}
-
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
+		let guard = PION.register_object(SkyGuard { is_sky_tex: false });
+		ref_owned(&guard);
+		Some(SkyGuardProxy::from_handler(&guard))
 	}
 }
 
 #[derive(Debug)]
 struct SkyGuard {
 	is_sky_tex: bool,
-	drop_nofifs: RwLock<Vec<DropNotifier>>,
 }
-impl SkyGuardHandler for SkyGuard {
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_nofifs.write().await.push(notifier);
-	}
-}
+impl SkyGuardHandler for SkyGuard {}
 impl_transaction_handler!(SkyGuard);
 impl Drop for SkyGuard {
 	fn drop(&mut self) {

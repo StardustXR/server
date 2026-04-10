@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-use gluon_wire::drop_tracking::DropNotifier;
 use stardust_xr_protocol::{
 	client::ClientState,
 	server::{Server, ServerInterfaceHandler},
@@ -26,10 +25,5 @@ impl ServerInterfaceHandler for ServerInterface {
 		.unwrap();
 
 		(Server::from_handler(&obj), state)
-	}
-
-	// TODO: this causes a mem leak on connect!
-	async fn drop_notification_requested(&self, notifier: DropNotifier) {
-		self.drop_notifs.write().await.push(notifier);
 	}
 }
