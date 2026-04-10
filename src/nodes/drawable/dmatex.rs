@@ -1,6 +1,6 @@
 use std::{
 	os::fd::{AsFd as _, OwnedFd},
-	sync::{Arc, LazyLock, OnceLock, Weak},
+	sync::{Arc, OnceLock},
 };
 
 use bevy::{
@@ -22,7 +22,6 @@ use bevy_dmabuf::{
 	import::{ImportedDmatexs, ImportedTexture, import_texture},
 };
 use binderbinder::binder_object::BinderObject;
-use dashmap::DashMap;
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
 use gluon_wire::{GluonCtx, impl_transaction_handler};
@@ -56,18 +55,9 @@ pub struct Dmatex {
 }
 pub static RENDER_DEV: OnceLock<RenderDevice> = OnceLock::new();
 static DRM_RENDER_NODE: OnceLock<DrmRenderNode> = OnceLock::new();
-static EXPORTED_DMATEXES: LazyLock<DashMap<u64, Weak<Dmatex>>> = LazyLock::new(DashMap::new);
 static NEW_DMATEXES: BevyChannel<Arc<BinderObject<Dmatex>>> = BevyChannel::new();
 static DESTROYED_MANUAL_VIEWS: BevyChannel<ManualTextureViewHandle> = BevyChannel::new();
 impl Dmatex {
-	pub fn import_uid(uid: u64) -> Option<Arc<Self>> {
-		EXPORTED_DMATEXES.get(&uid)?.upgrade()
-	}
-	pub fn export_uid(self: &Arc<Self>) -> u64 {
-		let id = rand::random();
-		EXPORTED_DMATEXES.insert(id, Arc::downgrade(self));
-		id
-	}
 	pub fn new(
 		size: DmatexSize,
 		format: u32,
