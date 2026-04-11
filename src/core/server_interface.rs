@@ -21,7 +21,6 @@ impl ServerInterfaceHandler for ServerInterface {
 			ctx.sender_pid,
 			resource_prefixes.into_iter().map(PathBuf::from).collect(),
 		)
-		.await
 		.unwrap();
 
 		(Server::from_handler(&obj), state)

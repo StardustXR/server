@@ -99,7 +99,7 @@ pub struct ConnectedClient {
 	// spatial_query_interface: SpatialQueryInterfaceProxy,
 }
 impl ConnectedClient {
-	pub async fn from_connection(
+	pub fn from_connection(
 		client: Client,
 		pid: RawPid,
 		base_resource_prefixes: Vec<PathBuf>,
@@ -169,10 +169,6 @@ impl ConnectedClient {
 		Some(ClientStateParsed::from_deserialized(self, internal))
 	}
 
-	pub fn generate_id(&self) -> Id {
-		Id(self.id_counter.inc() as u64)
-	}
-
 	pub fn unresponsive(&self) -> bool {
 		// TODO: reimplement this somehow, probably either based in ping or the binder freeze stuff
 		// let time_since_last_message = self.message_last_received.borrow().elapsed();
@@ -224,8 +220,10 @@ impl ServerHandler for ConnectedClient {
 	}
 
 	async fn spatial_query_interface(&self, _ctx: GluonCtx) -> SpatialQueryInterfaceProxy {
-        // TODO: use the protper thingy here
-        SpatialQueryInterfaceProxy::from_object_or_ref(self.audio_interface.to_binder_object_or_ref())
+		// TODO: use the protper thingy here
+		SpatialQueryInterfaceProxy::from_object_or_ref(
+			self.audio_interface.to_binder_object_or_ref(),
+		)
 	}
 
 	async fn generate_state_token(&self, _ctx: GluonCtx, state: ClientState) -> String {
