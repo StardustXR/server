@@ -93,7 +93,7 @@ impl ClientStateParsed {
 				.spatial_anchors
 				.iter()
 				.map(|(k, v)| {
-					let spatial = SpatialObject::new(Some(&root), *v);
+					let spatial = SpatialObject::new(Some(root), *v);
 					(k.clone(), SpatialRef::from_handler(spatial.get_ref()))
 				})
 				.collect(),

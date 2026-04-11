@@ -55,7 +55,7 @@ use std::{
 		atomic::{AtomicBool, Ordering},
 	},
 };
-use tokio::sync::{Notify, oneshot};
+use tokio::sync::oneshot;
 use vulkano::{VulkanObject, sync::semaphore::Semaphore};
 use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 
@@ -340,7 +340,9 @@ fn gen_model_parts(
 		model
 			.spatial
 			.set_entity(model.bevy_scene_entity.get().unwrap().clone());
-		model.setup_complete_notify.notify_waiters();
+		if let Some(tx) = model.setup_complete_tx.lock().take() {
+			let _ = tx.send(());
+		}
 	}
 }
 
@@ -802,7 +804,7 @@ pub struct Model {
 	bevy_scene_entity: OnceLock<EntityHandle>,
 	parts: OnceLock<Vec<Arc<BinderObject<ModelPart>>>>,
 	resource_prefixes: Arc<Vec<PathBuf>>,
-	setup_complete_notify: Notify,
+	setup_complete_tx: Mutex<Option<oneshot::Sender<()>>>,
 }
 impl Model {
 	pub async fn new(
@@ -817,20 +819,23 @@ impl Model {
 		)
 		.ok_or_else(|| eyre!("Resource not found"))?;
 
+		let (setup_complete_tx, setup_complete_rx) = oneshot::channel();
 		let model = PION.register_object(Model {
 			spatial,
 			_resource_id: resource_id,
 			bevy_scene_entity: OnceLock::new(),
 			parts: OnceLock::new(),
 			resource_prefixes: base_prefixes,
-			setup_complete_notify: Notify::new(),
+			setup_complete_tx: Mutex::new(Some(setup_complete_tx)),
 		});
 		LOAD_MODEL
 			.send((model.clone(), pending_model_path))
 			.unwrap();
 		MODEL_REGISTRY.add_raw(&model);
 		ref_owned(&model);
-		model.setup_complete_notify.notified().await;
+		setup_complete_rx
+			.await
+			.map_err(|_| eyre!("model setup cancelled before parts were generated"))?;
 
 		Ok(model)
 	}

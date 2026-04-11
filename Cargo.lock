@@ -1584,7 +1584,7 @@ dependencies = [
 [[package]]
 name = "binderbinder"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/binderbinder#0b9643a07369357860a1ef99b2e1e0331689b2a8"
+source = "git+https://github.com/technobaboo/binderbinder#7e7afca04063608a30c85b8128096731c675a3be"
 dependencies = [
  "async-trait",
  "bitflags 2.11.0",
