@@ -1,7 +1,7 @@
 use super::client_state::{CLIENT_STATES, ClientStateParsed};
 use crate::{
 	PION,
-	core::{Id, registry::OwnedRegistry},
+	core::registry::OwnedRegistry,
 	nodes::{
 		audio::AudioInterface,
 		drawable::{
@@ -142,6 +142,18 @@ impl ConnectedClient {
 			// spatial_query_interface: SpatialQueryInterfaceProxy::from_handler(&SpatialQueryInterface::new(&p)),
 		});
 		CLIENTS.add_raw(client.clone());
+		let death_future = client.client.death_or_drop();
+		// TODO: make sure this is cleaned up if we ever have a reason for disconnect that isn't the
+		// client being destroyed
+		tokio::spawn({
+			let client = Arc::downgrade(&client);
+			async move {
+				death_future.await;
+				if let Some(client) = client.upgrade() {
+					client.disconnect(Ok(()));
+				}
+			}
+		});
 
 		Ok((client, state.apply()))
 	}
