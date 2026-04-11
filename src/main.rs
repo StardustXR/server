@@ -33,7 +33,10 @@ use bevy::{
 	winit::{WakeUp, WinitPlugin},
 };
 use bevy_dmabuf::import::DmabufImportPlugin;
-use bevy_int::{entity_handle::EntityHandlePlugin, spectator_cam::SpectatorCameraPlugin};
+use bevy_int::{
+	entity_handle::EntityHandlePlugin, flatscreen_cam::FlatscreenCamPlugin,
+	spectator_cam::SpectatorCameraPlugin,
+};
 use bevy_mod_openxr::{
 	action_set_attaching::OxrActionAttachingPlugin,
 	action_set_syncing::OxrActionSyncingPlugin,
@@ -337,9 +340,12 @@ fn bevy_loop(
 		let mut plugin = WinitPlugin::<WakeUp>::default();
 		plugin.run_on_any_thread = true;
 		plugins = plugins.add(plugin).disable::<ScheduleRunnerPlugin>();
-		plugins = match args.spectator {
-			true => plugins.add(SpectatorCameraPlugin),
-			false => plugins, /* .add(FlatscreenInputPlugin) */
+		plugins = if args.spectator {
+			plugins.add(SpectatorCameraPlugin)
+		} else if args.force_flatscreen {
+			plugins.add(FlatscreenCamPlugin)
+		} else {
+			plugins
 		};
 	}
 	app.insert_resource(PipelinedRenderThreadOnCreateCallback(
