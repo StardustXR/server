@@ -47,7 +47,7 @@ use bevy_mod_openxr::{
 	init::{OxrInitPlugin, should_run_frame_loop},
 	reference_space::OxrReferenceSpacePlugin,
 	render::{OxrRenderPlugin, OxrWaitFrameSystem},
-	resources::{OxrFrameState, OxrFrameWaiter, OxrSessionConfig},
+	resources::{OxrFrameState, OxrFrameWaiter, OxrInstance, OxrSessionConfig, Pipelined},
 	types::AppInfo,
 };
 use bevy_mod_xr::{
@@ -67,14 +67,16 @@ use nodes::spatial::SpatialNodePlugin;
 // };
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use pion_binder::PionBinderDevice;
-use stardust_xr_protocol::client::FrameInfo;
+use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
 // use stardust_xr_gluon::object_registry::ObjectRegistry;
 // use stardust_xr_wire::server::LockedSocket;
 use std::{
+	mem::MaybeUninit,
 	ops::DerefMut as _,
 	path::PathBuf,
 	str::FromStr,
 	sync::{Arc, LazyLock, OnceLock},
+	time::Duration,
 };
 use tokio::{sync::Notify, task::JoinError};
 use tracing::{error, info, metadata::LevelFilter};
@@ -88,7 +90,8 @@ use crate::{
 		audio::AudioNodePlugin,
 		camera::{CameraInterface, CameraNodePlugin},
 		drawable::{
-			dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin
+			dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin,
+			text::TextNodePlugin,
 		},
 		fields::FieldDebugGizmoPlugin,
 	},
@@ -435,11 +438,7 @@ fn bevy_loop(
 	}
 	// the Stardust server plugins
 	// infra plugins
-	app.add_plugins((
-		EntityHandlePlugin,
-		DmatexPlugin,
-		VulkanoPlugin,
-	));
+	app.add_plugins((EntityHandlePlugin, DmatexPlugin, VulkanoPlugin));
 	// node plugins
 	app.add_plugins((
 		SpatialNodePlugin,
@@ -511,13 +510,47 @@ fn cam_settings(
 fn xr_step(world: &mut World) {
 	// update things like the Xr input methods
 	world.run_schedule(PreFrameWait);
-	let time = world.resource::<bevy::prelude::Time>().delta_secs_f64();
+	let (delta, predicted_display_time) = if let Some(instance) =
+		world.get_resource::<OxrInstance>()
+		&& let Some(state) = world.get_resource::<OxrFrameState>()
+	{
+		let predicted_display_time =
+			if let Some(time_ext) = instance.exts().khr_convert_timespec_time {
+				unsafe {
+					let mut out = MaybeUninit::uninit();
+					let result = (time_ext.convert_time_to_timespec_time)(
+						instance.as_raw(),
+						// i think we want this to be one frame ahead in addition to handling pipelined?
+						// since this is for the frame after wait?
+						get_time(world.contains_resource::<Pipelined>(), &state),
+						out.as_mut_ptr(),
+					);
+					if result == openxr::sys::Result::SUCCESS {
+						let v = out.assume_init();
+						Some(Timestamp {
+							seconds: v.tv_sec,
+							nanoseconds: v.tv_nsec,
+						})
+					} else {
+						None
+					}
+				}
+			} else {
+				None
+			};
+		let delta =
+			Duration::from_nanos(state.predicted_display_period.as_nanos() as u64).as_secs_f32();
+		(delta, predicted_display_time)
+	} else {
+		(
+			world.resource::<bevy::prelude::Time>().delta_secs_f64() as f32,
+			None,
+		)
+	};
 	for client in CLIENTS.get_vec() {
 		_ = client.frame(FrameInfo {
-			// TODO: ideally populate with openxr data instead of bevy
-			delta: time as f32,
-			// TODO: populate with openxr data
-			predicted_display_time: None,
+			delta,
+			predicted_display_time,
 		});
 	}
 

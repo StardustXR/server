@@ -723,8 +723,6 @@ impl ModelPartHandler for ModelPart {
 	}
 
 	fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
-		// TODO: impl
-		// warn!("tried setting model part transform, currently unimplemented");
         // TODO: only apply changes
         self.spatial.set_local_transform(transform.to_mat4());
 	}
