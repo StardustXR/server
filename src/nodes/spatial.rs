@@ -317,7 +317,7 @@ impl Spatial {
 		reference_space: Option<&Spatial>,
 		transform: PartialTransform,
 	) {
-		if reference_space.is_some_and(|reference| reference as *const _ == self as *const _) {
+		if reference_space.is_some_and(|reference| std::ptr::eq(reference, self)) {
 			self.set_local_transform(transform.to_mat4() * self.local_transform());
 			return;
 		}

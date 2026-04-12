@@ -41,7 +41,7 @@ macro_rules! interface {
 			pub fn new(
 				base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>,
 			) -> std::sync::Arc<binderbinder::binder_object::BinderObject<$type>> {
-				crate::PION.register_object($type {
+				$crate::PION.register_object($type {
 					base_resource_prefixes: base_resource_prefixes.clone(),
 				})
 			}
@@ -80,11 +80,11 @@ macro_rules! exposed_interface {
 					.write(true)
 					.open(&pion_path)
 					.expect("failed to open file even tho we're holding a lock file for it");
-				let interface = crate::PION.register_object($type {
+				let interface = $crate::PION.register_object($type {
 					_lock: lock,
 					pion_path,
 				});
-				crate::PION
+				$crate::PION
 					.bind_binder_ref_to_file(pion_file, &interface)
 					.await
 					.expect(&format!(
@@ -105,7 +105,7 @@ pub trait ProxyExt {
 #[macro_export]
 macro_rules! impl_proxy {
 	($proxy:ty, $type:ty) => {
-		impl crate::nodes::ProxyExt for $proxy {
+		impl $crate::nodes::ProxyExt for $proxy {
 			type Owned = $type;
 			fn owned(&self) -> Option<Arc<BinderObject<Self::Owned>>> {
 				use binderbinder::binder_object::BinderObjectOrRef;

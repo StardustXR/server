@@ -717,7 +717,7 @@ impl ModelPartHandler for ModelPart {
 		}
 	}
 
-	fn set_model_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
+	fn set_model_transform(&self, _ctx: GluonCtx, _transform: PartialNonUniformTransform) {
 		// TODO: impl
 		warn!("tried setting model part transform relative to model, currently unimplemented");
 	}
@@ -868,7 +868,7 @@ impl ModelHandler for Model {
 		}
 	}
 
-	fn set_model_scale(&self, _ctx: GluonCtx, scale: Vec3F) {
+	fn set_model_scale(&self, _ctx: GluonCtx, _scale: Vec3F) {
 		// TODO: impl
 		warn!("tried setting model scale, currently unimplemented");
 	}
@@ -881,7 +881,7 @@ impl ModelInterfaceHandler for ModelInterface {
 		_ctx: gluon_wire::GluonCtx,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		model: stardust_xr_protocol::types::Resource,
-		model_scale: stardust_xr_protocol::types::Vec3F,
+		_model_scale: stardust_xr_protocol::types::Vec3F,
 	) -> ModelProxy {
 		let Some(spatial) = spatial.owned() else {
 			// TODO: replace with proper error returning

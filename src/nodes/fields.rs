@@ -198,7 +198,7 @@ fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3>> {
 fn spawn_field_polylines(field: &Field) {
 	let mut cache = field.polyline_cache.write();
 	cache.0 += 1;
-	let chains = compute_field_polylines(&field);
+	let chains = compute_field_polylines(field);
 	cache.1 = Some(chains);
 }
 
@@ -749,7 +749,7 @@ pub struct FieldRef {
 }
 impl FieldRefHandler for FieldRef {
 	async fn spatial_ref(&self, _ctx: GluonCtx) -> SpatialRefProxy {
-		SpatialRefProxy::from_handler(&self.data.spatial.get_ref())
+		SpatialRefProxy::from_handler(self.data.spatial.get_ref())
 	}
 }
 

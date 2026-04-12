@@ -97,7 +97,7 @@ impl Dmatex {
 					.into_iter()
 					.map(|p| BevyDmatexPlane {
 						dmabuf_fd: p.dmabuf_fd.into(),
-						modifier: modifier,
+						modifier,
 						offset: p.offset as u32,
 						stride: p.row_size as i32,
 					})
@@ -273,7 +273,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 						.into_iter()
 						.map(move |v| DmatexFormat {
 							drm_fourcc: *fourcc as u32,
-							drm_modifier: v.drm_format_modifier.into(),
+							drm_modifier: v.drm_format_modifier,
 							is_srgb: true,
 						})
 						.chain(
@@ -282,7 +282,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 								.into_iter()
 								.map(move |v| DmatexFormat {
 									drm_fourcc: *fourcc as u32,
-									drm_modifier: v.drm_format_modifier.into(),
+									drm_modifier: v.drm_format_modifier,
 									is_srgb: false,
 								}),
 						),
