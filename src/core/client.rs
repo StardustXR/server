@@ -11,9 +11,10 @@ use crate::{
 		fields::FieldInterface,
 		spatial::SpatialInterface,
 	},
+	query::{QueryInterface, spatial_query::SpatialQueryInterface},
 };
 use bevy::prelude::Deref;
-use binderbinder::binder_object::{BinderObject, ToBinderObjectOrRef};
+use binderbinder::binder_object::BinderObject;
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
 use gluon_wire::{GluonCtx, impl_transaction_handler};
@@ -26,6 +27,7 @@ use stardust_xr_protocol::{
 	field::FieldInterface as FieldInterfaceProxy,
 	lines::LinesInterface as LinesInterfaceProxy,
 	model::ModelInterface as ModelInterfaceProxy,
+	query::QueryInterface as QueryInterfaceProxy,
 	server::ServerHandler,
 	sky::SkyInterface as SkyInterfaceProxy,
 	spatial::SpatialInterface as SpatialInterfaceProxy,
@@ -96,7 +98,8 @@ pub struct ConnectedClient {
 	lines_interface: LinesInterfaceProxy,
 	sky_interface: SkyInterfaceProxy,
 	audio_interface: AudioInterfaceProxy,
-	// spatial_query_interface: SpatialQueryInterfaceProxy,
+	query_interface: QueryInterfaceProxy,
+	spatial_query_interface: SpatialQueryInterfaceProxy,
 }
 impl ConnectedClient {
 	pub fn from_connection(
@@ -139,7 +142,10 @@ impl ConnectedClient {
 			lines_interface: LinesInterfaceProxy::from_handler(&LinesInterface::new(&p)),
 			sky_interface: SkyInterfaceProxy::from_handler(&SkyInterface::new(&p)),
 			audio_interface: AudioInterfaceProxy::from_handler(&AudioInterface::new(&p)),
-			// spatial_query_interface: SpatialQueryInterfaceProxy::from_handler(&SpatialQueryInterface::new(&p)),
+			query_interface: QueryInterfaceProxy::from_handler(&QueryInterface::new(&p)),
+			spatial_query_interface: SpatialQueryInterfaceProxy::from_handler(
+				&SpatialQueryInterface::new(&p),
+			),
 		});
 		CLIENTS.add_raw(client.clone());
 		let death_future = client.client.death_or_drop();
@@ -231,11 +237,12 @@ impl ServerHandler for ConnectedClient {
 		self.audio_interface.clone()
 	}
 
+	async fn query_interface(&self, _ctx: GluonCtx) -> QueryInterfaceProxy {
+		self.query_interface.clone()
+	}
+
 	async fn spatial_query_interface(&self, _ctx: GluonCtx) -> SpatialQueryInterfaceProxy {
-		// TODO: use the protper thingy here
-		SpatialQueryInterfaceProxy::from_object_or_ref(
-			self.audio_interface.to_binder_object_or_ref(),
-		)
+		self.spatial_query_interface.clone()
 	}
 
 	async fn generate_state_token(&self, _ctx: GluonCtx, state: ClientState) -> String {

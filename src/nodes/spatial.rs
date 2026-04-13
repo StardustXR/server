@@ -73,6 +73,7 @@ fn update_spatial_nodes(
 
 static SPATIAL_REGISTRY: Registry<Spatial> = Registry::new();
 
+#[expect(dead_code)]
 #[derive(Clone, Component, Debug)]
 #[require(BevyTransform, Visibility)]
 pub struct SpatialNode(pub Weak<Spatial>);
@@ -146,6 +147,12 @@ impl Debug for BoundingBoxCalc {
 		f.debug_tuple("BoundingBoxCalc").finish()
 	}
 }
+pub struct MovedCallback(Arc<dyn Fn() + Send + Sync + 'static>);
+impl Debug for MovedCallback {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_tuple("MovedCallback").finish()
+	}
+}
 
 pub struct Spatial {
 	entity: Mutex<Option<EntityHandle>>,
@@ -153,10 +160,12 @@ pub struct Spatial {
 	transform: Mutex<Mat4>,
 	children: Registry<Spatial>,
 	bounding_box_calc: Registry<dyn Fn() -> Aabb + Send + Sync + 'static>,
+	moved_callback: Registry<dyn Fn() + Send + Sync + 'static>,
 }
 impl Debug for Spatial {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
 		f.debug_struct("Spatial")
+			.field("entity", &self.entity)
 			.field("parent", &self.parent)
 			.field("transform", &self.transform)
 			.field("children", &self.children)
@@ -178,16 +187,12 @@ impl SpatialObject {
 			transform: Mutex::new(transform),
 			children: Registry::new(),
 			bounding_box_calc: Registry::new(),
+			moved_callback: Registry::new(),
 		});
 		SPATIAL_REGISTRY.add_raw(&data);
-		let spatial_ref = PION.register_object(SpatialRef {
-			data: data.clone(),
-		});
+		let spatial_ref = PION.register_object(SpatialRef { data: data.clone() });
 		ref_owned(&spatial_ref);
-		let spatial = PION.register_object(SpatialObject {
-			data,
-			spatial_ref,
-		});
+		let spatial = PION.register_object(SpatialObject { data, spatial_ref });
 		ref_owned(&spatial);
 		spatial.mark_dirty();
 		spatial
@@ -204,6 +209,14 @@ impl Spatial {
 	) -> BoundingBoxCalc {
 		let arc = BoundingBoxCalc(Arc::new(calc));
 		self.bounding_box_calc.add_raw(&arc.0);
+		arc
+	}
+	pub fn moved_callback(
+		&self,
+		f: impl Fn() + Send + Sync + 'static,
+	) -> MovedCallback {
+		let arc = MovedCallback(Arc::new(f));
+		self.moved_callback.add_raw(&arc.0);
 		arc
 	}
 	pub fn set_entity(&self, entity: EntityHandle) {
@@ -310,6 +323,9 @@ impl Spatial {
 	}
 	pub fn set_local_transform(&self, transform: Mat4) {
 		*self.transform.lock() = transform;
+		for f in self.moved_callback.get_valid_contents() {
+			f();
+		}
 		self.mark_dirty();
 	}
 	pub fn set_local_transform_components(
@@ -374,8 +390,14 @@ impl Spatial {
 	fn set_parent(self: &Arc<Self>, new_parent: &Arc<Spatial>) {
 		if let Some(parent) = self.get_parent() {
 			parent.children.remove(self);
+			for f in self.moved_callback.get_valid_contents() {
+				parent.moved_callback.remove(&*f);
+			}
 		}
 		new_parent.children.add_raw(self);
+		for f in self.moved_callback.get_valid_contents() {
+			new_parent.moved_callback.add_raw(&f);
+		}
 
 		*self.parent.lock() = Some(new_parent.clone());
 		self.mark_dirty();
@@ -497,7 +519,6 @@ impl SpatialHandler for SpatialObject {
 		};
 		self.set_local_transform_components(Some(&relative_to), transform);
 	}
-
 }
 impl Debug for SpatialObject {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -518,8 +539,7 @@ pub struct SpatialRef {
 	#[deref]
 	data: Arc<Spatial>,
 }
-impl SpatialRefHandler for SpatialRef {
-}
+impl SpatialRefHandler for SpatialRef {}
 interface!(SpatialInterface);
 impl SpatialInterfaceHandler for SpatialInterface {
 	async fn create_spatial(
