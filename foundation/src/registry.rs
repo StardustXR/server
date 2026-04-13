@@ -52,6 +52,7 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 		(added, removed)
 	}
 	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
+        // TODO: optimize so this happens with only one iter, when the upgrade fails
 		self.0.retain(|_, v| v.strong_count() > 0);
 		self.0
 			.iter()

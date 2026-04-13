@@ -24,6 +24,7 @@ use stardust_xr_protocol::field::{
 use stardust_xr_protocol::spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy};
 use stardust_xr_protocol::types::Vec3F;
 use std::collections::{HashMap, HashSet};
+use std::fmt::Debug;
 use std::sync::Arc;
 
 // TODO: get SDFs working properly with non-uniform scale and so on, output distance relative to the spatial it's compared against
@@ -508,6 +509,7 @@ impl CubicBezierSplineRef {
 	}
 }
 
+pub const R: f32 = 0.0001;
 pub trait FieldTrait: Send + Sync + 'static {
 	fn spatial_ref(&self) -> &Arc<Spatial>;
 
@@ -601,16 +603,42 @@ const MAX_RAY_MARCH: f32 = f32::MAX;
 // const MIN_RAY_LENGTH: f32 = 0_f32;
 const MAX_RAY_LENGTH: f32 = 1000_f32;
 
-#[derive(Debug)]
-pub struct FieldMut {
-	data: Arc<Field>,
-	field_ref: Arc<BinderObject<FieldRef>>,
+pub struct ShapeChangedCallback(Arc<dyn Fn() + Send + Sync + 'static>);
+impl Debug for ShapeChangedCallback {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_tuple("ShapeChangedCallback").finish()
+	}
 }
 #[derive(Debug)]
+pub struct FieldMut {
+	pub data: Arc<Field>,
+	field_ref: Arc<BinderObject<FieldRef>>,
+}
 pub struct Field {
 	pub spatial: Arc<BinderObject<SpatialObject>>,
 	pub shape: RwLock<Shape>,
+	shape_changed_callback: Registry<dyn Fn() + Send + Sync + 'static>,
 	polyline_cache: RwLock<(u64, Option<Vec<Vec<Vec3>>>)>,
+}
+
+impl Debug for Field {
+	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+		f.debug_struct("Field")
+			.field("spatial", &self.spatial)
+			.field("shape", &self.shape)
+			.field("polyline_cache", &self.polyline_cache)
+			.finish()
+	}
+}
+impl Field {
+	pub fn shape_changed_callback(
+		&self,
+		f: impl Fn() + Send + Sync + 'static,
+	) -> ShapeChangedCallback {
+		let arc = ShapeChangedCallback(Arc::new(f));
+		self.shape_changed_callback.add_raw(&arc.0);
+		arc
+	}
 }
 impl FieldMut {
 	pub fn new(
@@ -621,6 +649,7 @@ impl FieldMut {
 			spatial,
 			shape: RwLock::new(shape),
 			polyline_cache: RwLock::new((0, None)),
+			shape_changed_callback: Registry::new(),
 		});
 		FIELD_REGISTRY_DEBUG_GIZMOS.add_raw(&data);
 		tokio::task::spawn_blocking({
@@ -740,12 +769,15 @@ impl FieldHandler for FieldMut {
 		tokio::task::spawn_blocking(move || {
 			spawn_field_polylines(&data);
 		});
+        for f in self.data.shape_changed_callback.get_valid_contents() {
+            f()
+        }
 	}
 }
 
 #[derive(Debug)]
 pub struct FieldRef {
-	data: Arc<Field>,
+	pub data: Arc<Field>,
 }
 impl FieldRefHandler for FieldRef {
 	async fn spatial_ref(&self, _ctx: GluonCtx) -> SpatialRefProxy {

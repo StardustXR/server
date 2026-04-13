@@ -6,6 +6,7 @@ mod bevy_int;
 mod core;
 mod nodes;
 mod session;
+mod query;
 
 use bevy::{
 	MinimalPlugins,
