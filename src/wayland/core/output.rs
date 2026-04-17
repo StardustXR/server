@@ -34,7 +34,7 @@ impl Output {
 			)
 			.await?;
 		}
-		self.mode(client, self.id, Mode::Current, 2048, 2048, i32::MAX)
+		self.mode(client, self.id, Mode::Current, 2048, 2048, 2048)
 			.await?;
 
 		if self.version >= 2 {
