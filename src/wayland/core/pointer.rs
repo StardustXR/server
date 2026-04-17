@@ -154,61 +154,49 @@ impl Pointer {
 			scroll_steps
 		);
 		if let Some(distance) = scroll_distance {
-			if distance.x != 0.0 {
-				self.axis(
-					client,
-					self.id,
-					0, // time
-					Axis::HorizontalScroll,
-					(distance.x as f64).into(),
-				)
-				.await?;
-			}
-			if distance.y != 0.0 {
-				self.axis(
-					client,
-					self.id,
-					0, // time
-					Axis::VerticalScroll,
-					(distance.y as f64).into(),
-				)
-				.await?;
-			}
+			self.axis(
+				client,
+				self.id,
+				0, // time
+				Axis::HorizontalScroll,
+				(distance.x as f64).into(),
+			)
+			.await?;
+			self.axis(
+				client,
+				self.id,
+				0, // time
+				Axis::VerticalScroll,
+				(distance.y as f64).into(),
+			)
+			.await?;
 		}
 		if self.version < 8
 			&& self.version >= 5
 			&& let Some(steps) = scroll_steps
 		{
-			if steps.x != 0.0 {
-				self.axis_discrete(client, self.id, Axis::HorizontalScroll, steps.x as i32)
-					.await?;
-			}
-			if steps.y != 0.0 {
-				self.axis_discrete(client, self.id, Axis::VerticalScroll, steps.y as i32)
-					.await?;
-			}
+			self.axis_discrete(client, self.id, Axis::HorizontalScroll, steps.x as i32)
+				.await?;
+			self.axis_discrete(client, self.id, Axis::VerticalScroll, steps.y as i32)
+				.await?;
 		}
 		if self.version >= 8
 			&& let Some(steps) = scroll_steps
 		{
-			if steps.x != 0.0 {
-				self.axis_value120(
-					client,
-					self.id,
-					Axis::HorizontalScroll,
-					(steps.x * 120.) as i32,
-				)
-				.await?;
-			}
-			if steps.y != 0.0 {
-				self.axis_value120(
-					client,
-					self.id,
-					Axis::VerticalScroll,
-					(steps.y * 120.) as i32,
-				)
-				.await?;
-			}
+			self.axis_value120(
+				client,
+				self.id,
+				Axis::HorizontalScroll,
+				(steps.x * 120.) as i32,
+			)
+			.await?;
+			self.axis_value120(
+				client,
+				self.id,
+				Axis::VerticalScroll,
+				(steps.y * 120.) as i32,
+			)
+			.await?;
 		}
 		if self.version >= 5 {
 			self.frame(client, self.id).await?;
