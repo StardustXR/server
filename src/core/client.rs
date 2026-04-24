@@ -123,6 +123,47 @@ impl ConnectedClient {
 			.unwrap_or_else(|| Arc::new(ClientStateParsed::default()));
 
 		let p = Arc::new(base_resource_prefixes);
+
+		let spatial_iface = SpatialInterface::new(&p);
+		let spatial_interface = SpatialInterfaceProxy::from_handler(&spatial_iface);
+		spatial_iface.to_service();
+
+		let field_iface = FieldInterface::new(&p);
+		let field_interface = FieldInterfaceProxy::from_handler(&field_iface);
+		field_iface.to_service();
+
+		let dmatex_iface = DmatexInterface::new(&p);
+		let dmatex_interface = DmatexInterfaceProxy::from_handler(&dmatex_iface);
+		dmatex_iface.to_service();
+
+		let text_iface = TextInterface::new(&p);
+		let text_interface = TextInterfaceProxy::from_handler(&text_iface);
+		text_iface.to_service();
+
+		let model_iface = ModelInterface::new(&p);
+		let model_interface = ModelInterfaceProxy::from_handler(&model_iface);
+		model_iface.to_service();
+
+		let lines_iface = LinesInterface::new(&p);
+		let lines_interface = LinesInterfaceProxy::from_handler(&lines_iface);
+		lines_iface.to_service();
+
+		let sky_iface = SkyInterface::new(&p);
+		let sky_interface = SkyInterfaceProxy::from_handler(&sky_iface);
+		sky_iface.to_service();
+
+		let audio_iface = AudioInterface::new(&p);
+		let audio_interface = AudioInterfaceProxy::from_handler(&audio_iface);
+		audio_iface.to_service();
+
+		let query_iface = QueryInterface::new(&p);
+		let query_interface = QueryInterfaceProxy::from_handler(&query_iface);
+		query_iface.to_service();
+
+		let spatial_query_iface = SpatialQueryInterface::new(&p);
+		let spatial_query_interface = SpatialQueryInterfaceProxy::from_handler(&spatial_query_iface);
+		spatial_query_iface.to_service();
+
 		let client = PION.register_object(ConnectedClient {
 			pid,
 			// env,
@@ -134,21 +175,20 @@ impl ConnectedClient {
 			base_resource_prefixes: p.clone(),
 			client,
 
-			spatial_interface: SpatialInterfaceProxy::from_handler(&SpatialInterface::new(&p)),
-			field_interface: FieldInterfaceProxy::from_handler(&FieldInterface::new(&p)),
-			dmatex_interface: DmatexInterfaceProxy::from_handler(&DmatexInterface::new(&p)),
-			text_interface: TextInterfaceProxy::from_handler(&TextInterface::new(&p)),
-			model_interface: ModelInterfaceProxy::from_handler(&ModelInterface::new(&p)),
-			lines_interface: LinesInterfaceProxy::from_handler(&LinesInterface::new(&p)),
-			sky_interface: SkyInterfaceProxy::from_handler(&SkyInterface::new(&p)),
-			audio_interface: AudioInterfaceProxy::from_handler(&AudioInterface::new(&p)),
-			query_interface: QueryInterfaceProxy::from_handler(&QueryInterface::new(&p)),
-			spatial_query_interface: SpatialQueryInterfaceProxy::from_handler(
-				&SpatialQueryInterface::new(&p),
-			),
+			spatial_interface,
+			field_interface,
+			dmatex_interface,
+			text_interface,
+			model_interface,
+			lines_interface,
+			sky_interface,
+			audio_interface,
+			query_interface,
+			spatial_query_interface,
 		});
+		let death_future = client.strong_refs_hit_zero();
+		let client = Arc::new(client);
 		CLIENTS.add_raw(client.clone());
-		let death_future = client.client.death_or_drop();
 		// TODO: make sure this is cleaned up if we ever have a reason for disconnect that isn't the
 		// client being destroyed
 		tokio::spawn({

@@ -1,6 +1,6 @@
 use crate::core::registry::Registry;
 use crate::nodes::spatial::{Spatial, SpatialObject};
-use crate::nodes::{ProxyExt, ref_owned};
+use crate::nodes::ProxyExt;
 use crate::{DbusConnection, PION, impl_proxy, interface};
 use bevy::app::{Plugin, Update};
 use bevy::asset::Assets;
@@ -612,10 +612,11 @@ impl Debug for ShapeChangedCallback {
 #[derive(Debug)]
 pub struct FieldMut {
 	pub data: Arc<Field>,
-	field_ref: Arc<BinderObject<FieldRef>>,
+	field_ref: BinderObject<FieldRef>,
 }
 pub struct Field {
-	pub spatial: Arc<BinderObject<SpatialObject>>,
+	pub spatial: Arc<SpatialObject>,
+	spatial_proxy: SpatialProxy,
 	pub shape: RwLock<Shape>,
 	shape_changed_callback: Registry<dyn Fn() + Send + Sync + 'static>,
 	polyline_cache: RwLock<(u64, Option<Vec<Vec<Vec3>>>)>,
@@ -642,11 +643,13 @@ impl Field {
 }
 impl FieldMut {
 	pub fn new(
-		spatial: Arc<BinderObject<SpatialObject>>,
+		spatial: Arc<SpatialObject>,
+		spatial_proxy: SpatialProxy,
 		shape: Shape,
-	) -> Arc<BinderObject<FieldMut>> {
+	) -> BinderObject<FieldMut> {
 		let data = Arc::new(Field {
 			spatial,
+			spatial_proxy,
 			shape: RwLock::new(shape),
 			polyline_cache: RwLock::new((0, None)),
 			shape_changed_callback: Registry::new(),
@@ -659,9 +662,7 @@ impl FieldMut {
 			}
 		});
 		let field_ref = PION.register_object(FieldRef { data: data.clone() });
-		ref_owned(&field_ref);
 		let field = PION.register_object(FieldMut { field_ref, data });
-		ref_owned(&field);
 		field
 	}
 }
@@ -711,7 +712,7 @@ impl FieldHandler for FieldMut {
 	}
 
 	async fn spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
-		SpatialProxy::from_handler(&self.data.spatial)
+		self.data.spatial_proxy.clone()
 	}
 
 	async fn distance(
@@ -759,19 +760,19 @@ impl FieldHandler for FieldMut {
 		Some(self.data.ray_march(Ray {
 			origin: ray_origin.mint(),
 			direction: ray_direction.mint(),
-			space: (***ref_space).clone(),
+			space: (**ref_space).clone(),
 		}))
 	}
 
-	fn set_shape(&self, _ctx: GluonCtx, shape: Shape) {
+	async fn set_shape(&self, _ctx: GluonCtx, shape: Shape) {
 		*self.data.shape.write() = shape;
 		let data = self.data.clone();
 		tokio::task::spawn_blocking(move || {
 			spawn_field_polylines(&data);
 		});
-        for f in self.data.shape_changed_callback.get_valid_contents() {
-            f()
-        }
+		for f in self.data.shape_changed_callback.get_valid_contents() {
+			f()
+		}
 	}
 }
 
@@ -841,7 +842,7 @@ impl FieldInterfaceHandler for FieldInterface {
 		Some(field.data.ray_march(Ray {
 			origin: ray_origin.mint(),
 			direction: ray_direction.mint(),
-			space: (***space).clone(),
+			space: (**space).clone(),
 		}))
 	}
 
@@ -851,12 +852,14 @@ impl FieldInterfaceHandler for FieldInterface {
 		spatial: SpatialProxy,
 		shape: Shape,
 	) -> FieldProxy {
-		let Some(spatial) = spatial.owned() else {
+		let Some(spatial_arc) = spatial.owned() else {
 			// TODO: replace with returned error
 			panic!("invalid spatial used for field creation");
 		};
-		let field = FieldMut::new(spatial, shape);
-		FieldProxy::from_handler(&field)
+		let field = FieldMut::new(spatial_arc, spatial, shape);
+		let proxy = FieldProxy::from_handler(&field);
+		field.to_service();
+		proxy
 	}
 }
 

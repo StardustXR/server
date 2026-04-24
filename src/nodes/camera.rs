@@ -6,7 +6,6 @@ use crate::nodes::ProxyExt;
 use crate::nodes::drawable::dmatex::Dmatex;
 use crate::nodes::drawable::dmatex::DmatexExt as _;
 use crate::nodes::drawable::dmatex::SignalOnDrop;
-use crate::nodes::ref_owned;
 use crate::nodes::spatial::SpatialObject;
 use crate::nodes::spatial::TransformExt as _;
 use bevy::app::App;
@@ -31,13 +30,13 @@ use binderbinder::binder_object::BinderObject;
 use glam::Mat4;
 use gluon_wire::impl_transaction_handler;
 use parking_lot::Mutex;
+use std::sync::Arc;
 use stardust_xr_protocol::camera::Camera as CameraProxy;
 use stardust_xr_protocol::camera::CameraHandler;
 use stardust_xr_protocol::camera::CameraInterfaceHandler;
 use stardust_xr_protocol::camera::View;
 use stardust_xr_protocol::dmatex::DmatexRef;
 use stardust_xr_server_foundation::registry::Registry;
-use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::error;
 use tracing::warn;
@@ -50,27 +49,26 @@ use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 
 #[derive(Debug)]
 pub struct Camera {
-	spatial: Arc<BinderObject<SpatialObject>>,
+	spatial: Arc<SpatialObject>,
 	queued_render_targets:
-		Mutex<mpsc::UnboundedReceiver<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>>,
+		Mutex<mpsc::UnboundedReceiver<(u64, Vec<View>, Arc<Dmatex>, SignalOnDrop)>>,
 	render_target_queue:
-		mpsc::UnboundedSender<(u64, Vec<View>, Arc<BinderObject<Dmatex>>, SignalOnDrop)>,
+		mpsc::UnboundedSender<(u64, Vec<View>, Arc<Dmatex>, SignalOnDrop)>,
 }
 impl Camera {
-	pub fn new(spatial: Arc<BinderObject<SpatialObject>>) -> Arc<BinderObject<Camera>> {
+	pub fn new(spatial: Arc<SpatialObject>) -> BinderObject<Camera> {
 		let (tx, rx) = mpsc::unbounded_channel();
 		let cam = PION.register_object(Camera {
 			spatial,
 			queued_render_targets: Mutex::new(rx),
 			render_target_queue: tx,
 		});
-		ref_owned(&cam);
-		CAMERA_REGISTRY.add_raw(&cam);
+		CAMERA_REGISTRY.add_raw(cam.handler_arc());
 		cam
 	}
 }
 impl CameraHandler for Camera {
-	fn request_draw(
+	async fn request_draw(
 		&self,
 		_ctx: gluon_wire::GluonCtx,
 		render_target: DmatexRef,
@@ -98,7 +96,7 @@ impl CameraHandler for Camera {
 		});
 	}
 }
-static CAMERA_REGISTRY: Registry<BinderObject<Camera>> = Registry::new();
+static CAMERA_REGISTRY: Registry<Camera> = Registry::new();
 
 // TODO: figure out where to mount this
 exposed_interface!(CameraInterface, "stardust-camera");
@@ -112,7 +110,10 @@ impl CameraInterfaceHandler for CameraInterface {
 			// TODO: just return an error
 			panic!("Invalid Spatial use to create camera");
 		};
-		CameraProxy::from_handler(&Camera::new(spatial))
+		let cam = Camera::new(spatial);
+		let proxy = CameraProxy::from_handler(&cam);
+		cam.to_service();
+		proxy
 	}
 }
 impl_transaction_handler!(Camera);

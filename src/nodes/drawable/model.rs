@@ -13,7 +13,6 @@ use crate::{
 			ModelNodeSystemSet,
 			dmatex::{Dmatex, DmatexExt as _, SignalOnDrop},
 		},
-		ref_owned,
 		spatial::{BoundingBoxCalc, Spatial, SpatialNode, SpatialObject, TransformExt},
 	},
 };
@@ -59,7 +58,7 @@ use tokio::sync::oneshot;
 use vulkano::{VulkanObject, sync::semaphore::Semaphore};
 use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 
-static LOAD_MODEL: BevyChannel<(Arc<BinderObject<Model>>, PathBuf)> = BevyChannel::new();
+static LOAD_MODEL: BevyChannel<(Arc<Model>, PathBuf)> = BevyChannel::new();
 
 type HoldoutMaterial = ExtendedMaterial<BevyMaterial, HoldoutExtension>;
 const HOLDOUT_SHADER_HANDLE: Handle<Shader> = weak_handle!("92b481b7-d3da-4188-b252-2335ec814ee2");
@@ -126,12 +125,12 @@ impl MaterialExtension for HoldoutExtension {
 }
 
 #[derive(Component)]
-struct ModelNode(Weak<BinderObject<Model>>);
+struct ModelNode(Weak<Model>);
 
 fn load_models(
 	asset_server: Res<AssetServer>,
 	mut cmds: Commands,
-	mut mpsc_receiver: ResMut<BevyChannelReader<(Arc<BinderObject<Model>>, PathBuf)>>,
+	mut mpsc_receiver: ResMut<BevyChannelReader<(Arc<Model>, PathBuf)>>,
 ) {
 	while let Some((model, path)) = mpsc_receiver.read() {
 		// idk of the asset label is the correct approach here
@@ -147,7 +146,7 @@ fn load_models(
 				Name::new("ModelNode"),
 				SceneRoot(handle),
 				ModelNode(Arc::downgrade(&model)),
-				SpatialNode(Arc::downgrade(&model.spatial)),
+				SpatialNode(Arc::downgrade(&**model.spatial)),
 				Visibility::Hidden,
 			))
 			.id();
@@ -282,12 +281,14 @@ fn gen_model_parts(
 						.map(|p| p.spatial.clone())
 						.unwrap_or_else(|| model.spatial.clone());
 					let spatial =
-						SpatialObject::new(Some(&parent_spatial), transform.compute_matrix());
-					let model_part = PION.register_object(ModelPart {
+						SpatialObject::new(Some(&**parent_spatial), transform.compute_matrix());
+					let spatial_arc = spatial.handler_arc().clone();
+					spatial.to_service();
+					let model_part = Arc::new(PION.register_object(ModelPart {
 						entity: OnceLock::new(),
 						mesh_entity: OnceLock::new(),
 						path,
-						spatial: spatial.clone(),
+						spatial: spatial_arc.clone(),
 						pending_material_parameters: Mutex::default(),
 						pending_material_replacement: Mutex::default(),
 						holdout: AtomicBool::new(false),
@@ -295,7 +296,7 @@ fn gen_model_parts(
 						pending_dmatexes: Mutex::default(),
 						textures: Mutex::default(),
 						bounding_calc: OnceLock::new(),
-					});
+					}));
 					let aabb = Aabb::enclosing(
 						children
 							.iter()
@@ -310,19 +311,19 @@ fn gen_model_parts(
 					)
 					.unwrap_or_default();
 					let weak_part = Arc::downgrade(&model_part);
-					let calc = spatial.custom_bounding_box(move || {
+					let calc = spatial_arc.custom_bounding_box(move || {
 						weak_part
 							.upgrade()
 							.and_then(|v| v.bounds.get().copied())
 							.unwrap_or_default()
 					});
 					_ = model_part.bounding_calc.set(calc);
-					let _ = spatial.set_spatial_parent(&parent_spatial);
-					spatial.set_local_transform(transform.compute_matrix());
+					let _ = spatial_arc.set_spatial_parent(&**parent_spatial);
+					spatial_arc.set_local_transform(transform.compute_matrix());
 					let entity_handle = EntityHandle::new(entity);
-					spatial.set_entity(entity_handle.clone());
+					spatial_arc.set_entity(entity_handle.clone());
 					cmds.entity(entity)
-						.insert(SpatialNode(Arc::downgrade(&spatial)));
+						.insert(SpatialNode(Arc::downgrade(&**spatial_arc)));
 					let mesh_entity = children_query
 						.get(entity)
 						.iter()
@@ -464,7 +465,7 @@ fn hash_color<H: Hasher>(color: Color, state: &mut H) {
 		}
 	}
 }
-static MODEL_REGISTRY: Registry<BinderObject<Model>> = Registry::new();
+static MODEL_REGISTRY: Registry<Model> = Registry::new();
 
 fn apply_to_material(
 	param: &MaterialParameter,
@@ -593,14 +594,14 @@ pub struct ModelPart {
 	path: String,
 	// TODO: replace spatial in model part with a custom system so we can switch spatials to purely
 	// uniform scaling
-	spatial: Arc<BinderObject<SpatialObject>>,
+	spatial: Arc<SpatialObject>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Handle<BevyMaterial>>>,
 	pending_dmatexes: Mutex<
 		HashMap<
 			TextureSlot,
 			VecDeque<(
-				oneshot::Receiver<(SignalOnDrop, Arc<BinderObject<Dmatex>>)>,
+				oneshot::Receiver<(SignalOnDrop, Arc<Dmatex>)>,
 				AbortOnDrop,
 			)>,
 		>,
@@ -708,7 +709,7 @@ impl ModelPartHandler for ModelPart {
 			};
 		};
 		let (scale, rotation, translation) =
-			Spatial::space_to_space_matrix(Some(&relative.spatial), Some(&self.spatial))
+			Spatial::space_to_space_matrix(Some(&***relative.spatial), Some(&***self.spatial))
 				.to_scale_rotation_translation();
 		NonUniformTransform {
 			translation: translation.into(),
@@ -717,17 +718,17 @@ impl ModelPartHandler for ModelPart {
 		}
 	}
 
-	fn set_model_transform(&self, _ctx: GluonCtx, _transform: PartialNonUniformTransform) {
+	async fn set_model_transform(&self, _ctx: GluonCtx, _transform: PartialNonUniformTransform) {
 		// TODO: impl
 		warn!("tried setting model part transform relative to model, currently unimplemented");
 	}
 
-	fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
-        // TODO: only apply changes
-        self.spatial.set_local_transform(transform.to_mat4());
+	async fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
+		// TODO: only apply changes
+		self.spatial.set_local_transform(transform.to_mat4());
 	}
 
-	fn set_relative_transform(
+	async fn set_relative_transform(
 		&self,
 		_ctx: GluonCtx,
 		_relative_to: ModelPartProxy,
@@ -753,7 +754,7 @@ impl ModelPartHandler for ModelPart {
 		None
 	}
 
-	fn apply_holdout_material(&self, _ctx: GluonCtx) {
+	async fn apply_holdout_material(&self, _ctx: GluonCtx) {
 		self.holdout.store(true, Ordering::Relaxed);
 	}
 }
@@ -762,7 +763,7 @@ impl TransformExt for PartialNonUniformTransform {
 		// Zero scale values break everything
 
 		Mat4::from_scale_rotation_translation(
-            // TODO: avoid scale of 0.0
+			// TODO: avoid scale of 0.0
 			self.scale.map(|v| v.mint()).unwrap_or(Vec3::ONE),
 			self.rotation.map(|v| v.mint()).unwrap_or(Quat::IDENTITY),
 			self.translation.map(|v| v.mint()).unwrap_or(Vec3::ZERO),
@@ -797,7 +798,8 @@ impl MaterialRegistry {
 
 #[derive(Debug)]
 pub struct Model {
-	spatial: Arc<BinderObject<SpatialObject>>,
+	spatial: Arc<SpatialObject>,
+	spatial_proxy: SpatialProxy,
 	_resource_id: Resource,
 	bevy_scene_entity: OnceLock<EntityHandle>,
 	parts: OnceLock<Vec<Arc<BinderObject<ModelPart>>>>,
@@ -806,10 +808,11 @@ pub struct Model {
 }
 impl Model {
 	pub async fn new(
-		spatial: Arc<BinderObject<SpatialObject>>,
+		spatial: Arc<SpatialObject>,
+		spatial_proxy: SpatialProxy,
 		resource_id: Resource,
 		base_prefixes: Arc<Vec<PathBuf>>,
-	) -> Result<Arc<BinderObject<Model>>> {
+	) -> Result<BinderObject<Model>> {
 		let pending_model_path = get_resource_file(
 			&resource_id,
 			base_prefixes.iter(),
@@ -820,17 +823,16 @@ impl Model {
 		let (setup_complete_tx, setup_complete_rx) = oneshot::channel();
 		let model = PION.register_object(Model {
 			spatial,
+			spatial_proxy,
 			_resource_id: resource_id,
 			bevy_scene_entity: OnceLock::new(),
 			parts: OnceLock::new(),
 			resource_prefixes: base_prefixes,
 			setup_complete_tx: Mutex::new(Some(setup_complete_tx)),
 		});
-		LOAD_MODEL
-			.send((model.clone(), pending_model_path))
-			.unwrap();
-		MODEL_REGISTRY.add_raw(&model);
-		ref_owned(&model);
+		let model_arc = model.handler_arc().clone();
+		LOAD_MODEL.send((model_arc.clone(), pending_model_path)).unwrap();
+		MODEL_REGISTRY.add_raw(&model_arc);
 		setup_complete_rx
 			.await
 			.map_err(|_| eyre!("model setup cancelled before parts were generated"))?;
@@ -840,7 +842,7 @@ impl Model {
 }
 impl ModelHandler for Model {
 	async fn get_spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
-		SpatialProxy::from_handler(&self.spatial)
+		self.spatial_proxy.clone()
 	}
 
 	async fn get_part(&self, _ctx: GluonCtx, path: String) -> Option<ModelPartProxy> {
@@ -848,7 +850,7 @@ impl ModelHandler for Model {
 			parts
 				.iter()
 				.find(|p| p.path == path)
-				.map(ModelPartProxy::from_handler)
+				.map(|p| ModelPartProxy::from_handler(&**p))
 		} else {
 			error!(
 				"somehow called get_part before model parts were initialized, should be unreachable"
@@ -859,7 +861,7 @@ impl ModelHandler for Model {
 
 	async fn enumerate_parts(&self, _ctx: GluonCtx) -> Vec<ModelPartProxy> {
 		if let Some(parts) = self.parts.get() {
-			parts.iter().map(ModelPartProxy::from_handler).collect()
+			parts.iter().map(|p| ModelPartProxy::from_handler(&**p)).collect()
 		} else {
 			error!(
 				"somehow called enumerate_parts before model parts were initialized, should be unreachable"
@@ -868,11 +870,10 @@ impl ModelHandler for Model {
 		}
 	}
 
-	fn set_model_scale(&self, _ctx: GluonCtx, _scale: Vec3F) {
+	async fn set_model_scale(&self, _ctx: GluonCtx, _scale: Vec3F) {
 		// TODO: impl
 		warn!("tried setting model scale, currently unimplemented");
 	}
-
 }
 interface!(ModelInterface);
 impl ModelInterfaceHandler for ModelInterface {
@@ -883,16 +884,18 @@ impl ModelInterfaceHandler for ModelInterface {
 		model: stardust_xr_protocol::types::Resource,
 		_model_scale: stardust_xr_protocol::types::Vec3F,
 	) -> ModelProxy {
-		let Some(spatial) = spatial.owned() else {
+		let Some(spatial_arc) = spatial.owned() else {
 			// TODO: replace with proper error returning
 			panic!("invalid spatial in model loading");
 		};
 
 		// TODO: handle
-		let model = Model::new(spatial, model, self.base_resource_prefixes.clone())
+		let model = Model::new(spatial_arc, spatial, model, self.base_resource_prefixes.clone())
 			.await
 			.unwrap();
-		ModelProxy::from_handler(&model)
+		let proxy = ModelProxy::from_handler(&model);
+		model.to_service();
+		proxy
 	}
 }
 impl_transaction_handler!(Model);

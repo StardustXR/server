@@ -15,9 +15,10 @@ use tokio::sync::RwLock;
 
 use crate::{
 	PION, interface,
-	nodes::{ProxyExt, fields::FieldRef, ref_owned},
+	nodes::{ProxyExt, fields::FieldRef},
 	query::spatial_query::Query,
 };
+use stardust_xr_protocol::field::FieldRef as FieldRefProxy;
 
 pub mod spatial_query;
 
@@ -35,8 +36,9 @@ impl QueryableObjectRefHandler for QueryableRef {}
 struct QueryableMut(Arc<Queryable>);
 #[derive(Debug)]
 struct Queryable {
-	queryable_ref: Arc<BinderObject<QueryableRef>>,
-	field: Arc<BinderObject<FieldRef>>,
+	queryable_ref: BinderObject<QueryableRef>,
+	field: Arc<FieldRef>,
+	field_proxy: FieldRefProxy,
 	path: Arc<DedupedStr>,
 	interfaces: RwLock<Registry<QueryableInterface>>,
 }
@@ -73,8 +75,9 @@ impl QueryableObjectHandler for QueryableMut {
 		});
 		self.notify_interface_changes().await;
 		let guard = PION.register_object(InterfaceGuard(Some(interface), Arc::downgrade(&self.0)));
-		ref_owned(&guard);
-		QueryableInterfaceGuard::from_handler(&guard)
+		let proxy = QueryableInterfaceGuard::from_handler(&guard);
+		guard.to_service();
+		proxy
 	}
 }
 impl Queryable {
@@ -106,19 +109,22 @@ impl QueryInterfaceHandler for QueryInterface {
 		field: stardust_xr_protocol::field::FieldRef,
 		path: String,
 	) -> Result<QueryableObject, QueryableError> {
+		let field_proxy = field.clone();
 		let field = field.owned().ok_or(QueryableError::InvalidField)?;
 		// TODO: make sure path is valid
 		let path = DedupedStr::get(path).await;
 		let queryable_ref = PION.register_object(QueryableRef);
 		let queryable = Arc::new(Queryable {
-			field: field.clone(),
-			path: path,
+			field,
+			field_proxy,
+			path,
 			interfaces: RwLock::default(),
 			queryable_ref,
 		});
 		let obj = PION.register_object(QueryableMut(queryable));
-		ref_owned(&obj);
-		Ok(QueryableObject::from_handler(&obj))
+		let proxy = QueryableObject::from_handler(&obj);
+		obj.to_service();
+		Ok(proxy)
 	}
 }
 

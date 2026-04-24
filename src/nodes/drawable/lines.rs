@@ -4,7 +4,7 @@ use crate::{
 	core::{error::Result, registry::Registry},
 	interface,
 	nodes::{
-		ProxyExt, ref_owned,
+		ProxyExt,
 		spatial::{BoundingBoxCalc, SpatialObject},
 	},
 };
@@ -343,7 +343,7 @@ static LINES_REGISTRY: Registry<Lines> = Registry::new();
 
 #[derive(Debug)]
 pub struct Lines {
-	spatial: Arc<BinderObject<SpatialObject>>,
+	spatial: Arc<SpatialObject>,
 	data: Mutex<Vec<Line>>,
 	gen_mesh: AtomicBool,
 	entity: OnceLock<EntityHandle>,
@@ -352,10 +352,7 @@ pub struct Lines {
 	setup_complete: Notify,
 }
 impl Lines {
-	pub fn new(
-		spatial: Arc<BinderObject<SpatialObject>>,
-		lines: Vec<Line>,
-	) -> Arc<BinderObject<Lines>> {
+	pub fn new(spatial: Arc<SpatialObject>, lines: Vec<Line>) -> BinderObject<Lines> {
 		let lines = PION.register_object(Lines {
 			spatial: spatial.clone(),
 			data: Mutex::new(lines),
@@ -365,7 +362,9 @@ impl Lines {
 			bounding_calc: OnceLock::new(),
 			setup_complete: Notify::new(),
 		});
-		let lines_weak = Arc::downgrade(&lines);
+		let lines_arc = lines.handler_arc().clone();
+		LINES_REGISTRY.add_raw(&lines_arc);
+		let lines_weak = Arc::downgrade(&lines_arc);
 		let bounding_calc = spatial.custom_bounding_box(move || {
 			let Some(lines) = lines_weak.upgrade() else {
 				return Default::default();
@@ -377,13 +376,12 @@ impl Lines {
 			}
 		});
 		_ = lines.bounding_calc.set(bounding_calc);
-		ref_owned(&lines);
 
 		lines
 	}
 }
 impl LinesHandler for Lines {
-	fn set_lines(&self, _ctx: gluon_wire::GluonCtx, lines: Vec<Line>) {
+	async fn set_lines(&self, _ctx: gluon_wire::GluonCtx, lines: Vec<Line>) {
 		*self.data.lock() = lines;
 		self.gen_mesh.store(true, Ordering::Relaxed);
 	}
@@ -407,7 +405,9 @@ impl LinesInterfaceHandler for LinesInterface {
 		};
 		let lines = Lines::new(spatial, lines);
 		lines.setup_complete.notified().await;
-		LinesProxy::from_handler(&lines)
+		let proxy = LinesProxy::from_handler(&lines);
+		lines.to_service();
+		proxy
 	}
 }
 impl_transaction_handler!(Lines);

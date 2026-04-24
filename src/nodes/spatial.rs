@@ -1,7 +1,7 @@
 use crate::bevy_int::entity_handle::EntityHandle;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
-use crate::nodes::{ProxyExt, ref_owned};
+use crate::nodes::ProxyExt;
 use crate::{PION, impl_proxy, interface};
 use bevy::ecs::entity::EntityHashMap;
 use bevy::prelude::Transform as BevyTransform;
@@ -177,10 +177,10 @@ impl Debug for Spatial {
 pub struct SpatialObject {
 	#[deref]
 	data: Arc<Spatial>,
-	spatial_ref: Arc<BinderObject<SpatialRef>>,
+	spatial_ref: BinderObject<SpatialRef>,
 }
 impl SpatialObject {
-	pub fn new(parent: Option<&Arc<Spatial>>, transform: Mat4) -> Arc<BinderObject<Self>> {
+	pub fn new(parent: Option<&Arc<Spatial>>, transform: Mat4) -> BinderObject<Self> {
 		let data = Arc::new(Spatial {
 			entity: Mutex::new(None),
 			parent: Mutex::new(parent.cloned()),
@@ -191,13 +191,11 @@ impl SpatialObject {
 		});
 		SPATIAL_REGISTRY.add_raw(&data);
 		let spatial_ref = PION.register_object(SpatialRef { data: data.clone() });
-		ref_owned(&spatial_ref);
 		let spatial = PION.register_object(SpatialObject { data, spatial_ref });
-		ref_owned(&spatial);
 		spatial.mark_dirty();
 		spatial
 	}
-	pub fn get_ref(&self) -> &Arc<BinderObject<SpatialRef>> {
+	pub fn get_ref(&self) -> &BinderObject<SpatialRef> {
 		&self.spatial_ref
 	}
 }
@@ -211,10 +209,7 @@ impl Spatial {
 		self.bounding_box_calc.add_raw(&arc.0);
 		arc
 	}
-	pub fn moved_callback(
-		&self,
-		f: impl Fn() + Send + Sync + 'static,
-	) -> MovedCallback {
+	pub fn moved_callback(&self, f: impl Fn() + Send + Sync + 'static) -> MovedCallback {
 		let arc = MovedCallback(Arc::new(f));
 		self.moved_callback.add_raw(&arc.0);
 		arc
@@ -483,7 +478,7 @@ impl SpatialHandler for SpatialObject {
 		}
 	}
 
-	fn set_parent(&self, _ctx: GluonCtx, parent: SpatialRefProxy) {
+	async fn set_parent(&self, _ctx: GluonCtx, parent: SpatialRefProxy) {
 		let Some(parent) = parent.owned() else {
 			error!("Invalid SpatialRef used as parent");
 			return;
@@ -493,7 +488,7 @@ impl SpatialHandler for SpatialObject {
 			.inspect_err(|err| error!("error while setting spatial parent: {err}"));
 	}
 
-	fn set_parent_in_place(&self, _ctx: GluonCtx, parent: SpatialRefProxy) {
+	async fn set_parent_in_place(&self, _ctx: GluonCtx, parent: SpatialRefProxy) {
 		let Some(parent) = parent.owned() else {
 			error!("Invalid SpatialRef used as parent");
 			return;
@@ -503,11 +498,11 @@ impl SpatialHandler for SpatialObject {
 			.inspect_err(|err| error!("error while setting spatial parent in place: {err}"));
 	}
 
-	fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialTransform) {
+	async fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialTransform) {
 		self.set_local_transform_components(None, transform);
 	}
 
-	fn set_relative_transform(
+	async fn set_relative_transform(
 		&self,
 		_ctx: GluonCtx,
 		relative_to: SpatialRefProxy,
@@ -553,7 +548,10 @@ impl SpatialInterfaceHandler for SpatialInterface {
 			panic!("Invalid SpatialRef used");
 			// return;
 		};
-		SpatialProxy::from_handler(&SpatialObject::new(Some(&parent.data), transform.to_mat4()))
+		let s = SpatialObject::new(Some(&parent.data), transform.to_mat4());
+		let proxy = SpatialProxy::from_handler(&s);
+		s.to_service();
+		proxy
 	}
 
 	async fn get_relative_bounding_box(

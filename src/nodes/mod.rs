@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use binderbinder::{TransactionHandler, binder_object::BinderObject};
+use binderbinder::TransactionHandler;
 
 pub mod audio;
 pub mod camera;
@@ -9,26 +9,6 @@ pub mod fields;
 // pub mod input;
 pub mod spatial;
 
-// TODO: figure out how to make this task abort when the object as actually dropped
-/// keeps the object alive until all binder strong refs are dropped
-pub fn ref_owned<H: TransactionHandler>(obj: &Arc<BinderObject<H>>) {
-	let obj = obj.clone();
-	tokio::spawn(async move {
-		let mut obj = obj;
-		loop {
-			obj.strong_refs_hit_zero().await;
-			let weak = Arc::downgrade(&obj);
-			if weak.strong_count() == 1 {
-				break;
-			}
-			let future = obj.strong_refs_not_zero();
-			drop(obj);
-			future.await;
-			let Some(new_obj) = weak.upgrade() else { break };
-			obj = new_obj;
-		}
-	});
-}
 #[macro_export]
 macro_rules! interface {
 	($type:ident) => {
@@ -40,7 +20,7 @@ macro_rules! interface {
 		impl $type {
 			pub fn new(
 				base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>,
-			) -> std::sync::Arc<binderbinder::binder_object::BinderObject<$type>> {
+			) -> binderbinder::binder_object::BinderObject<$type> {
 				$crate::PION.register_object($type {
 					base_resource_prefixes: base_resource_prefixes.clone(),
 				})
@@ -66,7 +46,7 @@ macro_rules! exposed_interface {
 		impl $type {
 			pub async fn expose(
 				instance: &str,
-			) -> std::sync::Arc<binderbinder::binder_object::BinderObject<$type>> {
+			) -> binderbinder::binder_object::BinderObject<$type> {
 				let (pion_path, lock) = stardust_xr_protocol::dir::create_pion_file(
 					$service, &instance,
 				)
@@ -100,18 +80,18 @@ macro_rules! exposed_interface {
 }
 pub trait ProxyExt {
 	type Owned: TransactionHandler;
-	fn owned(&self) -> Option<Arc<BinderObject<Self::Owned>>>;
+	fn owned(&self) -> Option<Arc<Self::Owned>>;
 }
 #[macro_export]
 macro_rules! impl_proxy {
 	($proxy:ty, $type:ty) => {
 		impl $crate::nodes::ProxyExt for $proxy {
 			type Owned = $type;
-			fn owned(&self) -> Option<Arc<BinderObject<Self::Owned>>> {
+			fn owned(&self) -> Option<std::sync::Arc<Self::Owned>> {
 				use binderbinder::binder_object::BinderObjectOrRef;
 				use binderbinder::binder_object::ToBinderObjectOrRef;
 				match self.to_binder_object_or_ref() {
-					BinderObjectOrRef::Object(obj) => obj.downcast(),
+					BinderObjectOrRef::Object(obj) => obj.downcast_handler_arc::<Self::Owned>(),
 					// TODO: allow sending weak refs
 					// should never happen with the rust version of gluon tho
 					BinderObjectOrRef::WeakObject(_obj) => None,

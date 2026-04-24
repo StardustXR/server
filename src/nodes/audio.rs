@@ -61,7 +61,7 @@ fn update_sound_event(
 			let entity = cmds
 				.spawn((
 					Name::new("Audio Node"),
-					SpatialNode(Arc::downgrade(&sound.spatial)),
+					SpatialNode(Arc::downgrade(&**sound.spatial)),
 					AudioPlayer::new(handle),
 					PlaybackSettings {
 						mode: PlaybackMode::Once,
@@ -93,7 +93,7 @@ static SOUND_REGISTRY: Registry<Sound> = Registry::new();
 
 #[derive(Debug)]
 pub struct Sound {
-	spatial: Arc<BinderObject<SpatialObject>>,
+	spatial: Arc<SpatialObject>,
 
 	volume: f32,
 	pending_audio_path: PathBuf,
@@ -104,10 +104,10 @@ pub struct Sound {
 }
 impl Sound {
 	pub fn new(
-		spatial: Arc<BinderObject<SpatialObject>>,
+		spatial: Arc<SpatialObject>,
 		resource_id: Resource,
 		resource_prefixes: &[PathBuf],
-	) -> Option<Arc<BinderObject<Sound>>> {
+	) -> Option<BinderObject<Sound>> {
 		let pending_audio_path = get_resource_file(
 			&resource_id,
 			resource_prefixes,
@@ -121,15 +121,16 @@ impl Sound {
 			stop: Mutex::new(None),
 			play: Mutex::new(None),
 		});
+		SOUND_REGISTRY.add_raw(sound.handler_arc());
 		Some(sound)
 	}
 }
 impl SoundHandler for Sound {
-	fn play(&self, _ctx: gluon_wire::GluonCtx) {
+	async fn play(&self, _ctx: gluon_wire::GluonCtx) {
 		self.play.lock().replace(());
 	}
 
-	fn stop(&self, _ctx: gluon_wire::GluonCtx) {
+	async fn stop(&self, _ctx: gluon_wire::GluonCtx) {
 		self.stop.lock().replace(());
 	}
 }
@@ -155,7 +156,9 @@ impl AudioInterfaceHandler for AudioInterface {
 			// TODO: replace with error
 			panic!("sound resource not found");
 		};
-		SoundProxy::from_handler(&sound)
+		let proxy = SoundProxy::from_handler(&sound);
+		sound.to_service();
+		proxy
 	}
 }
 

@@ -43,7 +43,7 @@ use crate::{
 	bevy_int::bevy_channel::{BevyChannel, BevyChannelReader},
 	core::vulkano_data::VULKANO_CONTEXT,
 	impl_proxy, interface,
-	nodes::{drawable::ModelNodeSystemSet, ref_owned},
+	nodes::drawable::ModelNodeSystemSet,
 };
 
 #[derive(Debug)]
@@ -55,7 +55,7 @@ pub struct Dmatex {
 }
 pub static RENDER_DEV: OnceLock<RenderDevice> = OnceLock::new();
 static DRM_RENDER_NODE: OnceLock<DrmRenderNode> = OnceLock::new();
-static NEW_DMATEXES: BevyChannel<Arc<BinderObject<Dmatex>>> = BevyChannel::new();
+static NEW_DMATEXES: BevyChannel<Arc<Dmatex>> = BevyChannel::new();
 static DESTROYED_MANUAL_VIEWS: BevyChannel<ManualTextureViewHandle> = BevyChannel::new();
 impl Dmatex {
 	pub fn new(
@@ -67,7 +67,7 @@ impl Dmatex {
 		array_layers: Option<u32>,
 		planes: Vec<DmatexPlane>,
 		timeline_syncobj_fd: OwnedFd,
-	) -> Result<Arc<BinderObject<Self>>> {
+	) -> Result<BinderObject<Self>> {
 		let DmatexSize::Size2D { size } = size else {
 			bail!("non 2d dmatex are not implemented yet");
 		};
@@ -127,8 +127,7 @@ impl Dmatex {
 			bevy_image_handle: OnceLock::new(),
 			bevy_custom_view: OnceLock::new(),
 		});
-		ref_owned(&tex);
-		NEW_DMATEXES.send(tex.clone());
+		NEW_DMATEXES.send(tex.handler_arc().clone());
 		Ok(tex)
 	}
 	pub fn timeline_sync(&self) -> &TimelineSyncObj {
@@ -158,7 +157,7 @@ impl Dmatex {
 pub trait DmatexExt {
 	fn signal_on_drop(&self, point: u64) -> SignalOnDrop;
 }
-impl DmatexExt for Arc<BinderObject<Dmatex>> {
+impl DmatexExt for Arc<Dmatex> {
 	/// only use for readonly uses, write operations should sync with a vulkan semaphore
 	fn signal_on_drop(&self, point: u64) -> SignalOnDrop {
 		SignalOnDrop {
@@ -179,7 +178,7 @@ impl Drop for Dmatex {
 #[derive(Debug)]
 pub struct SignalOnDrop {
 	point: u64,
-	tex: Arc<BinderObject<Dmatex>>,
+	tex: Arc<Dmatex>,
 	consumed: bool,
 }
 impl SignalOnDrop {
@@ -226,18 +225,19 @@ impl DmatexInterfaceHandler for DmatexInterface {
 		planes: Vec<DmatexPlane>,
 		timeline_syncobj_fd: OwnedFd,
 	) -> DmatexRef {
-		DmatexRef::from_handler(
-			&Dmatex::new(
-				size,
-				format.drm_fourcc,
-				format.drm_modifier,
-				format.is_srgb,
-				Some(array_layers),
-				planes,
-				timeline_syncobj_fd,
-			)
-			.unwrap(),
+		let tex = Dmatex::new(
+			size,
+			format.drm_fourcc,
+			format.drm_modifier,
+			format.is_srgb,
+			Some(array_layers),
+			planes,
+			timeline_syncobj_fd,
 		)
+		.unwrap();
+		let proxy = DmatexRef::from_handler(&tex);
+		tex.to_service();
+		proxy
 	}
 
 	async fn enumerate_formats(&self, _ctx: GluonCtx, render_node: u64) -> Vec<DmatexFormat> {
@@ -325,7 +325,7 @@ fn cleanup_manual_texture_views(
 fn add_dmatex_into_bevy(
 	mut images: ResMut<Assets<Image>>,
 	texes: Res<ImportedDmatexs>,
-	mut new_texes: ResMut<BevyChannelReader<Arc<BinderObject<Dmatex>>>>,
+	mut new_texes: ResMut<BevyChannelReader<Arc<Dmatex>>>,
 	mut custom_views: ResMut<ManualTextureViews>,
 ) {
 	while let Some(tex) = new_texes.read() {

@@ -6,7 +6,6 @@ use std::{
 
 use bevy::prelude::Deref;
 use glam::{Vec3, Vec3A};
-use stardust_xr_protocol::field::FieldRef as FieldRefProxy;
 use stardust_xr_protocol::{
 	query::{QueriedInterface, QueryableObjectRef},
 	spatial_query::{
@@ -421,7 +420,7 @@ impl QueryType {
 				HitTestResult::Zone { pos, distance },
 			) => handler.entered(
 				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				FieldRefProxy::from_handler(&queryable.field),
+				queryable.field_proxy.clone(),
 				interfaces,
 				pos.into(),
 				distance,
@@ -439,7 +438,7 @@ impl QueryType {
 				},
 			) => handler.intersected(
 				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				FieldRefProxy::from_handler(&queryable.field),
+				queryable.field_proxy.clone(),
 				interfaces,
 				deepest_point_distance,
 				distance,
@@ -537,7 +536,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			interfaces: interface_ids,
 			inner: QueryType::Beam {
 				handler,
-				origin: (***origin).clone(),
+				origin: (**origin).clone(),
                 dir: direction.mint(),
 				max_length,
 			},
@@ -547,16 +546,12 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		});
 		query.init().await;
 		tokio::spawn(async move {
-			let QueryType::Zone {
-				handler,
-				field: _,
-				margin: _,
-				_shape_changed: _,
-			} = &query.inner
-			else {
+			let QueryType::Beam { handler, .. } = &query.inner else {
 				unreachable!()
 			};
-			handler.death_or_drop().await;
+			// TODO: wait for handler death to drop query
+			let _ = handler;
+			std::future::pending::<()>().await;
 		});
 	}
 
@@ -599,16 +594,12 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		});
 		query.init().await;
 		tokio::spawn(async move {
-			let QueryType::Zone {
-				handler,
-				field: _,
-				margin: _,
-				_shape_changed: _,
-			} = &query.inner
-			else {
+			let QueryType::Zone { handler, .. } = &query.inner else {
 				unreachable!()
 			};
-			handler.death_or_drop().await;
+			// TODO: wait for handler death to drop query
+			let _ = handler;
+			std::future::pending::<()>().await;
 		});
 	}
 }

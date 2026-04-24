@@ -10,7 +10,6 @@ use crate::{
 	nodes::{
 		ProxyExt as _,
 		drawable::model::MaterialRegistry,
-		ref_owned,
 		spatial::{SpatialNode, SpatialObject},
 	},
 };
@@ -151,7 +150,7 @@ fn spawn_text(
 		let entity = cmds
 			.spawn((
 				Name::new("TextNode"),
-				SpatialNode(Arc::downgrade(&text.spatial)),
+				SpatialNode(Arc::downgrade(&**text.spatial)),
 			))
 			.add_children(&letters)
 			.id();
@@ -177,7 +176,7 @@ impl FontDatabaseRegistry {
 
 #[derive(Debug)]
 pub struct Text {
-	spatial: Arc<BinderObject<SpatialObject>>,
+	spatial: Arc<SpatialObject>,
 	font_path: Option<PathBuf>,
 	entity: Mutex<Option<EntityHandle>>,
 	text: Mutex<String>,
@@ -188,11 +187,11 @@ pub struct Text {
 struct TextObject(Arc<Text>);
 impl TextObject {
 	pub fn new(
-		spatial: Arc<BinderObject<SpatialObject>>,
+		spatial: Arc<SpatialObject>,
 		text: String,
 		style: TextStyle,
 		prefixes: &[PathBuf],
-	) -> Arc<BinderObject<TextObject>> {
+	) -> BinderObject<TextObject> {
 		let text = Arc::new(Text {
 			spatial,
 			font_path: style.font.as_ref().and_then(|res| {
@@ -205,18 +204,16 @@ impl TextObject {
 		});
 		_ = SPAWN_TEXT.send(text.clone());
 		let text = PION.register_object(TextObject(text));
-		ref_owned(&text);
-
 		text
 	}
 }
 impl TextHandler for TextObject {
-	fn set_character_height(&self, _ctx: gluon_wire::GluonCtx, height: f32) {
+	async fn set_character_height(&self, _ctx: gluon_wire::GluonCtx, height: f32) {
 		self.0.data.lock().character_height = height;
 		_ = SPAWN_TEXT.send(self.0.clone());
 	}
 
-	fn set_text(&self, _ctx: gluon_wire::GluonCtx, text: String) {
+	async fn set_text(&self, _ctx: gluon_wire::GluonCtx, text: String) {
 		*self.0.text.lock() = text;
 		_ = SPAWN_TEXT.send(self.0.clone());
 	}
@@ -235,7 +232,9 @@ impl TextInterfaceHandler for TextInterface {
 			panic!("invalid spatial in model loading");
 		};
 		let text = TextObject::new(spatial, text, style, self.base_prefixes());
-		TextProxy::from_handler(&text)
+		let proxy = TextProxy::from_handler(&text);
+		text.to_service();
+		proxy
 	}
 }
 impl_transaction_handler!(TextObject);

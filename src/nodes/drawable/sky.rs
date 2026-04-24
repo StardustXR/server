@@ -25,7 +25,7 @@ use stardust_xr_protocol::{
 };
 use stardust_xr_server_foundation::resource::get_resource_file;
 
-use crate::{PION, interface, nodes::ref_owned};
+use crate::{PION, interface};
 
 pub struct SkyPlugin;
 
@@ -104,8 +104,9 @@ impl SkyInterfaceHandler for SkyInterface {
 		QUEUED_SKYTEX.lock().replace(Some(resource_path));
 		SKYTEX_SET.store(true, Ordering::Relaxed);
 		let guard = PION.register_object(SkyGuard { is_sky_tex: true });
-		ref_owned(&guard);
-		Some(SkyGuardProxy::from_handler(&guard))
+		let proxy = SkyGuardProxy::from_handler(&guard);
+		guard.to_service();
+		Some(proxy)
 	}
 
 	async fn set_sky_light(
@@ -124,8 +125,9 @@ impl SkyInterfaceHandler for SkyInterface {
 		QUEUED_SKYLIGHT.lock().replace(Some(resource_path));
 		SKYLIGHT_SET.store(true, Ordering::Relaxed);
 		let guard = PION.register_object(SkyGuard { is_sky_tex: false });
-		ref_owned(&guard);
-		Some(SkyGuardProxy::from_handler(&guard))
+		let proxy = SkyGuardProxy::from_handler(&guard);
+		guard.to_service();
+		Some(proxy)
 	}
 }
 
