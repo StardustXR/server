@@ -160,11 +160,11 @@ impl ConnectedClient {
 		});
 		let death_future = client.strong_refs_hit_zero();
 		let client = client;
-		CLIENTS.add_raw(client.handler().clone());
+		CLIENTS.add_raw(client.handler_arc().clone());
 		// TODO: make sure this is cleaned up if we ever have a reason for disconnect that isn't the
 		// client being destroyed
 		tokio::spawn({
-			let client = Arc::downgrade(client.handler());
+			let client = Arc::downgrade(client.handler_arc());
 			async move {
 				death_future.await;
 				if let Some(client) = client.upgrade() {
