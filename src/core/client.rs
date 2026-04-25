@@ -14,7 +14,7 @@ use crate::{
 	query::{QueryInterface, spatial_query::SpatialQueryInterface},
 };
 use bevy::prelude::Deref;
-use binderbinder::binder_object::BinderObject;
+use binderbinder::binder_object::{BinderObject, BinderObjectRef};
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
 use gluon_wire::{GluonCtx, impl_transaction_handler};
@@ -106,7 +106,7 @@ impl ConnectedClient {
 		client: Client,
 		pid: RawPid,
 		base_resource_prefixes: Vec<PathBuf>,
-	) -> Result<(BinderObject<Self>, ClientState)> {
+	) -> Result<(BinderObjectRef<Self>, ClientState)> {
 		let env = get_env(pid).ok();
 		let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
 		info!(
@@ -124,17 +124,24 @@ impl ConnectedClient {
 
 		let p = Arc::new(base_resource_prefixes);
 
-		let spatial_interface = SpatialInterfaceProxy::from_handler(&SpatialInterface::new(&p));
-		let field_interface = FieldInterfaceProxy::from_handler(&FieldInterface::new(&p));
-		let dmatex_interface = DmatexInterfaceProxy::from_handler(&DmatexInterface::new(&p));
-		let text_interface = TextInterfaceProxy::from_handler(&TextInterface::new(&p));
-		let model_interface = ModelInterfaceProxy::from_handler(&ModelInterface::new(&p));
-		let lines_interface = LinesInterfaceProxy::from_handler(&LinesInterface::new(&p));
-		let sky_interface = SkyInterfaceProxy::from_handler(&SkyInterface::new(&p));
-		let audio_interface = AudioInterfaceProxy::from_handler(&AudioInterface::new(&p));
-		let query_interface = QueryInterfaceProxy::from_handler(&QueryInterface::new(&p));
+		let spatial_interface =
+			SpatialInterfaceProxy::from_handler(&SpatialInterface::new(&p).to_service());
+		let field_interface =
+			FieldInterfaceProxy::from_handler(&FieldInterface::new(&p).to_service());
+		let dmatex_interface =
+			DmatexInterfaceProxy::from_handler(&DmatexInterface::new(&p).to_service());
+		let text_interface = TextInterfaceProxy::from_handler(&TextInterface::new(&p).to_service());
+		let model_interface =
+			ModelInterfaceProxy::from_handler(&ModelInterface::new(&p).to_service());
+		let lines_interface =
+			LinesInterfaceProxy::from_handler(&LinesInterface::new(&p).to_service());
+		let sky_interface = SkyInterfaceProxy::from_handler(&SkyInterface::new(&p).to_service());
+		let audio_interface =
+			AudioInterfaceProxy::from_handler(&AudioInterface::new(&p).to_service());
+		let query_interface =
+			QueryInterfaceProxy::from_handler(&QueryInterface::new(&p).to_service());
 		let spatial_query_interface =
-		SpatialQueryInterfaceProxy::from_handler(&SpatialQueryInterface::new(&p));
+			SpatialQueryInterfaceProxy::from_handler(&SpatialQueryInterface::new(&p).to_service());
 
 		let client = PION.register_object(ConnectedClient {
 			pid,
@@ -173,7 +180,7 @@ impl ConnectedClient {
 			}
 		});
 
-		Ok((client, state.apply()))
+		Ok((client.to_service(), state.apply()))
 	}
 
 	pub fn get_cmdline(&self) -> Option<Vec<String>> {

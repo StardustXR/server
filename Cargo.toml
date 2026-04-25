@@ -16,6 +16,9 @@ members = ["foundation"]
 name = "stardust-xr-server"
 path = "src/main.rs"
 
+# [patch."https://github.com/technobaboo/binderbinder"]
+# binderbinder.path = "../binderbinder"
+
 [features]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy", "bevy/trace_tracy", "bevy/trace"]
