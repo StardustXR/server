@@ -78,6 +78,13 @@
           devShells.default = pkgs.mkShell {
             inputsFrom = [ self'.packages.default ];
             LIBCLANG_PATH = "${pkgs.libclang.lib}/lib";
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+              pkgs.vulkan-loader
+              pkgs.openxr-loader
+              pkgs.libxkbcommon
+              pkgs.wayland
+              pkgs.alsa-lib
+            ];
           };
         };
       flake = {
