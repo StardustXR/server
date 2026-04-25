@@ -19,7 +19,7 @@ use bevy::{
 		view::VisibilitySystems,
 	},
 };
-use binderbinder::binder_object::BinderObject;
+use binderbinder::binder_object::BinderObjectRef;
 use glam::Vec3;
 use gluon_wire::impl_transaction_handler;
 use parking_lot::Mutex;
@@ -352,7 +352,7 @@ pub struct Lines {
 	setup_complete: Notify,
 }
 impl Lines {
-	pub fn new(spatial: Arc<SpatialObject>, lines: Vec<Line>) -> BinderObject<Lines> {
+	pub fn new(spatial: Arc<SpatialObject>, lines: Vec<Line>) -> BinderObjectRef<Lines> {
 		let lines = PION.register_object(Lines {
 			spatial: spatial.clone(),
 			data: Mutex::new(lines),
@@ -377,7 +377,7 @@ impl Lines {
 		});
 		_ = lines.bounding_calc.set(bounding_calc);
 
-		lines
+		lines.to_service()
 	}
 }
 impl LinesHandler for Lines {
@@ -405,9 +405,7 @@ impl LinesInterfaceHandler for LinesInterface {
 		};
 		let lines = Lines::new(spatial, lines);
 		lines.setup_complete.notified().await;
-		let proxy = LinesProxy::from_handler(&lines);
-		lines.to_service();
-		proxy
+		LinesProxy::from_handler(&lines)
 	}
 }
 impl_transaction_handler!(Lines);

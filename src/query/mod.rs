@@ -75,9 +75,7 @@ impl QueryableObjectHandler for QueryableMut {
 		});
 		self.notify_interface_changes().await;
 		let guard = PION.register_object(InterfaceGuard(Some(interface), Arc::downgrade(&self.0)));
-		let proxy = QueryableInterfaceGuard::from_handler(&guard);
-		guard.to_service();
-		proxy
+		QueryableInterfaceGuard::from_handler(&guard.to_service())
 	}
 }
 impl Queryable {
@@ -122,9 +120,7 @@ impl QueryInterfaceHandler for QueryInterface {
 			queryable_ref,
 		});
 		let obj = PION.register_object(QueryableMut(queryable));
-		let proxy = QueryableObject::from_handler(&obj);
-		obj.to_service();
-		Ok(proxy)
+		Ok(QueryableObject::from_handler(&obj.to_service()))
 	}
 }
 

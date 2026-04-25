@@ -104,9 +104,7 @@ impl SkyInterfaceHandler for SkyInterface {
 		QUEUED_SKYTEX.lock().replace(Some(resource_path));
 		SKYTEX_SET.store(true, Ordering::Relaxed);
 		let guard = PION.register_object(SkyGuard { is_sky_tex: true });
-		let proxy = SkyGuardProxy::from_handler(&guard);
-		guard.to_service();
-		Some(proxy)
+		Some(SkyGuardProxy::from_handler(&guard.to_service()))
 	}
 
 	async fn set_sky_light(
@@ -125,9 +123,7 @@ impl SkyInterfaceHandler for SkyInterface {
 		QUEUED_SKYLIGHT.lock().replace(Some(resource_path));
 		SKYLIGHT_SET.store(true, Ordering::Relaxed);
 		let guard = PION.register_object(SkyGuard { is_sky_tex: false });
-		let proxy = SkyGuardProxy::from_handler(&guard);
-		guard.to_service();
-		Some(proxy)
+		Some(SkyGuardProxy::from_handler(&guard.to_service()))
 	}
 }
 

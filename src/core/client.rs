@@ -43,7 +43,7 @@ use std::{
 };
 use tracing::info;
 
-pub static CLIENTS: OwnedRegistry<BinderObject<ConnectedClient>> = OwnedRegistry::new();
+pub static CLIENTS: OwnedRegistry<ConnectedClient> = OwnedRegistry::new();
 
 // static INTERNAL_CLIENT_MESSAGE_TIMES: LazyLock<(watch::Sender<Instant>, watch::Receiver<Instant>)> =
 // LazyLock::new(|| watch::channel(Instant::now()));
@@ -106,7 +106,7 @@ impl ConnectedClient {
 		client: Client,
 		pid: RawPid,
 		base_resource_prefixes: Vec<PathBuf>,
-	) -> Result<(Arc<BinderObject<Self>>, ClientState)> {
+	) -> Result<(BinderObject<Self>, ClientState)> {
 		let env = get_env(pid).ok();
 		let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
 		info!(
@@ -124,45 +124,17 @@ impl ConnectedClient {
 
 		let p = Arc::new(base_resource_prefixes);
 
-		let spatial_iface = SpatialInterface::new(&p);
-		let spatial_interface = SpatialInterfaceProxy::from_handler(&spatial_iface);
-		spatial_iface.to_service();
-
-		let field_iface = FieldInterface::new(&p);
-		let field_interface = FieldInterfaceProxy::from_handler(&field_iface);
-		field_iface.to_service();
-
-		let dmatex_iface = DmatexInterface::new(&p);
-		let dmatex_interface = DmatexInterfaceProxy::from_handler(&dmatex_iface);
-		dmatex_iface.to_service();
-
-		let text_iface = TextInterface::new(&p);
-		let text_interface = TextInterfaceProxy::from_handler(&text_iface);
-		text_iface.to_service();
-
-		let model_iface = ModelInterface::new(&p);
-		let model_interface = ModelInterfaceProxy::from_handler(&model_iface);
-		model_iface.to_service();
-
-		let lines_iface = LinesInterface::new(&p);
-		let lines_interface = LinesInterfaceProxy::from_handler(&lines_iface);
-		lines_iface.to_service();
-
-		let sky_iface = SkyInterface::new(&p);
-		let sky_interface = SkyInterfaceProxy::from_handler(&sky_iface);
-		sky_iface.to_service();
-
-		let audio_iface = AudioInterface::new(&p);
-		let audio_interface = AudioInterfaceProxy::from_handler(&audio_iface);
-		audio_iface.to_service();
-
-		let query_iface = QueryInterface::new(&p);
-		let query_interface = QueryInterfaceProxy::from_handler(&query_iface);
-		query_iface.to_service();
-
-		let spatial_query_iface = SpatialQueryInterface::new(&p);
-		let spatial_query_interface = SpatialQueryInterfaceProxy::from_handler(&spatial_query_iface);
-		spatial_query_iface.to_service();
+		let spatial_interface = SpatialInterfaceProxy::from_handler(&SpatialInterface::new(&p));
+		let field_interface = FieldInterfaceProxy::from_handler(&FieldInterface::new(&p));
+		let dmatex_interface = DmatexInterfaceProxy::from_handler(&DmatexInterface::new(&p));
+		let text_interface = TextInterfaceProxy::from_handler(&TextInterface::new(&p));
+		let model_interface = ModelInterfaceProxy::from_handler(&ModelInterface::new(&p));
+		let lines_interface = LinesInterfaceProxy::from_handler(&LinesInterface::new(&p));
+		let sky_interface = SkyInterfaceProxy::from_handler(&SkyInterface::new(&p));
+		let audio_interface = AudioInterfaceProxy::from_handler(&AudioInterface::new(&p));
+		let query_interface = QueryInterfaceProxy::from_handler(&QueryInterface::new(&p));
+		let spatial_query_interface =
+		SpatialQueryInterfaceProxy::from_handler(&SpatialQueryInterface::new(&p));
 
 		let client = PION.register_object(ConnectedClient {
 			pid,
@@ -187,12 +159,12 @@ impl ConnectedClient {
 			spatial_query_interface,
 		});
 		let death_future = client.strong_refs_hit_zero();
-		let client = Arc::new(client);
-		CLIENTS.add_raw(client.clone());
+		let client = client;
+		CLIENTS.add_raw(client.handler().clone());
 		// TODO: make sure this is cleaned up if we ever have a reason for disconnect that isn't the
 		// client being destroyed
 		tokio::spawn({
-			let client = Arc::downgrade(&client);
+			let client = Arc::downgrade(client.handler());
 			async move {
 				death_future.await;
 				if let Some(client) = client.upgrade() {
@@ -233,12 +205,8 @@ impl ConnectedClient {
 		// time_since_last_message.as_millis() > 500
 		false
 	}
-}
-pub trait ConnectedClientExt {
-	fn disconnect(&self, reason: Result<()>);
-}
-impl ConnectedClientExt for BinderObject<ConnectedClient> {
-	fn disconnect(&self, reason: Result<()>) {
+
+	fn disconnect(self: &Arc<Self>, reason: Result<()>) {
 		let _ = self.disconnect_status.set(reason);
 		CLIENTS.remove(self);
 	}

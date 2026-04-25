@@ -21,7 +21,7 @@ use bevy_dmabuf::{
 	dmatex::DmatexPlane as BevyDmatexPlane,
 	import::{ImportedDmatexs, ImportedTexture, import_texture},
 };
-use binderbinder::binder_object::BinderObject;
+use binderbinder::binder_object::BinderObjectRef;
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
 use gluon_wire::{GluonCtx, impl_transaction_handler};
@@ -67,7 +67,7 @@ impl Dmatex {
 		array_layers: Option<u32>,
 		planes: Vec<DmatexPlane>,
 		timeline_syncobj_fd: OwnedFd,
-	) -> Result<BinderObject<Self>> {
+	) -> Result<BinderObjectRef<Self>> {
 		let DmatexSize::Size2D { size } = size else {
 			bail!("non 2d dmatex are not implemented yet");
 		};
@@ -121,12 +121,14 @@ impl Dmatex {
 		else {
 			bail!("unable to import timiline syncobj");
 		};
-		let tex = PION.register_object(Self {
-			tex,
-			sync_obj,
-			bevy_image_handle: OnceLock::new(),
-			bevy_custom_view: OnceLock::new(),
-		});
+		let tex = PION
+			.register_object(Self {
+				tex,
+				sync_obj,
+				bevy_image_handle: OnceLock::new(),
+				bevy_custom_view: OnceLock::new(),
+			})
+			.to_service();
 		NEW_DMATEXES.send(tex.handler_arc().clone());
 		Ok(tex)
 	}
@@ -235,9 +237,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 			timeline_syncobj_fd,
 		)
 		.unwrap();
-		let proxy = DmatexRef::from_handler(&tex);
-		tex.to_service();
-		proxy
+		DmatexRef::from_handler(&tex)
 	}
 
 	async fn enumerate_formats(&self, _ctx: GluonCtx, render_node: u64) -> Vec<DmatexFormat> {

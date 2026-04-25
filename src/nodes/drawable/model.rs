@@ -27,7 +27,7 @@ use bevy::{
 		render_resource::{AsBindGroup, ShaderRef},
 	},
 };
-use binderbinder::binder_object::BinderObject;
+use binderbinder::binder_object::{BinderObject, BinderObjectRef};
 use color_eyre::eyre::eyre;
 use gluon_wire::GluonCtx;
 use gluon_wire::impl_transaction_handler;
@@ -283,7 +283,6 @@ fn gen_model_parts(
 					let spatial =
 						SpatialObject::new(Some(&**parent_spatial), transform.compute_matrix());
 					let spatial_arc = spatial.handler_arc().clone();
-					spatial.to_service();
 					let model_part = Arc::new(PION.register_object(ModelPart {
 						entity: OnceLock::new(),
 						mesh_entity: OnceLock::new(),
@@ -600,10 +599,7 @@ pub struct ModelPart {
 	pending_dmatexes: Mutex<
 		HashMap<
 			TextureSlot,
-			VecDeque<(
-				oneshot::Receiver<(SignalOnDrop, Arc<Dmatex>)>,
-				AbortOnDrop,
-			)>,
+			VecDeque<(oneshot::Receiver<(SignalOnDrop, Arc<Dmatex>)>, AbortOnDrop)>,
 		>,
 	>,
 	textures: Mutex<PartTextures>,
@@ -812,7 +808,7 @@ impl Model {
 		spatial_proxy: SpatialProxy,
 		resource_id: Resource,
 		base_prefixes: Arc<Vec<PathBuf>>,
-	) -> Result<BinderObject<Model>> {
+	) -> Result<BinderObjectRef<Model>> {
 		let pending_model_path = get_resource_file(
 			&resource_id,
 			base_prefixes.iter(),
@@ -831,13 +827,15 @@ impl Model {
 			setup_complete_tx: Mutex::new(Some(setup_complete_tx)),
 		});
 		let model_arc = model.handler_arc().clone();
-		LOAD_MODEL.send((model_arc.clone(), pending_model_path)).unwrap();
+		LOAD_MODEL
+			.send((model_arc.clone(), pending_model_path))
+			.unwrap();
 		MODEL_REGISTRY.add_raw(&model_arc);
 		setup_complete_rx
 			.await
 			.map_err(|_| eyre!("model setup cancelled before parts were generated"))?;
 
-		Ok(model)
+		Ok(model.to_service())
 	}
 }
 impl ModelHandler for Model {
@@ -861,7 +859,10 @@ impl ModelHandler for Model {
 
 	async fn enumerate_parts(&self, _ctx: GluonCtx) -> Vec<ModelPartProxy> {
 		if let Some(parts) = self.parts.get() {
-			parts.iter().map(|p| ModelPartProxy::from_handler(&**p)).collect()
+			parts
+				.iter()
+				.map(|p| ModelPartProxy::from_handler(&**p))
+				.collect()
 		} else {
 			error!(
 				"somehow called enumerate_parts before model parts were initialized, should be unreachable"
@@ -890,11 +891,15 @@ impl ModelInterfaceHandler for ModelInterface {
 		};
 
 		// TODO: handle
-		let model = Model::new(spatial_arc, spatial, model, self.base_resource_prefixes.clone())
-			.await
-			.unwrap();
+		let model = Model::new(
+			spatial_arc,
+			spatial,
+			model,
+			self.base_resource_prefixes.clone(),
+		)
+		.await
+		.unwrap();
 		let proxy = ModelProxy::from_handler(&model);
-		model.to_service();
 		proxy
 	}
 }

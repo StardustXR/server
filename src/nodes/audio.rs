@@ -9,7 +9,7 @@ use bevy::audio::{PlaybackMode, Volume};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::XrSpace;
-use binderbinder::binder_object::BinderObject;
+use binderbinder::binder_object::BinderObjectRef;
 use gluon_wire::impl_transaction_handler;
 use parking_lot::Mutex;
 
@@ -107,20 +107,22 @@ impl Sound {
 		spatial: Arc<SpatialObject>,
 		resource_id: Resource,
 		resource_prefixes: &[PathBuf],
-	) -> Option<BinderObject<Sound>> {
+	) -> Option<BinderObjectRef<Sound>> {
 		let pending_audio_path = get_resource_file(
 			&resource_id,
 			resource_prefixes,
 			&[OsStr::new("wav"), OsStr::new("mp3")],
 		)?;
-		let sound = PION.register_object(Sound {
-			spatial,
-			volume: 1.0,
-			pending_audio_path,
-			entity: OnceLock::new(),
-			stop: Mutex::new(None),
-			play: Mutex::new(None),
-		});
+		let sound = PION
+			.register_object(Sound {
+				spatial,
+				volume: 1.0,
+				pending_audio_path,
+				entity: OnceLock::new(),
+				stop: Mutex::new(None),
+				play: Mutex::new(None),
+			})
+			.to_service();
 		SOUND_REGISTRY.add_raw(sound.handler_arc());
 		Some(sound)
 	}
@@ -156,9 +158,7 @@ impl AudioInterfaceHandler for AudioInterface {
 			// TODO: replace with error
 			panic!("sound resource not found");
 		};
-		let proxy = SoundProxy::from_handler(&sound);
-		sound.to_service();
-		proxy
+		SoundProxy::from_handler(&sound)
 	}
 }
 

@@ -6,10 +6,12 @@ use std::{
 
 use bevy::prelude::Deref;
 use glam::{Vec3, Vec3A};
+use gluon_wire::impl_transaction_handler;
 use stardust_xr_protocol::{
 	query::{QueriedInterface, QueryableObjectRef},
 	spatial_query::{
-		BeamQuery, BeamQueryHandler, SpatialQueryInterfaceHandler, ZoneQuery, ZoneQueryHandler,
+		BeamQuery, BeamQueryHandler, SpatialQueryGuard, SpatialQueryGuardHandler,
+		SpatialQueryInterfaceHandler, ZoneQuery, ZoneQueryHandler,
 	},
 };
 use stardust_xr_server_foundation::{
@@ -20,7 +22,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, warn};
 
 use crate::{
-	interface,
+	PION, interface,
 	nodes::{
 		ProxyExt as _,
 		fields::{Field, FieldTrait, R, Ray, ShapeChangedCallback},
@@ -42,11 +44,13 @@ use crate::{
 // - [x] register moved handler when object becomes a valid query target
 // - [x] drop moved handler when object becomees an invalid query target
 
+#[derive(Debug)]
 struct QueryableInterest {
 	interfaces: Registry<QueryableInterface>,
 	_move_handle: MovedCallback,
 	_shape_callback: ShapeChangedCallback,
 }
+#[derive(Debug)]
 pub(super) struct Query {
 	interfaces: Vec<InterfaceQuery>,
 	interesting_queryables: RwLock<HashMap<WeakPtrHash<Queryable>, QueryableInterest>>,
@@ -54,6 +58,7 @@ pub(super) struct Query {
 	self_moved_handle: OnceLock<MovedCallback>,
 	inner: QueryType,
 }
+#[derive(Debug)]
 enum QueryType {
 	Zone {
 		handler: ZoneQueryHandler,
@@ -505,13 +510,12 @@ enum HitTestResult {
 
 interface!(SpatialQueryInterface);
 impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
-	async fn beam_query(&self, _ctx: gluon_wire::GluonCtx, query: BeamQuery) {
+	async fn beam_query(&self, _ctx: gluon_wire::GluonCtx, query: BeamQuery) -> SpatialQueryGuard {
 		let BeamQuery {
 			handler,
 			interfaces,
 			origin_spatial,
 			direction,
-			limit,
 			max_length,
 		} = query;
 		let Some(origin) = origin_spatial.owned() else {
@@ -537,7 +541,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			inner: QueryType::Beam {
 				handler,
 				origin: (**origin).clone(),
-                dir: direction.mint(),
+				dir: direction.mint(),
 				max_length,
 			},
 			interesting_queryables: RwLock::default(),
@@ -545,17 +549,11 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			self_moved_handle: OnceLock::new(),
 		});
 		query.init().await;
-		tokio::spawn(async move {
-			let QueryType::Beam { handler, .. } = &query.inner else {
-				unreachable!()
-			};
-			// TODO: wait for handler death to drop query
-			let _ = handler;
-			std::future::pending::<()>().await;
-		});
+		let v = PION.register_object(Guard(query)).to_service();
+		SpatialQueryGuard::from_handler(&v)
 	}
 
-	async fn zone_query(&self, _ctx: gluon_wire::GluonCtx, query: ZoneQuery) {
+	async fn zone_query(&self, _ctx: gluon_wire::GluonCtx, query: ZoneQuery) -> SpatialQueryGuard {
 		let ZoneQuery {
 			handler,
 			interfaces,
@@ -593,16 +591,14 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			self_moved_handle: OnceLock::new(),
 		});
 		query.init().await;
-		tokio::spawn(async move {
-			let QueryType::Zone { handler, .. } = &query.inner else {
-				unreachable!()
-			};
-			// TODO: wait for handler death to drop query
-			let _ = handler;
-			std::future::pending::<()>().await;
-		});
+		let v = PION.register_object(Guard(query)).to_service();
+		SpatialQueryGuard::from_handler(&v)
 	}
 }
+#[derive(Debug)]
+struct Guard(Arc<Query>);
+impl SpatialQueryGuardHandler for Guard {}
+impl_transaction_handler!(Guard);
 
 #[derive(Debug, Deref)]
 struct WeakPtrHash<T>(Weak<T>);

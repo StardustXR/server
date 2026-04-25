@@ -1584,7 +1584,7 @@ dependencies = [
 [[package]]
 name = "binderbinder"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/binderbinder#e107496da155e20fd0397d46d6c3ae4fd84f7b5d"
+source = "git+https://github.com/technobaboo/binderbinder#68ecb7cc12b11f15527575bd2020c8e9059a9fe7"
 dependencies = [
  "bitflags 2.11.0",
  "byteorder",
@@ -2579,7 +2579,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2969,7 +2969,7 @@ dependencies = [
 [[package]]
 name = "gluon-codegen-rust"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#ba138e7a1a5a9944f01fff20e6d473f9e698400b"
+source = "git+https://github.com/technobaboo/gluon#20f8d53c7bd28a656aa0b982f9a74fdee267503d"
 dependencies = [
  "convert_case 0.11.0",
  "gluon-parser",
@@ -2983,7 +2983,7 @@ dependencies = [
 [[package]]
 name = "gluon-parser"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#ba138e7a1a5a9944f01fff20e6d473f9e698400b"
+source = "git+https://github.com/technobaboo/gluon#20f8d53c7bd28a656aa0b982f9a74fdee267503d"
 dependencies = [
  "ansi_term",
  "binderbinder",
@@ -2994,7 +2994,7 @@ dependencies = [
 [[package]]
 name = "gluon-wire"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#ba138e7a1a5a9944f01fff20e6d473f9e698400b"
+source = "git+https://github.com/technobaboo/gluon#20f8d53c7bd28a656aa0b982f9a74fdee267503d"
 dependencies = [
  "binderbinder",
  "bitflags 2.11.0",
@@ -5199,7 +5199,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5212,7 +5212,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5547,7 +5547,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.52.0",
  "windows-sys 0.59.0",
 ]
 
@@ -5563,7 +5562,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "0.51.1"
-source = "git+https://github.com/StardustXR/core.git?branch=binder#e4669f83a77207e8d8510b3b550dd98aca9a75da"
+source = "git+https://github.com/StardustXR/core.git?branch=binder#d7eac207eadd3e5d355b9ffe186f9f027bfed350"
 dependencies = [
  "binderbinder",
  "fnv",
@@ -5811,7 +5810,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6859,7 +6858,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

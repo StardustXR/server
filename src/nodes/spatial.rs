@@ -7,7 +7,7 @@ use bevy::ecs::entity::EntityHashMap;
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
-use binderbinder::binder_object::BinderObject;
+use binderbinder::binder_object::BinderObjectRef;
 use glam::{Mat4, Quat};
 use gluon_wire::{GluonCtx, impl_transaction_handler};
 use parking_lot::Mutex;
@@ -177,10 +177,10 @@ impl Debug for Spatial {
 pub struct SpatialObject {
 	#[deref]
 	data: Arc<Spatial>,
-	spatial_ref: BinderObject<SpatialRef>,
+	spatial_ref: BinderObjectRef<SpatialRef>,
 }
 impl SpatialObject {
-	pub fn new(parent: Option<&Arc<Spatial>>, transform: Mat4) -> BinderObject<Self> {
+	pub fn new(parent: Option<&Arc<Spatial>>, transform: Mat4) -> BinderObjectRef<Self> {
 		let data = Arc::new(Spatial {
 			entity: Mutex::new(None),
 			parent: Mutex::new(parent.cloned()),
@@ -190,12 +190,16 @@ impl SpatialObject {
 			moved_callback: Registry::new(),
 		});
 		SPATIAL_REGISTRY.add_raw(&data);
-		let spatial_ref = PION.register_object(SpatialRef { data: data.clone() });
-		let spatial = PION.register_object(SpatialObject { data, spatial_ref });
+		let spatial_ref = PION
+			.register_object(SpatialRef { data: data.clone() })
+			.to_service();
+		let spatial = PION
+			.register_object(SpatialObject { data, spatial_ref })
+			.to_service();
 		spatial.mark_dirty();
 		spatial
 	}
-	pub fn get_ref(&self) -> &BinderObject<SpatialRef> {
+	pub fn get_ref(&self) -> &BinderObjectRef<SpatialRef> {
 		&self.spatial_ref
 	}
 }
@@ -549,9 +553,7 @@ impl SpatialInterfaceHandler for SpatialInterface {
 			// return;
 		};
 		let s = SpatialObject::new(Some(&parent.data), transform.to_mat4());
-		let proxy = SpatialProxy::from_handler(&s);
-		s.to_service();
-		proxy
+		SpatialProxy::from_handler(&s)
 	}
 
 	async fn get_relative_bounding_box(

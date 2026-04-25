@@ -232,9 +232,7 @@ impl TextInterfaceHandler for TextInterface {
 			panic!("invalid spatial in model loading");
 		};
 		let text = TextObject::new(spatial, text, style, self.base_prefixes());
-		let proxy = TextProxy::from_handler(&text);
-		text.to_service();
-		proxy
+		TextProxy::from_handler(&text.to_service())
 	}
 }
 impl_transaction_handler!(TextObject);

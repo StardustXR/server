@@ -1,6 +1,6 @@
 use crate::core::registry::Registry;
-use crate::nodes::spatial::{Spatial, SpatialObject};
 use crate::nodes::ProxyExt;
+use crate::nodes::spatial::{Spatial, SpatialObject};
 use crate::{DbusConnection, PION, impl_proxy, interface};
 use bevy::app::{Plugin, Update};
 use bevy::asset::Assets;
@@ -12,7 +12,7 @@ use bevy::ecs::resource::Resource;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::gizmos::GizmoAsset;
 use bevy::gizmos::retained::Gizmo;
-use binderbinder::binder_object::BinderObject;
+use binderbinder::binder_object::BinderObjectRef;
 use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
 use gluon_wire::GluonCtx;
 use gluon_wire::impl_transaction_handler;
@@ -612,7 +612,7 @@ impl Debug for ShapeChangedCallback {
 #[derive(Debug)]
 pub struct FieldMut {
 	pub data: Arc<Field>,
-	field_ref: BinderObject<FieldRef>,
+	field_ref: BinderObjectRef<FieldRef>,
 }
 pub struct Field {
 	pub spatial: Arc<SpatialObject>,
@@ -646,7 +646,7 @@ impl FieldMut {
 		spatial: Arc<SpatialObject>,
 		spatial_proxy: SpatialProxy,
 		shape: Shape,
-	) -> BinderObject<FieldMut> {
+	) -> BinderObjectRef<FieldMut> {
 		let data = Arc::new(Field {
 			spatial,
 			spatial_proxy,
@@ -661,9 +661,11 @@ impl FieldMut {
 				spawn_field_polylines(&data);
 			}
 		});
-		let field_ref = PION.register_object(FieldRef { data: data.clone() });
-		let field = PION.register_object(FieldMut { field_ref, data });
-		field
+		let field_ref = PION
+			.register_object(FieldRef { data: data.clone() })
+			.to_service();
+		PION.register_object(FieldMut { field_ref, data })
+			.to_service()
 	}
 }
 impl Drop for Field {
@@ -780,11 +782,7 @@ impl FieldHandler for FieldMut {
 pub struct FieldRef {
 	pub data: Arc<Field>,
 }
-impl FieldRefHandler for FieldRef {
-	async fn spatial_ref(&self, _ctx: GluonCtx) -> SpatialRefProxy {
-		SpatialRefProxy::from_handler(self.data.spatial.get_ref())
-	}
-}
+impl FieldRefHandler for FieldRef {}
 
 interface!(FieldInterface);
 impl FieldInterfaceHandler for FieldInterface {
@@ -857,9 +855,7 @@ impl FieldInterfaceHandler for FieldInterface {
 			panic!("invalid spatial used for field creation");
 		};
 		let field = FieldMut::new(spatial_arc, spatial, shape);
-		let proxy = FieldProxy::from_handler(&field);
-		field.to_service();
-		proxy
+		FieldProxy::from_handler(&field)
 	}
 }
 
