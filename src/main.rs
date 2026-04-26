@@ -412,7 +412,7 @@ fn bevy_loop(
 		} else {
 			// enable a event
 			plugins = plugins.add(XrSessionPlugin { auto_handle: false });
-			bevy_dmabuf::wgpu_init::add_dmabuf_init_plugin(plugins)
+			bevy_dmabuf::wgpu_init::add_dmabuf_init_plugin(plugins, vk_device_exts())
 		}
 		.set(WindowPlugin {
 			primary_window: Some(Window {
