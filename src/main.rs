@@ -5,8 +5,8 @@
 mod bevy_int;
 mod core;
 mod nodes;
-mod session;
 mod query;
+mod session;
 
 use bevy::{
 	MinimalPlugins,
@@ -539,13 +539,31 @@ fn xr_step(world: &mut World) {
 			} else {
 				None
 			};
+
 		let delta =
 			Duration::from_nanos(state.predicted_display_period.as_nanos() as u64).as_secs_f32();
-		(delta, predicted_display_time)
+		(
+			delta,
+			predicted_display_time.unwrap_or_else(|| {
+				warn_once!(
+					"unable to get predicted display time from OpenXR using current time instead"
+				);
+				let timespec = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+				Timestamp {
+					seconds: timespec.tv_sec,
+					nanoseconds: timespec.tv_nsec,
+				}
+			}),
+		)
 	} else {
+		// TODO: optionally get presentation time from wayland
+		let timespec = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
 		(
 			world.resource::<bevy::prelude::Time>().delta_secs_f64() as f32,
-			None,
+			Timestamp {
+				seconds: timespec.tv_sec,
+				nanoseconds: timespec.tv_nsec,
+			},
 		)
 	};
 	for client in CLIENTS.get_vec() {
