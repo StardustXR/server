@@ -231,7 +231,12 @@ impl TextInterfaceHandler for TextInterface {
 			// TODO: replace with proper error returning
 			panic!("invalid spatial in model loading");
 		};
-		let text = TextObject::new(spatial, text, style, self.base_prefixes());
+		let text = TextObject::new(
+			spatial.handler_arc().clone(),
+			text,
+			style,
+			self.base_prefixes(),
+		);
 		TextProxy::from_handler(&text.to_service())
 	}
 }

@@ -613,10 +613,10 @@ impl Debug for ShapeChangedCallback {
 pub struct FieldMut {
 	pub data: Arc<Field>,
 	field_ref: BinderObjectRef<FieldRef>,
+	spatial: BinderObjectRef<SpatialObject>,
 }
 pub struct Field {
 	pub spatial: Arc<SpatialObject>,
-	spatial_proxy: SpatialProxy,
 	pub shape: RwLock<Shape>,
 	shape_changed_callback: Registry<dyn Fn() + Send + Sync + 'static>,
 	polyline_cache: RwLock<(u64, Option<Vec<Vec<Vec3>>>)>,
@@ -642,14 +642,9 @@ impl Field {
 	}
 }
 impl FieldMut {
-	pub fn new(
-		spatial: Arc<SpatialObject>,
-		spatial_proxy: SpatialProxy,
-		shape: Shape,
-	) -> BinderObjectRef<FieldMut> {
+	pub fn new(spatial: BinderObjectRef<SpatialObject>, shape: Shape) -> BinderObjectRef<FieldMut> {
 		let data = Arc::new(Field {
-			spatial,
-			spatial_proxy,
+			spatial: spatial.handler_arc().clone(),
 			shape: RwLock::new(shape),
 			polyline_cache: RwLock::new((0, None)),
 			shape_changed_callback: Registry::new(),
@@ -664,8 +659,12 @@ impl FieldMut {
 		let field_ref = PION
 			.register_object(FieldRef { data: data.clone() })
 			.to_service();
-		PION.register_object(FieldMut { field_ref, data })
-			.to_service()
+		PION.register_object(FieldMut {
+			field_ref,
+			data,
+			spatial,
+		})
+		.to_service()
 	}
 }
 impl Drop for Field {
@@ -714,7 +713,7 @@ impl FieldHandler for FieldMut {
 	}
 
 	async fn spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
-		self.data.spatial_proxy.clone()
+		SpatialProxy::from_handler(&self.spatial)
 	}
 
 	async fn distance(
@@ -850,11 +849,11 @@ impl FieldInterfaceHandler for FieldInterface {
 		spatial: SpatialProxy,
 		shape: Shape,
 	) -> FieldProxy {
-		let Some(spatial_arc) = spatial.owned() else {
+		let Some(spatial) = spatial.owned() else {
 			// TODO: replace with returned error
 			panic!("invalid spatial used for field creation");
 		};
-		let field = FieldMut::new(spatial_arc, spatial, shape);
+		let field = FieldMut::new(spatial, shape);
 		FieldProxy::from_handler(&field)
 	}
 }

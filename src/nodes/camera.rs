@@ -90,7 +90,7 @@ impl CameraHandler for Camera {
 				return;
 			};
 			future.await;
-			tx.send((acquire_point, views, tex, release_on_drop))
+			tx.send((acquire_point, views, tex.handler_arc().clone(), release_on_drop))
 				.unwrap();
 		});
 	}
@@ -109,7 +109,7 @@ impl CameraInterfaceHandler for CameraInterface {
 			// TODO: just return an error
 			panic!("Invalid Spatial use to create camera");
 		};
-		let cam = Camera::new(spatial);
+		let cam = Camera::new(spatial.handler_arc().clone());
 		CameraProxy::from_handler(&cam)
 	}
 }

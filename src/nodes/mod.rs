@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use binderbinder::TransactionHandler;
+use binderbinder::{TransactionHandler, binder_object::BinderObjectRef};
 
 pub mod audio;
 pub mod camera;
@@ -80,18 +78,18 @@ macro_rules! exposed_interface {
 }
 pub trait ProxyExt {
 	type Owned: TransactionHandler;
-	fn owned(&self) -> Option<Arc<Self::Owned>>;
+	fn owned(&self) -> Option<BinderObjectRef<Self::Owned>>;
 }
 #[macro_export]
 macro_rules! impl_proxy {
 	($proxy:ty, $type:ty) => {
 		impl $crate::nodes::ProxyExt for $proxy {
 			type Owned = $type;
-			fn owned(&self) -> Option<std::sync::Arc<Self::Owned>> {
+			fn owned(&self) -> Option<binderbinder::binder_object::BinderObjectRef<Self::Owned>> {
 				use binderbinder::binder_object::BinderObjectOrRef;
 				use binderbinder::binder_object::ToBinderObjectOrRef;
 				match self.to_binder_object_or_ref() {
-					BinderObjectOrRef::Object(obj) => obj.downcast_handler_arc::<Self::Owned>(),
+					BinderObjectOrRef::Object(obj) => obj.downcast::<Self::Owned>(),
 					// TODO: allow sending weak refs
 					// should never happen with the rust version of gluon tho
 					BinderObjectOrRef::WeakObject(_obj) => None,

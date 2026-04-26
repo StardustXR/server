@@ -14,7 +14,7 @@ use crate::{
 	query::{QueryInterface, spatial_query::SpatialQueryInterface},
 };
 use bevy::prelude::Deref;
-use binderbinder::binder_object::{BinderObject, BinderObjectRef};
+use binderbinder::binder_object::BinderObjectRef;
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
 use gluon_wire::{GluonCtx, impl_transaction_handler};

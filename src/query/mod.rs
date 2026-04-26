@@ -4,7 +4,7 @@ use std::{
 };
 
 use bevy::prelude::Deref;
-use binderbinder::binder_object::{BinderObject, BinderObjectOrRef};
+use binderbinder::binder_object::{BinderObject, BinderObjectOrRef, BinderObjectRef};
 use gluon_wire::{GluonCtx, impl_transaction_handler};
 use stardust_xr_protocol::query::{
 	QueryInterfaceHandler, QueryableError, QueryableInterfaceGuard, QueryableInterfaceGuardHandler,
@@ -18,7 +18,6 @@ use crate::{
 	nodes::{ProxyExt, fields::FieldRef},
 	query::spatial_query::Query,
 };
-use stardust_xr_protocol::field::FieldRef as FieldRefProxy;
 
 pub mod spatial_query;
 
@@ -37,8 +36,7 @@ struct QueryableMut(Arc<Queryable>);
 #[derive(Debug)]
 struct Queryable {
 	queryable_ref: BinderObject<QueryableRef>,
-	field: Arc<FieldRef>,
-	field_proxy: FieldRefProxy,
+	field: BinderObjectRef<FieldRef>,
 	path: Arc<DedupedStr>,
 	interfaces: RwLock<Registry<QueryableInterface>>,
 }
@@ -107,14 +105,12 @@ impl QueryInterfaceHandler for QueryInterface {
 		field: stardust_xr_protocol::field::FieldRef,
 		path: String,
 	) -> Result<QueryableObject, QueryableError> {
-		let field_proxy = field.clone();
 		let field = field.owned().ok_or(QueryableError::InvalidField)?;
 		// TODO: make sure path is valid
 		let path = DedupedStr::get(path).await;
 		let queryable_ref = PION.register_object(QueryableRef);
 		let queryable = Arc::new(Queryable {
 			field,
-			field_proxy,
 			path,
 			interfaces: RwLock::default(),
 			queryable_ref,

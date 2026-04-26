@@ -403,7 +403,7 @@ impl LinesInterfaceHandler for LinesInterface {
 			// TODO: replace with proper error returning
 			panic!("invalid spatial in lines creation");
 		};
-		let lines = Lines::new(spatial, lines);
+		let lines = Lines::new(spatial.handler_arc().clone(), lines);
 		lines.setup_complete.notified().await;
 		LinesProxy::from_handler(&lines)
 	}

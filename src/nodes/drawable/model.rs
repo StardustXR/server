@@ -279,7 +279,7 @@ fn gen_model_parts(
 					let parent_spatial = parent
 						.as_ref()
 						.map(|p| p.spatial.clone())
-						.unwrap_or_else(|| model.spatial.clone());
+						.unwrap_or_else(|| model.spatial.handler_arc().clone());
 					let spatial =
 						SpatialObject::new(Some(&**parent_spatial), transform.compute_matrix());
 					let spatial_arc = spatial.handler_arc().clone();
@@ -648,7 +648,7 @@ impl ModelPart {
 				future.await;
 				let sema = tex.get_acquire_semaphore(acquire_point);
 				ACQUIRE_SEMAPHORES.lock().push(sema);
-				tx.send((release, tex)).unwrap();
+				tx.send((release, tex.handler_arc().clone())).unwrap();
 			});
 			self.pending_dmatexes
 				.lock()
@@ -794,8 +794,7 @@ impl MaterialRegistry {
 
 #[derive(Debug)]
 pub struct Model {
-	spatial: Arc<SpatialObject>,
-	spatial_proxy: SpatialProxy,
+	spatial: BinderObjectRef<SpatialObject>,
 	_resource_id: Resource,
 	bevy_scene_entity: OnceLock<EntityHandle>,
 	parts: OnceLock<Vec<Arc<BinderObject<ModelPart>>>>,
@@ -804,8 +803,7 @@ pub struct Model {
 }
 impl Model {
 	pub async fn new(
-		spatial: Arc<SpatialObject>,
-		spatial_proxy: SpatialProxy,
+		spatial: BinderObjectRef<SpatialObject>,
 		resource_id: Resource,
 		base_prefixes: Arc<Vec<PathBuf>>,
 	) -> Result<BinderObjectRef<Model>> {
@@ -819,7 +817,6 @@ impl Model {
 		let (setup_complete_tx, setup_complete_rx) = oneshot::channel();
 		let model = PION.register_object(Model {
 			spatial,
-			spatial_proxy,
 			_resource_id: resource_id,
 			bevy_scene_entity: OnceLock::new(),
 			parts: OnceLock::new(),
@@ -840,7 +837,7 @@ impl Model {
 }
 impl ModelHandler for Model {
 	async fn get_spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
-		self.spatial_proxy.clone()
+		SpatialProxy::from_handler(&self.spatial)
 	}
 
 	async fn get_part(&self, _ctx: GluonCtx, path: String) -> Option<ModelPartProxy> {
@@ -885,20 +882,15 @@ impl ModelInterfaceHandler for ModelInterface {
 		model: stardust_xr_protocol::types::Resource,
 		_model_scale: stardust_xr_protocol::types::Vec3F,
 	) -> ModelProxy {
-		let Some(spatial_arc) = spatial.owned() else {
+		let Some(spatial) = spatial.owned() else {
 			// TODO: replace with proper error returning
 			panic!("invalid spatial in model loading");
 		};
 
 		// TODO: handle
-		let model = Model::new(
-			spatial_arc,
-			spatial,
-			model,
-			self.base_resource_prefixes.clone(),
-		)
-		.await
-		.unwrap();
+		let model = Model::new(spatial, model, self.base_resource_prefixes.clone())
+			.await
+			.unwrap();
 		let proxy = ModelProxy::from_handler(&model);
 		proxy
 	}

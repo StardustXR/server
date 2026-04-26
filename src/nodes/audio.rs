@@ -154,7 +154,8 @@ impl AudioInterfaceHandler for AudioInterface {
 			// TODO: replace with error
 			panic!("tried to create sound with invalid spatial");
 		};
-		let Some(sound) = Sound::new(spatial, sound, self.base_prefixes()) else {
+		let Some(sound) = Sound::new(spatial.handler_arc().clone(), sound, self.base_prefixes())
+		else {
 			// TODO: replace with error
 			panic!("sound resource not found");
 		};

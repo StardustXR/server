@@ -8,6 +8,7 @@ use bevy::prelude::Deref;
 use glam::{Vec3, Vec3A};
 use gluon_wire::impl_transaction_handler;
 use stardust_xr_protocol::{
+	field::FieldRef as FieldRefProxy,
 	query::{QueriedInterface, QueryableObjectRef},
 	spatial_query::{
 		BeamQuery, BeamQueryHandler, SpatialQueryGuard, SpatialQueryGuardHandler,
@@ -425,7 +426,7 @@ impl QueryType {
 				HitTestResult::Zone { pos, distance },
 			) => handler.entered(
 				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				queryable.field_proxy.clone(),
+				FieldRefProxy::from_handler(&queryable.field),
 				interfaces,
 				pos.into(),
 				distance,
@@ -443,7 +444,7 @@ impl QueryType {
 				},
 			) => handler.intersected(
 				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				queryable.field_proxy.clone(),
+				FieldRefProxy::from_handler(&queryable.field),
 				interfaces,
 				deepest_point_distance,
 				distance,
@@ -595,6 +596,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		SpatialQueryGuard::from_handler(&v)
 	}
 }
+#[expect(unused)]
 #[derive(Debug)]
 struct Guard(Arc<Query>);
 impl SpatialQueryGuardHandler for Guard {}
