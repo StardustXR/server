@@ -554,7 +554,7 @@ dependencies = [
 [[package]]
 name = "bevy-dmabuf"
 version = "0.2.0"
-source = "git+https://github.com/Schmarni-Dev/bevy-dmabuf#7f0a4a35f7f84d34c0a604c41e3f382b8cebf0aa"
+source = "git+https://github.com/Schmarni-Dev/bevy-dmabuf#4dc77184620bfa3c9dbc4d1a1baef33501506242"
 dependencies = [
  "ash",
  "bevy",
