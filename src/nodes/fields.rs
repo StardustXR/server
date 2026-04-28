@@ -615,6 +615,11 @@ pub struct FieldMut {
 	field_ref: BinderObjectRef<FieldRef>,
 	spatial: BinderObjectRef<SpatialObject>,
 }
+impl FieldMut {
+	pub fn get_ref(&self) -> &BinderObjectRef<FieldRef> {
+		&self.field_ref
+	}
+}
 pub struct Field {
 	pub spatial: Arc<SpatialObject>,
 	pub shape: RwLock<Shape>,

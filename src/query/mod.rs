@@ -12,6 +12,7 @@ use stardust_xr_protocol::query::{
 };
 use stardust_xr_server_foundation::{deduped_string::DedupedStr, registry::Registry};
 use tokio::sync::RwLock;
+use tracing::info;
 
 use crate::{
 	PION, interface,
@@ -50,6 +51,7 @@ struct InterfaceGuard(Option<Arc<QueryableInterface>>, Weak<Queryable>);
 impl QueryableInterfaceGuardHandler for InterfaceGuard {}
 impl Drop for InterfaceGuard {
 	fn drop(&mut self) {
+        info!("dropping interface");
 		drop(self.0.take());
 		if let Some(queryable) = self.1.upgrade() {
 			tokio::spawn(async move { queryable.notify_interface_changes().await });

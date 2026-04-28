@@ -5,6 +5,8 @@
 mod bevy_int;
 mod core;
 mod nodes;
+mod objects;
+mod openxr_helpers;
 mod query;
 mod session;
 
@@ -58,21 +60,20 @@ use bevy_mod_xr::{
 use clap::Parser;
 use directories::ProjectDirs;
 use nodes::spatial::SpatialNodePlugin;
-// use objects::{
-// 	hmd::HmdPlugin,
-// 	input::{
-// 		mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
-// 		oxr_hand::HandPlugin,
-// 	},
-// 	play_space::PlaySpacePlugin,
-// };
+use objects::{
+	// 	hmd::HmdPlugin,
+	input::{
+		// 		mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
+		oxr_hand::HandPlugin,
+	},
+	// 	play_space::PlaySpacePlugin,
+};
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use pion_binder::PionBinderDevice;
 use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
 // use stardust_xr_gluon::object_registry::ObjectRegistry;
 // use stardust_xr_wire::server::LockedSocket;
 use std::{
-	mem::MaybeUninit,
 	ops::DerefMut as _,
 	path::PathBuf,
 	str::FromStr,
@@ -96,6 +97,7 @@ use crate::{
 		},
 		fields::FieldDebugGizmoPlugin,
 	},
+	openxr_helpers::ConvertTimespec,
 	session::{launch_start, save_session},
 };
 
@@ -453,14 +455,14 @@ fn bevy_loop(
 	));
 	// object plugins
 	// app.add_plugins((PlaySpacePlugin, HmdPlugin));
-	// if !args.disable_hands {
-	// 	app.add_plugins((
-	// 		HandPlugin {
-	// 			transparent_hands: args.transparent_hands,
-	// 		},
-	// 		bevy_sk::hand::HandPlugin,
-	// 	));
-	// }
+	if !args.disable_hands {
+		app.add_plugins((
+			HandPlugin {
+				transparent_hands: args.transparent_hands,
+			},
+			bevy_sk::hand::HandPlugin,
+		));
+	}
 	// if !args.disable_controllers {
 	// 	app.add_plugins(ControllerPlugin);
 	// }
@@ -515,30 +517,11 @@ fn xr_step(world: &mut World) {
 		world.get_resource::<OxrInstance>()
 		&& let Some(state) = world.get_resource::<OxrFrameState>()
 	{
-		let predicted_display_time =
-			if let Some(time_ext) = instance.exts().khr_convert_timespec_time {
-				unsafe {
-					let mut out = MaybeUninit::uninit();
-					let result = (time_ext.convert_time_to_timespec_time)(
-						instance.as_raw(),
-						// i think we want this to be one frame ahead in addition to handling pipelined?
-						// since this is for the frame after wait?
-						get_time(world.contains_resource::<Pipelined>(), &state),
-						out.as_mut_ptr(),
-					);
-					if result == openxr::sys::Result::SUCCESS {
-						let v = out.assume_init();
-						Some(Timestamp {
-							seconds: v.tv_sec,
-							nanoseconds: v.tv_nsec,
-						})
-					} else {
-						None
-					}
-				}
-			} else {
-				None
-			};
+		let predicted_display_time = instance.xr_to_timestamp(
+			// i think we want this to be one frame ahead in addition to handling pipelined?
+			// since this is for the frame after wait?
+			get_time(world.contains_resource::<Pipelined>(), &state),
+		);
 
 		let delta =
 			Duration::from_nanos(state.predicted_display_period.as_nanos() as u64).as_secs_f32();
