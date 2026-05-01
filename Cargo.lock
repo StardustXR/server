@@ -1584,7 +1584,7 @@ dependencies = [
 [[package]]
 name = "binderbinder"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/binderbinder#743782a85500eb375d5e25e20f88823a8f4bdde7"
+source = "git+https://github.com/technobaboo/binderbinder#b367b3d3ec6f17bc430a56be67f219315c4e6345"
 dependencies = [
  "bitflags 2.11.0",
  "byteorder",
@@ -5563,7 +5563,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "0.51.1"
-source = "git+https://github.com/StardustXR/core.git?branch=binder#5e7ff1c544dc50bafc11569f73b85e6fda84a541"
+source = "git+https://github.com/StardustXR/core.git?branch=binder#f6b41cd00403d18ff55c2c70d1745aadb566e424"
 dependencies = [
  "binderbinder",
  "fnv",

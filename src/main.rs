@@ -81,8 +81,8 @@ use std::{
 	time::Duration,
 };
 use tokio::{sync::Notify, task::JoinError};
-use tracing::{error, info, metadata::LevelFilter};
-use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*};
+use tracing::{Subscriber, error, info, metadata::LevelFilter};
+use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry::LookupSpan};
 use zbus::Connection;
 
 use crate::{
@@ -157,6 +157,18 @@ pub type BevyMaterial = StandardMaterial;
 static STARDUST_INSTANCE: OnceLock<String> = OnceLock::new();
 pub static PION: LazyLock<PionBinderDevice> = LazyLock::new(PionBinderDevice::default);
 
+struct SpanFilter(&'static str);
+impl<S: Subscriber + for<'a> LookupSpan<'a>> tracing_subscriber::layer::Filter<S> for SpanFilter {
+	fn enabled(
+		&self,
+		_meta: &tracing::Metadata<'_>,
+		cx: &tracing_subscriber::layer::Context<'_, S>,
+	) -> bool {
+		cx.lookup_current()
+			.is_none_or(|span| span.scope().all(|s| s.name() != self.0))
+	}
+}
+
 // #[tokio::main(flavor = "current_thread")]
 #[tokio::main]
 async fn main() -> Result<AppExit, JoinError> {
@@ -182,7 +194,8 @@ async fn main() -> Result<AppExit, JoinError> {
 				.with_default_directive(LevelFilter::WARN.into())
 				.from_env_lossy()
 				.add_directive(Directive::from_str("bevy_mesh_text_3d::text_glyphs=off").unwrap()),
-		);
+		)
+		.with_filter(SpanFilter("frame-event"));
 	registry.with(log_layer).init();
 
 	let cli_args = CliArgs::parse();
@@ -549,12 +562,14 @@ fn xr_step(world: &mut World) {
 			},
 		)
 	};
+	let frame_span = info_span!("frame-event").entered();
 	for client in CLIENTS.get_vec() {
 		_ = client.frame(FrameInfo {
 			delta,
 			predicted_display_time,
 		});
 	}
+	drop(frame_span);
 
 	let should_wait = world
 		.run_system_cached(should_run_frame_loop)

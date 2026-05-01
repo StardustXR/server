@@ -16,7 +16,7 @@ use tracing::info;
 
 use crate::{
 	PION, interface,
-	nodes::{ProxyExt, fields::FieldRef},
+	nodes::{ProxyExt, fields::FieldRef, spatial::SpatialRef},
 	query::spatial_query::Query,
 };
 
@@ -37,8 +37,8 @@ struct QueryableMut(Arc<Queryable>);
 #[derive(Debug)]
 struct Queryable {
 	queryable_ref: BinderObject<QueryableRef>,
+	spatial: BinderObjectRef<SpatialRef>,
 	field: BinderObjectRef<FieldRef>,
-	path: Arc<DedupedStr>,
 	interfaces: RwLock<Registry<QueryableInterface>>,
 }
 #[derive(Debug)]
@@ -51,7 +51,7 @@ struct InterfaceGuard(Option<Arc<QueryableInterface>>, Weak<Queryable>);
 impl QueryableInterfaceGuardHandler for InterfaceGuard {}
 impl Drop for InterfaceGuard {
 	fn drop(&mut self) {
-        info!("dropping interface");
+		info!("dropping interface");
 		drop(self.0.take());
 		if let Some(queryable) = self.1.upgrade() {
 			tokio::spawn(async move { queryable.notify_interface_changes().await });
@@ -104,16 +104,15 @@ impl QueryInterfaceHandler for QueryInterface {
 	async fn register_queryable(
 		&self,
 		_ctx: GluonCtx,
+		spatial: stardust_xr_protocol::spatial::SpatialRef,
 		field: stardust_xr_protocol::field::FieldRef,
-		path: String,
 	) -> Result<QueryableObject, QueryableError> {
+		let spatial = spatial.owned().ok_or(QueryableError::InvalidField)?;
 		let field = field.owned().ok_or(QueryableError::InvalidField)?;
-		// TODO: make sure path is valid
-		let path = DedupedStr::get(path).await;
 		let queryable_ref = PION.register_object(QueryableRef);
 		let queryable = Arc::new(Queryable {
 			field,
-			path,
+            spatial,
 			interfaces: RwLock::default(),
 			queryable_ref,
 		});

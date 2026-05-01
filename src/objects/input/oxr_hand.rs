@@ -27,17 +27,21 @@ use stardust_xr_protocol::input::{
 	InputMethodHandler, Joint, Thumb,
 };
 use stardust_xr_protocol::query::{InterfaceDependency, QueriedInterface, QueryableObjectRef};
+use stardust_xr_protocol::spatial::SpatialRef as SpatialRefProxy;
 use stardust_xr_protocol::spatial_query::{
-	SpatialQueryGuard, SpatialQueryInterface as SpatialQueryInterfaceProxy, ZoneQuery,
-	ZoneQueryHandler, ZoneQueryHandlerHandler,
+	Point, PointsQuery, PointsQueryHandle, PointsQueryHandler, PointsQueryHandlerHandler,
+	SpatialQueryGuard, SpatialQueryInterface as SpatialQueryInterfaceProxy,
 };
 use stardust_xr_protocol::types::{Timestamp, Vec3F};
 use std::any::type_name;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
+use std::process;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
+use std::time::Duration;
 use tokio::sync::RwLock;
+use tracing::Instrument;
 use zbus::Connection;
 
 // Holdout material for transparent hands (passthrough)
@@ -139,7 +143,6 @@ fn create_trackers(session: Res<OxrSession>, mut hands: ResMut<Hands>) {
 		&& let Ok(method) = HandInputMethod::new(
 			hands.base_spatial.get_ref().clone(),
 			base_space.clone(),
-			FieldRef::from_handler(hands.left.query_field.get_ref()),
 			HandSide::Left,
 			tracker,
 		)
@@ -153,7 +156,6 @@ fn create_trackers(session: Res<OxrSession>, mut hands: ResMut<Hands>) {
 		&& let Ok(method) = HandInputMethod::new(
 			hands.base_spatial.get_ref().clone(),
 			base_space,
-			FieldRef::from_handler(hands.right.query_field.get_ref()),
 			HandSide::Right,
 			tracker,
 		)
@@ -204,7 +206,7 @@ fn setup(
 	cmds.insert_resource(Hands {
 		left: OxrHandInput::new(
 			HandSide::Left,
-            base_spatial.get_ref(),
+			base_spatial.get_ref(),
 			&mut materials,
 			&mut holdout_materials,
 			&hand_config,
@@ -212,7 +214,7 @@ fn setup(
 		.unwrap(),
 		right: OxrHandInput::new(
 			HandSide::Right,
-            base_spatial.get_ref(),
+			base_spatial.get_ref(),
 			&mut materials,
 			&mut holdout_materials,
 			&hand_config,
@@ -253,7 +255,6 @@ enum HandMaterial {
 
 pub struct OxrHandInput {
 	palm_spatial: BinderObjectRef<SpatialObject>,
-	query_field: BinderObjectRef<FieldMut>,
 	side: HandSide,
 	method: Option<BinderObject<HandInputMethod>>,
 	// capture_manager: CaptureManager,
@@ -266,13 +267,12 @@ pub struct OxrHandInput {
 impl OxrHandInput {
 	pub fn new(
 		side: HandSide,
-        base_space: &BinderObjectRef<SpatialRef>,
+		base_space: &BinderObjectRef<SpatialRef>,
 		materials: &mut Assets<BevyMaterial>,
 		holdout_materials: &mut Assets<HandHoldoutMaterial>,
 		hand_config: &HandRenderConfig,
 	) -> Result<Self> {
 		let palm_spatial = SpatialObject::new(Some(&***base_space), Mat4::IDENTITY);
-		let query_field = FieldMut::new(palm_spatial.clone(), Shape::Sphere { radius: 0.125 });
 		let hand = InputDataType::Hand {
 			data: Hand {
 				right: matches!(side, HandSide::Right),
@@ -299,7 +299,6 @@ impl OxrHandInput {
 		};
 		Ok(OxrHandInput {
 			palm_spatial,
-			query_field,
 			side,
 			datamap: Default::default(),
 			material,
@@ -333,6 +332,24 @@ impl OxrHandInput {
 					new_hand.palm.rotation.mint(),
 					new_hand.palm.position.mint(),
 				));
+			if let Some(method) = self.method.as_ref()
+				&& let Some(handle) = method.query_handle.get()
+			{
+				_ = handle.update_points(
+					[
+						new_hand.thumb.tip,
+						new_hand.index.tip,
+						new_hand.middle.tip,
+						new_hand.ring.tip,
+					]
+					.into_iter()
+					.map(|v| Point {
+						point: v.position,
+						margin: v.radius + 0.5,
+					})
+					.collect(),
+				);
+			}
 
 			self.datamap.pinch_strength = pinch_between(&new_hand.thumb.tip, &new_hand.index.tip);
 			// this is how stereokit calculates grab
@@ -367,7 +384,7 @@ impl OxrHandInput {
 				let Some(field) = field.owned() else {
 					continue;
 				};
-				let distance = HandInputMethod::hand_distance(base_space, &field.data, &hand);
+				let distance = HandInputMethod::hand_sort_distance(base_space, &field.data, &hand);
 				handler_order.push((distance, handler.clone()));
 				new_handlers.insert(handler.clone());
 			}
@@ -406,7 +423,9 @@ impl OxrHandInput {
 				// TODO: optimize and cache this
 				let mut grab_bindings = HashSet::new();
 				let mut pinch_bindings = HashSet::new();
-				let Ok(bindings) = handler.suggested_bindings().await else {
+				let bindings_span = info_span!("suggested-bindings");
+				let Ok(bindings) = handler.suggested_bindings().instrument(bindings_span).await
+				else {
 					continue;
 				};
 				for (name, bindings) in bindings {
@@ -449,6 +468,7 @@ impl OxrHandInput {
 					}
 				}
 				if newly_added_handlers.contains(&handler) {
+					let _span = info_span!("input-gained").entered();
 					handler.input_gained(
 						input_method.clone(),
 						InputData {
@@ -458,6 +478,7 @@ impl OxrHandInput {
 						},
 					);
 				} else {
+					let _span = info_span!("input-updated").entered();
 					handler.input_updated(
 						input_method.clone(),
 						InputData {
@@ -469,6 +490,7 @@ impl OxrHandInput {
 				}
 			}
 			for handler in removed_handlers {
+				let _span = info_span!("input-left").entered();
 				handler.input_left(input_method.clone());
 			}
 		});
@@ -487,13 +509,12 @@ struct HandInputMethod {
 	capture_requests: RwLock<HashSet<InputHandler>>,
 	queried_handlers: Arc<RwLock<HashMap<InputHandler, FieldRef>>>,
 	query: BinderObject<InputHandlerQuery>,
-	query_guard: Arc<OnceLock<SpatialQueryGuard>>,
+	query_handle: Arc<OnceLock<PointsQueryHandle>>,
 }
 impl HandInputMethod {
 	fn new(
 		base_spatial: BinderObjectRef<SpatialRef>,
 		base_space: Arc<openxr::Space>,
-		query_field: FieldRef,
 		side: HandSide,
 		tracker: openxr::HandTracker,
 	) -> Result<Self, GluonSendError> {
@@ -502,28 +523,29 @@ impl HandInputMethod {
 			queried_handlers: queried_handlers.clone(),
 			queried_objects: RwLock::new(HashMap::new()),
 		});
-		let proxy = ZoneQueryHandler::from_handler(&query);
-		let query_guard = Arc::new(OnceLock::new());
+		let proxy = PointsQueryHandler::from_handler(&query);
+		let query_handle = Arc::new(OnceLock::new());
+		let base_spatial_ref = SpatialRefProxy::from_handler(&base_spatial);
 		tokio::spawn({
-			let query_guard = query_guard.clone();
+			let query_handle = query_handle.clone();
 			async move {
 				let spatial_query_interface = SpatialQueryInterface::new(&Arc::default());
 				let spatial_query_interface_proxy =
 					SpatialQueryInterfaceProxy::from_handler(&spatial_query_interface);
-				let guard = spatial_query_interface_proxy
-					.zone_query(ZoneQuery {
+				let handle = spatial_query_interface_proxy
+					.points_query(PointsQuery {
 						handler: proxy,
 						interfaces: vec![InterfaceDependency {
 							id: "org.stardustxr.SUIS.Handler".to_string(),
 							optional: false,
 						}],
-						zone_field: query_field,
-						margin: 0.0,
+						points: vec![],
+						reference_spatial: base_spatial_ref,
 					})
 					.await
 					.inspect_err(|err| error!("failed to create query: {err}"));
-				if let Ok(guard) = guard {
-					query_guard.set(guard);
+				if let Ok(handle) = handle {
+					query_handle.set(handle);
 				}
 			}
 		});
@@ -536,7 +558,7 @@ impl HandInputMethod {
 			capture_requests: RwLock::new(HashSet::new()),
 			queried_handlers,
 			query,
-			query_guard,
+			query_handle,
 		})
 	}
 	fn locate_hand(
@@ -634,7 +656,7 @@ impl HandInputMethod {
 			None
 		}
 	}
-	pub fn hand_distance(
+	pub fn hand_sort_distance(
 		hand_space: &BinderObjectRef<SpatialRef>,
 		field: &Field,
 		hand: &Hand,
@@ -648,6 +670,19 @@ impl HandInputMethod {
 			+ (index_tip_distance * 0.4)
 			+ (middle_tip_distance * 0.15)
 			+ (ring_tip_distance * 0.15)
+	}
+	pub fn hand_real_distance(
+		hand_space: &BinderObjectRef<SpatialRef>,
+		field: &Field,
+		hand: &Hand,
+	) -> f32 {
+		let get_dist =
+			|joint: &Joint| field.distance(&hand_space, joint.position.mint()) - joint.radius;
+
+		get_dist(&hand.thumb.tip)
+			.min(get_dist(&hand.index.tip))
+			.min(get_dist(&hand.middle.tip))
+			.min(get_dist(&hand.ring.tip))
 	}
 }
 
@@ -693,7 +728,7 @@ impl InputMethodHandler for HandInputMethod {
 			.ok()?
 			.owned()?;
 		let hand = self.locate_hand(&space, time)?;
-		let distance = Self::hand_distance(&space, &field.data, &hand);
+		let distance = Self::hand_real_distance(&space, &field.data, &hand);
 		Some(stardust_xr_protocol::input::SpatialInputData {
 			input: InputDataType::Hand { data: hand },
 			distance,
@@ -705,14 +740,14 @@ struct InputHandlerQuery {
 	queried_handlers: Arc<RwLock<HashMap<InputHandler, FieldRef>>>,
 	queried_objects: RwLock<HashMap<QueryableObjectRef, InputHandler>>,
 }
-impl ZoneQueryHandlerHandler for InputHandlerQuery {
+impl PointsQueryHandlerHandler for InputHandlerQuery {
 	async fn entered(
 		&self,
 		_ctx: gluon_wire::GluonCtx,
 		obj: QueryableObjectRef,
 		field: stardust_xr_protocol::field::FieldRef,
+		spatial: stardust_xr_protocol::spatial::SpatialRef,
 		interfaces: Vec<QueriedInterface>,
-		relative_position: Vec3F,
 		distance: f32,
 	) {
 		let Some(interface) = interfaces.first() else {
@@ -724,9 +759,30 @@ impl ZoneQueryHandlerHandler for InputHandlerQuery {
 			return;
 		}
 		let handler = InputHandler::from_object_or_ref(interface.interface.clone());
-		let Ok(field_ref) = handler.get_field().await else {
-			return;
+		info!("trying to get field ref");
+		let field_span = info_span!("get-field");
+		let field_ref = match tokio::time::timeout(
+			Duration::from_millis(10),
+			handler.get_field().instrument(field_span),
+		)
+		.await
+		{
+			Ok(Ok(v)) => v,
+			Ok(Err(_)) => {
+				warn!("unable to get field ref?");
+				return;
+			}
+			Err(_) => {
+				error!("get_field hit timeout");
+                return;
+			}
 		};
+		// let Ok(field_ref) = handler.get_field().instrument(field_span).await else {
+		// 	warn!("unable to get field ref?");
+		// 	return;
+		// };
+		// panic!("got field");
+		info!("got field");
 		if let Some(old_handler) = self
 			.queried_objects
 			.write()
@@ -735,7 +791,7 @@ impl ZoneQueryHandlerHandler for InputHandlerQuery {
 		{
 			self.queried_handlers.write().await.remove(&old_handler);
 		}
-        info!("entereered");
+		info!("entered");
 		self.queried_handlers
 			.write()
 			.await
@@ -750,17 +806,10 @@ impl ZoneQueryHandlerHandler for InputHandlerQuery {
 	) {
 	}
 
-	async fn moved(
-		&self,
-		_ctx: gluon_wire::GluonCtx,
-		_obj: QueryableObjectRef,
-		_relative_position: Vec3F,
-		_distance: f32,
-	) {
-	}
+	async fn moved(&self, _ctx: gluon_wire::GluonCtx, _obj: QueryableObjectRef, _distance: f32) {}
 
 	async fn left(&self, _ctx: gluon_wire::GluonCtx, obj: QueryableObjectRef) {
-        info!("left");
+		info!("left");
 		if let Some(old_handler) = self.queried_objects.write().await.remove(&obj) {
 			self.queried_handlers.write().await.remove(&old_handler);
 		}

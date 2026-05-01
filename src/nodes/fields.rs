@@ -509,8 +509,7 @@ impl CubicBezierSplineRef {
 	}
 }
 
-pub const R: f32 = 0.0001;
-pub trait FieldTrait: Send + Sync + 'static {
+pub trait FieldTrait: Send + Sync {
 	fn spatial_ref(&self) -> &Arc<Spatial>;
 
 	fn local_distance(&self, p: Vec3A) -> f32;

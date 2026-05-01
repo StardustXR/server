@@ -5,13 +5,15 @@ use std::{
 };
 
 use bevy::prelude::Deref;
-use glam::{Vec3, Vec3A};
+use glam::Vec3;
 use gluon_wire::impl_transaction_handler;
 use stardust_xr_protocol::{
 	field::FieldRef as FieldRefProxy,
 	query::{QueriedInterface, QueryableObjectRef},
+	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
-		BeamQuery, BeamQueryHandler, SpatialQueryGuard, SpatialQueryGuardHandler,
+		BeamQuery, BeamQueryHandler, Point, PointsQuery, PointsQueryHandleHandler,
+		PointsQueryHandler, SpatialQueryGuard, SpatialQueryGuardHandler,
 		SpatialQueryInterfaceHandler, ZoneQuery, ZoneQueryHandler,
 	},
 };
@@ -20,13 +22,13 @@ use stardust_xr_server_foundation::{
 	registry::{OwnedRegistry, Registry},
 };
 use tokio::sync::RwLock;
-use tracing::{debug, error, warn};
+use tracing::{error, info, warn};
 
 use crate::{
 	PION, interface,
 	nodes::{
 		ProxyExt as _,
-		fields::{Field, FieldTrait, R, Ray, ShapeChangedCallback},
+		fields::{Field, FieldTrait, Ray, ShapeChangedCallback},
 		spatial::{MovedCallback, Spatial},
 	},
 	query::{InterfaceQuery, QUERY_STATE, Queryable, QueryableInterface},
@@ -69,9 +71,15 @@ enum QueryType {
 	},
 	Beam {
 		handler: BeamQueryHandler,
-		origin: Arc<Spatial>,
+		ref_space: Arc<Spatial>,
+		origin: Vec3,
 		dir: Vec3,
 		max_length: f32,
+	},
+	Points {
+		handler: PointsQueryHandler,
+		ref_space: Arc<Spatial>,
+		points: RwLock<Vec<Point>>,
 	},
 }
 impl Query {
@@ -204,10 +212,12 @@ impl Query {
 			warn!("tried to update hit state for queryable without interfaces of interest");
 			return;
 		};
-		let r = self.inner.hit(&queryable);
+		let r = self.inner.hit(&queryable).await;
 		match (r, self.matching_queryables.contains(queryable)) {
 			(None, true) => {
+                info!("removing queryable");
 				self.matching_queryables.remove(queryable);
+                info!("removed queryable");
 				_ = self
 					.inner
 					.left(QueryableObjectRef::from_handler(&queryable.queryable_ref));
@@ -216,7 +226,9 @@ impl Query {
 				_ = self.inner.moved(queryable, v);
 			}
 			(Some(v), false) => {
+                info!("inserting queryable");
 				self.matching_queryables.add_raw(queryable);
+                info!("inserted queryable");
 				_ = self
 					.inner
 					.match_gained(&interfaces.interfaces, queryable, v);
@@ -260,10 +272,16 @@ impl Query {
 				}
 				QueryType::Beam {
 					handler: _,
-					origin,
+					ref_space: origin,
+					origin: _,
 					dir: _,
 					max_length: _,
 				} => &origin,
+				QueryType::Points {
+					handler: _,
+					ref_space,
+					points: _,
+				} => &ref_space,
 			}
 			.moved_callback({
 				let query = Arc::downgrade(&self);
@@ -293,7 +311,7 @@ impl Query {
 			.iter()
 			.flat_map(|(k, v)| Some((k.upgrade()?, v)))
 		{
-			if let Some(data) = self.inner.hit(&queryable) {
+			if let Some(data) = self.inner.hit(&queryable).await {
 				_ = self
 					.inner
 					.match_gained(&interfaces.interfaces, &queryable, data);
@@ -308,7 +326,7 @@ impl Drop for Query {
 }
 impl QueryType {
 	/// this could take a while to run, might we worth to run in a spawn_blocking?
-	fn hit(&self, queryable: &Queryable) -> Option<HitTestResult> {
+	async fn hit(&self, queryable: &Queryable) -> Option<HitTestResult> {
 		match self {
 			// TODO: improve this intersection test a bunch, this is probably completely wrong
 			QueryType::Zone {
@@ -317,34 +335,22 @@ impl QueryType {
 				margin,
 				_shape_changed: _,
 			} => {
-				if !queryable.field.data.spatial.visible() {
+				if !queryable.spatial.visible() {
 					return None;
 				}
 				if !field.spatial.visible() {
 					return None;
 				}
-				// let zone_point = field.closest_point(&queryable.field.spatial, Vec3A::ZERO, R);
-				let target_point =
-					queryable
-						.field
-						.data
-						.closest_point(&field.spatial, Vec3A::ZERO, R);
-				// let zone_point_distance = queryable.field.distance(&field.spatial, zone_point);
-				let target_point_distance =
-					field.distance(&queryable.field.data.spatial, target_point);
-				debug!(target_point_distance, "checking zone intersection");
-				let (_scale, _rotation, position) = Spatial::space_to_space_matrix(
-					Some(&queryable.field.data.spatial),
-					Some(&field.spatial),
-				)
-				.to_scale_rotation_translation();
-				(target_point_distance < *margin).then(|| HitTestResult::Zone {
-					pos: position,
-					distance: target_point_distance,
-				})
+				let (_scale, _rotation, pos) =
+					Spatial::space_to_space_matrix(Some(&queryable.spatial), Some(&field.spatial))
+						.to_scale_rotation_translation();
+				let distance = field.local_distance(pos.into());
+
+				(distance < *margin).then(|| HitTestResult::Zone { pos, distance })
 			}
 			QueryType::Beam {
 				handler: _,
+				ref_space,
 				origin,
 				dir,
 				max_length,
@@ -353,15 +359,39 @@ impl QueryType {
 					return None;
 				}
 				let ray_march = queryable.field.data.ray_march(Ray {
-					origin: Vec3::ZERO,
+					origin: *origin,
 					direction: *dir,
-					space: origin.clone(),
+					space: ref_space.clone(),
 				});
 				(ray_march.min_distance <= 0.0 && ray_march.deepest_point_distance <= *max_length)
 					.then(|| HitTestResult::Beam {
 						deepest_point_distance: ray_march.deepest_point_distance,
 						distance: ray_march.min_distance,
 					})
+			}
+			QueryType::Points {
+				handler: _,
+				ref_space,
+				points,
+			} => {
+				let distance = points
+					.read()
+					.await
+					.iter()
+					.map(|p| {
+						let distance = queryable.field.data.distance(&ref_space, p.point.mint());
+						(distance - p.margin, distance)
+					})
+					.reduce(|(sort1, distance1), (sort2, distance2)| {
+						if sort1 < sort2 {
+							(sort1, distance1)
+						} else {
+							(sort2, distance2)
+						}
+					});
+				distance
+					.filter(|(distance, _)| *distance < 0.0)
+					.map(|(_, distance)| HitTestResult::Points { distance })
 			}
 		}
 	}
@@ -375,9 +405,15 @@ impl QueryType {
 			} => handler.left(obj),
 			QueryType::Beam {
 				handler,
+				ref_space: _,
 				origin: _,
 				dir: _,
 				max_length: _,
+			} => handler.left(obj),
+			QueryType::Points {
+				handler,
+				ref_space: _,
+				points: _,
 			} => handler.left(obj),
 		}
 	}
@@ -395,9 +431,15 @@ impl QueryType {
 			} => handler.interfaces_changed(obj, interfaces),
 			QueryType::Beam {
 				handler,
+				ref_space: _,
 				origin: _,
 				dir: _,
 				max_length: _,
+			} => handler.interfaces_changed(obj, interfaces),
+			QueryType::Points {
+				handler,
+				ref_space: _,
+				points: _,
 			} => handler.interfaces_changed(obj, interfaces),
 		}
 	}
@@ -427,6 +469,7 @@ impl QueryType {
 			) => handler.entered(
 				QueryableObjectRef::from_handler(&queryable.queryable_ref),
 				FieldRefProxy::from_handler(&queryable.field),
+				SpatialRefProxy::from_handler(&queryable.spatial),
 				interfaces,
 				pos.into(),
 				distance,
@@ -434,6 +477,7 @@ impl QueryType {
 			(
 				QueryType::Beam {
 					handler,
+					ref_space: _,
 					origin: _,
 					dir: _,
 					max_length: _,
@@ -445,10 +489,25 @@ impl QueryType {
 			) => handler.intersected(
 				QueryableObjectRef::from_handler(&queryable.queryable_ref),
 				FieldRefProxy::from_handler(&queryable.field),
+				SpatialRefProxy::from_handler(&queryable.spatial),
 				interfaces,
 				deepest_point_distance,
 				distance,
 			),
+			(
+				QueryType::Points {
+					handler,
+					ref_space: _,
+					points: _,
+				},
+				HitTestResult::Points { distance },
+			) => dbg!(handler.entered(
+				QueryableObjectRef::from_handler(&queryable.queryable_ref),
+				FieldRefProxy::from_handler(&queryable.field),
+				SpatialRefProxy::from_handler(&queryable.spatial),
+				interfaces,
+				distance,
+			)),
 			_ => {
 				error!("tried sending entered event with mismatching QueryType and HitTestResult");
 				Ok(())
@@ -477,6 +536,7 @@ impl QueryType {
 			(
 				QueryType::Beam {
 					handler,
+					ref_space: _,
 					origin: _,
 					dir: _,
 					max_length: _,
@@ -490,6 +550,17 @@ impl QueryType {
 				deepest_point_distance,
 				distance,
 			),
+			(
+				QueryType::Points {
+					handler,
+					ref_space: _,
+					points: _,
+				},
+				HitTestResult::Points { distance },
+			) => handler.moved(
+				QueryableObjectRef::from_handler(&queryable.queryable_ref),
+				distance,
+			),
 			_ => {
 				error!("tried sending moved event with mismatching QueryType and HitTestResult");
 				Ok(())
@@ -498,6 +569,7 @@ impl QueryType {
 	}
 }
 
+#[derive(Debug)]
 enum HitTestResult {
 	Zone {
 		pos: Vec3,
@@ -505,6 +577,9 @@ enum HitTestResult {
 	},
 	Beam {
 		deepest_point_distance: f32,
+		distance: f32,
+	},
+	Points {
 		distance: f32,
 	},
 }
@@ -515,11 +590,12 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		let BeamQuery {
 			handler,
 			interfaces,
-			origin_spatial,
+			reference_spatial,
 			direction,
+			origin,
 			max_length,
 		} = query;
-		let Some(origin) = origin_spatial.owned() else {
+		let Some(ref_space) = reference_spatial.owned() else {
 			// TODO: replace with returned error
 			panic!("invalid SpatialRef used while creating a beam query");
 		};
@@ -541,7 +617,8 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			interfaces: interface_ids,
 			inner: QueryType::Beam {
 				handler,
-				origin: (**origin).clone(),
+				ref_space: (**ref_space).clone(),
+				origin: origin.mint(),
 				dir: direction.mint(),
 				max_length,
 			},
@@ -595,7 +672,67 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		let v = PION.register_object(Guard(query)).to_service();
 		SpatialQueryGuard::from_handler(&v)
 	}
+
+	async fn points_query(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		query: PointsQuery,
+	) -> stardust_xr_protocol::spatial_query::PointsQueryHandle {
+		let PointsQuery {
+			handler,
+			interfaces,
+			reference_spatial,
+			points,
+		} = query;
+		let Some(ref_space) = reference_spatial.owned() else {
+			// TODO: replace with returned error
+			panic!("invalid SpatialRef used while creating a points query");
+		};
+		let mut interface_ids = Vec::with_capacity(interfaces.len());
+		let mut found_required = false;
+		for i in interfaces {
+			found_required |= !i.optional;
+			interface_ids.push(InterfaceQuery {
+				id: DedupedStr::get(i.id).await,
+				optional: i.optional,
+			});
+		}
+		if !found_required {
+			// TODO: replace with returned error
+			panic!("no required interface")
+		}
+		let query = QUERY_STATE.queries.add(Query {
+			interfaces: interface_ids,
+			inner: QueryType::Points {
+				handler,
+				ref_space: (**ref_space).clone(),
+				points: RwLock::new(points),
+			},
+			interesting_queryables: RwLock::default(),
+			matching_queryables: Registry::new(),
+			self_moved_handle: OnceLock::new(),
+		});
+		query.init().await;
+		let v = PION.register_object(PointsQueryHandle(query)).to_service();
+		stardust_xr_protocol::spatial_query::PointsQueryHandle::from_handler(&v)
+	}
 }
+#[derive(Debug)]
+struct PointsQueryHandle(Arc<Query>);
+impl PointsQueryHandleHandler for PointsQueryHandle {
+	async fn update_points(&self, _ctx: gluon_wire::GluonCtx, points: Vec<Point>) {
+		if let QueryType::Points {
+			handler: _,
+			ref_space: _,
+			points: inner_points,
+		} = &self.0.inner
+		{
+			*inner_points.write().await = points;
+			self.0.self_moved().await;
+		}
+	}
+}
+impl_transaction_handler!(PointsQueryHandle);
 #[expect(unused)]
 #[derive(Debug)]
 struct Guard(Arc<Query>);
