@@ -16,15 +16,15 @@ use gluon_wire::impl_transaction_handler;
 use mint::Vector2;
 use stardust_xr_protocol::{
 	field::FieldRef as FieldRefProto,
-	input::{
-		DatamapData, InputData, InputDataType, InputHandler, InputMethod, InputMethodHandler,
-		Pointer, SpatialInputData,
-	},
 	query::{InterfaceDependency, QueriedInterface, QueryableObjectRef},
 	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
 		BeamQuery, BeamQueryHandler, BeamQueryHandlerHandler, SpatialQueryGuard,
 		SpatialQueryInterface as SpatialQueryInterfaceProxy,
+	},
+	suis::{
+		DatamapData, InputData, InputDataType, InputHandler, InputMethod, InputMethodHandler,
+		Pointer, SpatialInputData,
 	},
 	types::{Timestamp, Vec3F},
 };

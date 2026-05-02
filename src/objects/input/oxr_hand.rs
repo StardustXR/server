@@ -22,15 +22,15 @@ use gluon_wire::{GluonSendError, impl_transaction_handler};
 use openxr::{HandJointLocation, Posef, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::field::{FieldRef, Shape};
-use stardust_xr_protocol::input::{
-	DatamapData, Finger, Hand, InputData, InputDataType, InputHandler, InputMethod,
-	InputMethodHandler, Joint, Thumb,
-};
 use stardust_xr_protocol::query::{InterfaceDependency, QueriedInterface, QueryableObjectRef};
 use stardust_xr_protocol::spatial::SpatialRef as SpatialRefProxy;
 use stardust_xr_protocol::spatial_query::{
 	Point, PointsQuery, PointsQueryHandle, PointsQueryHandler, PointsQueryHandlerHandler,
 	SpatialQueryGuard, SpatialQueryInterface as SpatialQueryInterfaceProxy,
+};
+use stardust_xr_protocol::suis::{
+	DatamapData, Finger, Hand, InputData, InputDataType, InputHandler, InputMethod,
+	InputMethodHandler, Joint, SpatialInputData, Thumb,
 };
 use stardust_xr_protocol::types::{Timestamp, Vec3F};
 use std::any::type_name;
@@ -713,7 +713,7 @@ impl InputMethodHandler for HandInputMethod {
 		_ctx: gluon_wire::GluonCtx,
 		handler: InputHandler,
 		time: Timestamp,
-	) -> Option<stardust_xr_protocol::input::SpatialInputData> {
+	) -> Option<SpatialInputData> {
 		let time = self.base_space.instance().timestamp_to_xr(time)?;
 		let space = handler
 			.get_spatial()
@@ -729,7 +729,7 @@ impl InputMethodHandler for HandInputMethod {
 			.owned()?;
 		let hand = self.locate_hand(&space, time)?;
 		let distance = Self::hand_real_distance(&space, &field.data, &hand);
-		Some(stardust_xr_protocol::input::SpatialInputData {
+		Some(SpatialInputData {
 			input: InputDataType::Hand { data: hand },
 			distance,
 		})
@@ -774,7 +774,7 @@ impl PointsQueryHandlerHandler for InputHandlerQuery {
 			}
 			Err(_) => {
 				error!("get_field hit timeout");
-                return;
+				return;
 			}
 		};
 		// let Ok(field_ref) = handler.get_field().instrument(field_span).await else {
