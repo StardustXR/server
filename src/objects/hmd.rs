@@ -1,4 +1,5 @@
-use super::{ObjectHandle, SpatialRef, input::mouse_pointer::FlatscreenCam};
+use crate::bevy_int::flatscreen_cam::FlatscreenCam;
+use super::{ObjectHandle, SpatialRef};
 use crate::{DbusConnection, PreFrameWait, get_time, nodes::spatial::SpatialMut};
 use bevy::prelude::*;
 use bevy_mod_openxr::{

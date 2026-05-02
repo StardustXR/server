@@ -63,7 +63,8 @@ use nodes::spatial::SpatialNodePlugin;
 use objects::{
 	// 	hmd::HmdPlugin,
 	input::{
-		// 		mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
+		// 		oxr_controller::ControllerPlugin,
+		mouse_pointer::FlatscreenInputPlugin,
 		oxr_hand::HandPlugin,
 	},
 	// 	play_space::PlaySpacePlugin,
@@ -362,7 +363,7 @@ fn bevy_loop(
 		plugins = if args.spectator {
 			plugins.add(SpectatorCameraPlugin)
 		} else if args.force_flatscreen {
-			plugins.add(FlatscreenCamPlugin)
+			plugins.add(FlatscreenCamPlugin).add(FlatscreenInputPlugin)
 		} else {
 			plugins
 		};

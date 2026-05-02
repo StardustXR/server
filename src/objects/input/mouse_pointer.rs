@@ -1,121 +1,68 @@
-use super::{CaptureManager, DistanceCalculator, get_sorted_handlers};
 use crate::{
-	DbusConnection, ObjectRegistryRes,
-	core::{client::INTERNAL_CLIENT, task},
+	PION,
+	bevy_int::flatscreen_cam::FlatscreenCam,
 	nodes::{
-		Node, OwnedNode,
-		fields::{EXPORTED_FIELDS, Field, FieldTrait, Ray},
-		input::{InputDataType, InputHandler, InputMethod, Pointer},
-		items::panel::KEYMAPS,
-		spatial::SpatialMut,
+		ProxyExt as _,
+		fields::{FieldTrait, Ray},
+		spatial::{Spatial, SpatialObject},
 	},
-	objects::FieldRef,
+	query::spatial_query::SpatialQueryInterface,
 };
-use bevy::{
-	input::{
-		ButtonState,
-		keyboard::{KeyboardInput, NativeKey, NativeKeyCode},
-		mouse::{MouseMotion, MouseWheel},
-	},
-	prelude::*,
-	window::PrimaryWindow,
-};
+use bevy::{input::mouse::MouseWheel, prelude::*, window::PrimaryWindow};
+use binderbinder::binder_object::{BinderObject, BinderObjectRef, ToBinderObjectOrRef};
 use color_eyre::eyre::Result;
-use dashmap::DashMap;
-use glam::{Mat4, Vec3, vec3};
+use glam::{Mat4, Vec3};
+use gluon_wire::impl_transaction_handler;
 use mint::Vector2;
-use rustc_hash::{FxHashMap, FxHasher};
-use serde::{Deserialize, Serialize};
-use slotmap::{DefaultKey, Key as SlotKey};
-use stardust_xr_gluon::{
-	ObjectInfo,
-	interfaces::FieldRefProxy,
-	list_query::{ListEvent, ObjectListQuery},
-	object_registry::ObjectRegistry,
-	query::{ObjectQuery, QueryContext, QueryEvent},
+use stardust_xr_protocol::{
+	field::FieldRef as FieldRefProto,
+	input::{
+		DatamapData, InputData, InputDataType, InputHandler, InputMethod, InputMethodHandler,
+		Pointer, SpatialInputData,
+	},
+	query::{InterfaceDependency, QueriedInterface, QueryableObjectRef},
+	spatial::SpatialRef as SpatialRefProxy,
+	spatial_query::{
+		BeamQuery, BeamQueryHandler, BeamQueryHandlerHandler, SpatialQueryGuard,
+		SpatialQueryInterface as SpatialQueryInterfaceProxy,
+	},
+	types::{Timestamp, Vec3F},
 };
-use stardust_xr_wire::values::Datamap;
-use std::sync::{Arc, Weak};
-use tokio::sync::{Notify, mpsc, watch};
-use tokio::task::{AbortHandle, JoinSet};
-use tokio::time::{Duration, timeout};
-use xkbcommon_rs::{Context, Keymap, KeymapFormat, xkb_keymap::CompileFlags};
-use zbus::{Connection, names::OwnedInterfaceName};
-
-#[derive(Clone)]
-struct HandlerInfo {
-	handler: ObjectInfo,
-	field_ref: Arc<Field>,
-	keyboard_proxy: KeyboardHandlerProxy<'static>,
-}
-
-#[derive(Debug, Clone)]
-struct InputEvent {
-	key: u32,
-	pressed: bool,
-}
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, OnceLock};
+use tokio::sync::RwLock;
 
 pub struct FlatscreenInputPlugin;
 impl Plugin for FlatscreenInputPlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(Startup, setup);
-		// yes the input method will be delayed by one frame, its only for debugging anyways
 		app.add_systems(Update, update_pointer);
 	}
 }
 
-#[derive(Component)]
-#[require(Camera3d)]
-pub struct FlatscreenCam;
-
-fn setup(mut cmds: Commands, object_registry: Res<ObjectRegistryRes>) {
-	let Ok(pointer) = MousePointer::new(object_registry.0.clone())
-		.inspect_err(|err| error!("unable to create mouse pointer: {err}"))
+fn setup(mut cmds: Commands) {
+	let Ok(pointer) =
+		MousePointer::new().inspect_err(|err| error!("unable to create mouse pointer: {err}"))
 	else {
 		return;
 	};
-	cmds.spawn((FlatscreenCam, Name::new("Flatscreen Camera")));
 	cmds.insert_resource(pointer);
 }
 
 fn update_pointer(
-	window: Single<(&Window), With<PrimaryWindow>>,
-	mut cam: Single<(&Camera, &GlobalTransform, &mut Transform), With<FlatscreenCam>>,
+	window: Single<&Window, With<PrimaryWindow>>,
+	cam: Single<(&Camera, &GlobalTransform), With<FlatscreenCam>>,
 	mut pointer: ResMut<MousePointer>,
-	connection: Res<DbusConnection>,
-	object_registry: Res<ObjectRegistryRes>,
 	mouse_buttons: Res<ButtonInput<MouseButton>>,
 	keyboard_buttons: Res<ButtonInput<KeyCode>>,
-	mut scroll: EventReader<MouseWheel>,
-	mut motion: EventReader<MouseMotion>,
-	mut keyboard_input_events: EventReader<KeyboardInput>,
-	time: Res<Time>,
+	scroll: EventReader<MouseWheel>,
 ) {
-	let (cam, cam_transform, mut cam_local_transform) = cam.into_inner();
+	// Don't deliver pointer input while the fly camera is active.
 	if keyboard_buttons.pressed(KeyCode::ShiftLeft) && mouse_buttons.pressed(MouseButton::Right) {
-		let (mut yaw, mut pitch, _) = cam_local_transform.rotation.to_euler(EulerRot::YXZ);
-
-		for e in motion.read() {
-			let scale = -0.003;
-			pitch += e.delta.y * scale;
-			yaw += e.delta.x * scale;
-		}
-
-		cam_local_transform.rotation = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch);
-
-		let mut move_vec = Vec3::ZERO;
-		move_vec.x += keyboard_buttons.pressed(KeyCode::KeyD) as u32 as f32;
-		move_vec.x -= keyboard_buttons.pressed(KeyCode::KeyA) as u32 as f32;
-		move_vec.z += keyboard_buttons.pressed(KeyCode::KeyS) as u32 as f32;
-		move_vec.z -= keyboard_buttons.pressed(KeyCode::KeyW) as u32 as f32;
-		move_vec.y += keyboard_buttons.pressed(KeyCode::KeyE) as u32 as f32;
-		move_vec.y -= keyboard_buttons.pressed(KeyCode::KeyQ) as u32 as f32;
-
-		let move_vec = cam_local_transform.rotation * move_vec.normalize_or_zero();
-		cam_local_transform.translation += move_vec * time.delta_secs() * 3.0;
-
 		return;
 	}
+
+	let (cam, cam_transform) = *cam;
 	let Some(ray) = window
 		.cursor_position()
 		.and_then(|pos| get_viewport_pos(pos, cam))
@@ -123,15 +70,7 @@ fn update_pointer(
 	else {
 		return;
 	};
-	pointer.update(
-		&connection,
-		&object_registry,
-		ray,
-		&mouse_buttons,
-		&keyboard_buttons,
-		scroll,
-		keyboard_input_events,
-	);
+	pointer.update(ray, &mouse_buttons, scroll);
 }
 
 fn get_viewport_pos(logical_pos: Vec2, cam: &Camera) -> Option<Vec2> {
@@ -145,7 +84,7 @@ fn get_viewport_pos(logical_pos: Vec2, cam: &Camera) -> Option<Vec2> {
 	}
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy)]
 struct MouseEvent {
 	select: f32,
 	middle: f32,
@@ -153,7 +92,6 @@ struct MouseEvent {
 	grab: f32,
 	scroll_continuous: Vector2<f32>,
 	scroll_discrete: Vector2<f32>,
-	raw_input_events: Vec<u32>,
 }
 impl Default for MouseEvent {
 	fn default() -> Self {
@@ -164,118 +102,236 @@ impl Default for MouseEvent {
 			grab: 0.0,
 			scroll_continuous: [0.0; 2].into(),
 			scroll_discrete: [0.0; 2].into(),
-			raw_input_events: vec![],
 		}
 	}
 }
 
-#[zbus::proxy(
-	interface = "org.stardustxr.XKBv1",
-	default_service = "org.stardustxr.XKBv1"
-)]
-trait KeyboardHandler {
-	async fn keymap(&self, keymap_id: u64) -> zbus::Result<()>;
-	async fn key_state(&self, key: u32, pressed: bool) -> zbus::Result<()>;
-	async fn reset(&self) -> zbus::Result<()>;
+#[derive(Debug)]
+struct MouseInputMethod {
+	_beam_handler: BinderObject<MouseBeamHandler>,
+	capture: RwLock<Option<InputHandler>>,
+	capture_requests: RwLock<HashSet<InputHandler>>,
+	queried_handlers: Arc<RwLock<HashMap<InputHandler, f32>>>,
+	spatial_arc: Arc<Spatial>,
 }
 
-// Make KeyboardHandlerProxy queryable
-stardust_xr_gluon::impl_queryable_for_proxy!(KeyboardHandlerProxy);
+impl InputMethodHandler for MouseInputMethod {
+	async fn request_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
+		if self.queried_handlers.read().await.contains_key(&handler) {
+			self.capture_requests.write().await.insert(handler);
+		}
+	}
 
-// Query context for keyboard handlers
-#[derive(Debug, Clone)]
-struct KeyboardQueryContext;
-impl QueryContext for KeyboardQueryContext {}
+	async fn release_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
+		self.capture_requests.write().await.remove(&handler);
+		if self
+			.capture
+			.read()
+			.await
+			.as_ref()
+			.is_some_and(|h| h == &handler)
+		{
+			self.capture.write().await.take();
+		}
+	}
+
+	async fn get_spatial_data(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		handler: InputHandler,
+		_time: Timestamp,
+	) -> Option<SpatialInputData> {
+		let handler_space = handler
+			.get_spatial()
+			.await
+			.inspect_err(|e| error!("failed to get spatial for input handler: {e}"))
+			.ok()?
+			.owned()?;
+		info!("got space: {handler_space:?}");
+		let handler_field = handler
+			.get_field()
+			.await
+			.inspect_err(|e| error!("failed to get field for input handler: {e}"))
+			.ok()?
+			.owned()?;
+
+		info!("got field: {handler_field:?}");
+
+		let ray_result = handler_field.data.ray_march(Ray {
+			origin: Vec3::ZERO,
+			direction: Vec3::NEG_Z,
+			space: self.spatial_arc.clone(),
+		});
+
+		// Transform pointer origin and orientation into the handler's coordinate space.
+		let ptr_to_handler =
+			Spatial::space_to_space_matrix(Some(&*self.spatial_arc), Some(&***handler_space));
+		let (_, rotation, translation) = ptr_to_handler.to_scale_rotation_translation();
+
+		Some(SpatialInputData {
+			input: InputDataType::Pointer {
+				data: Pointer {
+					origin: translation.into(),
+					orientation: rotation.into(),
+					deepest_point: ray_result.deepest_point_distance,
+				},
+			},
+			distance: ray_result.min_distance,
+		})
+	}
+}
+
+impl_transaction_handler!(MouseInputMethod);
+
+#[derive(Debug)]
+struct MouseBeamHandler {
+	queried_handlers: Arc<RwLock<HashMap<InputHandler, f32>>>,
+	queried_objects: RwLock<HashMap<QueryableObjectRef, InputHandler>>,
+}
+
+impl BeamQueryHandlerHandler for MouseBeamHandler {
+	async fn intersected(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		obj: QueryableObjectRef,
+		_field: FieldRefProto,
+		_spatial: SpatialRefProxy,
+		interfaces: Vec<QueriedInterface>,
+		deepest_point_distance: f32,
+		_distance: f32,
+	) {
+		let Some(interface) = interfaces.first() else {
+			return;
+		};
+		if interface.interface_id != "org.stardustxr.SUIS.Handler" {
+			return;
+		}
+		let handler = InputHandler::from_object_or_ref(interface.interface.clone());
+		self.queried_objects
+			.write()
+			.await
+			.insert(obj, handler.clone());
+		self.queried_handlers
+			.write()
+			.await
+			.insert(handler, deepest_point_distance);
+	}
+
+	async fn interfaces_changed(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		_obj: QueryableObjectRef,
+		_interfaces: Vec<QueriedInterface>,
+	) {
+	}
+
+	async fn moved(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		obj: QueryableObjectRef,
+		deepest_point_distance: f32,
+		_distance: f32,
+	) {
+		let objects = self.queried_objects.read().await;
+		if let Some(handler) = objects.get(&obj) {
+			if let Some(entry) = self.queried_handlers.write().await.get_mut(handler) {
+				*entry = deepest_point_distance;
+			}
+		}
+	}
+
+	async fn left(&self, _ctx: gluon_wire::GluonCtx, obj: QueryableObjectRef) {
+		if let Some(handler) = self.queried_objects.write().await.remove(&obj) {
+			self.queried_handlers.write().await.remove(&handler);
+		}
+	}
+}
+
+impl_transaction_handler!(MouseBeamHandler);
 
 #[derive(Resource)]
 pub struct MousePointer {
-	node: OwnedNode,
-	keymap: DefaultKey,
-	spatial: Arc<SpatialMut>,
-	input: Arc<InputMethod>,
-	capture_manager: CaptureManager,
+	spatial: BinderObjectRef<SpatialObject>,
+	method: BinderObject<MouseInputMethod>,
+	active_handlers: HashSet<InputHandler>,
+	_query_guard: Arc<OnceLock<SpatialQueryGuard>>,
 	mouse_datamap: MouseEvent,
-	// Task management
-	focus_task_abort_handle: AbortHandle,
-	input_delivery_task_abort_handle: AbortHandle,
-	// Channels
-	input_event_tx: mpsc::UnboundedSender<InputEvent>,
-	// Notification for focus recalculation
-	focus_notify: Arc<Notify>,
 }
+
 impl MousePointer {
-	pub fn new(object_registry: Arc<ObjectRegistry>) -> Result<Self> {
-		let node = Node::generate(&INTERNAL_CLIENT, false).add_to_scenegraph_owned()?;
-		let spatial = SpatialMut::add_to(&node.0, None, Mat4::IDENTITY);
-		let pointer = InputMethod::add_to(
-			&node.0,
-			InputDataType::Pointer(Pointer::default()),
-			Datamap::from_typed(MouseEvent::default())?,
-		)?;
+	pub fn new() -> Result<Self> {
+		let spatial = SpatialObject::new(None, Mat4::IDENTITY);
+		let spatial_arc = (**spatial).clone();
+		let queried_handlers: Arc<RwLock<HashMap<InputHandler, f32>>> =
+			Arc::new(RwLock::new(HashMap::new()));
 
-		let context = Context::new(0).unwrap();
-		let keymap = KEYMAPS.lock().insert(
-			Keymap::new_from_names(context, None, CompileFlags::NO_FLAGS)
-				.unwrap()
-				.get_as_string(KeymapFormat::TextV1)
-				.unwrap(),
-		);
+		let beam_handler = PION.register_object(MouseBeamHandler {
+			queried_handlers: queried_handlers.clone(),
+			queried_objects: RwLock::new(HashMap::new()),
+		});
+		let beam_handler_proxy = BeamQueryHandler::from_handler(&beam_handler);
 
-		// Create channels and notification
-		let (focused_handler_tx, focused_handler_rx) = watch::channel::<Option<HandlerInfo>>(None);
-		let (input_event_tx, input_event_rx) = mpsc::unbounded_channel::<InputEvent>();
-		let focus_notify = Arc::new(Notify::new());
-		// Spawn input delivery task
-		info!("Creating input delivery task");
-		let input_delivery_task_abort_handle = task::new(
-			|| "Mouse pointer input delivery task",
-			Self::input_delivery_task(
-				object_registry.get_connection().clone(),
-				focused_handler_rx,
-				input_event_rx,
-				keymap.data().as_ffi(),
-			),
-		)?
-		.abort_handle();
-		info!("Input delivery task created successfully");
+		let method = PION.register_object(MouseInputMethod {
+			_beam_handler: beam_handler,
+			capture: RwLock::new(None),
+			capture_requests: RwLock::new(HashSet::new()),
+			queried_handlers,
+			spatial_arc,
+		});
 
-		// Spawn focus tracking task
-		info!("Creating focus tracking task");
-		let focus_task_abort_handle = task::new(
-			|| "Mouse pointer focus task",
-			Self::focus_tracking_task(
-				object_registry,
-				focus_notify.clone(),
-				spatial.clone(),
-				pointer.clone(),
-				focused_handler_tx,
-			),
-		)?
-		.abort_handle();
-		info!("Focus tracking task created successfully");
+		let query_guard: Arc<OnceLock<SpatialQueryGuard>> = Arc::new(OnceLock::new());
+		let base_spatial_ref = SpatialRefProxy::from_handler(spatial.get_ref());
+		tokio::spawn({
+			let query_guard = query_guard.clone();
+			async move {
+				let sqi = SpatialQueryInterface::new(&Arc::default());
+				let sqi_proxy = SpatialQueryInterfaceProxy::from_handler(&sqi);
+				match sqi_proxy
+					.beam_query(BeamQuery {
+						handler: beam_handler_proxy,
+						interfaces: vec![InterfaceDependency {
+							id: "org.stardustxr.SUIS.Handler".to_string(),
+							optional: false,
+						}],
+						reference_spatial: base_spatial_ref,
+						origin: Vec3F {
+							x: 0.0,
+							y: 0.0,
+							z: 0.0,
+						},
+						direction: Vec3F {
+							x: 0.0,
+							y: 0.0,
+							z: -1.0,
+						},
+						max_length: f32::MAX,
+					})
+					.await
+				{
+					Ok(guard) => {
+						query_guard.set(guard).ok();
+					}
+					Err(e) => {
+						error!("failed to create mouse pointer beam query: {e}");
+					}
+				}
+			}
+		});
 
 		Ok(MousePointer {
-			node,
 			spatial,
-			input: pointer,
-			capture_manager: CaptureManager::default(),
+			method,
+			active_handlers: HashSet::new(),
+			_query_guard: query_guard,
 			mouse_datamap: Default::default(),
-			keymap,
-			focus_task_abort_handle,
-			input_delivery_task_abort_handle,
-			input_event_tx,
-			focus_notify,
 		})
 	}
+
 	pub fn update(
 		&mut self,
-		dbus_connection: &Connection,
-		object_registry: &ObjectRegistry,
 		ray: Ray3d,
 		mouse_buttons: &ButtonInput<MouseButton>,
-		keyboard_buttons: &ButtonInput<KeyCode>,
 		mut scroll: EventReader<MouseWheel>,
-		mut keyboard_input_events: EventReader<KeyboardInput>,
 	) {
 		let mut discrete = Vec2::ZERO;
 		let mut continuous = Vec2::ZERO;
@@ -295,374 +351,122 @@ impl MousePointer {
 		self.spatial.set_local_transform(
 			Mat4::look_to_rh(ray.origin, Vec3::from(ray.direction), Vec3::Y).inverse(),
 		);
-		{
-			// Set pointer input datamap
-			self.mouse_datamap = MouseEvent {
-				select: mouse_buttons.pressed(MouseButton::Left) as u32 as f32,
-				middle: mouse_buttons.pressed(MouseButton::Middle) as u32 as f32,
-				context: mouse_buttons.pressed(MouseButton::Right) as u32 as f32,
-				grab: mouse_buttons.pressed(MouseButton::Right) as u32 as f32, // Was Mouse 5
-				scroll_continuous: continuous.into(),
-				scroll_discrete: discrete.into(),
-				raw_input_events: mouse_buttons
-					.get_pressed()
-					.map(|button| match button {
-						MouseButton::Left => input_event_codes::BTN_LEFT!(),
-						MouseButton::Right => input_event_codes::BTN_RIGHT!(),
-						MouseButton::Middle => input_event_codes::BTN_MIDDLE!(),
-						MouseButton::Back => input_event_codes::BTN_BACK!(),
-						MouseButton::Forward => input_event_codes::BTN_FORWARD!(),
-						MouseButton::Other(b) => *b as u32,
-					})
-					.collect(),
-			};
-			let input = self.input.data().clone();
-			self.input
-				.update_state(input, Datamap::from_typed(&self.mouse_datamap).unwrap());
-		}
-		self.target_pointer_input();
 
-		// Send keyboard input events via channel
-		for event in keyboard_input_events.read() {
-			if let Some(key) = map_key(event.key_code) {
-				let input_event = InputEvent {
-					key,
-					pressed: matches!(event.state, ButtonState::Pressed),
-				};
-				info!(
-					"Sending keyboard input event: key={}, pressed={}",
-					key, input_event.pressed
-				);
-				if let Err(e) = self.input_event_tx.send(input_event) {
-					error!("Failed to send keyboard input event: {}", e);
-				}
-			} else {
-				warn!("Unable to map key code: {:?}", event.key_code);
-			}
-		}
-
-		// Notify focus tracking task to recalculate focus
-		self.focus_notify.notify_waiters();
-	}
-	fn target_pointer_input(&mut self) {
-		let distance_calculator: DistanceCalculator = |space, data, field| {
-			let result = field.ray_march(Ray {
-				origin: vec3(0.0, 0.0, 0.0),
-				direction: vec3(0.0, 0.0, -1.0),
-				space: space.clone(),
-			});
-			let valid =
-				result.deepest_point_distance > 0.0 && result.min_distance.is_sign_negative();
-			valid.then_some(result.deepest_point_distance)
+		self.mouse_datamap = MouseEvent {
+			select: mouse_buttons.pressed(MouseButton::Left) as u32 as f32,
+			middle: mouse_buttons.pressed(MouseButton::Middle) as u32 as f32,
+			context: mouse_buttons.pressed(MouseButton::Right) as u32 as f32,
+			grab: mouse_buttons.pressed(MouseButton::Right) as u32 as f32,
+			scroll_continuous: continuous.into(),
+			scroll_discrete: discrete.into(),
 		};
 
-		if self
-			.capture_manager
-			.update(&self.input, distance_calculator)
-		{
-			return;
-		}
-
-		let mut handlers = get_sorted_handlers(&self.input, distance_calculator);
-		let first_distance = handlers
-			.first()
-			.map(|(_, distance)| *distance)
-			.unwrap_or(f32::NEG_INFINITY);
-
-		let order: Vec<Arc<InputHandler>> = handlers
-			.into_iter()
-			.filter(|(handler, distance)| (distance - first_distance).abs() <= 0.001)
-			.map(|(handler, _)| handler)
-			.take(10)
-			.collect();
-		self.input.set_handler_capture_order(order, vec![]);
+		self.deliver_input();
 	}
 
-	async fn focus_tracking_task(
-		object_registry: Arc<ObjectRegistry>,
-		focus_notify: Arc<Notify>,
-		spatial: Arc<SpatialMut>,
-		pointer: Arc<InputMethod>,
-		focused_handler_tx: watch::Sender<Option<HandlerInfo>>,
-	) {
-		info!("Focus tracking task started");
+	fn deliver_input(&mut self) {
+		let queried = self.method.queried_handlers.blocking_read();
+		let captured = self.method.capture.blocking_read().clone();
 
-		// Create keyboard handler query inside the task
-		let mut keyboard_query = ObjectQuery::<
-			(FieldRefProxy<'static>, KeyboardHandlerProxy<'static>),
-			_,
-		>::new(object_registry.clone(), ());
-		let (keyboard_handlers, mapper) = keyboard_query.to_list_query();
-		task::new(
-			|| "Focus tracking mapper",
-			mapper.init(async |ev| match ev {
-				ListEvent::NewMatch((field_ref, keyboard_proxy)) => {
-					info!("New keyboard handler found");
-					let uid = timeout(Duration::from_millis(100), field_ref.uid())
-						.await
-						.ok()?
-						.ok()?;
-					let field_node = EXPORTED_FIELDS.get(&uid)?.upgrade()?;
-					let field = field_node.get_aspect::<Field>();
-					Some((field, keyboard_proxy))
-				}
-				ListEvent::Modified((field_ref, keyboard_proxy)) => {
-					let uid = timeout(Duration::from_millis(100), field_ref.uid())
-						.await
-						.ok()?
-						.ok()?;
-					let field_node = EXPORTED_FIELDS.get(&uid)?.upgrade()?;
-					let field = field_node.get_aspect::<Field>();
-					Some((field, keyboard_proxy))
-				}
-				_ => None,
-			}),
-		);
+		let mut handler_order: Vec<(f32, InputHandler)> =
+			queried.iter().map(|(h, &dist)| (dist, h.clone())).collect();
+		drop(queried);
+		handler_order.sort_by(|(d1, _), (d2, _)| d1.total_cmp(d2));
 
-		// Main focus calculation loop
-		loop {
-			let mut closest_handler = None;
-			let mut closest_distance = f32::MAX;
+		let new_handlers: HashSet<InputHandler> =
+			handler_order.iter().map(|(_, h)| h.clone()).collect();
 
-			// Find closest handler
-			for (handler, (field_ref, keyboard_proxy)) in &*keyboard_handlers.iter().await {
-				let Ok(field_ref) = field_ref else {
-					continue;
-				};
-
-				let result = field_ref.ray_march(Ray {
-					origin: vec3(0.0, 0.0, 0.0),
-					direction: vec3(0.0, 0.0, -1.0),
-					space: spatial.clone(),
-				});
-
-				if result.deepest_point_distance > 0.0
-					&& result.min_distance < 0.05
-					&& result.deepest_point_distance < closest_distance
-				{
-					closest_distance = result.deepest_point_distance;
-					closest_handler = Some(HandlerInfo {
-						handler: handler.clone(),
-						field_ref: field_ref.clone(),
-						keyboard_proxy: keyboard_proxy.clone(),
-					});
-				}
+		let mut newly_added = HashSet::new();
+		for h in &new_handlers {
+			if !self.active_handlers.contains(h) {
+				newly_added.insert(h.clone());
 			}
-
-			// Update focused handler
-			if let Some(ref handler_info) = closest_handler {
-				info!(
-					"Focus tracking task: Focused on handler at distance {}",
-					closest_distance
-				);
-			} else {
-				debug!("Focus tracking task: No handler in focus");
-			}
-			let _ = focused_handler_tx.send(closest_handler);
-
-			// Wait for next frame signal
-			focus_notify.notified().await;
 		}
-	}
+		let mut removed = HashSet::new();
+		for h in &self.active_handlers {
+			if !new_handlers.contains(h) {
+				removed.insert(h.clone());
+			}
+		}
 
-	async fn input_delivery_task(
-		dbus_connection: Connection,
-		mut focused_handler_rx: watch::Receiver<Option<HandlerInfo>>,
-		mut input_event_rx: mpsc::UnboundedReceiver<InputEvent>,
-		keymap_id: u64,
-	) {
-		info!("Input delivery task started");
-		loop {
-			// Handle input events
-			while let Some(input_event) = input_event_rx.recv().await {
-				info!(
-					"Input delivery task: Received input event key={}, pressed={}",
-					input_event.key, input_event.pressed
-				);
-				// Get current focused handler
-				let current_handler = focused_handler_rx.borrow().clone();
-				let Some(handler_info) = current_handler else {
-					continue;
-				};
+		let mouse_datamap = self.mouse_datamap;
+		let method_arc = self.method.handler_arc().clone();
+		let input_method = InputMethod::from_handler(&self.method);
 
-				// Send input to handler using cached proxy
-				info!("Input delivery task: Sending to handler");
-				let keyboard_handler = &handler_info.keyboard_proxy;
-
-				// Register keymap first
-				if let Err(e) = keyboard_handler.keymap(keymap_id).await {
-					warn!("Input delivery task: Failed to register keymap: {}", e);
+		tokio::spawn(async move {
+			for (i, (_, handler)) in handler_order.into_iter().enumerate() {
+				if method_arc.capture_requests.read().await.contains(&handler)
+					&& method_arc.capture.read().await.is_none()
+				{
+					method_arc.capture.write().await.replace(handler.clone());
 				}
 
-				// Send key state
-				if let Err(e) = keyboard_handler
-					.key_state(input_event.key + 8, input_event.pressed)
-					.await
-				{
-					error!("Input delivery task: Failed to send key state: {}", e);
+				let is_captured = captured.as_ref().is_some_and(|c| c == &handler);
+				let input_data = InputData {
+					datamap: build_datamap(&mouse_datamap),
+					order: i as u32,
+					captured: is_captured,
+				};
+
+				if newly_added.contains(&handler) {
+					handler.input_gained(input_method.clone(), input_data);
 				} else {
-					info!(
-						"Input delivery task: Successfully sent key {} (pressed={})",
-						input_event.key + 8,
-						input_event.pressed
-					);
+					handler.input_updated(input_method.clone(), input_data);
 				}
 			}
-		}
+			for handler in removed {
+				handler.input_left(input_method.clone());
+			}
+		});
+
+		self.active_handlers = new_handlers;
 	}
 }
 
-impl Drop for MousePointer {
-	fn drop(&mut self) {
-		// Abort the persistent tasks when MousePointer is dropped
-		self.focus_task_abort_handle.abort();
-		self.input_delivery_task_abort_handle.abort();
-	}
-}
-
-fn map_key(key: KeyCode) -> Option<u32> {
-	use KeyCode as Key;
-	match key {
-		Key::Unidentified(NativeKeyCode::Xkb(code)) => Some(code),
-		Key::Backspace => Some(input_event_codes::KEY_BACKSPACE!()),
-		Key::Tab => Some(input_event_codes::KEY_TAB!()),
-		Key::Enter => Some(input_event_codes::KEY_ENTER!()),
-		Key::ShiftLeft => Some(input_event_codes::KEY_LEFTSHIFT!()),
-		Key::ShiftRight => Some(input_event_codes::KEY_RIGHTSHIFT!()),
-		Key::ControlLeft => Some(input_event_codes::KEY_LEFTCTRL!()),
-		Key::ControlRight => Some(input_event_codes::KEY_RIGHTCTRL!()),
-		Key::AltLeft => Some(input_event_codes::KEY_LEFTALT!()),
-		Key::AltRight => Some(input_event_codes::KEY_RIGHTALT!()),
-		Key::CapsLock => Some(input_event_codes::KEY_CAPSLOCK!()),
-		Key::Escape => Some(input_event_codes::KEY_ESC!()),
-		Key::Space => Some(input_event_codes::KEY_SPACE!()),
-		Key::End => Some(input_event_codes::KEY_END!()),
-		Key::Home => Some(input_event_codes::KEY_HOME!()),
-		Key::ArrowLeft => Some(input_event_codes::KEY_LEFT!()),
-		Key::ArrowRight => Some(input_event_codes::KEY_RIGHT!()),
-		Key::ArrowUp => Some(input_event_codes::KEY_UP!()),
-		Key::ArrowDown => Some(input_event_codes::KEY_DOWN!()),
-		Key::PageUp => Some(input_event_codes::KEY_PAGEUP!()),
-		Key::PageDown => Some(input_event_codes::KEY_PAGEDOWN!()),
-		Key::PrintScreen => Some(input_event_codes::KEY_PRINT!()),
-		Key::Insert => Some(input_event_codes::KEY_INSERT!()),
-		Key::Delete => Some(input_event_codes::KEY_DELETE!()),
-		Key::Digit0 => Some(input_event_codes::KEY_0!()),
-		Key::Digit1 => Some(input_event_codes::KEY_1!()),
-		Key::Digit2 => Some(input_event_codes::KEY_2!()),
-		Key::Digit3 => Some(input_event_codes::KEY_3!()),
-		Key::Digit4 => Some(input_event_codes::KEY_4!()),
-		Key::Digit5 => Some(input_event_codes::KEY_5!()),
-		Key::Digit6 => Some(input_event_codes::KEY_6!()),
-		Key::Digit7 => Some(input_event_codes::KEY_7!()),
-		Key::Digit8 => Some(input_event_codes::KEY_8!()),
-		Key::Digit9 => Some(input_event_codes::KEY_9!()),
-		Key::KeyA => Some(input_event_codes::KEY_A!()),
-		Key::KeyB => Some(input_event_codes::KEY_B!()),
-		Key::KeyC => Some(input_event_codes::KEY_C!()),
-		Key::KeyD => Some(input_event_codes::KEY_D!()),
-		Key::KeyE => Some(input_event_codes::KEY_E!()),
-		Key::KeyF => Some(input_event_codes::KEY_F!()),
-		Key::KeyG => Some(input_event_codes::KEY_G!()),
-		Key::KeyH => Some(input_event_codes::KEY_H!()),
-		Key::KeyI => Some(input_event_codes::KEY_I!()),
-		Key::KeyJ => Some(input_event_codes::KEY_J!()),
-		Key::KeyK => Some(input_event_codes::KEY_K!()),
-		Key::KeyL => Some(input_event_codes::KEY_L!()),
-		Key::KeyM => Some(input_event_codes::KEY_M!()),
-		Key::KeyN => Some(input_event_codes::KEY_N!()),
-		Key::KeyO => Some(input_event_codes::KEY_O!()),
-		Key::KeyP => Some(input_event_codes::KEY_P!()),
-		Key::KeyQ => Some(input_event_codes::KEY_Q!()),
-		Key::KeyR => Some(input_event_codes::KEY_R!()),
-		Key::KeyS => Some(input_event_codes::KEY_S!()),
-		Key::KeyT => Some(input_event_codes::KEY_T!()),
-		Key::KeyU => Some(input_event_codes::KEY_U!()),
-		Key::KeyV => Some(input_event_codes::KEY_V!()),
-		Key::KeyW => Some(input_event_codes::KEY_W!()),
-		Key::KeyX => Some(input_event_codes::KEY_X!()),
-		Key::KeyY => Some(input_event_codes::KEY_Y!()),
-		Key::KeyZ => Some(input_event_codes::KEY_Z!()),
-		Key::Numpad0 => Some(input_event_codes::KEY_NUMERIC_0!()),
-		Key::Numpad1 => Some(input_event_codes::KEY_NUMERIC_1!()),
-		Key::Numpad2 => Some(input_event_codes::KEY_NUMERIC_2!()),
-		Key::Numpad3 => Some(input_event_codes::KEY_NUMERIC_3!()),
-		Key::Numpad4 => Some(input_event_codes::KEY_NUMERIC_4!()),
-		Key::Numpad5 => Some(input_event_codes::KEY_NUMERIC_5!()),
-		Key::Numpad6 => Some(input_event_codes::KEY_NUMERIC_6!()),
-		Key::Numpad7 => Some(input_event_codes::KEY_NUMERIC_7!()),
-		Key::Numpad8 => Some(input_event_codes::KEY_NUMERIC_8!()),
-		Key::Numpad9 => Some(input_event_codes::KEY_NUMERIC_9!()),
-		Key::F1 => Some(input_event_codes::KEY_F1!()),
-		Key::F2 => Some(input_event_codes::KEY_F2!()),
-		Key::F3 => Some(input_event_codes::KEY_F3!()),
-		Key::F4 => Some(input_event_codes::KEY_F4!()),
-		Key::F5 => Some(input_event_codes::KEY_F5!()),
-		Key::F6 => Some(input_event_codes::KEY_F6!()),
-		Key::F7 => Some(input_event_codes::KEY_F7!()),
-		Key::F8 => Some(input_event_codes::KEY_F8!()),
-		Key::F9 => Some(input_event_codes::KEY_F9!()),
-		Key::F10 => Some(input_event_codes::KEY_F10!()),
-		Key::F11 => Some(input_event_codes::KEY_F11!()),
-		Key::F12 => Some(input_event_codes::KEY_F12!()),
-		Key::F13 => Some(input_event_codes::KEY_F13!()),
-		Key::F14 => Some(input_event_codes::KEY_F14!()),
-		Key::F15 => Some(input_event_codes::KEY_F15!()),
-		Key::F16 => Some(input_event_codes::KEY_F16!()),
-		Key::F17 => Some(input_event_codes::KEY_F17!()),
-		Key::F18 => Some(input_event_codes::KEY_F18!()),
-		Key::F19 => Some(input_event_codes::KEY_F19!()),
-		Key::F20 => Some(input_event_codes::KEY_F20!()),
-		Key::F21 => Some(input_event_codes::KEY_F21!()),
-		Key::F22 => Some(input_event_codes::KEY_F22!()),
-		Key::F23 => Some(input_event_codes::KEY_F23!()),
-		Key::F24 => Some(input_event_codes::KEY_F24!()),
-		Key::Comma => Some(input_event_codes::KEY_COMMA!()),
-		Key::Period => Some(input_event_codes::KEY_DOT!()),
-		Key::Slash => Some(input_event_codes::KEY_SLASH!()),
-		Key::Backslash => Some(input_event_codes::KEY_BACKSLASH!()),
-		Key::Semicolon => Some(input_event_codes::KEY_SEMICOLON!()),
-		Key::Quote => Some(input_event_codes::KEY_APOSTROPHE!()),
-		Key::BracketLeft => Some(input_event_codes::KEY_LEFTBRACE!()),
-		Key::BracketRight => Some(input_event_codes::KEY_RIGHTBRACE!()),
-		Key::Minus => Some(input_event_codes::KEY_MINUS!()),
-		Key::Equal => Some(input_event_codes::KEY_EQUAL!()),
-		Key::Backquote => Some(input_event_codes::KEY_GRAVE!()),
-		Key::SuperLeft => Some(input_event_codes::KEY_LEFTMETA!()),
-		Key::SuperRight => Some(input_event_codes::KEY_RIGHTMETA!()),
-		Key::NumpadMultiply => Some(input_event_codes::KEY_NUMERIC_STAR!()),
-		Key::NumpadAdd => Some(input_event_codes::KEY_KPPLUS!()),
-		Key::NumpadSubtract => Some(input_event_codes::KEY_MINUS!()),
-		Key::NumpadDecimal => Some(input_event_codes::KEY_DOT!()),
-		Key::NumpadDivide => Some(input_event_codes::KEY_SLASH!()),
-		Key::ContextMenu => Some(input_event_codes::KEY_CONTEXT_MENU!()),
-		Key::Help => Some(input_event_codes::KEY_HELP!()),
-		Key::NumLock => Some(input_event_codes::KEY_NUMLOCK!()),
-		Key::NumpadBackspace => Some(input_event_codes::KEY_BACKSPACE!()),
-		Key::NumpadClear => Some(input_event_codes::KEY_CLEAR!()),
-		Key::NumpadClearEntry => Some(input_event_codes::KEY_CLEAR!()),
-		Key::NumpadComma => Some(input_event_codes::KEY_COMMA!()),
-		Key::NumpadEnter => Some(input_event_codes::KEY_ENTER!()),
-		Key::NumpadEqual => Some(input_event_codes::KEY_EQUAL!()),
-		Key::NumpadHash => Some(input_event_codes::KEY_NUMERIC_POUND!()),
-		Key::NumpadStar => Some(input_event_codes::KEY_KPASTERISK!()),
-		Key::Fn => Some(input_event_codes::KEY_FN!()),
-		Key::ScrollLock => Some(input_event_codes::KEY_SCROLLLOCK!()),
-		Key::Pause => Some(input_event_codes::KEY_PAUSE!()),
-		Key::Power => Some(input_event_codes::KEY_POWER!()),
-		Key::Sleep => Some(input_event_codes::KEY_SLEEP!()),
-		Key::Suspend => Some(input_event_codes::KEY_SUSPEND!()),
-		Key::Again => Some(input_event_codes::KEY_AGAIN!()),
-		Key::Copy => Some(input_event_codes::KEY_COPY!()),
-		Key::Cut => Some(input_event_codes::KEY_CUT!()),
-		Key::Find => Some(input_event_codes::KEY_FIND!()),
-		Key::Open => Some(input_event_codes::KEY_OPEN!()),
-		Key::Paste => Some(input_event_codes::KEY_PASTE!()),
-		Key::Props => Some(input_event_codes::KEY_PROPS!()),
-		Key::Select => Some(input_event_codes::KEY_SELECT!()),
-		Key::Undo => Some(input_event_codes::KEY_UNDO!()),
-		Key::Hiragana => Some(input_event_codes::KEY_HIRAGANA!()),
-		Key::Katakana => Some(input_event_codes::KEY_KATAKANA!()),
-		_ => None,
-	}
+fn build_datamap(event: &MouseEvent) -> HashMap<String, DatamapData> {
+	let mut map = HashMap::new();
+	map.insert(
+		"select".to_string(),
+		DatamapData::Float {
+			value: event.select,
+		},
+	);
+	map.insert(
+		"middle".to_string(),
+		DatamapData::Float {
+			value: event.middle,
+		},
+	);
+	map.insert(
+		"context".to_string(),
+		DatamapData::Float {
+			value: event.context,
+		},
+	);
+	map.insert("grab".to_string(), DatamapData::Float { value: event.grab });
+	map.insert(
+		"scroll_continuous_x".to_string(),
+		DatamapData::Float {
+			value: event.scroll_continuous.x,
+		},
+	);
+	map.insert(
+		"scroll_continuous_y".to_string(),
+		DatamapData::Float {
+			value: event.scroll_continuous.y,
+		},
+	);
+	map.insert(
+		"scroll_discrete_x".to_string(),
+		DatamapData::Float {
+			value: event.scroll_discrete.x,
+		},
+	);
+	map.insert(
+		"scroll_discrete_y".to_string(),
+		DatamapData::Float {
+			value: event.scroll_discrete.y,
+		},
+	);
+	map
 }
