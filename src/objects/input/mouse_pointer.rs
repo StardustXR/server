@@ -28,9 +28,12 @@ use stardust_xr_protocol::{
 	},
 	types::{Timestamp, Vec3F},
 };
-use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock};
-use tokio::sync::RwLock;
+use std::{
+	collections::{HashMap, HashSet},
+	time::Duration,
+};
+use tokio::{sync::RwLock, time::timeout};
 
 pub struct FlatscreenInputPlugin;
 impl Plugin for FlatscreenInputPlugin {
@@ -141,16 +144,19 @@ impl InputMethodHandler for MouseInputMethod {
 		handler: InputHandler,
 		_time: Timestamp,
 	) -> Option<SpatialInputData> {
-		let handler_space = handler
-			.get_spatial()
+		info!("get spatial data");
+		let handler_space = timeout(Duration::from_secs_f32(1.0), handler.get_spatial())
 			.await
+			.inspect_err(|e| error!("timeout getting spatial for input handler!: {e}"))
+			.ok()?
 			.inspect_err(|e| error!("failed to get spatial for input handler: {e}"))
 			.ok()?
 			.owned()?;
 		info!("got space: {handler_space:?}");
-		let handler_field = handler
-			.get_field()
+		let handler_field = timeout(Duration::from_secs_f32(1.0), handler.get_field())
 			.await
+			.inspect_err(|e| error!("timeout getting field for input handler!: {e}"))
+			.ok()?
 			.inspect_err(|e| error!("failed to get field for input handler: {e}"))
 			.ok()?
 			.owned()?;
