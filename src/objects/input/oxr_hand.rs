@@ -4,6 +4,7 @@ use crate::nodes::fields::{Field, FieldMut, FieldTrait};
 use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
 use crate::openxr_helpers::ConvertTimespec;
 use crate::query::spatial_query::SpatialQueryInterface;
+use crate::type_helpers::TimestampExt;
 use crate::{BevyMaterial, DbusConnection, PION, PreFrameWait, get_time};
 use bevy::pbr::ExtendedMaterial;
 use bevy::prelude::Transform as BevyTransform;
@@ -29,10 +30,10 @@ use stardust_xr_protocol::spatial_query::{
 	SpatialQueryGuard, SpatialQueryInterface as SpatialQueryInterfaceProxy,
 };
 use stardust_xr_protocol::suis::{
-	DatamapData, Finger, Hand, InputData, InputDataType, InputHandler, InputMethod,
-	InputMethodHandler, Joint, SpatialInputData, Thumb,
+	Chirality, DatamapData, Finger, Hand, InputDataType, InputHandler, InputMethod,
+	InputMethodHandler, Joint, SemanticData, SpatialData, Thumb,
 };
-use stardust_xr_protocol::types::{Timestamp, Vec3F};
+use stardust_xr_protocol::types::{self, Timestamp, Vec3F};
 use std::any::type_name;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -120,9 +121,10 @@ fn pinch_between(joint_1: &Joint, joint_2: &Joint) -> f32 {
 	const PINCH_ACTIVACTION_DISTANCE: f32 = 0.01;
 	let combined_radius = joint_1.radius + joint_2.radius;
 	let pinch_dist = joint_1
+		.pose
 		.position
 		.mint::<Vec3>()
-		.distance(joint_2.position.mint())
+		.distance(joint_2.pose.position.mint())
 		- combined_radius;
 	(1.0 - ((pinch_dist - PINCH_ACTIVACTION_DISTANCE) / (PINCH_MAX - PINCH_ACTIVACTION_DISTANCE)))
 		.clamp(0.0, 1.0)
@@ -227,8 +229,10 @@ fn setup(
 
 fn convert_joint(joint: HandJointLocation) -> Joint {
 	Joint {
-		position: joint.pose.position.to_vec3().into(),
-		rotation: joint.pose.orientation.to_quat().into(),
+		pose: types::Posef {
+			position: joint.pose.position.to_vec3().into(),
+			orientation: joint.pose.orientation.to_quat().into(),
+		},
 		radius: joint.radius,
 		distance: 0.0,
 	}
@@ -275,7 +279,10 @@ impl OxrHandInput {
 		let palm_spatial = SpatialObject::new(Some(&***base_space), Mat4::IDENTITY);
 		let hand = InputDataType::Hand {
 			data: Hand {
-				right: matches!(side, HandSide::Right),
+				chirality: match side {
+					HandSide::Left => Chirality::Left,
+					HandSide::Right => Chirality::Right,
+				},
 				..Default::default()
 			},
 		};
@@ -329,8 +336,8 @@ impl OxrHandInput {
 		if let Some(new_hand) = new_hand {
 			self.palm_spatial
 				.set_local_transform(Mat4::from_rotation_translation(
-					new_hand.palm.rotation.mint(),
-					new_hand.palm.position.mint(),
+					new_hand.palm.pose.orientation.mint(),
+					new_hand.palm.pose.position.mint(),
 				));
 			if let Some(method) = self.method.as_ref()
 				&& let Some(handle) = method.query_handle.get()
@@ -344,7 +351,7 @@ impl OxrHandInput {
 					]
 					.into_iter()
 					.map(|v| Point {
-						point: v.position,
+						point: v.pose.position,
 						margin: v.radius + 0.5,
 					})
 					.collect(),
@@ -380,23 +387,23 @@ impl OxrHandInput {
 		if let Some(hand) = new_hand
 			&& method.capture.blocking_read().is_none()
 		{
-			for (handler, field) in method.queried_handlers.blocking_read().iter() {
-				let Some(field) = field.owned() else {
+			for (handler, field_ref) in method.queried_handlers.blocking_read().iter() {
+				let Some(field) = field_ref.owned() else {
 					continue;
 				};
 				let distance = HandInputMethod::hand_sort_distance(base_space, &field.data, &hand);
-				handler_order.push((distance, handler.clone()));
+				handler_order.push((distance, handler.clone(), field_ref.clone()));
 				new_handlers.insert(handler.clone());
 			}
 		}
 		if let Some(hand) = new_hand
-			&& let Some(handler) = method.capture.blocking_read().as_ref()
+			&& let Some((handler, field)) = method.capture.blocking_read().as_ref()
 		{
 			// this distance is only used for sorting, which doesn't happen with only one entry
-			handler_order.push((0.0, handler.clone()));
+			handler_order.push((0.0, handler.clone(), field.clone()));
 			new_handlers.insert(handler.clone());
 		}
-		handler_order.sort_by(|(v1, _), (v2, _)| v1.total_cmp(v2));
+		handler_order.sort_by(|(v1, _, _), (v2, _, _)| v1.total_cmp(v2));
 		let mut newly_added_handlers = HashSet::new();
 		for h in &new_handlers {
 			if !self.active_handlers.contains(h) {
@@ -413,12 +420,25 @@ impl OxrHandInput {
 		let method_arc = method.handler_arc().clone();
 		let input_method = InputMethod::from_handler(method);
 		let data = self.datamap;
+		let timestamp = method
+			.base_space
+			.instance()
+			.xr_to_timestamp(time)
+			.unwrap_or_else(Timestamp::now);
+		let hand_space = base_space.clone();
 		tokio::spawn(async move {
-			for (i, (_, handler)) in handler_order.into_iter().enumerate() {
+			for (i, (_, handler, field_ref)) in handler_order.into_iter().enumerate() {
+				let Some(field) = field_ref.owned() else {
+					continue;
+				};
 				if method_arc.capture_requests.read().await.contains(&handler)
 					&& method_arc.capture.read().await.is_none()
 				{
-					method_arc.capture.write().await.replace(handler.clone());
+					method_arc
+						.capture
+						.write()
+						.await
+						.replace((handler.clone(), field_ref));
 				}
 				// TODO: optimize and cache this
 				let mut grab_bindings = HashSet::new();
@@ -467,31 +487,53 @@ impl OxrHandInput {
 						*value = data.pinch_strength.max(*value);
 					}
 				}
+				let Ok(Some(handler_spatial)) =
+					tokio::time::timeout(Duration::from_millis(10), handler.get_spatial())
+						.await
+						.map(|v| v.ok().and_then(|v| v.owned()))
+				else {
+					continue;
+				};
+				let hand = new_hand.unwrap();
+				let distance = HandInputMethod::hand_real_distance(&hand_space, &field.data, &hand);
+				let hand = HandInputMethod::localize_hand(
+					&hand_space,
+					&hand,
+					&handler_spatial,
+					&field.data,
+				);
+				let spatial_data = SpatialData {
+					input: InputDataType::Hand { data: hand },
+					distance,
+				};
+				let semantic_data = SemanticData {
+					datamap,
+					order: i as u32,
+					captured: captured_handler
+						.as_ref()
+						.is_some_and(|(v, _)| v == &handler),
+				};
 				if newly_added_handlers.contains(&handler) {
 					let _span = info_span!("input-gained").entered();
 					handler.input_gained(
 						input_method.clone(),
-						InputData {
-							datamap,
-							order: i as u32,
-							captured: captured_handler.as_ref().is_some_and(|v| v == &handler),
-						},
+						timestamp,
+						spatial_data,
+						semantic_data,
 					);
 				} else {
 					let _span = info_span!("input-updated").entered();
 					handler.input_updated(
 						input_method.clone(),
-						InputData {
-							datamap,
-							order: i as u32,
-							captured: captured_handler.as_ref().is_some_and(|v| v == &handler),
-						},
+						timestamp,
+						spatial_data,
+						semantic_data,
 					);
 				}
 			}
 			for handler in removed_handlers {
 				let _span = info_span!("input-left").entered();
-				handler.input_left(input_method.clone());
+				handler.input_left(input_method.clone(), timestamp);
 			}
 		});
 		self.active_handlers = new_handlers;
@@ -505,7 +547,7 @@ struct HandInputMethod {
 	base_space: DebugWrapper<Arc<openxr::Space>>,
 	base_spatial: BinderObjectRef<SpatialRef>,
 	tracker: DebugWrapper<openxr::HandTracker>,
-	capture: RwLock<Option<InputHandler>>,
+	capture: RwLock<Option<(InputHandler, FieldRef)>>,
 	capture_requests: RwLock<HashSet<InputHandler>>,
 	queried_handlers: Arc<RwLock<HashMap<InputHandler, FieldRef>>>,
 	query: BinderObject<InputHandlerQuery>,
@@ -536,7 +578,7 @@ impl HandInputMethod {
 					.points_query(PointsQuery {
 						handler: proxy,
 						interfaces: vec![InterfaceDependency {
-							id: "org.stardustxr.SUIS.Handler".to_string(),
+							id: InputHandler::QUERY_INTERFACE.to_string(),
 							optional: false,
 						}],
 						points: vec![],
@@ -612,7 +654,10 @@ impl HandInputMethod {
 			// cannot ever crash, is_tracked is only true of joints is some
 			let joints = joints.unwrap();
 			let new_hand = Hand {
-				right: matches!(self.side, HandSide::Right),
+				chirality: match self.side {
+					HandSide::Left => Chirality::Left,
+					HandSide::Right => Chirality::Right,
+				},
 				thumb: Thumb {
 					tip: convert_joint(joints[HandBone::ThumbTip as usize]),
 					distal: convert_joint(joints[HandBone::ThumbDistal as usize]),
@@ -661,10 +706,10 @@ impl HandInputMethod {
 		field: &Field,
 		hand: &Hand,
 	) -> f32 {
-		let thumb_tip_distance = field.distance(&hand_space, hand.thumb.tip.position.mint());
-		let index_tip_distance = field.distance(&hand_space, hand.index.tip.position.mint());
-		let middle_tip_distance = field.distance(&hand_space, hand.middle.tip.position.mint());
-		let ring_tip_distance = field.distance(&hand_space, hand.ring.tip.position.mint());
+		let thumb_tip_distance = field.distance(&hand_space, hand.thumb.tip.pose.position.mint());
+		let index_tip_distance = field.distance(&hand_space, hand.index.tip.pose.position.mint());
+		let middle_tip_distance = field.distance(&hand_space, hand.middle.tip.pose.position.mint());
+		let ring_tip_distance = field.distance(&hand_space, hand.ring.tip.pose.position.mint());
 
 		(thumb_tip_distance * 0.3)
 			+ (index_tip_distance * 0.4)
@@ -677,12 +722,57 @@ impl HandInputMethod {
 		hand: &Hand,
 	) -> f32 {
 		let get_dist =
-			|joint: &Joint| field.distance(&hand_space, joint.position.mint()) - joint.radius;
+			|joint: &Joint| field.distance(&hand_space, joint.pose.position.mint()) - joint.radius;
 
 		get_dist(&hand.thumb.tip)
 			.min(get_dist(&hand.index.tip))
 			.min(get_dist(&hand.middle.tip))
 			.min(get_dist(&hand.ring.tip))
+	}
+	fn localize_hand(from: &Spatial, hand: &Hand, to: &Spatial, field: &Field) -> Hand {
+		Hand {
+			chirality: hand.chirality,
+			thumb: Thumb {
+				tip: transform_joint(from, to, field, &hand.thumb.tip),
+				distal: transform_joint(from, to, field, &hand.thumb.distal),
+				proximal: transform_joint(from, to, field, &hand.thumb.proximal),
+				metacarpal: transform_joint(from, to, field, &hand.thumb.metacarpal),
+			},
+			index: transform_finger(from, to, field, &hand.index),
+			middle: transform_finger(from, to, field, &hand.middle),
+			ring: transform_finger(from, to, field, &hand.ring),
+			little: transform_finger(from, to, field, &hand.little),
+			palm: transform_joint(from, to, field, &hand.palm),
+			wrist: transform_joint(from, to, field, &hand.wrist),
+			elbow: hand
+				.elbow
+				.as_ref()
+				.map(|j| transform_joint(from, to, field, j)),
+		}
+	}
+}
+
+fn transform_finger(from: &Spatial, to: &Spatial, field: &Field, finger: &Finger) -> Finger {
+	Finger {
+		tip: transform_joint(from, to, field, &finger.tip),
+		distal: transform_joint(from, to, field, &finger.distal),
+		intermediate: transform_joint(from, to, field, &finger.intermediate),
+		proximal: transform_joint(from, to, field, &finger.proximal),
+		metacarpal: transform_joint(from, to, field, &finger.metacarpal),
+	}
+}
+
+fn transform_joint(from: &Spatial, to: &Spatial, field: &Field, joint: &Joint) -> Joint {
+	let mat = Spatial::space_to_space_matrix(Some(from), Some(to));
+	let (_, rot, _) = mat.to_scale_rotation_translation();
+	Joint {
+		pose: types::Posef {
+			position: mat.transform_point3a(joint.pose.position.mint()).into(),
+			orientation: (rot * joint.pose.orientation.mint::<Quat>()).into(),
+		},
+		// TODO: apply scaling
+		radius: joint.radius,
+		distance: field.distance(from, joint.pose.position.mint()),
 	}
 }
 
@@ -702,7 +792,7 @@ impl InputMethodHandler for HandInputMethod {
 			.read()
 			.await
 			.as_ref()
-			.is_some_and(|h| h == &handler)
+			.is_some_and(|(h, _)| h == &handler)
 		{
 			self.capture.write().await.take();
 		}
@@ -713,7 +803,7 @@ impl InputMethodHandler for HandInputMethod {
 		_ctx: gluon_wire::GluonCtx,
 		handler: InputHandler,
 		time: Timestamp,
-	) -> Option<SpatialInputData> {
+	) -> Option<SpatialData> {
 		let time = self.base_space.instance().timestamp_to_xr(time)?;
 		let space = handler
 			.get_spatial()
@@ -729,7 +819,7 @@ impl InputMethodHandler for HandInputMethod {
 			.owned()?;
 		let hand = self.locate_hand(&space, time)?;
 		let distance = Self::hand_real_distance(&space, &field.data, &hand);
-		Some(SpatialInputData {
+		Some(SpatialData {
 			input: InputDataType::Hand { data: hand },
 			distance,
 		})

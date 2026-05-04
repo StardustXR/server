@@ -9,6 +9,7 @@ mod objects;
 mod openxr_helpers;
 mod query;
 mod session;
+pub mod type_helpers;
 
 use bevy::{
 	MinimalPlugins,
@@ -100,6 +101,7 @@ use crate::{
 	},
 	openxr_helpers::ConvertTimespec,
 	session::{launch_start, save_session},
+	type_helpers::TimestampExt,
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -545,22 +547,14 @@ fn xr_step(world: &mut World) {
 				warn_once!(
 					"unable to get predicted display time from OpenXR using current time instead"
 				);
-				let timespec = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
-				Timestamp {
-					seconds: timespec.tv_sec,
-					nanoseconds: timespec.tv_nsec,
-				}
+				Timestamp::now()
 			}),
 		)
 	} else {
 		// TODO: optionally get presentation time from wayland
-		let timespec = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
 		(
 			world.resource::<bevy::prelude::Time>().delta_secs_f64() as f32,
-			Timestamp {
-				seconds: timespec.tv_sec,
-				nanoseconds: timespec.tv_nsec,
-			},
+			Timestamp::now(),
 		)
 	};
 	let frame_span = info_span!("frame-event").entered();

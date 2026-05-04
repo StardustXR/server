@@ -3,10 +3,11 @@ use crate::{
 	bevy_int::flatscreen_cam::FlatscreenCam,
 	nodes::{
 		ProxyExt as _,
-		fields::{FieldTrait, Ray},
-		spatial::{Spatial, SpatialObject},
+		fields::{Field, FieldRef, FieldTrait, Ray},
+		spatial::{Spatial, SpatialObject, SpatialRef},
 	},
 	query::spatial_query::SpatialQueryInterface,
+	type_helpers::TimestampExt,
 };
 use bevy::{input::mouse::MouseWheel, prelude::*, window::PrimaryWindow};
 use binderbinder::binder_object::{BinderObject, BinderObjectRef, ToBinderObjectOrRef};
@@ -14,8 +15,9 @@ use color_eyre::eyre::Result;
 use glam::{Mat4, Vec3};
 use gluon_wire::impl_transaction_handler;
 use mint::Vector2;
+use rustix::time::ClockId;
 use stardust_xr_protocol::{
-	field::FieldRef as FieldRefProto,
+	field::FieldRef as FieldRefProxy,
 	query::{InterfaceDependency, QueriedInterface, QueryableObjectRef},
 	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
@@ -23,8 +25,8 @@ use stardust_xr_protocol::{
 		SpatialQueryInterface as SpatialQueryInterfaceProxy,
 	},
 	suis::{
-		DatamapData, InputData, InputDataType, InputHandler, InputMethod, InputMethodHandler,
-		Pointer, SpatialInputData,
+		DatamapData, InputDataType, InputHandler, InputMethod, InputMethodHandler, Pointer,
+		SemanticData, SpatialData,
 	},
 	types::{Timestamp, Vec3F},
 };
@@ -117,6 +119,52 @@ struct MouseInputMethod {
 	queried_handlers: Arc<RwLock<HashMap<InputHandler, f32>>>,
 	spatial_arc: Arc<Spatial>,
 }
+async fn get_handler_spatial_and_field(
+	handler: &InputHandler,
+) -> Option<(BinderObjectRef<SpatialRef>, BinderObjectRef<FieldRef>)> {
+	let handler_space = timeout(Duration::from_secs_f32(1.0), handler.get_spatial())
+		.await
+		.inspect_err(|e| error!("timeout getting spatial for input handler!: {e}"))
+		.ok()?
+		.inspect_err(|e| error!("failed to get spatial for input handler: {e}"))
+		.ok()?
+		.owned()?;
+	let handler_field = timeout(Duration::from_secs_f32(1.0), handler.get_field())
+		.await
+		.inspect_err(|e| error!("timeout getting field for input handler!: {e}"))
+		.ok()?
+		.inspect_err(|e| error!("failed to get field for input handler: {e}"))
+		.ok()?
+		.owned()?;
+	Some((handler_space, handler_field))
+}
+impl MouseInputMethod {
+	fn spatial_data(&self, ref_space: &Spatial, field: &Field) -> SpatialData {
+		let ray_result = field.ray_march(Ray {
+			origin: Vec3::ZERO,
+			direction: Vec3::NEG_Z,
+			space: self.spatial_arc.clone(),
+		});
+
+		// Transform pointer origin and orientation into the handler's coordinate space.
+		let ptr_to_handler =
+			Spatial::space_to_space_matrix(Some(&*self.spatial_arc), Some(ref_space));
+		let (_, rotation, translation) = ptr_to_handler.to_scale_rotation_translation();
+
+		SpatialData {
+			input: InputDataType::Pointer {
+				data: Pointer {
+					pose: stardust_xr_protocol::types::Posef {
+						position: translation.into(),
+						orientation: rotation.into(),
+					},
+					deepest_point: ray_result.deepest_point_distance,
+				},
+			},
+			distance: ray_result.min_distance,
+		}
+	}
+}
 
 impl InputMethodHandler for MouseInputMethod {
 	async fn request_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
@@ -143,47 +191,9 @@ impl InputMethodHandler for MouseInputMethod {
 		_ctx: gluon_wire::GluonCtx,
 		handler: InputHandler,
 		_time: Timestamp,
-	) -> Option<SpatialInputData> {
-		info!("get spatial data");
-		let handler_space = timeout(Duration::from_secs_f32(1.0), handler.get_spatial())
-			.await
-			.inspect_err(|e| error!("timeout getting spatial for input handler!: {e}"))
-			.ok()?
-			.inspect_err(|e| error!("failed to get spatial for input handler: {e}"))
-			.ok()?
-			.owned()?;
-		info!("got space: {handler_space:?}");
-		let handler_field = timeout(Duration::from_secs_f32(1.0), handler.get_field())
-			.await
-			.inspect_err(|e| error!("timeout getting field for input handler!: {e}"))
-			.ok()?
-			.inspect_err(|e| error!("failed to get field for input handler: {e}"))
-			.ok()?
-			.owned()?;
-
-		info!("got field: {handler_field:?}");
-
-		let ray_result = handler_field.data.ray_march(Ray {
-			origin: Vec3::ZERO,
-			direction: Vec3::NEG_Z,
-			space: self.spatial_arc.clone(),
-		});
-
-		// Transform pointer origin and orientation into the handler's coordinate space.
-		let ptr_to_handler =
-			Spatial::space_to_space_matrix(Some(&*self.spatial_arc), Some(&***handler_space));
-		let (_, rotation, translation) = ptr_to_handler.to_scale_rotation_translation();
-
-		Some(SpatialInputData {
-			input: InputDataType::Pointer {
-				data: Pointer {
-					origin: translation.into(),
-					orientation: rotation.into(),
-					deepest_point: ray_result.deepest_point_distance,
-				},
-			},
-			distance: ray_result.min_distance,
-		})
+	) -> Option<SpatialData> {
+		let (handler_space, handler_field) = get_handler_spatial_and_field(&handler).await?;
+		Some(self.spatial_data(&handler_space, &handler_field.data))
 	}
 }
 
@@ -200,7 +210,7 @@ impl BeamQueryHandlerHandler for MouseBeamHandler {
 		&self,
 		_ctx: gluon_wire::GluonCtx,
 		obj: QueryableObjectRef,
-		_field: FieldRefProto,
+		_field: FieldRefProxy,
 		_spatial: SpatialRefProxy,
 		interfaces: Vec<QueriedInterface>,
 		deepest_point_distance: f32,
@@ -400,7 +410,14 @@ impl MousePointer {
 		let input_method = InputMethod::from_handler(&self.method);
 
 		tokio::spawn(async move {
+			let time = Timestamp::now();
 			for (i, (_, handler)) in handler_order.into_iter().enumerate() {
+				let Some((handler_space, handler_field)) =
+					get_handler_spatial_and_field(&handler).await
+				else {
+					warn!("unable to get field and spatial for handler");
+					continue;
+				};
 				if method_arc.capture_requests.read().await.contains(&handler)
 					&& method_arc.capture.read().await.is_none()
 				{
@@ -408,20 +425,21 @@ impl MousePointer {
 				}
 
 				let is_captured = captured.as_ref().is_some_and(|c| c == &handler);
-				let input_data = InputData {
+				let input_data = SemanticData {
 					datamap: build_datamap(&mouse_datamap),
 					order: i as u32,
 					captured: is_captured,
 				};
+				let spatial_data = method_arc.spatial_data(&handler_space, &handler_field.data);
 
 				if newly_added.contains(&handler) {
-					handler.input_gained(input_method.clone(), input_data);
+					handler.input_gained(input_method.clone(), time, spatial_data, input_data);
 				} else {
-					handler.input_updated(input_method.clone(), input_data);
+					handler.input_updated(input_method.clone(), time, spatial_data, input_data);
 				}
 			}
 			for handler in removed {
-				handler.input_left(input_method.clone());
+				handler.input_left(input_method.clone(), time);
 			}
 		});
 
