@@ -22,7 +22,7 @@ use rustc_hash::FxHashMap;
 use rustix::process::RawPid;
 use stardust_xr_protocol::{
 	audio::AudioInterface as AudioInterfaceProxy,
-	client::{Client, ClientState},
+	client::{Client, ClientState, FrameInfo},
 	dmatex::DmatexInterface as DmatexInterfaceProxy,
 	field::FieldInterface as FieldInterfaceProxy,
 	lines::LinesInterface as LinesInterfaceProxy,
@@ -79,10 +79,9 @@ pub fn state(env: &FxHashMap<String, String>) -> Option<Arc<ClientStateParsed>> 
 	CLIENT_STATES.get(token).as_deref().cloned()
 }
 
-#[derive(Debug, Deref, Handler)]
+#[derive(Debug, Handler)]
 pub struct ConnectedClient {
 	pub pid: RawPid,
-	#[deref]
 	client: Client,
 	exe: Option<PathBuf>,
 	disconnect_status: OnceLock<Result<()>>,
@@ -211,6 +210,10 @@ impl ConnectedClient {
 		// let time_since_last_message = self.message_last_received.borrow().elapsed();
 		// time_since_last_message.as_millis() > 500
 		false
+	}
+
+	pub fn frame(&self, info: FrameInfo) {
+		_ = self.client.frame(info);
 	}
 
 	fn disconnect(self: &Arc<Self>, reason: Result<()>) {
