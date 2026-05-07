@@ -9,7 +9,7 @@ use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
 use binderbinder::binder_object::BinderObjectRef;
 use glam::{Mat4, Quat};
-use gluon_wire::{GluonCtx, impl_transaction_handler};
+use gluon_wire::{GluonCtx, Handler};
 use parking_lot::Mutex;
 use stardust_xr_protocol::spatial::{
 	BoundingBox, PartialTransform, Spatial as SpatialProxy, SpatialHandler,
@@ -173,7 +173,7 @@ impl Debug for Spatial {
 	}
 }
 
-#[derive(Deref)]
+#[derive(Deref, Handler)]
 pub struct SpatialObject {
 	#[deref]
 	data: Arc<Spatial>,
@@ -533,7 +533,7 @@ impl Drop for Spatial {
 	}
 }
 
-#[derive(Debug, Deref)]
+#[derive(Debug, Deref, Handler)]
 pub struct SpatialRef {
 	#[deref]
 	data: Arc<Spatial>,
@@ -617,5 +617,3 @@ impl SpatialInterfaceHandler for SpatialInterface {
 
 impl_proxy!(SpatialProxy, SpatialObject);
 impl_proxy!(SpatialRefProxy, SpatialRef);
-impl_transaction_handler!(SpatialObject);
-impl_transaction_handler!(SpatialRef);

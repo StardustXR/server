@@ -29,8 +29,7 @@ use bevy::{
 };
 use binderbinder::binder_object::{BinderObject, BinderObjectRef};
 use color_eyre::eyre::eyre;
-use gluon_wire::GluonCtx;
-use gluon_wire::impl_transaction_handler;
+use gluon_wire::{GluonCtx, Handler};
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr_protocol::{
@@ -586,7 +585,7 @@ impl FromStr for TextureSlot {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 pub struct ModelPart {
 	entity: OnceLock<EntityHandle>,
 	mesh_entity: OnceLock<EntityHandle>,
@@ -792,7 +791,7 @@ impl MaterialRegistry {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 pub struct Model {
 	spatial: BinderObjectRef<SpatialObject>,
 	_resource_id: Resource,
@@ -895,5 +894,3 @@ impl ModelInterfaceHandler for ModelInterface {
 		proxy
 	}
 }
-impl_transaction_handler!(Model);
-impl_transaction_handler!(ModelPart);

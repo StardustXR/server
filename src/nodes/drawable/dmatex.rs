@@ -24,7 +24,7 @@ use bevy_dmabuf::{
 use binderbinder::binder_object::BinderObjectRef;
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
-use gluon_wire::{GluonCtx, impl_transaction_handler};
+use gluon_wire::{GluonCtx, Handler};
 use stardust_xr_protocol::dmatex::{
 	DmatexFormat, DmatexInterfaceHandler, DmatexPlane, DmatexRef, DmatexRefHandler, DmatexSize,
 };
@@ -46,7 +46,7 @@ use crate::{
 	nodes::drawable::ModelNodeSystemSet,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 pub struct Dmatex {
 	tex: ImportedTexture,
 	sync_obj: TimelineSyncObj,
@@ -350,7 +350,6 @@ fn add_dmatex_into_bevy(
 fn init_render_device(dev: Res<RenderDevice>) {
 	_ = RENDER_DEV.set(dev.clone());
 }
-impl_transaction_handler!(Dmatex);
 pub const ALL_DRM_FOURCCS: [DrmFourcc; 105] = [
 	DrmFourcc::Abgr1555,
 	DrmFourcc::Abgr16161616f,

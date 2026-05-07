@@ -10,7 +10,7 @@ use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::XrSpace;
 use binderbinder::binder_object::BinderObjectRef;
-use gluon_wire::impl_transaction_handler;
+use gluon_wire::Handler;
 use parking_lot::Mutex;
 
 use bevy::prelude::*;
@@ -91,7 +91,7 @@ fn update_sound_event(
 
 static SOUND_REGISTRY: Registry<Sound> = Registry::new();
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 pub struct Sound {
 	spatial: Arc<SpatialObject>,
 
@@ -162,5 +162,3 @@ impl AudioInterfaceHandler for AudioInterface {
 		SoundProxy::from_handler(&sound)
 	}
 }
-
-impl_transaction_handler!(Sound);

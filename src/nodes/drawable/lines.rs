@@ -21,7 +21,7 @@ use bevy::{
 };
 use binderbinder::binder_object::BinderObjectRef;
 use glam::Vec3;
-use gluon_wire::impl_transaction_handler;
+use gluon_wire::Handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::lines::Lines as LinesProxy;
 use stardust_xr_protocol::lines::{Line, LinePoint, LinesHandler, LinesInterfaceHandler};
@@ -341,7 +341,7 @@ fn cyclic_indices(start_set: u32, end_set: u32) -> [u32; INDICES.len()] {
 
 static LINES_REGISTRY: Registry<Lines> = Registry::new();
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 pub struct Lines {
 	spatial: Arc<SpatialObject>,
 	data: Mutex<Vec<Line>>,
@@ -408,4 +408,3 @@ impl LinesInterfaceHandler for LinesInterface {
 		LinesProxy::from_handler(&lines)
 	}
 }
-impl_transaction_handler!(Lines);

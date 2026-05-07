@@ -17,7 +17,7 @@ use bevy::{
 };
 use bevy_equirect::EquirectManager;
 use glam::Quat;
-use gluon_wire::impl_transaction_handler;
+use gluon_wire::Handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::{
 	sky::{SkyGuard as SkyGuardProxy, SkyGuardHandler, SkyInterfaceHandler},
@@ -127,12 +127,11 @@ impl SkyInterfaceHandler for SkyInterface {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 struct SkyGuard {
 	is_sky_tex: bool,
 }
 impl SkyGuardHandler for SkyGuard {}
-impl_transaction_handler!(SkyGuard);
 impl Drop for SkyGuard {
 	fn drop(&mut self) {
 		if self.is_sky_tex {

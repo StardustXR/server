@@ -19,7 +19,7 @@ use bevy_sk::hand::GRADIENT_TEXTURE_HANDLE;
 use binderbinder::binder_object::{BinderObject, BinderObjectRef, ToBinderObjectOrRef};
 use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
-use gluon_wire::{GluonSendError, impl_transaction_handler};
+use gluon_wire::{GluonSendError, Handler};
 use openxr::{HandJointLocation, Posef, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::field::{FieldRef, Shape};
@@ -541,7 +541,7 @@ impl OxrHandInput {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 struct HandInputMethod {
 	side: HandSide,
 	base_space: DebugWrapper<Arc<openxr::Space>>,
@@ -825,7 +825,7 @@ impl InputMethodHandler for HandInputMethod {
 		})
 	}
 }
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 struct InputHandlerQuery {
 	queried_handlers: Arc<RwLock<HashMap<InputHandler, FieldRef>>>,
 	queried_objects: RwLock<HashMap<QueryableObjectRef, InputHandler>>,
@@ -906,8 +906,6 @@ impl PointsQueryHandlerHandler for InputHandlerQuery {
 	}
 }
 
-impl_transaction_handler!(InputHandlerQuery);
-impl_transaction_handler!(HandInputMethod);
 #[derive(Deref, DerefMut)]
 struct DebugWrapper<T>(T);
 impl<T> From<T> for DebugWrapper<T> {

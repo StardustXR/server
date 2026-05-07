@@ -14,8 +14,7 @@ use bevy::gizmos::GizmoAsset;
 use bevy::gizmos::retained::Gizmo;
 use binderbinder::binder_object::BinderObjectRef;
 use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
-use gluon_wire::GluonCtx;
-use gluon_wire::impl_transaction_handler;
+use gluon_wire::{GluonCtx, Handler};
 use parking_lot::RwLock;
 use stardust_xr_protocol::field::{
 	CubicBezierControlPoint, Field as FieldProxy, FieldHandler, FieldInterfaceHandler,
@@ -608,7 +607,7 @@ impl Debug for ShapeChangedCallback {
 		f.debug_tuple("ShapeChangedCallback").finish()
 	}
 }
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 pub struct FieldMut {
 	pub data: Arc<Field>,
 	field_ref: BinderObjectRef<FieldRef>,
@@ -781,7 +780,7 @@ impl FieldHandler for FieldMut {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 pub struct FieldRef {
 	pub data: Arc<Field>,
 }
@@ -864,8 +863,6 @@ impl FieldInterfaceHandler for FieldInterface {
 
 impl_proxy!(FieldProxy, FieldMut);
 impl_proxy!(FieldRefProxy, FieldRef);
-impl_transaction_handler!(FieldMut);
-impl_transaction_handler!(FieldRef);
 
 #[cfg(test)]
 mod tests {

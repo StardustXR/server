@@ -13,7 +13,7 @@ use bevy::{input::mouse::MouseWheel, prelude::*, window::PrimaryWindow};
 use binderbinder::binder_object::{BinderObject, BinderObjectRef, ToBinderObjectOrRef};
 use color_eyre::eyre::Result;
 use glam::{Mat4, Vec3};
-use gluon_wire::impl_transaction_handler;
+use gluon_wire::Handler;
 use mint::Vector2;
 use rustix::time::ClockId;
 use stardust_xr_protocol::{
@@ -111,7 +111,7 @@ impl Default for MouseEvent {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 struct MouseInputMethod {
 	_beam_handler: BinderObject<MouseBeamHandler>,
 	capture: RwLock<Option<InputHandler>>,
@@ -197,9 +197,7 @@ impl InputMethodHandler for MouseInputMethod {
 	}
 }
 
-impl_transaction_handler!(MouseInputMethod);
-
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 struct MouseBeamHandler {
 	queried_handlers: Arc<RwLock<HashMap<InputHandler, f32>>>,
 	queried_objects: RwLock<HashMap<QueryableObjectRef, InputHandler>>,
@@ -262,8 +260,6 @@ impl BeamQueryHandlerHandler for MouseBeamHandler {
 		}
 	}
 }
-
-impl_transaction_handler!(MouseBeamHandler);
 
 #[derive(Resource)]
 pub struct MousePointer {

@@ -9,7 +9,7 @@ pub mod spatial;
 #[macro_export]
 macro_rules! interface {
 	($type:ident) => {
-		#[derive(Debug)]
+		#[derive(Debug, gluon_wire::Handler)]
 		pub struct $type {
 			base_resource_prefixes: std::sync::Arc<Vec<std::path::PathBuf>>,
 		}
@@ -27,14 +27,12 @@ macro_rules! interface {
 				&self.base_resource_prefixes
 			}
 		}
-
-		gluon_wire::impl_transaction_handler!($type);
 	};
 }
 #[macro_export]
 macro_rules! exposed_interface {
 	($type:ident, $service:literal) => {
-		#[derive(Debug)]
+		#[derive(Debug, gluon_wire::Handler)]
 		pub struct $type {
 			_lock: std::fs::File,
 			pub pion_path: std::path::PathBuf,
@@ -71,8 +69,6 @@ macro_rules! exposed_interface {
 				interface
 			}
 		}
-
-		gluon_wire::impl_transaction_handler!($type);
 	};
 }
 pub trait ProxyExt {

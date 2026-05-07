@@ -28,7 +28,7 @@ use bevy::render::extract_component::ExtractComponentPlugin;
 use bevy_mod_xr::camera::XrProjection;
 use binderbinder::binder_object::BinderObjectRef;
 use glam::Mat4;
-use gluon_wire::impl_transaction_handler;
+use gluon_wire::Handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::camera::Camera as CameraProxy;
 use stardust_xr_protocol::camera::CameraHandler;
@@ -47,7 +47,7 @@ use vulkano::sync::semaphore::SemaphoreCreateInfo;
 use wgpu_hal::vulkan::SIGNAL_SEMAPHORES;
 use wgpu_hal::vulkan::WAIT_SEMAPHORES;
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 pub struct Camera {
 	spatial: Arc<SpatialObject>,
 	queued_render_targets:
@@ -90,8 +90,13 @@ impl CameraHandler for Camera {
 				return;
 			};
 			future.await;
-			tx.send((acquire_point, views, tex.handler_arc().clone(), release_on_drop))
-				.unwrap();
+			tx.send((
+				acquire_point,
+				views,
+				tex.handler_arc().clone(),
+				release_on_drop,
+			))
+			.unwrap();
 		});
 	}
 }
@@ -113,7 +118,6 @@ impl CameraInterfaceHandler for CameraInterface {
 		CameraProxy::from_handler(&cam)
 	}
 }
-impl_transaction_handler!(Camera);
 pub struct CameraNodePlugin;
 impl Plugin for CameraNodePlugin {
 	fn build(&self, app: &mut App) {

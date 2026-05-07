@@ -17,7 +17,7 @@ use bevy::prelude::Deref;
 use binderbinder::binder_object::BinderObjectRef;
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
-use gluon_wire::{GluonCtx, impl_transaction_handler};
+use gluon_wire::{GluonCtx, Handler};
 use rustc_hash::FxHashMap;
 use rustix::process::RawPid;
 use stardust_xr_protocol::{
@@ -79,7 +79,7 @@ pub fn state(env: &FxHashMap<String, String>) -> Option<Arc<ClientStateParsed>> 
 	CLIENT_STATES.get(token).as_deref().cloned()
 }
 
-#[derive(Debug, Deref)]
+#[derive(Debug, Deref, Handler)]
 pub struct ConnectedClient {
 	pub pid: RawPid,
 	#[deref]
@@ -281,4 +281,3 @@ impl Drop for ConnectedClient {
 		);
 	}
 }
-impl_transaction_handler!(ConnectedClient);

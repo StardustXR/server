@@ -6,7 +6,7 @@ use std::{
 
 use bevy::prelude::Deref;
 use glam::Vec3;
-use gluon_wire::impl_transaction_handler;
+use gluon_wire::Handler;
 use stardust_xr_protocol::{
 	field::FieldRef as FieldRefProxy,
 	query::{QueriedInterface, QueryableObjectRef},
@@ -215,9 +215,9 @@ impl Query {
 		let r = self.inner.hit(&queryable).await;
 		match (r, self.matching_queryables.contains(queryable)) {
 			(None, true) => {
-                info!("removing queryable");
+				info!("removing queryable");
 				self.matching_queryables.remove(queryable);
-                info!("removed queryable");
+				info!("removed queryable");
 				_ = self
 					.inner
 					.left(QueryableObjectRef::from_handler(&queryable.queryable_ref));
@@ -226,9 +226,9 @@ impl Query {
 				_ = self.inner.moved(queryable, v);
 			}
 			(Some(v), false) => {
-                info!("inserting queryable");
+				info!("inserting queryable");
 				self.matching_queryables.add_raw(queryable);
-                info!("inserted queryable");
+				info!("inserted queryable");
 				_ = self
 					.inner
 					.match_gained(&interfaces.interfaces, queryable, v);
@@ -717,7 +717,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		stardust_xr_protocol::spatial_query::PointsQueryHandle::from_handler(&v)
 	}
 }
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 struct PointsQueryHandle(Arc<Query>);
 impl PointsQueryHandleHandler for PointsQueryHandle {
 	async fn update_points(&self, _ctx: gluon_wire::GluonCtx, points: Vec<Point>) {
@@ -732,12 +732,10 @@ impl PointsQueryHandleHandler for PointsQueryHandle {
 		}
 	}
 }
-impl_transaction_handler!(PointsQueryHandle);
 #[expect(unused)]
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 struct Guard(Arc<Query>);
 impl SpatialQueryGuardHandler for Guard {}
-impl_transaction_handler!(Guard);
 
 #[derive(Debug, Deref)]
 struct WeakPtrHash<T>(Weak<T>);

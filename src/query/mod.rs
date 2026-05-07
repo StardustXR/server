@@ -5,7 +5,7 @@ use std::{
 
 use bevy::prelude::Deref;
 use binderbinder::binder_object::{BinderObject, BinderObjectOrRef, BinderObjectRef};
-use gluon_wire::{GluonCtx, impl_transaction_handler};
+use gluon_wire::{GluonCtx, Handler};
 use stardust_xr_protocol::query::{
 	QueryInterfaceHandler, QueryableError, QueryableInterfaceGuard, QueryableInterfaceGuardHandler,
 	QueryableObject, QueryableObjectHandler, QueryableObjectRef, QueryableObjectRefHandler,
@@ -28,11 +28,11 @@ struct State {
 	interface_to_queryable: RwLock<HashMap<Arc<DedupedStr>, Registry<Queryable>>>,
 	queries: Registry<Query>,
 }
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 struct QueryableRef;
 impl QueryableObjectRefHandler for QueryableRef {}
 
-#[derive(Debug, Deref)]
+#[derive(Debug, Deref, Handler)]
 struct QueryableMut(Arc<Queryable>);
 #[derive(Debug)]
 struct Queryable {
@@ -46,7 +46,7 @@ struct QueryableInterface {
 	interface_id: Arc<DedupedStr>,
 	interface_ref: BinderObjectOrRef,
 }
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 struct InterfaceGuard(Option<Arc<QueryableInterface>>, Weak<Queryable>);
 impl QueryableInterfaceGuardHandler for InterfaceGuard {}
 impl Drop for InterfaceGuard {
@@ -95,9 +95,6 @@ impl Drop for Queryable {
 			.for_each(|q| q.queryable_destroyed(self));
 	}
 }
-impl_transaction_handler!(QueryableMut);
-impl_transaction_handler!(QueryableRef);
-impl_transaction_handler!(InterfaceGuard);
 
 interface!(QueryInterface);
 impl QueryInterfaceHandler for QueryInterface {
@@ -112,7 +109,7 @@ impl QueryInterfaceHandler for QueryInterface {
 		let queryable_ref = PION.register_object(QueryableRef);
 		let queryable = Arc::new(Queryable {
 			field,
-            spatial,
+			spatial,
 			interfaces: RwLock::default(),
 			queryable_ref,
 		});

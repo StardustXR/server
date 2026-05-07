@@ -20,7 +20,7 @@ use bevy_mesh_text_3d::{
 };
 use binderbinder::binder_object::BinderObject;
 use core::f32;
-use gluon_wire::impl_transaction_handler;
+use gluon_wire::Handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::text::Text as TextProxy;
 use stardust_xr_protocol::text::{
@@ -183,7 +183,7 @@ pub struct Text {
 	data: Mutex<TextStyle>,
 }
 /// only exists so we can send an Arc<Text> into SPAWN_TEXT
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 struct TextObject(Arc<Text>);
 impl TextObject {
 	pub fn new(
@@ -240,4 +240,3 @@ impl TextInterfaceHandler for TextInterface {
 		TextProxy::from_handler(&text.to_service())
 	}
 }
-impl_transaction_handler!(TextObject);
