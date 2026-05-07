@@ -9,7 +9,6 @@ mod objects;
 mod openxr_helpers;
 mod query;
 mod session;
-pub mod type_helpers;
 
 use bevy::{
 	MinimalPlugins,
@@ -101,7 +100,6 @@ use crate::{
 	},
 	openxr_helpers::ConvertTimespec,
 	session::{launch_start, save_session},
-	type_helpers::TimestampExt,
 };
 
 #[derive(Debug, Clone, Parser)]

@@ -5573,7 +5573,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "0.51.1"
-source = "git+https://github.com/StardustXR/core.git?branch=binder#806448d18a5ac46968bd8ca68c665065a1a4872a"
+source = "git+https://github.com/StardustXR/core.git?branch=binder#84ab80e03e3b61c075bc158f7ccf8e043b7a2b17"
 dependencies = [
  "binderbinder",
  "fnv",
@@ -5583,6 +5583,7 @@ dependencies = [
  "gluon-wire",
  "mint",
  "prettyplease",
+ "rustix 1.1.4",
  "syn",
  "thiserror 2.0.18",
  "tokio",

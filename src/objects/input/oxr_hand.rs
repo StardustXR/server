@@ -4,7 +4,6 @@ use crate::nodes::fields::{Field, FieldMut, FieldTrait};
 use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
 use crate::openxr_helpers::ConvertTimespec;
 use crate::query::spatial_query::SpatialQueryInterface;
-use crate::type_helpers::TimestampExt;
 use crate::{BevyMaterial, DbusConnection, PION, PreFrameWait, get_time};
 use bevy::pbr::ExtendedMaterial;
 use bevy::prelude::Transform as BevyTransform;
@@ -102,13 +101,13 @@ fn update_hands(
 			&& pose.location_flags.contains(
 				SpaceLocationFlags::POSITION_TRACKED | SpaceLocationFlags::ORIENTATION_TRACKED,
 			) {
-				hands
-					.base_spatial
-					.set_local_transform(Mat4::from_rotation_translation(
-						pose.pose.orientation.to_quat(),
-						pose.pose.position.to_vec3(),
-					));
-			}
+			hands
+				.base_spatial
+				.set_local_transform(Mat4::from_rotation_translation(
+					pose.pose.orientation.to_quat(),
+					pose.pose.position.to_vec3(),
+				));
+		}
 	}
 	let base_spatial = hands.base_spatial.get_ref().clone();
 	hands.left.update(time, &mut materials, &base_spatial);

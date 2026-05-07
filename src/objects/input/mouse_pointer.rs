@@ -7,7 +7,6 @@ use crate::{
 		spatial::{Spatial, SpatialObject, SpatialRef},
 	},
 	query::spatial_query::SpatialQueryInterface,
-	type_helpers::TimestampExt,
 };
 use bevy::{input::mouse::MouseWheel, prelude::*, window::PrimaryWindow};
 use binderbinder::binder_object::{BinderObject, BinderObjectRef, ToBinderObjectOrRef};
@@ -248,9 +247,10 @@ impl BeamQueryHandlerHandler for MouseBeamHandler {
 	) {
 		let objects = self.queried_objects.read().await;
 		if let Some(handler) = objects.get(&obj)
-			&& let Some(entry) = self.queried_handlers.write().await.get_mut(handler) {
-				*entry = deepest_point_distance;
-			}
+			&& let Some(entry) = self.queried_handlers.write().await.get_mut(handler)
+		{
+			*entry = deepest_point_distance;
+		}
 	}
 
 	async fn left(&self, _ctx: gluon_wire::GluonCtx, obj: QueryableObjectRef) {
