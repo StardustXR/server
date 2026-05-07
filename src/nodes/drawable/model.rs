@@ -316,7 +316,7 @@ fn gen_model_parts(
 							.unwrap_or_default()
 					});
 					_ = model_part.bounding_calc.set(calc);
-					let _ = spatial_arc.set_spatial_parent(&**parent_spatial);
+					let _ = spatial_arc.set_spatial_parent(&parent_spatial);
 					spatial_arc.set_local_transform(transform.compute_matrix());
 					let entity_handle = EntityHandle::new(entity);
 					spatial_arc.set_entity(entity_handle.clone());
@@ -890,7 +890,7 @@ impl ModelInterfaceHandler for ModelInterface {
 		let model = Model::new(spatial, model, self.base_resource_prefixes.clone())
 			.await
 			.unwrap();
-		let proxy = ModelProxy::from_handler(&model);
-		proxy
+		
+		ModelProxy::from_handler(&model)
 	}
 }

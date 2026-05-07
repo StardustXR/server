@@ -536,7 +536,7 @@ fn xr_step(world: &mut World) {
 		let predicted_display_time = instance.xr_to_timestamp(
 			// i think we want this to be one frame ahead in addition to handling pipelined?
 			// since this is for the frame after wait?
-			get_time(world.contains_resource::<Pipelined>(), &state),
+			get_time(world.contains_resource::<Pipelined>(), state),
 		);
 
 		let delta =

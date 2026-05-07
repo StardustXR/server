@@ -123,8 +123,8 @@ impl Query {
 		};
 		for i in self.interfaces.iter() {
 			if !v.contains_key(&i.id) && !i.optional {
-				if self.matching_queryables.contains(&queryable) {
-					self.matching_queryables.remove(&queryable);
+				if self.matching_queryables.contains(queryable) {
+					self.matching_queryables.remove(queryable);
 					_ = self
 						.inner
 						.left(QueryableObjectRef::from_handler(&queryable.queryable_ref));
@@ -212,7 +212,7 @@ impl Query {
 			warn!("tried to update hit state for queryable without interfaces of interest");
 			return;
 		};
-		let r = self.inner.hit(&queryable).await;
+		let r = self.inner.hit(queryable).await;
 		match (r, self.matching_queryables.contains(queryable)) {
 			(None, true) => {
 				info!("removing queryable");
@@ -259,7 +259,7 @@ impl Query {
 					_shape_changed,
 				} => {
 					_ = _shape_changed.set(field.shape_changed_callback({
-						let query = Arc::downgrade(&self);
+						let query = Arc::downgrade(self);
 						move || {
 							if let Some(q) = query.upgrade() {
 								tokio::spawn(async move {
@@ -268,7 +268,7 @@ impl Query {
 							}
 						}
 					}));
-					&***field.spatial
+					&field.spatial
 				}
 				QueryType::Beam {
 					handler: _,
@@ -276,15 +276,15 @@ impl Query {
 					origin: _,
 					dir: _,
 					max_length: _,
-				} => &origin,
+				} => origin,
 				QueryType::Points {
 					handler: _,
 					ref_space,
 					points: _,
-				} => &ref_space,
+				} => ref_space,
 			}
 			.moved_callback({
-				let query = Arc::downgrade(&self);
+				let query = Arc::downgrade(self);
 				move || {
 					if let Some(q) = query.upgrade() {
 						tokio::spawn(async move {
@@ -346,7 +346,7 @@ impl QueryType {
 						.to_scale_rotation_translation();
 				let distance = field.local_distance(pos.into());
 
-				(distance < *margin).then(|| HitTestResult::Zone { pos, distance })
+				(distance < *margin).then_some(HitTestResult::Zone { pos, distance })
 			}
 			QueryType::Beam {
 				handler: _,
@@ -364,7 +364,7 @@ impl QueryType {
 					space: ref_space.clone(),
 				});
 				(ray_march.min_distance <= 0.0 && ray_march.deepest_point_distance <= *max_length)
-					.then(|| HitTestResult::Beam {
+					.then_some(HitTestResult::Beam {
 						deepest_point_distance: ray_march.deepest_point_distance,
 						distance: ray_march.min_distance,
 					})
@@ -379,7 +379,7 @@ impl QueryType {
 					.await
 					.iter()
 					.map(|p| {
-						let distance = queryable.field.data.distance(&ref_space, p.point.mint());
+						let distance = queryable.field.data.distance(ref_space, p.point.mint());
 						(distance - p.margin, distance)
 					})
 					.reduce(|(sort1, distance1), (sort2, distance2)| {

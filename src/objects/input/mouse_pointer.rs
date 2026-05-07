@@ -247,11 +247,10 @@ impl BeamQueryHandlerHandler for MouseBeamHandler {
 		_distance: f32,
 	) {
 		let objects = self.queried_objects.read().await;
-		if let Some(handler) = objects.get(&obj) {
-			if let Some(entry) = self.queried_handlers.write().await.get_mut(handler) {
+		if let Some(handler) = objects.get(&obj)
+			&& let Some(entry) = self.queried_handlers.write().await.get_mut(handler) {
 				*entry = deepest_point_distance;
 			}
-		}
 	}
 
 	async fn left(&self, _ctx: gluon_wire::GluonCtx, obj: QueryableObjectRef) {

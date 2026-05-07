@@ -98,8 +98,8 @@ fn update_hands(
 			&ref_space,
 			time,
 		);
-		if let Ok(pose) = pose {
-			if pose.location_flags.contains(
+		if let Ok(pose) = pose
+			&& pose.location_flags.contains(
 				SpaceLocationFlags::POSITION_TRACKED | SpaceLocationFlags::ORIENTATION_TRACKED,
 			) {
 				hands
@@ -109,7 +109,6 @@ fn update_hands(
 						pose.pose.position.to_vec3(),
 					));
 			}
-		}
 	}
 	let base_spatial = hands.base_spatial.get_ref().clone();
 	hands.left.update(time, &mut materials, &base_spatial);
@@ -706,10 +705,10 @@ impl HandInputMethod {
 		field: &Field,
 		hand: &Hand,
 	) -> f32 {
-		let thumb_tip_distance = field.distance(&hand_space, hand.thumb.tip.pose.position.mint());
-		let index_tip_distance = field.distance(&hand_space, hand.index.tip.pose.position.mint());
-		let middle_tip_distance = field.distance(&hand_space, hand.middle.tip.pose.position.mint());
-		let ring_tip_distance = field.distance(&hand_space, hand.ring.tip.pose.position.mint());
+		let thumb_tip_distance = field.distance(hand_space, hand.thumb.tip.pose.position.mint());
+		let index_tip_distance = field.distance(hand_space, hand.index.tip.pose.position.mint());
+		let middle_tip_distance = field.distance(hand_space, hand.middle.tip.pose.position.mint());
+		let ring_tip_distance = field.distance(hand_space, hand.ring.tip.pose.position.mint());
 
 		(thumb_tip_distance * 0.3)
 			+ (index_tip_distance * 0.4)
@@ -722,7 +721,7 @@ impl HandInputMethod {
 		hand: &Hand,
 	) -> f32 {
 		let get_dist =
-			|joint: &Joint| field.distance(&hand_space, joint.pose.position.mint()) - joint.radius;
+			|joint: &Joint| field.distance(hand_space, joint.pose.position.mint()) - joint.radius;
 
 		get_dist(&hand.thumb.tip)
 			.min(get_dist(&hand.index.tip))

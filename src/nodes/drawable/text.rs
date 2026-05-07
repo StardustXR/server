@@ -203,8 +203,8 @@ impl TextObject {
 			data: Mutex::new(style),
 		});
 		_ = SPAWN_TEXT.send(text.clone());
-		let text = PION.register_object(TextObject(text));
-		text
+		
+		PION.register_object(TextObject(text))
 	}
 }
 impl TextHandler for TextObject {
