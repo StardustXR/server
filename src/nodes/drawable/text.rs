@@ -203,7 +203,7 @@ impl TextObject {
 			data: Mutex::new(style),
 		});
 		_ = SPAWN_TEXT.send(text.clone());
-		
+
 		PION.register_object(TextObject(text))
 	}
 }

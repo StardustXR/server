@@ -56,8 +56,7 @@ fn fly_cam_controls(
 	mut motion: EventReader<MouseMotion>,
 	time: Res<Time>,
 ) {
-	if !(keyboard_buttons.pressed(KeyCode::ShiftLeft)
-		&& mouse_buttons.pressed(MouseButton::Right))
+	if !(keyboard_buttons.pressed(KeyCode::ShiftLeft) && mouse_buttons.pressed(MouseButton::Right))
 	{
 		// Drain motion events so they don't accumulate for the next time the
 		// user engages look mode.
@@ -72,7 +71,10 @@ fn fly_cam_controls(
 		yaw += e.delta.x * scale;
 	}
 	// Clamp pitch to avoid flipping past the poles.
-	pitch = pitch.clamp(-std::f32::consts::FRAC_PI_2 + 0.001, std::f32::consts::FRAC_PI_2 - 0.001);
+	pitch = pitch.clamp(
+		-std::f32::consts::FRAC_PI_2 + 0.001,
+		std::f32::consts::FRAC_PI_2 - 0.001,
+	);
 	cam.rotation = Quat::from_rotation_y(yaw) * Quat::from_rotation_x(pitch);
 
 	let mut move_vec = Vec3::ZERO;

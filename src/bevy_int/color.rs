@@ -1,4 +1,3 @@
-
 pub trait ColorConvert {
 	fn to_bevy(&self) -> bevy::color::Color;
 }

@@ -890,7 +890,7 @@ impl ModelInterfaceHandler for ModelInterface {
 		let model = Model::new(spatial, model, self.base_resource_prefixes.clone())
 			.await
 			.unwrap();
-		
+
 		ModelProxy::from_handler(&model)
 	}
 }
