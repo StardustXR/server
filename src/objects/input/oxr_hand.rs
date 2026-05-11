@@ -330,8 +330,8 @@ impl InputSource for HandSource {
 
 	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> SpatialData {
 		let hand = self.hand.blocking_read().clone().unwrap();
-		let distance = hand_real_distance(&self.hand_space, handler_field, &hand);
 		let localized = localize_hand(&self.hand_space, &hand, handler_spatial, handler_field);
+		let distance = hand_real_distance(&localized);
 		SpatialData {
 			input: InputDataType::Hand { data: localized },
 			distance,
@@ -649,7 +649,7 @@ impl InputMethodHandler for HandInputMethod {
 		&self,
 		_ctx: gluon_wire::GluonCtx,
 		handler: InputHandler,
-		_time: Timestamp,
+		time: Timestamp,
 	) -> Option<SpatialData> {
 		let cap = self.source.capture.read().await.clone();
 		if cap.as_ref().is_some_and(|c| c != &handler) {
@@ -658,7 +658,15 @@ impl InputMethodHandler for HandInputMethod {
 		self.source.hand.read().await.as_ref()?;
 		let objects = self.sender.cache.read().await;
 		let entry = objects.values().find(|e| e.handler == handler)?;
-		Some(self.source.spatial_data(&entry.spatial, &entry.field.data))
+		let hand = self.locate_hand(
+			&entry.spatial,
+			self.base_space.instance().timestamp_to_xr(time)?,
+		)?;
+		let hand = localize_hand(&entry.spatial, &hand, &entry.spatial, &entry.field.data);
+		Some(SpatialData {
+			distance: hand_real_distance(&hand),
+			input: InputDataType::Hand { data: hand },
+		})
 	}
 }
 
@@ -676,9 +684,9 @@ fn hand_sort_distance(hand_space: &SpatialRef, field: &Field, hand: &Hand) -> f3
 		+ (ring_tip_distance * 0.15)
 }
 
-fn hand_real_distance(hand_space: &SpatialRef, field: &Field, hand: &Hand) -> f32 {
-	let get_dist =
-		|joint: &Joint| field.distance(hand_space, joint.pose.position.mint()) - joint.radius;
+/// assumes joint distances are populated
+fn hand_real_distance(hand: &Hand) -> f32 {
+	let get_dist = |joint: &Joint| joint.distance - joint.radius;
 
 	get_dist(&hand.thumb.tip)
 		.min(get_dist(&hand.index.tip))

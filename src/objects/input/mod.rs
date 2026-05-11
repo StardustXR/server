@@ -86,7 +86,7 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 		let Some(interface) = interfaces.first() else {
 			return;
 		};
-		if interface.interface_id != "org.stardustxr.SUIS.Handler" {
+		if interface.interface_id != InputHandler::QUERY_INTERFACE {
 			return;
 		}
 		let Some(spatial) = spatial.owned() else {
