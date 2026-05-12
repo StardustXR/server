@@ -34,10 +34,7 @@ impl ServerInterfaceHandler for ServerInterface {
 		&self,
 		_ctx: gluon_wire::GluonCtx,
 		startup_token: String,
-	) -> SpatialRef {
-		// TODO: don't panic here, this is really bad
-		state(&startup_token)
-			.expect("startup token not found, we really need error handling")
-			.apply()
+	) -> Option<SpatialRef> {
+		Some(state(&startup_token)?.apply())
 	}
 }

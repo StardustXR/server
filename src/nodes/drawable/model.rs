@@ -13,7 +13,7 @@ use crate::{
 			ModelNodeSystemSet,
 			dmatex::{Dmatex, DmatexExt as _, SignalOnDrop},
 		},
-		spatial::{BoundingBoxCalc, Spatial, SpatialNode, SpatialObject, TransformExt},
+		spatial::{BoundingBoxCalc, SpatialNode, SpatialObject},
 	},
 };
 use bevy::{
@@ -35,10 +35,9 @@ use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr_protocol::{
 	model::{
 		MaterialParamError, MaterialParameter, Model as ModelProxy, ModelHandler,
-		ModelInterfaceHandler, ModelPart as ModelPartProxy, ModelPartHandler, NonUniformTransform,
-		PartialNonUniformTransform,
+		ModelInterfaceHandler, ModelLoadError, ModelPart as ModelPartProxy, ModelPartHandler,
 	},
-	spatial::Spatial as SpatialProxy,
+	spatial::Spatial,
 	types::{Resource, Vec3F},
 };
 use stardust_xr_server_foundation::on_drop::AbortOnDrop;
@@ -169,7 +168,9 @@ fn apply_materials(
 		.filter_map(|p| Some(p.parts.get()?.iter().map(move |v| (p, v))))
 		.flatten()
 	{
-		let entity = **model_part.mesh_entity.get().unwrap();
+		let Some(entity) = *model_part.mesh_entity.get().unwrap() else {
+			continue;
+		};
 		let Ok(mut mesh_mat) = query.get_mut(entity) else {
 			continue;
 		};
@@ -278,15 +279,14 @@ fn gen_model_parts(
 					let parent_spatial = parent
 						.as_ref()
 						.map(|p| p.spatial.clone())
-						.unwrap_or_else(|| model.spatial.handler_arc().clone());
+						.unwrap_or_else(|| model.spatial.clone());
 					let spatial =
 						SpatialObject::new(Some(&**parent_spatial), transform.compute_matrix());
-					let spatial_arc = spatial.handler_arc().clone();
 					let model_part = Arc::new(PION.register_object(ModelPart {
 						entity: OnceLock::new(),
 						mesh_entity: OnceLock::new(),
 						path,
-						spatial: spatial_arc.clone(),
+						spatial: spatial.clone(),
 						pending_material_parameters: Mutex::default(),
 						pending_material_replacement: Mutex::default(),
 						holdout: AtomicBool::new(false),
@@ -309,27 +309,27 @@ fn gen_model_parts(
 					)
 					.unwrap_or_default();
 					let weak_part = Arc::downgrade(&model_part);
-					let calc = spatial_arc.custom_bounding_box(move || {
+					let calc = spatial.custom_bounding_box(move || {
 						weak_part
 							.upgrade()
 							.and_then(|v| v.bounds.get().copied())
 							.unwrap_or_default()
 					});
 					_ = model_part.bounding_calc.set(calc);
-					let _ = spatial_arc.set_spatial_parent(&parent_spatial);
-					spatial_arc.set_local_transform(transform.compute_matrix());
+					let _ = spatial.set_spatial_parent(&parent_spatial);
+					spatial.set_local_transform(transform.compute_matrix());
 					let entity_handle = EntityHandle::new(entity);
-					spatial_arc.set_entity(entity_handle.clone());
+					spatial.set_entity(entity_handle.clone());
 					cmds.entity(entity)
-						.insert(SpatialNode(Arc::downgrade(&**spatial_arc)));
+						.insert(SpatialNode(Arc::downgrade(&**spatial)));
 					let mesh_entity = children_query
 						.get(entity)
 						.iter()
 						.flat_map(|v| v.iter())
-						.find(|e| has_mesh.get(*e).unwrap_or(false))?;
+						.find(|e| has_mesh.get(*e).unwrap_or(false));
 					_ = model_part.bounds.set(aabb);
 					_ = model_part.entity.set(entity_handle);
-					_ = model_part.mesh_entity.set(EntityHandle::new(mesh_entity));
+					_ = model_part.mesh_entity.set(mesh_entity);
 					parts.push(model_part.clone());
 					Some(model_part)
 				},
@@ -588,11 +588,10 @@ impl FromStr for TextureSlot {
 #[derive(Debug, Handler)]
 pub struct ModelPart {
 	entity: OnceLock<EntityHandle>,
-	mesh_entity: OnceLock<EntityHandle>,
+    // no handle needed, despawned recusively
+	mesh_entity: OnceLock<Option<Entity>>,
 	path: String,
-	// TODO: replace spatial in model part with a custom system so we can switch spatials to purely
-	// uniform scaling
-	spatial: Arc<SpatialObject>,
+	spatial: BinderObjectRef<SpatialObject>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_material_replacement: Mutex<Option<Handle<BevyMaterial>>>,
 	pending_dmatexes: Mutex<
@@ -667,72 +666,8 @@ impl ModelPartHandler for ModelPart {
 		self.path.clone()
 	}
 
-	async fn get_model_transform(&self, _ctx: GluonCtx) -> NonUniformTransform {
-		// TODO: impl
-		warn!("tried getting model part transform relative to model, currently unimplemented");
-		NonUniformTransform {
-			translation: Vec3::ZERO.into(),
-			rotation: Quat::IDENTITY.into(),
-			scale: Vec3::ONE.into(),
-		}
-	}
-
-	async fn get_local_transform(&self, _ctx: GluonCtx) -> NonUniformTransform {
-		let (scale, rotation, translation) = self
-			.spatial
-			.local_transform()
-			.to_scale_rotation_translation();
-		NonUniformTransform {
-			translation: translation.into(),
-			rotation: rotation.into(),
-			scale: scale.into(),
-		}
-	}
-
-	async fn get_relative_transform(
-		&self,
-		_ctx: GluonCtx,
-		relative_to: ModelPartProxy,
-	) -> NonUniformTransform {
-		// TODO: make sure the 2 model parts are from the same model
-		let Some(relative) = relative_to.owned() else {
-			error!("unknown model part");
-			return NonUniformTransform {
-				translation: Vec3::ZERO.into(),
-				rotation: Quat::IDENTITY.into(),
-				scale: Vec3::ONE.into(),
-			};
-		};
-		let (scale, rotation, translation) =
-			Spatial::space_to_space_matrix(Some(&***relative.spatial), Some(&***self.spatial))
-				.to_scale_rotation_translation();
-		NonUniformTransform {
-			translation: translation.into(),
-			rotation: rotation.into(),
-			scale: scale.into(),
-		}
-	}
-
-	async fn set_model_transform(&self, _ctx: GluonCtx, _transform: PartialNonUniformTransform) {
-		// TODO: impl
-		warn!("tried setting model part transform relative to model, currently unimplemented");
-	}
-
-	async fn set_local_transform(&self, _ctx: GluonCtx, transform: PartialNonUniformTransform) {
-		// TODO: only apply changes
-		self.spatial.set_local_transform(transform.to_mat4());
-	}
-
-	async fn set_relative_transform(
-		&self,
-		_ctx: GluonCtx,
-		_relative_to: ModelPartProxy,
-		_transform: PartialNonUniformTransform,
-	) {
-		// TODO: impl
-		warn!(
-			"tried setting model part transform relative to another model, currently unimplemented"
-		);
+	async fn get_spatial(&self, _ctx: gluon_wire::GluonCtx) -> Spatial {
+		Spatial::from_handler(&self.spatial)
 	}
 
 	async fn set_material_parameter(
@@ -753,18 +688,7 @@ impl ModelPartHandler for ModelPart {
 		self.holdout.store(true, Ordering::Relaxed);
 	}
 }
-impl TransformExt for PartialNonUniformTransform {
-	fn to_mat4(&self) -> Mat4 {
-		// Zero scale values break everything
 
-		Mat4::from_scale_rotation_translation(
-			// TODO: avoid scale of 0.0
-			self.scale.map(|v| v.mint()).unwrap_or(Vec3::ONE),
-			self.rotation.map(|v| v.mint()).unwrap_or(Quat::IDENTITY),
-			self.translation.map(|v| v.mint()).unwrap_or(Vec3::ZERO),
-		)
-	}
-}
 impl_proxy!(ModelPartProxy, ModelPart);
 #[derive(Default, Resource)]
 pub struct MaterialRegistry(FxHashMap<HashedPbrMaterial, Handle<BevyMaterial>>);
@@ -835,10 +759,6 @@ impl Model {
 	}
 }
 impl ModelHandler for Model {
-	async fn get_spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
-		SpatialProxy::from_handler(&self.spatial)
-	}
-
 	async fn get_part(&self, _ctx: GluonCtx, path: String) -> Option<ModelPartProxy> {
 		if let Some(parts) = self.parts.get() {
 			parts
@@ -879,18 +799,19 @@ impl ModelInterfaceHandler for ModelInterface {
 		_ctx: gluon_wire::GluonCtx,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		model: stardust_xr_protocol::types::Resource,
-		_model_scale: stardust_xr_protocol::types::Vec3F,
-	) -> ModelProxy {
+	) -> Result<ModelProxy, ModelLoadError> {
 		let Some(spatial) = spatial.owned() else {
-			// TODO: replace with proper error returning
-			panic!("invalid spatial in model loading");
+			return Err(ModelLoadError::InvalidSpatial);
 		};
 
 		// TODO: handle
 		let model = Model::new(spatial, model, self.base_resource_prefixes.clone())
 			.await
-			.unwrap();
+			.map_err(|err| {
+				error!("failed to load model: {err}");
+				ModelLoadError::NotFound
+			})?;
 
-		ModelProxy::from_handler(&model)
+		Ok(ModelProxy::from_handler(&model))
 	}
 }

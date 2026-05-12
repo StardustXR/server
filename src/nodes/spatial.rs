@@ -83,17 +83,18 @@ const EPSILON: f32 = 0.00001;
 pub trait TransformExt {
 	fn to_mat4(&self) -> Mat4;
 }
+fn clamp_scale(scale: f32) -> f32 {
+	if scale.abs() <= EPSILON {
+		EPSILON * scale.signum()
+	} else {
+		scale
+	}
+}
 impl TransformExt for Transform {
 	fn to_mat4(&self) -> Mat4 {
 		// Zero scale values break everything
-		let scale = if self.scale == 0.0 {
-			EPSILON
-		} else {
-			self.scale
-		};
-
 		Mat4::from_scale_rotation_translation(
-			Vec3::splat(scale),
+			self.scale.mint::<Vec3>().map(clamp_scale),
 			self.rotation.mint(),
 			self.translation.mint(),
 		)
@@ -101,15 +102,10 @@ impl TransformExt for Transform {
 }
 impl TransformExt for PartialTransform {
 	fn to_mat4(&self) -> Mat4 {
-		// Zero scale values break everything
-		let scale = if self.scale.unwrap_or(1.0) == 0.0 {
-			EPSILON
-		} else {
-			self.scale.unwrap_or(1.0)
-		};
-
 		Mat4::from_scale_rotation_translation(
-			Vec3::splat(scale),
+			self.scale
+				.map(|v| v.mint::<Vec3>().map(clamp_scale))
+				.unwrap_or(Vec3::ONE),
 			self.rotation.map(|v| v.mint()).unwrap_or(Quat::IDENTITY),
 			self.translation.map(|v| v.mint()).unwrap_or(Vec3::ZERO),
 		)
@@ -355,7 +351,7 @@ impl Spatial {
 			reference_space_rot = Quat::IDENTITY;
 		}
 		if let Some(scl) = transform.scale {
-			reference_space_scl = Vec3::splat(scl)
+			reference_space_scl = scl.mint::<Vec3>().map(clamp_scale);
 		}
 
 		local_transform_in_reference_space = Mat4::from_scale_rotation_translation(
@@ -477,8 +473,7 @@ impl SpatialHandler for SpatialObject {
 		Transform {
 			translation: position.into(),
 			rotation: rotation.into(),
-			// TODO: actually just store pos rot and a single scale float
-			scale: scale.max_element(),
+			scale: scale.into(),
 		}
 	}
 
@@ -609,8 +604,7 @@ impl SpatialInterfaceHandler for SpatialInterface {
 		Transform {
 			translation: position.into(),
 			rotation: rotation.into(),
-			// TODO: actually just store pos rot and a single scale float
-			scale: scale.max_element(),
+			scale: scale.into(),
 		}
 	}
 }
