@@ -283,7 +283,7 @@ impl InputSource for HandSource {
 		objects: &HashMap<QueryableObjectRef, CachedObject<f32>>,
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
-		let hand = self.hand.blocking_read().clone();
+		let hand = *self.hand.blocking_read();
 		let Some(hand) = hand else {
 			self.capture.blocking_write().take();
 			return (vec![], None);
@@ -329,7 +329,7 @@ impl InputSource for HandSource {
 	}
 
 	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> SpatialData {
-		let hand = self.hand.blocking_read().clone().unwrap();
+		let hand = (*self.hand.blocking_read()).unwrap();
 		let localized = localize_hand(&self.hand_space, &hand, handler_spatial, handler_field);
 		let distance = hand_real_distance(&localized);
 		SpatialData {
