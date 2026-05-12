@@ -28,7 +28,7 @@ use crate::{
 	PION, interface,
 	nodes::{
 		ProxyExt as _,
-		fields::{Field, FieldTrait, Ray, ShapeChangedCallback},
+		fields::{Field, Ray, ShapeChangedCallback},
 		spatial::{MovedCallback, Spatial},
 	},
 	query::{InterfaceQuery, QUERY_STATE, Queryable, QueryableInterface},
@@ -344,7 +344,7 @@ impl QueryType {
 				let (_scale, _rotation, pos) =
 					Spatial::space_to_space_matrix(Some(&queryable.spatial), Some(&field.spatial))
 						.to_scale_rotation_translation();
-				let distance = field.local_distance(pos.into());
+				let distance = field.local_sample(pos.into()).distance;
 
 				(distance < *margin).then_some(HitTestResult::Zone { pos, distance })
 			}
@@ -379,7 +379,11 @@ impl QueryType {
 					.await
 					.iter()
 					.map(|p| {
-						let distance = queryable.field.data.distance(ref_space, p.point.mint());
+						let distance = queryable
+							.field
+							.data
+							.sample(ref_space, p.point.mint())
+							.distance;
 						(distance - p.margin, distance)
 					})
 					.reduce(|(sort1, distance1), (sort2, distance2)| {

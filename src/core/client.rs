@@ -13,7 +13,6 @@ use crate::{
 	},
 	query::{QueryInterface, spatial_query::SpatialQueryInterface},
 };
-use bevy::prelude::Deref;
 use binderbinder::binder_object::BinderObjectRef;
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;

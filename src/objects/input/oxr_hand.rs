@@ -1,7 +1,7 @@
 use super::{CachedObject, InputSender, InputSource, PointsQueryCache, QueryCache};
 use crate::nodes::ProxyExt;
 use crate::nodes::drawable::model::HoldoutExtension;
-use crate::nodes::fields::{Field, FieldTrait};
+use crate::nodes::fields::Field;
 use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
 use crate::openxr_helpers::ConvertTimespec;
 use crate::query::spatial_query::SpatialQueryInterface;
@@ -673,10 +673,18 @@ impl InputMethodHandler for HandInputMethod {
 // ── Free functions ────────────────────────────────────────────────────────────
 
 fn hand_sort_distance(hand_space: &SpatialRef, field: &Field, hand: &Hand) -> f32 {
-	let thumb_tip_distance = field.distance(hand_space, hand.thumb.tip.pose.position.mint());
-	let index_tip_distance = field.distance(hand_space, hand.index.tip.pose.position.mint());
-	let middle_tip_distance = field.distance(hand_space, hand.middle.tip.pose.position.mint());
-	let ring_tip_distance = field.distance(hand_space, hand.ring.tip.pose.position.mint());
+	let thumb_tip_distance = field
+		.sample(hand_space, hand.thumb.tip.pose.position.mint())
+		.distance;
+	let index_tip_distance = field
+		.sample(hand_space, hand.index.tip.pose.position.mint())
+		.distance;
+	let middle_tip_distance = field
+		.sample(hand_space, hand.middle.tip.pose.position.mint())
+		.distance;
+	let ring_tip_distance = field
+		.sample(hand_space, hand.ring.tip.pose.position.mint())
+		.distance;
 
 	(thumb_tip_distance * 0.3)
 		+ (index_tip_distance * 0.4)
@@ -735,7 +743,7 @@ fn transform_joint(from: &Spatial, to: &Spatial, field: &Field, joint: &Joint) -
 			orientation: (rot * joint.pose.orientation.mint::<Quat>()).into(),
 		},
 		radius: joint.radius,
-		distance: field.distance(from, joint.pose.position.mint()),
+		distance: field.sample(from, joint.pose.position.mint()).distance,
 	}
 }
 

@@ -13,12 +13,12 @@ use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::gizmos::GizmoAsset;
 use bevy::gizmos::retained::Gizmo;
 use binderbinder::binder_object::BinderObjectRef;
-use glam::{Vec3, Vec3A, Vec3Swizzles, vec2, vec3, vec3a};
+use glam::{Vec3, Vec3A, vec3a};
 use gluon_wire::{GluonCtx, Handler};
 use parking_lot::RwLock;
 use stardust_xr_protocol::field::{
 	CubicBezierControlPoint, Field as FieldProxy, FieldHandler, FieldInterfaceHandler,
-	FieldRef as FieldRefProxy, FieldRefHandler, RayMarchResult, Shape,
+	FieldRef as FieldRefProxy, FieldRefHandler, FieldSample, RayMarchResult, Shape,
 };
 use stardust_xr_protocol::spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy};
 use stardust_xr_protocol::types::Vec3F;
@@ -111,7 +111,7 @@ fn sync_field_gizmos(
 
 			for chain in chains {
 				let mut asset = GizmoAsset::new();
-				asset.linestrip(chain.iter().copied(), color);
+				asset.linestrip(chain.iter().map(|c| c.clone().into()), color);
 				let handle = gizmo_assets.add(asset);
 				let entity = commands
 					.spawn((
@@ -130,16 +130,16 @@ fn sync_field_gizmos(
 	}
 }
 
-fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3>> {
+fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3A>> {
 	const FAR: f32 = 100.0;
 	const PAD: f32 = 1.1;
 	const MIN_EXT: f32 = 0.005;
-	let bx_pos = ((FAR - f.local_distance(vec3a(FAR, 0.0, 0.0))) * PAD).max(MIN_EXT);
-	let bx_neg = ((FAR - f.local_distance(vec3a(-FAR, 0.0, 0.0))) * PAD).max(MIN_EXT);
-	let by_pos = ((FAR - f.local_distance(vec3a(0.0, FAR, 0.0))) * PAD).max(MIN_EXT);
-	let by_neg = ((FAR - f.local_distance(vec3a(0.0, -FAR, 0.0))) * PAD).max(MIN_EXT);
-	let bz_pos = ((FAR - f.local_distance(vec3a(0.0, 0.0, FAR))) * PAD).max(MIN_EXT);
-	let bz_neg = ((FAR - f.local_distance(vec3a(0.0, 0.0, -FAR))) * PAD).max(MIN_EXT);
+	let bx_pos = ((FAR - f.local_sample(vec3a(FAR, 0.0, 0.0)).distance) * PAD).max(MIN_EXT);
+	let bx_neg = ((FAR - f.local_sample(vec3a(-FAR, 0.0, 0.0)).distance) * PAD).max(MIN_EXT);
+	let by_pos = ((FAR - f.local_sample(vec3a(0.0, FAR, 0.0)).distance) * PAD).max(MIN_EXT);
+	let by_neg = ((FAR - f.local_sample(vec3a(0.0, -FAR, 0.0)).distance) * PAD).max(MIN_EXT);
+	let bz_pos = ((FAR - f.local_sample(vec3a(0.0, 0.0, FAR)).distance) * PAD).max(MIN_EXT);
+	let bz_neg = ((FAR - f.local_sample(vec3a(0.0, 0.0, -FAR)).distance) * PAD).max(MIN_EXT);
 
 	const MAX_SLICES_PER_HALF_AXIS: i32 = 10;
 	let slice_step = 0.01_f32.max(
@@ -156,11 +156,11 @@ fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3>> {
 		(-neg_count..=pos_count).map(|i| i as f32 * slice_step)
 	};
 
-	let mut all_chains: Vec<Vec<Vec3>> = Vec::new();
+	let mut all_chains: Vec<Vec<Vec3A>> = Vec::new();
 
 	for z in slice_positions(bz_neg, bz_pos).chain([-(bz_neg / PAD), bz_pos / PAD]) {
 		for chain in chain_segments(marching_squares_slice(
-			|p| f.local_distance(p),
+			|p| f.local_sample(p).distance,
 			(-bx_neg, bx_pos, -by_neg, by_pos),
 			slice_step / square_rez,
 			move |u, v| vec3a(u, v, z),
@@ -171,7 +171,7 @@ fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3>> {
 
 	for y in slice_positions(by_neg, by_pos).chain([-(by_neg / PAD), by_pos / PAD]) {
 		for chain in chain_segments(marching_squares_slice(
-			|p| f.local_distance(p),
+			|p| f.local_sample(p).distance,
 			(-bx_neg, bx_pos, -bz_neg, bz_pos),
 			slice_step / square_rez,
 			move |u, v| vec3a(u, y, v),
@@ -182,7 +182,7 @@ fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3>> {
 
 	for x in slice_positions(bx_neg, bx_pos).chain([-(bx_neg / PAD), bx_pos / PAD]) {
 		for chain in chain_segments(marching_squares_slice(
-			|p| f.local_distance(p),
+			|p| f.local_sample(p).distance,
 			(-by_neg, by_pos, -bz_neg, bz_pos),
 			slice_step / square_rez,
 			move |u, v| vec3a(x, u, v),
@@ -215,7 +215,7 @@ fn marching_squares_slice<S, L>(
 	bounds: (f32, f32, f32, f32),
 	cell_size: f32,
 	lift: L,
-) -> Vec<(Vec3, Vec3)>
+) -> Vec<(Vec3A, Vec3A)>
 where
 	S: Fn(Vec3A) -> f32,
 	L: Fn(f32, f32) -> Vec3A,
@@ -287,13 +287,13 @@ where
 			let u1 = u0 + cell_size;
 			let v1 = v0 + cell_size;
 
-			let c0: Vec3 = lift(u0, v0).into();
-			let c1: Vec3 = lift(u1, v0).into();
-			let c2: Vec3 = lift(u1, v1).into();
-			let c3: Vec3 = lift(u0, v1).into();
+			let c0: Vec3A = lift(u0, v0).into();
+			let c1: Vec3A = lift(u1, v0).into();
+			let c2: Vec3A = lift(u1, v1).into();
+			let c3: Vec3A = lift(u0, v1).into();
 
 			// Linearly interpolate to find the zero crossing on an edge.
-			let edge_pt = |e: usize| -> Vec3 {
+			let edge_pt = |e: usize| -> Vec3A {
 				let (ca, da, cb, db) = match e {
 					0 => (c0, d0, c1, d1),
 					1 => (c1, d1, c2, d2),
@@ -317,15 +317,15 @@ where
 /// Chain a list of `(start, end)` segment pairs into polylines by connecting shared endpoints.
 /// Segments sharing an endpoint (within quantized precision) are merged into longer chains.
 /// Closed loops are detected and the first point is appended to close them.
-fn chain_segments(segments: Vec<(Vec3, Vec3)>) -> Vec<Vec<Vec3>> {
+fn chain_segments(segments: Vec<(Vec3A, Vec3A)>) -> Vec<Vec<Vec3A>> {
 	use std::collections::{HashMap, VecDeque};
 
 	if segments.is_empty() {
 		return vec![];
 	}
 
-	// Quantize a Vec3 to a (i32,i32,i32) key at 0.1 mm precision for endpoint matching.
-	let quantize = |v: Vec3| -> (i32, i32, i32) {
+	// Quantize a Vec3A to a (i32,i32,i32) key at 0.1 mm precision for endpoint matching.
+	let quantize = |v: Vec3A| -> (i32, i32, i32) {
 		(
 			(v.x * 10_000.0) as i32,
 			(v.y * 10_000.0) as i32,
@@ -334,14 +334,14 @@ fn chain_segments(segments: Vec<(Vec3, Vec3)>) -> Vec<Vec<Vec3>> {
 	};
 
 	// Build adjacency map: endpoint key -> [(segment_idx, other_endpoint)]
-	let mut adj: HashMap<(i32, i32, i32), Vec<(usize, Vec3)>> = HashMap::new();
+	let mut adj: HashMap<(i32, i32, i32), Vec<(usize, Vec3A)>> = HashMap::new();
 	for (idx, &(a, b)) in segments.iter().enumerate() {
 		adj.entry(quantize(a)).or_default().push((idx, b));
 		adj.entry(quantize(b)).or_default().push((idx, a));
 	}
 
 	let mut used = vec![false; segments.len()];
-	let mut chains: Vec<Vec<Vec3>> = Vec::new();
+	let mut chains: Vec<Vec<Vec3A>> = Vec::new();
 
 	for start in 0..segments.len() {
 		if used[start] {
@@ -349,7 +349,7 @@ fn chain_segments(segments: Vec<(Vec3, Vec3)>) -> Vec<Vec<Vec3>> {
 		}
 		used[start] = true;
 		let (a, b) = segments[start];
-		let mut chain: VecDeque<Vec3> = vec![a, b].into();
+		let mut chain: VecDeque<Vec3A> = vec![a, b].into();
 
 		// Extend forward from tail.
 		loop {
@@ -508,84 +508,6 @@ impl CubicBezierSplineRef {
 	}
 }
 
-pub trait FieldTrait: Send + Sync {
-	fn spatial_ref(&self) -> &Arc<Spatial>;
-
-	fn local_distance(&self, p: Vec3A) -> f32;
-	fn local_normal(&self, p: Vec3A, r: f32) -> Vec3A {
-		let d = self.local_distance(p);
-		let e = vec2(r, 0_f32);
-
-		let n = vec3a(d, d, d)
-			- vec3a(
-				self.local_distance(vec3a(e.x, e.y, e.y)),
-				self.local_distance(vec3a(e.y, e.x, e.y)),
-				self.local_distance(vec3a(e.y, e.y, e.x)),
-			);
-
-		n.normalize()
-	}
-	fn local_closest_point(&self, p: Vec3A, r: f32) -> Vec3A {
-		p - (self.local_normal(p, r) * self.local_distance(p))
-	}
-
-	fn distance(&self, reference_space: &Spatial, p: Vec3A) -> f32 {
-		let reference_to_local_space =
-			Spatial::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
-		let local_p = reference_to_local_space.transform_point3a(p);
-		self.local_distance(local_p)
-	}
-	fn normal(&self, reference_space: &Spatial, p: Vec3A, r: f32) -> Vec3A {
-		let reference_to_local_space =
-			Spatial::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
-		let local_p = reference_to_local_space.transform_point3a(p);
-		reference_to_local_space
-			.inverse()
-			.transform_vector3a(self.local_normal(local_p, r))
-	}
-	fn closest_point(&self, reference_space: &Spatial, p: Vec3A, r: f32) -> Vec3A {
-		let reference_to_local_space =
-			Spatial::space_to_space_matrix(Some(reference_space), Some(self.spatial_ref()));
-		let local_p = reference_to_local_space.transform_point3a(p);
-		reference_to_local_space
-			.inverse()
-			.transform_point3a(self.local_closest_point(local_p, r))
-	}
-
-	fn ray_march(&self, ray: Ray) -> RayMarchResult {
-		let mut result = RayMarchResult {
-			min_distance: f32::MAX,
-			deepest_point_distance: 0_f32,
-			ray_length: 0_f32,
-			ray_steps: 0,
-		};
-
-		let ray_to_field_matrix =
-			Spatial::space_to_space_matrix(Some(&ray.space), Some(self.spatial_ref()));
-		let mut ray_point = ray_to_field_matrix.transform_point3a(ray.origin.into());
-		let ray_direction = ray_to_field_matrix
-			.transform_vector3a(ray.direction.into())
-			.normalize();
-
-		while result.ray_steps < MAX_RAY_STEPS && result.ray_length < MAX_RAY_LENGTH {
-			let distance = self.local_distance(ray_point);
-			let march_distance = distance.clamp(MIN_RAY_MARCH, MAX_RAY_MARCH);
-
-			result.ray_length += march_distance;
-			ray_point += ray_direction * march_distance;
-
-			if result.min_distance > distance {
-				result.deepest_point_distance = result.ray_length;
-				result.min_distance = distance;
-			}
-
-			result.ray_steps += 1;
-		}
-
-		result
-	}
-}
-
 pub struct Ray {
 	pub origin: Vec3,
 	pub direction: Vec3,
@@ -608,21 +530,16 @@ impl Debug for ShapeChangedCallback {
 	}
 }
 #[derive(Debug, Handler)]
-pub struct FieldMut {
+pub struct FieldObject {
 	pub data: Arc<Field>,
 	field_ref: BinderObjectRef<FieldRef>,
 	spatial: BinderObjectRef<SpatialObject>,
-}
-impl FieldMut {
-	pub fn get_ref(&self) -> &BinderObjectRef<FieldRef> {
-		&self.field_ref
-	}
 }
 pub struct Field {
 	pub spatial: Arc<SpatialObject>,
 	pub shape: RwLock<Shape>,
 	shape_changed_callback: Registry<dyn Fn() + Send + Sync + 'static>,
-	polyline_cache: RwLock<(u64, Option<Vec<Vec<Vec3>>>)>,
+	polyline_cache: RwLock<(u64, Option<Vec<Vec<Vec3A>>>)>,
 }
 
 impl Debug for Field {
@@ -643,9 +560,57 @@ impl Field {
 		self.shape_changed_callback.add_raw(&arc.0);
 		arc
 	}
+
+	pub fn local_sample(&self, p: Vec3A) -> FieldSample {
+		self.shape.read().clone().sample(p)
+	}
+	pub fn sample(&self, reference_space: &Spatial, p: Vec3A) -> FieldSample {
+		Shape::Transform {
+			shape: Box::new(self.shape.read().clone()),
+			transform: Spatial::space_to_space_matrix(Some(reference_space), Some(&self.spatial))
+				.into(),
+		}
+		.sample(p)
+	}
+
+	pub fn ray_march(&self, ray: Ray) -> RayMarchResult {
+		let mut result = RayMarchResult {
+			min_distance: f32::MAX,
+			deepest_point_distance: 0_f32,
+			ray_length: 0_f32,
+			ray_steps: 0,
+		};
+
+		let ray_to_field_matrix =
+			Spatial::space_to_space_matrix(Some(&ray.space), Some(&self.spatial));
+		let mut ray_point = ray_to_field_matrix.transform_point3a(ray.origin.into());
+		let ray_direction = ray_to_field_matrix
+			.transform_vector3a(ray.direction.into())
+			.normalize();
+
+		while result.ray_steps < MAX_RAY_STEPS && result.ray_length < MAX_RAY_LENGTH {
+			let distance = self.sample(&ray.space, ray_point).distance;
+			let march_distance = distance.clamp(MIN_RAY_MARCH, MAX_RAY_MARCH);
+
+			result.ray_length += march_distance;
+			ray_point += ray_direction * march_distance;
+
+			if result.min_distance > distance {
+				result.deepest_point_distance = result.ray_length;
+				result.min_distance = distance;
+			}
+
+			result.ray_steps += 1;
+		}
+
+		result
+	}
 }
-impl FieldMut {
-	pub fn new(spatial: BinderObjectRef<SpatialObject>, shape: Shape) -> BinderObjectRef<FieldMut> {
+impl FieldObject {
+	pub fn new(
+		spatial: BinderObjectRef<SpatialObject>,
+		shape: Shape,
+	) -> BinderObjectRef<FieldObject> {
 		let data = Arc::new(Field {
 			spatial: spatial.handler_arc().clone(),
 			shape: RwLock::new(shape),
@@ -662,7 +627,7 @@ impl FieldMut {
 		let field_ref = PION
 			.register_object(FieldRef { data: data.clone() })
 			.to_service();
-		PION.register_object(FieldMut {
+		PION.register_object(FieldObject {
 			field_ref,
 			data,
 			spatial,
@@ -675,42 +640,7 @@ impl Drop for Field {
 		FIELD_REGISTRY_DEBUG_GIZMOS.remove(self);
 	}
 }
-impl FieldTrait for Field {
-	fn spatial_ref(&self) -> &Arc<Spatial> {
-		&self.spatial
-	}
-	fn local_distance(&self, p: Vec3A) -> f32 {
-		match self.shape.read().clone() {
-			Shape::Box { size } => {
-				let q = vec3(
-					p.x.abs() - (size.x * 0.5_f32),
-					p.y.abs() - (size.y * 0.5_f32),
-					p.z.abs() - (size.z * 0.5_f32),
-				);
-				let v = vec3a(q.x.max(0_f32), q.y.max(0_f32), q.z.max(0_f32));
-				v.length() + q.x.max(q.y.max(q.z)).min(0_f32)
-			}
-			Shape::Cylinder { length, radius } => {
-				let d = vec2(p.xz().length().abs() - radius, p.y.abs() - (length * 0.5));
-				d.x.max(d.y).min(0.0) + d.max(vec2(0.0, 0.0)).length()
-			}
-			Shape::Sphere { radius } => p.length() - radius,
-			Shape::CubicBezierSpline { points, cyclic } => CubicBezierSplineRef {
-				control_points: points,
-				cyclic,
-			}
-			.sd_tube(p.into()),
-			Shape::Torus {
-				major_radius,
-				minor_radius,
-			} => {
-				let q = vec2(p.xz().length() - major_radius, p.y);
-				q.length() - minor_radius
-			}
-		}
-	}
-}
-impl FieldHandler for FieldMut {
+impl FieldHandler for FieldObject {
 	async fn field_ref(&self, _ctx: GluonCtx) -> FieldRefProxy {
 		FieldRefProxy::from_handler(&self.field_ref)
 	}
@@ -719,38 +649,16 @@ impl FieldHandler for FieldMut {
 		SpatialProxy::from_handler(&self.spatial)
 	}
 
-	async fn distance(
+	async fn sample(
 		&self,
 		_ctx: GluonCtx,
 		reference_space: SpatialRefProxy,
 		point: Vec3F,
-	) -> Option<f32> {
-		let ref_space = reference_space.owned()?;
-		Some(self.data.distance(&ref_space, point.mint()))
-	}
-
-	async fn normal(
-		&self,
-		_ctx: GluonCtx,
-		reference_space: SpatialRefProxy,
-		point: Vec3F,
-	) -> Option<Vec3F> {
-		let ref_space = reference_space.owned()?;
-		Some(self.data.normal(&ref_space, point.mint(), 0.0001).into())
-	}
-
-	async fn closest_point(
-		&self,
-		_ctx: GluonCtx,
-		reference_space: SpatialRefProxy,
-		point: Vec3F,
-	) -> Option<Vec3F> {
-		let ref_space = reference_space.owned()?;
-		Some(
-			self.data
-				.closest_point(&ref_space, point.mint(), 0.0001)
-				.into(),
-		)
+	) -> FieldSample {
+		let Some(ref_space) = reference_space.owned() else {
+			return FieldSample::infinite();
+		};
+		self.data.sample(&ref_space, point.mint())
 	}
 
 	async fn ray_march(
@@ -788,45 +696,21 @@ impl FieldRefHandler for FieldRef {}
 
 interface!(FieldInterface);
 impl FieldInterfaceHandler for FieldInterface {
-	async fn distance(
+	async fn sample(
 		&self,
-		_ctx: GluonCtx,
+		_ctx: gluon_wire::GluonCtx,
 		field: FieldRefProxy,
 		space: SpatialRefProxy,
 		point: Vec3F,
-	) -> Option<f32> {
-		let space = space.owned()?;
-		let field = field.owned()?;
-		Some(field.data.distance(&space, point.mint()))
-	}
-
-	async fn normal(
-		&self,
-		_ctx: GluonCtx,
-		field: FieldRefProxy,
-		space: SpatialRefProxy,
-		point: Vec3F,
-	) -> Option<Vec3F> {
-		let space = space.owned()?;
-		let field = field.owned()?;
-		Some(field.data.normal(&space, point.mint(), 0.0001).into())
-	}
-
-	async fn closest_point(
-		&self,
-		_ctx: GluonCtx,
-		field: FieldRefProxy,
-		space: SpatialRefProxy,
-		point: Vec3F,
-	) -> Option<Vec3F> {
-		let space = space.owned()?;
-		let field = field.owned()?;
-		Some(
-			field
-				.data
-				.closest_point(&space, point.mint(), 0.0001)
-				.into(),
-		)
+	) -> FieldSample {
+		let Some(field) = field.owned() else {
+			return FieldSample::infinite();
+		};
+		let Some(space) = space.owned() else {
+			return FieldSample::infinite();
+		};
+		let point = point.mint();
+		field.data.sample(&space, point)
 	}
 
 	async fn ray_march(
@@ -856,12 +740,12 @@ impl FieldInterfaceHandler for FieldInterface {
 			// TODO: replace with returned error
 			panic!("invalid spatial used for field creation");
 		};
-		let field = FieldMut::new(spatial, shape);
+		let field = FieldObject::new(spatial, shape);
 		FieldProxy::from_handler(&field)
 	}
 }
 
-impl_proxy!(FieldProxy, FieldMut);
+impl_proxy!(FieldProxy, FieldObject);
 impl_proxy!(FieldRefProxy, FieldRef);
 
 #[cfg(test)]

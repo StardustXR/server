@@ -587,7 +587,7 @@ dependencies = [
  "bevy_asset",
  "bevy_ecs",
  "bevy_image",
- "glam 0.29.3",
+ "glam",
  "wgpu-types",
 ]
 
@@ -1043,7 +1043,7 @@ dependencies = [
  "approx",
  "bevy_reflect",
  "derive_more 1.0.0",
- "glam 0.29.3",
+ "glam",
  "itertools 0.14.0",
  "libm",
  "rand 0.8.5",
@@ -1085,7 +1085,7 @@ version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bb60c753b968a2de0fd279b76a3d19517695e771edb4c23575c7f92156315de"
 dependencies = [
- "glam 0.29.3",
+ "glam",
 ]
 
 [[package]]
@@ -1202,7 +1202,7 @@ dependencies = [
  "downcast-rs 2.0.2",
  "erased-serde",
  "foldhash",
- "glam 0.29.3",
+ "glam",
  "serde",
  "smallvec",
  "smol_str",
@@ -2484,7 +2484,7 @@ checksum = "b0a05902cf601ed11d564128448097b98ebe3c6574bd7b6a653a3d56d54aa020"
 dependencies = [
  "const_panic",
  "encase_derive",
- "glam 0.29.3",
+ "glam",
  "thiserror 1.0.69",
 ]
 
@@ -2579,7 +2579,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2894,15 +2894,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "glam"
-version = "0.32.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f70749695b063ecbf6b62949ccccde2e733ec3ecbbd71d467dca4e5c6c97cca0"
-dependencies = [
- "mint",
-]
-
-[[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2969,7 +2960,7 @@ dependencies = [
 [[package]]
 name = "gluon-codegen-rust"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#981673fea01bd263705a2d97065265e4faa32acf"
+source = "git+https://github.com/technobaboo/gluon#91dfa63f3860010b6aae9070f9208e231b5a7627"
 dependencies = [
  "convert_case 0.11.0",
  "gluon-parser",
@@ -2983,7 +2974,7 @@ dependencies = [
 [[package]]
 name = "gluon-parser"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#981673fea01bd263705a2d97065265e4faa32acf"
+source = "git+https://github.com/technobaboo/gluon#91dfa63f3860010b6aae9070f9208e231b5a7627"
 dependencies = [
  "ansi_term",
  "binderbinder",
@@ -2994,7 +2985,7 @@ dependencies = [
 [[package]]
 name = "gluon-wire"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#981673fea01bd263705a2d97065265e4faa32acf"
+source = "git+https://github.com/technobaboo/gluon#91dfa63f3860010b6aae9070f9208e231b5a7627"
 dependencies = [
  "binderbinder",
  "bitflags 2.11.0",
@@ -3007,7 +2998,7 @@ dependencies = [
 [[package]]
 name = "gluon-wire-derive"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#981673fea01bd263705a2d97065265e4faa32acf"
+source = "git+https://github.com/technobaboo/gluon#91dfa63f3860010b6aae9070f9208e231b5a7627"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3215,7 +3206,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c9e718d32b6e6b2b32354e1b0367025efdd0b11d6a740b905ddf5db1074679"
 dependencies = [
  "constgebra",
- "glam 0.29.3",
+ "glam",
  "tinyvec",
 ]
 
@@ -5210,7 +5201,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5223,7 +5214,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5558,6 +5549,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
+ "windows-sys 0.52.0",
  "windows-sys 0.59.0",
 ]
 
@@ -5573,11 +5565,11 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "0.51.1"
-source = "git+https://github.com/StardustXR/core.git?branch=binder#84ab80e03e3b61c075bc158f7ccf8e043b7a2b17"
+source = "git+https://github.com/StardustXR/core.git?branch=binder#da6c8ff3ebe3fb89615e69a1de70f67797fe7a33"
 dependencies = [
  "binderbinder",
  "fnv",
- "glam 0.32.1",
+ "glam",
  "gluon-codegen-rust",
  "gluon-parser",
  "gluon-wire",
@@ -5611,7 +5603,7 @@ dependencies = [
  "directories",
  "drm-fourcc",
  "futures-sink",
- "glam 0.29.3",
+ "glam",
  "global_counter",
  "gluon-wire",
  "input-event-codes",
@@ -5822,7 +5814,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6870,7 +6862,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

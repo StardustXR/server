@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use stardust_xr_protocol::{
 	client::ClientState,
 	server::{Server, ServerInterfaceHandler},
+	spatial::SpatialRef,
 };
 
 use crate::{core::client::ConnectedClient, exposed_interface};
@@ -13,6 +14,7 @@ impl ServerInterfaceHandler for ServerInterface {
 		&self,
 		ctx: gluon_wire::GluonCtx,
 		client: stardust_xr_protocol::client::Client,
+		state_token: Option<String>,
 		resource_prefixes: Vec<String>,
 	) -> (Server, ClientState) {
 		// TODO: forward errors
@@ -24,5 +26,13 @@ impl ServerInterfaceHandler for ServerInterface {
 		.unwrap();
 
 		(Server::from_handler(&obj), state)
+	}
+
+	async fn startup_spatial(
+		&self,
+		_ctx: gluon_wire::GluonCtx,
+		startup_token: String,
+	) -> SpatialRef {
+		todo!()
 	}
 }

@@ -3,7 +3,7 @@ use crate::{
 	PION,
 	bevy_int::flatscreen_cam::FlatscreenCam,
 	nodes::{
-		fields::{Field, FieldTrait, Ray},
+		fields::{Field, Ray},
 		spatial::{Spatial, SpatialObject, SpatialRef},
 	},
 	query::spatial_query::SpatialQueryInterface,
