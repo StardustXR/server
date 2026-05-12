@@ -198,9 +198,23 @@ impl SpatialObject {
 	pub fn get_ref(&self) -> &BinderObjectRef<SpatialRef> {
 		&self.spatial_ref
 	}
+	pub fn spatial_arc(&self) -> &Arc<Spatial> {
+		&self.data
+	}
 }
 
 impl Spatial {
+	#[cfg(test)]
+	pub(crate) fn test_new(parent: Option<Arc<Spatial>>, transform: Mat4) -> Arc<Spatial> {
+		Arc::new(Spatial {
+			entity: Mutex::new(None),
+			parent: Mutex::new(parent),
+			transform: Mutex::new(transform),
+			children: Registry::new(),
+			bounding_box_calc: Registry::new(),
+			moved_callback: Registry::new(),
+		})
+	}
 	pub fn custom_bounding_box(
 		&self,
 		calc: impl Fn() -> Aabb + Send + Sync + 'static,

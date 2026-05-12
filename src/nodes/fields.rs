@@ -428,7 +428,7 @@ pub struct FieldObject {
 	spatial: BinderObjectRef<SpatialObject>,
 }
 pub struct Field {
-	pub spatial: Arc<SpatialObject>,
+	pub spatial: Arc<Spatial>,
 	pub shape: RwLock<Shape>,
 	shape_changed_callback: Registry<dyn Fn() + Send + Sync + 'static>,
 	polyline_cache: RwLock<(u64, Option<Vec<Vec<Vec3A>>>)>,
@@ -459,13 +459,13 @@ impl Field {
 	pub fn sample(&self, reference_space: &Spatial, p: Vec3A) -> FieldSample {
 		Shape::Transform {
 			shape: Box::new(self.shape.read().clone()),
-			transform: Spatial::space_to_space_matrix(Some(reference_space), Some(&self.spatial))
+			transform: Spatial::space_to_space_matrix(Some(&self.spatial), Some(reference_space))
 				.into(),
 		}
 		.sample(p)
 	}
 
-	pub fn ray_march(&self, ray: Ray) -> RayMarchResult {
+	pub fn ray_march(&self, mut ray: Ray) -> RayMarchResult {
 		let mut result = RayMarchResult {
 			min_distance: f32::MAX,
 			deepest_point_distance: 0_f32,
@@ -473,19 +473,12 @@ impl Field {
 			ray_steps: 0,
 		};
 
-		let ray_to_field_matrix =
-			Spatial::space_to_space_matrix(Some(&ray.space), Some(&self.spatial));
-		let mut ray_point = ray_to_field_matrix.transform_point3a(ray.origin.into());
-		let ray_direction = ray_to_field_matrix
-			.transform_vector3a(ray.direction.into())
-			.normalize();
-
 		while result.ray_steps < MAX_RAY_STEPS && result.ray_length < MAX_RAY_LENGTH {
-			let distance = self.sample(&ray.space, ray_point).distance;
+			let distance = self.sample(&ray.space, ray.origin.into()).distance;
 			let march_distance = distance.clamp(MIN_RAY_MARCH, MAX_RAY_MARCH);
 
 			result.ray_length += march_distance;
-			ray_point += ray_direction * march_distance;
+			ray.origin += ray.direction * march_distance;
 
 			if result.min_distance > distance {
 				result.deepest_point_distance = result.ray_length;
@@ -504,7 +497,7 @@ impl FieldObject {
 		shape: Shape,
 	) -> BinderObjectRef<FieldObject> {
 		let data = Arc::new(Field {
-			spatial: spatial.handler_arc().clone(),
+			spatial: spatial.handler_arc().spatial_arc().clone(),
 			shape: RwLock::new(shape),
 			polyline_cache: RwLock::new((0, None)),
 			shape_changed_callback: Registry::new(),
@@ -639,3 +632,193 @@ impl FieldInterfaceHandler for FieldInterface {
 
 impl_proxy!(FieldProxy, FieldObject);
 impl_proxy!(FieldRefProxy, FieldRef);
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::core::registry::Registry;
+	use crate::nodes::spatial::Spatial;
+	use glam::{Mat4, Vec3, vec3a};
+	use stardust_xr_protocol::field::Shape;
+	use stardust_xr_protocol::types::Vec3F;
+
+	fn approx_eq(a: f32, b: f32) -> bool {
+		(a - b).abs() < 1e-4
+	}
+
+	fn make_field(spatial: Arc<Spatial>, shape: Shape) -> Field {
+		Field {
+			spatial,
+			shape: RwLock::new(shape),
+			shape_changed_callback: Registry::new(),
+			polyline_cache: RwLock::new((0, None)),
+		}
+	}
+
+	fn origin_spatial() -> Arc<Spatial> {
+		Spatial::test_new(None, Mat4::IDENTITY)
+	}
+
+	fn translated_spatial(x: f32, y: f32, z: f32) -> Arc<Spatial> {
+		Spatial::test_new(None, Mat4::from_translation(Vec3::new(x, y, z)))
+	}
+
+	#[test]
+	fn local_sample_sphere_center_is_inside() {
+		let field = make_field(origin_spatial(), Shape::Sphere { radius: 1.0 });
+		let sample = field.local_sample(vec3a(0.0, 0.0, 0.0));
+		assert!(
+			approx_eq(sample.distance, -1.0),
+			"expected -1.0, got {}",
+			sample.distance
+		);
+	}
+
+	#[test]
+	fn local_sample_sphere_exterior() {
+		let field = make_field(origin_spatial(), Shape::Sphere { radius: 1.0 });
+		let sample = field.local_sample(vec3a(3.0, 0.0, 0.0));
+		assert!(
+			approx_eq(sample.distance, 2.0),
+			"expected 2.0, got {}",
+			sample.distance
+		);
+	}
+
+	#[test]
+	fn local_sample_sphere_surface() {
+		let field = make_field(origin_spatial(), Shape::Sphere { radius: 1.0 });
+		let sample = field.local_sample(vec3a(1.0, 0.0, 0.0));
+		assert!(
+			approx_eq(sample.distance, 0.0),
+			"expected 0.0, got {}",
+			sample.distance
+		);
+	}
+
+	#[test]
+	fn local_sample_box_center() {
+		let field = make_field(
+			origin_spatial(),
+			Shape::Box {
+				size: Vec3F {
+					x: 2.0,
+					y: 2.0,
+					z: 2.0,
+				},
+			},
+		);
+		let sample = field.local_sample(vec3a(0.0, 0.0, 0.0));
+		assert!(
+			approx_eq(sample.distance, -1.0),
+			"expected -1.0, got {}",
+			sample.distance
+		);
+	}
+
+	#[test]
+	fn local_sample_box_exterior() {
+		let field = make_field(
+			origin_spatial(),
+			Shape::Box {
+				size: Vec3F {
+					x: 2.0,
+					y: 2.0,
+					z: 2.0,
+				},
+			},
+		);
+		let sample = field.local_sample(vec3a(3.0, 0.0, 0.0));
+		assert!(
+			approx_eq(sample.distance, 2.0),
+			"expected 2.0, got {}",
+			sample.distance
+		);
+	}
+
+	#[test]
+	fn sample_colocated_spaces_matches_local_sample() {
+		let field_spatial = origin_spatial();
+		let ref_spatial = origin_spatial();
+		let field = make_field(field_spatial, Shape::Sphere { radius: 1.0 });
+
+		let p = vec3a(2.0, 0.0, 0.0);
+		let local = field.local_sample(p);
+		let cross = field.sample(&ref_spatial, p);
+		assert!(
+			approx_eq(local.distance, cross.distance),
+			"colocated spaces: local={} cross={}",
+			local.distance,
+			cross.distance
+		);
+	}
+
+	#[test]
+	fn sample_field_offset_point_at_field_center() {
+		// Field sphere at world (5, 0, 0); sample point (5, 0, 0) in reference
+		// (world-origin) space → local position is (0, 0, 0) → inside, distance -1.
+		let field_spatial = translated_spatial(5.0, 0.0, 0.0);
+		let ref_spatial = origin_spatial();
+		let field = make_field(field_spatial, Shape::Sphere { radius: 1.0 });
+
+		let sample = field.sample(&ref_spatial, vec3a(5.0, 0.0, 0.0));
+		assert!(
+			approx_eq(sample.distance, -1.0),
+			"expected -1.0, got {}",
+			sample.distance
+		);
+	}
+
+	#[test]
+	fn sample_field_offset_point_outside() {
+		// Field sphere at world (5, 0, 0), radius 1; sample at (8, 0, 0) in
+		// reference space → 3 units from center → distance 2.0.
+		let field_spatial = translated_spatial(5.0, 0.0, 0.0);
+		let ref_spatial = origin_spatial();
+		let field = make_field(field_spatial, Shape::Sphere { radius: 1.0 });
+
+		let sample = field.sample(&ref_spatial, vec3a(8.0, 0.0, 0.0));
+		assert!(
+			approx_eq(sample.distance, 2.0),
+			"expected 2.0, got {}",
+			sample.distance
+		);
+	}
+
+	#[test]
+	fn sample_reference_offset_from_field() {
+		// Field at world origin, sphere radius 1; reference at (3, 0, 0).
+		// Point (0, 0, 0) in reference space = (3, 0, 0) in world → distance 2.0.
+		let field_spatial = origin_spatial();
+		let ref_spatial = translated_spatial(3.0, 0.0, 0.0);
+		let field = make_field(field_spatial, Shape::Sphere { radius: 1.0 });
+
+		let sample = field.sample(&ref_spatial, vec3a(0.0, 0.0, 0.0));
+		assert!(
+			approx_eq(sample.distance, 2.0),
+			"expected 2.0, got {}",
+			sample.distance
+		);
+	}
+
+	#[test]
+	fn sample_parented_reference_space() {
+		// Reference child at local (2, 0, 0) under a parent at (3, 0, 0);
+		// effective world position = (5, 0, 0). Field sphere at origin, radius 1.
+		// Point (0, 0, 0) in reference child space = (5, 0, 0) in world → distance 4.0.
+		let parent_spatial = translated_spatial(3.0, 0.0, 0.0);
+		let child_spatial = Spatial::test_new(
+			Some(parent_spatial),
+			Mat4::from_translation(Vec3::new(2.0, 0.0, 0.0)),
+		);
+		let field_spatial = origin_spatial();
+		let field = make_field(field_spatial, Shape::Sphere { radius: 1.0 });
+
+		let sample = field.sample(&child_spatial, vec3a(0.0, 0.0, 0.0));
+		assert!(
+			approx_eq(sample.distance, 4.0),
+			"expected 4.0, got {}",
+			sample.distance
+		);
+	}
+}
