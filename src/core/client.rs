@@ -21,7 +21,7 @@ use rustc_hash::FxHashMap;
 use rustix::process::RawPid;
 use stardust_xr_protocol::{
 	audio::AudioInterface as AudioInterfaceProxy,
-	client::{Client, ClientState, FrameInfo},
+	client::{Client, FrameInfo},
 	dmatex::DmatexInterface as DmatexInterfaceProxy,
 	field::FieldInterface as FieldInterfaceProxy,
 	lines::LinesInterface as LinesInterfaceProxy,
@@ -29,7 +29,7 @@ use stardust_xr_protocol::{
 	query::QueryInterface as QueryInterfaceProxy,
 	server::ServerHandler,
 	sky::SkyInterface as SkyInterfaceProxy,
-	spatial::SpatialInterface as SpatialInterfaceProxy,
+	spatial::{SpatialInterface as SpatialInterfaceProxy, SpatialRef},
 	spatial_query::SpatialQueryInterface as SpatialQueryInterfaceProxy,
 	text::TextInterface as TextInterfaceProxy,
 };
@@ -73,14 +73,12 @@ pub fn get_env(pid: RawPid) -> Result<FxHashMap<String, String>, std::io::Error>
 			.map(|(k, v)| (k.to_string(), v.to_string())),
 	))
 }
-pub fn state(env: &FxHashMap<String, String>) -> Option<Arc<ClientStateParsed>> {
-	let token = env.get("STARDUST_STARTUP_TOKEN")?;
+pub fn state(token: &String) -> Option<Arc<ClientStateParsed>> {
 	CLIENT_STATES.get(token).as_deref().cloned()
 }
 
 #[derive(Debug, Handler)]
 pub struct ConnectedClient {
-	pub pid: RawPid,
 	client: Client,
 	exe: Option<PathBuf>,
 	disconnect_status: OnceLock<Result<()>>,
@@ -102,20 +100,16 @@ pub struct ConnectedClient {
 impl ConnectedClient {
 	pub fn from_connection(
 		client: Client,
-		pid: RawPid,
+		// pid: RawPid,
+		startup_token: Option<String>,
 		base_resource_prefixes: Vec<PathBuf>,
-	) -> Result<(BinderObjectRef<Self>, ClientState)> {
-		let env = get_env(pid).ok();
-		let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
-		info!(
-			pid,
-			exe = exe
-				.as_ref()
-				.and_then(|exe| exe.to_str().map(|s| s.to_string())),
-			"New client connected"
-		);
+	) -> Result<(BinderObjectRef<Self>, SpatialRef)> {
+		// let env = get_env(pid).ok();
+		// let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
+		let exe = None;
+		info!("New client connected");
 
-		let state = env
+		let state = startup_token
 			.as_ref()
 			.and_then(state)
 			.unwrap_or_else(|| Arc::new(ClientStateParsed::default()));
@@ -142,7 +136,6 @@ impl ConnectedClient {
 			SpatialQueryInterfaceProxy::from_handler(&SpatialQueryInterface::new(&p).to_service());
 
 		let client = PION.register_object(ConnectedClient {
-			pid,
 			// env,
 			exe: exe.clone(),
 
@@ -182,26 +175,22 @@ impl ConnectedClient {
 	}
 
 	pub fn get_cmdline(&self) -> Option<Vec<String>> {
-		let pid = self.pid;
-		let exe_proc_path = format!("/proc/{pid}/exe");
-		let cmdline_proc_path = format!("/proc/{pid}/cmdline");
-		let exe = std::fs::read_link(exe_proc_path).ok()?;
-		let cmdline = std::fs::read_to_string(cmdline_proc_path).ok()?;
-		let mut cmdline_split: Vec<_> = cmdline.split('\0').map(ToString::to_string).collect();
-		cmdline_split.pop();
-		*cmdline_split.get_mut(0).unwrap() = exe.to_str()?.to_string();
-		Some(cmdline_split)
+        None
+		// let pid = self.pid;
+		// let exe_proc_path = format!("/proc/{pid}/exe");
+		// let cmdline_proc_path = format!("/proc/{pid}/cmdline");
+		// let exe = std::fs::read_link(exe_proc_path).ok()?;
+		// let cmdline = std::fs::read_to_string(cmdline_proc_path).ok()?;
+		// let mut cmdline_split: Vec<_> = cmdline.split('\0').map(ToString::to_string).collect();
+		// cmdline_split.pop();
+		// *cmdline_split.get_mut(0).unwrap() = exe.to_str()?.to_string();
+		// Some(cmdline_split)
 	}
 	pub fn get_cwd(&self) -> Option<PathBuf> {
-		let pid = self.pid;
-		let cwd_proc_path = format!("/proc/{pid}/cwd");
-		std::fs::read_link(cwd_proc_path).ok()
-	}
-	pub async fn save_state(&self) -> Option<ClientStateParsed> {
-		info!("start save state");
-		let internal = self.client.get_state().await.ok()?;
-		info!("finished save state");
-		Some(ClientStateParsed::from_deserialized(self, internal))
+        None
+		// let pid = self.pid;
+		// let cwd_proc_path = format!("/proc/{pid}/cwd");
+		// std::fs::read_link(cwd_proc_path).ok()
 	}
 
 	pub fn unresponsive(&self) -> bool {
@@ -262,14 +251,13 @@ impl ServerHandler for ConnectedClient {
 		self.spatial_query_interface.clone()
 	}
 
-	async fn generate_state_token(&self, _ctx: GluonCtx, state: ClientState) -> String {
-		ClientStateParsed::from_deserialized(self, state).token()
+	async fn generate_startup_token(&self, _ctx: GluonCtx, root: SpatialRef) -> String {
+		ClientStateParsed::from_deserialized(self, &root).token()
 	}
 }
 impl Drop for ConnectedClient {
 	fn drop(&mut self) {
 		info!(
-			pid = self.pid,
 			exe = self
 				.exe
 				.as_ref()

@@ -1,26 +1,28 @@
 use std::path::PathBuf;
 
 use stardust_xr_protocol::{
-	client::ClientState,
 	server::{Server, ServerInterfaceHandler},
 	spatial::SpatialRef,
 };
 
-use crate::{core::client::ConnectedClient, exposed_interface};
+use crate::{
+	core::client::{ConnectedClient, state},
+	exposed_interface,
+};
 
 exposed_interface!(ServerInterface, "stardust-server");
 impl ServerInterfaceHandler for ServerInterface {
 	async fn connect(
 		&self,
-		ctx: gluon_wire::GluonCtx,
+		_ctx: gluon_wire::GluonCtx,
 		client: stardust_xr_protocol::client::Client,
-		state_token: Option<String>,
+		startup_token: Option<String>,
 		resource_prefixes: Vec<String>,
-	) -> (Server, ClientState) {
+	) -> (Server, SpatialRef) {
 		// TODO: forward errors
 		let (obj, state) = ConnectedClient::from_connection(
 			client,
-			ctx.sender_pid,
+			startup_token,
 			resource_prefixes.into_iter().map(PathBuf::from).collect(),
 		)
 		.unwrap();
@@ -33,6 +35,9 @@ impl ServerInterfaceHandler for ServerInterface {
 		_ctx: gluon_wire::GluonCtx,
 		startup_token: String,
 	) -> SpatialRef {
-		todo!()
+		// TODO: don't panic here, this is really bad
+		state(&startup_token)
+			.expect("startup token not found, we really need error handling")
+			.apply()
 	}
 }

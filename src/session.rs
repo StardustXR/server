@@ -1,4 +1,4 @@
-use crate::core::client::CLIENTS;
+// use crate::core::client::CLIENTS;
 use crate::core::client_state::ClientStateParsed;
 use crate::{CliArgs, STARDUST_INSTANCE};
 use directories::ProjectDirs;
@@ -7,7 +7,7 @@ use std::ffi::OsStr;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::time::Duration;
+// use std::time::Duration;
 use tokio::task::LocalSet;
 use tracing::info;
 
@@ -20,16 +20,16 @@ pub async fn save_session(project_dirs: &ProjectDirs) {
 	std::os::unix::fs::symlink(&session_dir, state_dir.join("latest")).unwrap();
 
 	let local_set = LocalSet::new();
-	for client in CLIENTS.get_vec() {
-		let session_dir = session_dir.clone();
-		local_set.spawn_local(async move {
-			tokio::select! {
-				biased;
-				s = client.save_state() => {if let Some(s) = s { s.to_file(&session_dir) }},
-				_ = tokio::time::sleep(Duration::from_millis(100)) => (),
-			}
-		});
-	}
+	// for client in CLIENTS.get_vec() {
+	// 	let session_dir = session_dir.clone();
+	// 	local_set.spawn_local(async move {
+	// 		tokio::select! {
+	// 			biased;
+	// 			s = client.save_state() => {if let Some(s) = s { s.to_file(&session_dir) }},
+	// 			_ = tokio::time::sleep(Duration::from_millis(100)) => (),
+	// 		}
+	// 	});
+	// }
 	local_set.await;
 	info!("Session ID for restore is {session_id}");
 }
