@@ -254,99 +254,6 @@ enum HandMaterial {
 	Holdout(Handle<HandHoldoutMaterial>),
 }
 
-// ── HandSource ────────────────────────────────────────────────────────────────
-
-#[derive(Debug)]
-struct HandSource {
-	hand: RwLock<Option<Hand>>,
-	datamap: RwLock<HandDatamap>,
-	hand_space: BinderObjectRef<SpatialRef>,
-	capture: RwLock<Option<InputHandler>>,
-}
-
-impl HandSource {
-	fn new(hand_space: BinderObjectRef<SpatialRef>) -> Self {
-		Self {
-			hand: RwLock::new(None),
-			datamap: RwLock::new(HandDatamap::default()),
-			hand_space,
-			capture: RwLock::new(None),
-		}
-	}
-}
-
-impl InputSource for HandSource {
-	type QueryValue = f32;
-
-	fn order_handlers_and_captures(
-		&self,
-		objects: &HashMap<QueryableObjectRef, CachedObject<f32>>,
-		capture_requests: &HashSet<InputHandler>,
-	) -> (Vec<InputHandler>, Option<InputHandler>) {
-		let hand = *self.hand.blocking_read();
-		let Some(hand) = hand else {
-			self.capture.blocking_write().take();
-			return (vec![], None);
-		};
-
-		let current_capture = self.capture.blocking_read().clone();
-		let capture = if let Some(cap) = current_capture {
-			if objects.values().any(|e| e.handler == cap) {
-				Some(cap)
-			} else {
-				self.capture.blocking_write().take();
-				None
-			}
-		} else {
-			let promoted = capture_requests
-				.iter()
-				.find(|r| objects.values().any(|e| &e.handler == *r))
-				.cloned();
-			if let Some(ref p) = promoted {
-				*self.capture.blocking_write() = Some(p.clone());
-			}
-			promoted
-		};
-
-		if let Some(ref cap) = capture {
-			let handlers: Vec<_> = objects
-				.values()
-				.filter(|e| &e.handler == cap)
-				.map(|e| e.handler.clone())
-				.collect();
-			return (handlers, capture);
-		}
-
-		let mut order: Vec<_> = objects
-			.values()
-			.map(|e| {
-				let dist = hand_sort_distance(&self.hand_space, &e.field.data, &hand);
-				(dist, e.handler.clone())
-			})
-			.collect();
-		order.sort_by(|(d1, _), (d2, _)| d1.total_cmp(d2));
-		(order.into_iter().map(|(_, h)| h).collect(), None)
-	}
-
-	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> SpatialData {
-		let hand = (*self.hand.blocking_read()).unwrap();
-		let localized = localize_hand(&self.hand_space, &hand, handler_spatial, handler_field);
-		let distance = hand_real_distance(&localized);
-		SpatialData {
-			input: InputDataType::Hand { data: localized },
-			distance,
-		}
-	}
-
-	fn datamap(
-		&self,
-		suggested_bindings: &HashMap<String, Vec<String>>,
-	) -> HashMap<String, DatamapData> {
-		let data = *self.datamap.blocking_read();
-		build_hand_datamap(&data, suggested_bindings)
-	}
-}
-
 // ── OxrHandInput ──────────────────────────────────────────────────────────────
 
 pub struct OxrHandInput {
@@ -445,13 +352,13 @@ impl OxrHandInput {
 			grab_strength: pinch_between(&hand.ring.tip, &hand.ring.metacarpal),
 		});
 
-		*method.source.hand.blocking_write() = new_hand;
+		*method.hand.blocking_write() = new_hand;
 		if let Some(dm) = new_datamap {
-			*method.source.datamap.blocking_write() = dm;
+			*method.datamap.blocking_write() = dm;
 		}
 
 		if let HandMaterial::Normal(material_handle) = &self.material {
-			let captured = method.source.capture.blocking_read().is_some();
+			let captured = method.capture.blocking_read().is_some();
 			if captured && !self.captured {
 				materials.get_mut(material_handle).unwrap().base_color =
 					Srgba::rgb(0., 1., 0.75).into();
@@ -468,7 +375,8 @@ impl OxrHandInput {
 			.instance()
 			.xr_to_timestamp(time)
 			.unwrap_or_else(Timestamp::now);
-		method.sender.send(&*method.source, input_method, ts);
+		let sender = method.sender.clone();
+		sender.send(&***method, input_method, ts);
 	}
 }
 
@@ -482,7 +390,9 @@ struct HandInputMethod {
 	tracker: DebugWrapper<openxr::HandTracker>,
 	_query: BinderObject<PointsQueryCache>,
 	sender: Arc<InputSender<f32>>,
-	source: Arc<HandSource>,
+	hand: RwLock<Option<Hand>>,
+	datamap: RwLock<HandDatamap>,
+	capture: RwLock<Option<InputHandler>>,
 	query_handle: Arc<OnceLock<PointsQueryHandle>>,
 }
 
@@ -495,7 +405,6 @@ impl HandInputMethod {
 	) -> Result<Self, GluonSendError> {
 		let (query_cache, objects_arc) = QueryCache::new();
 		let sender = Arc::new(InputSender::new(objects_arc));
-		let source = Arc::new(HandSource::new(base_spatial.clone()));
 
 		let query = PION.register_object(PointsQueryCache(query_cache));
 		let proxy = PointsQueryHandler::from_handler(&query);
@@ -532,7 +441,9 @@ impl HandInputMethod {
 			tracker: tracker.into(),
 			_query: query,
 			sender,
-			source,
+			hand: RwLock::new(None),
+			datamap: RwLock::new(HandDatamap::default()),
+			capture: RwLock::new(None),
 			query_handle,
 		})
 	}
@@ -632,6 +543,78 @@ impl HandInputMethod {
 	}
 }
 
+impl InputSource for HandInputMethod {
+	type QueryValue = f32;
+
+	fn order_handlers_and_captures(
+		&self,
+		objects: &HashMap<QueryableObjectRef, CachedObject<f32>>,
+		capture_requests: &HashSet<InputHandler>,
+	) -> (Vec<InputHandler>, Option<InputHandler>) {
+		let hand = *self.hand.blocking_read();
+		let Some(hand) = hand else {
+			self.capture.blocking_write().take();
+			return (vec![], None);
+		};
+
+		let current_capture = self.capture.blocking_read().clone();
+		let capture = if let Some(cap) = current_capture {
+			if objects.values().any(|e| e.handler == cap) {
+				Some(cap)
+			} else {
+				self.capture.blocking_write().take();
+				None
+			}
+		} else {
+			let promoted = capture_requests
+				.iter()
+				.find(|r| objects.values().any(|e| &e.handler == *r))
+				.cloned();
+			if let Some(ref p) = promoted {
+				*self.capture.blocking_write() = Some(p.clone());
+			}
+			promoted
+		};
+
+		if let Some(ref cap) = capture {
+			let handlers: Vec<_> = objects
+				.values()
+				.filter(|e| &e.handler == cap)
+				.map(|e| e.handler.clone())
+				.collect();
+			return (handlers, capture);
+		}
+
+		let mut order: Vec<_> = objects
+			.values()
+			.map(|e| {
+				let dist = hand_sort_distance(&self.base_spatial, &e.field.data, &hand);
+				(dist, e.handler.clone())
+			})
+			.collect();
+		order.sort_by(|(d1, _), (d2, _)| d1.total_cmp(d2));
+		(order.into_iter().map(|(_, h)| h).collect(), None)
+	}
+
+	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> SpatialData {
+		let hand = (*self.hand.blocking_read()).unwrap();
+		let localized = localize_hand(&self.base_spatial, &hand, handler_spatial, handler_field);
+		let distance = hand_real_distance(&localized);
+		SpatialData {
+			input: InputDataType::Hand { data: localized },
+			distance,
+		}
+	}
+
+	fn datamap(
+		&self,
+		suggested_bindings: &HashMap<String, Vec<String>>,
+	) -> HashMap<String, DatamapData> {
+		let data = *self.datamap.blocking_read();
+		build_hand_datamap(&data, suggested_bindings)
+	}
+}
+
 impl InputMethodHandler for HandInputMethod {
 	async fn request_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
 		self.sender.request_capture(handler).await;
@@ -639,7 +622,7 @@ impl InputMethodHandler for HandInputMethod {
 
 	async fn release_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
 		self.sender.release_capture(&handler).await;
-		let mut cap = self.source.capture.write().await;
+		let mut cap = self.capture.write().await;
 		if cap.as_ref() == Some(&handler) {
 			cap.take();
 		}
@@ -651,11 +634,11 @@ impl InputMethodHandler for HandInputMethod {
 		handler: InputHandler,
 		time: Timestamp,
 	) -> Option<SpatialData> {
-		let cap = self.source.capture.read().await.clone();
+		let cap = self.capture.read().await.clone();
 		if cap.as_ref().is_some_and(|c| c != &handler) {
 			return None;
 		}
-		self.source.hand.read().await.as_ref()?;
+		self.hand.read().await.as_ref()?;
 		let objects = self.sender.cache.read().await;
 		let entry = objects.values().find(|e| e.handler == handler)?;
 		let hand = self.locate_hand(

@@ -107,36 +107,28 @@ impl Default for MouseEvent {
 	}
 }
 
-// ── MouseSource ───────────────────────────────────────────────────────────────
+// ── MouseMethod ───────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
-struct MouseSource {
+#[derive(Debug, Handler)]
+struct MouseMethod {
 	spatial_arc: Arc<Spatial>,
 	event: RwLock<MouseEvent>,
 	capture: RwLock<Option<InputHandler>>,
+	sender: Arc<InputSender<BeamValue>>,
+	_beam_query: BinderObject<BeamQueryCache>,
+	_query_guard: Arc<OnceLock<SpatialQueryGuard>>,
 }
 
-impl MouseSource {
-	fn new(spatial_arc: Arc<Spatial>) -> Self {
-		Self {
-			spatial_arc,
-			event: RwLock::new(MouseEvent::default()),
-			capture: RwLock::new(None),
-		}
-	}
-}
-
-impl InputSource for MouseSource {
+impl InputSource for MouseMethod {
 	type QueryValue = BeamValue;
 
 	fn order_handlers_and_captures(
 		&self,
-		objects: &std::collections::HashMap<QueryableObjectRef, CachedObject<Self::QueryValue>>,
+		objects: &HashMap<QueryableObjectRef, CachedObject<Self::QueryValue>>,
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let current_capture = self.capture.blocking_read().clone();
 
-		// If currently captured, check handler still present; if not, clear.
 		let capture = if let Some(cap) = current_capture {
 			if objects.values().any(|e| e.handler == cap) {
 				Some(cap)
@@ -145,7 +137,6 @@ impl InputSource for MouseSource {
 				None
 			}
 		} else {
-			// Promote first capture request that is present in objects.
 			let promoted = capture_requests
 				.iter()
 				.find(|r| objects.values().any(|e| &e.handler == *r))
@@ -157,7 +148,6 @@ impl InputSource for MouseSource {
 		};
 
 		let mut order: Vec<_> = if let Some(ref cap) = capture {
-			// When captured, only deliver to the captured handler.
 			objects
 				.values()
 				.filter(|e| &e.handler == cap)
@@ -206,24 +196,14 @@ impl InputSource for MouseSource {
 	}
 }
 
-// ── MouseInputMethod ──────────────────────────────────────────────────────────
-
-#[derive(Debug, Handler)]
-struct MouseInputMethod {
-	_query: BinderObject<BeamQueryCache>,
-	sender: Arc<InputSender<BeamValue>>,
-	source: Arc<MouseSource>,
-}
-
-impl InputMethodHandler for MouseInputMethod {
+impl InputMethodHandler for MouseMethod {
 	async fn request_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
 		self.sender.request_capture(handler).await;
 	}
 
 	async fn release_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
 		self.sender.release_capture(&handler).await;
-		// Clear source capture if it matches.
-		let mut cap = self.source.capture.write().await;
+		let mut cap = self.capture.write().await;
 		if cap.as_ref() == Some(&handler) {
 			cap.take();
 		}
@@ -235,13 +215,13 @@ impl InputMethodHandler for MouseInputMethod {
 		handler: InputHandler,
 		_time: Timestamp,
 	) -> Option<SpatialData> {
-		let cap = self.source.capture.read().await.clone();
+		let cap = self.capture.read().await.clone();
 		if cap.as_ref().is_some_and(|c| c != &handler) {
 			return None;
 		}
 		let objects = self.sender.cache.read().await;
 		let entry = objects.values().find(|e| e.handler == handler)?;
-		Some(self.source.spatial_data(&entry.spatial, &entry.field.data))
+		Some(self.spatial_data(&entry.spatial, &entry.field.data))
 	}
 }
 
@@ -250,8 +230,7 @@ impl InputMethodHandler for MouseInputMethod {
 #[derive(Resource)]
 pub struct MousePointer {
 	spatial: BinderObjectRef<SpatialObject>,
-	method: BinderObject<MouseInputMethod>,
-	_query_guard: Arc<OnceLock<SpatialQueryGuard>>,
+	method: BinderObject<MouseMethod>,
 }
 
 impl MousePointer {
@@ -261,16 +240,9 @@ impl MousePointer {
 
 		let (query_cache, objects_arc) = QueryCache::new();
 		let sender = Arc::new(InputSender::new(objects_arc));
-		let source = Arc::new(MouseSource::new(spatial_arc));
 
 		let beam_query = PION.register_object(BeamQueryCache(query_cache));
 		let beam_handler_proxy = BeamQueryHandler::from_handler(&beam_query);
-
-		let method = PION.register_object(MouseInputMethod {
-			_query: beam_query,
-			sender: sender.clone(),
-			source: source.clone(),
-		});
 
 		let query_guard: Arc<OnceLock<SpatialQueryGuard>> = Arc::new(OnceLock::new());
 		let base_spatial_ref = SpatialRefProxy::from_handler(spatial.get_ref());
@@ -311,11 +283,16 @@ impl MousePointer {
 			}
 		});
 
-		Ok(MousePointer {
-			spatial,
-			method,
+		let method = PION.register_object(MouseMethod {
+			spatial_arc,
+			event: RwLock::new(MouseEvent::default()),
+			capture: RwLock::new(None),
+			sender,
+			_beam_query: beam_query,
 			_query_guard: query_guard,
-		})
+		});
+
+		Ok(MousePointer { spatial, method })
 	}
 
 	pub fn update(
@@ -343,7 +320,7 @@ impl MousePointer {
 			Mat4::look_to_rh(ray.origin, Vec3::from(ray.direction), Vec3::Y).inverse(),
 		);
 
-		*self.method.source.event.blocking_write() = MouseEvent {
+		*self.method.event.blocking_write() = MouseEvent {
 			select: mouse_buttons.pressed(MouseButton::Left) as u32 as f32,
 			middle: mouse_buttons.pressed(MouseButton::Middle) as u32 as f32,
 			context: mouse_buttons.pressed(MouseButton::Right) as u32 as f32,
@@ -353,9 +330,8 @@ impl MousePointer {
 		};
 
 		let input_method = InputMethod::from_handler(&self.method);
-		self.method
-			.sender
-			.send(&*self.method.source, input_method, Timestamp::now());
+		let sender = self.method.sender.clone();
+		sender.send(&**self.method, input_method, Timestamp::now());
 	}
 }
 
