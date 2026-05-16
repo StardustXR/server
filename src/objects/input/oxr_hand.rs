@@ -116,12 +116,8 @@ fn pinch_between(joint_1: &Joint, joint_2: &Joint) -> f32 {
 	const PINCH_MAX: f32 = 0.11;
 	const PINCH_ACTIVACTION_DISTANCE: f32 = 0.01;
 	let combined_radius = joint_1.radius + joint_2.radius;
-	let pinch_dist = joint_1
-		.pose
-		.position
-		.mint::<Vec3>()
-		.distance(joint_2.pose.position.mint())
-		- combined_radius;
+	let pinch_dist =
+		Vec3::from(joint_1.pose.position).distance(joint_2.pose.position.into()) - combined_radius;
 	(1.0 - ((pinch_dist - PINCH_ACTIVACTION_DISTANCE) / (PINCH_MAX - PINCH_ACTIVACTION_DISTANCE)))
 		.clamp(0.0, 1.0)
 }
@@ -320,8 +316,8 @@ impl OxrHandInput {
 		if let Some(new_hand) = &new_hand {
 			self.palm_spatial
 				.set_local_transform(Mat4::from_rotation_translation(
-					new_hand.palm.pose.orientation.mint(),
-					new_hand.palm.pose.position.mint(),
+					new_hand.palm.pose.orientation.into(),
+					new_hand.palm.pose.position.into(),
 				));
 
 			if let Some(method) = self.method.as_ref()
@@ -339,7 +335,7 @@ impl OxrHandInput {
 						point: v.pose.position,
 						margin: v.radius + 0.5,
 					})
-					.collect(),
+					.collect::<Vec<_>>(),
 				);
 			}
 		}
@@ -658,16 +654,16 @@ impl InputMethodHandler for HandInputMethod {
 
 fn hand_sort_distance(hand_space: &SpatialRef, field: &Field, hand: &Hand) -> f32 {
 	let thumb_tip_distance = field
-		.sample(hand_space, hand.thumb.tip.pose.position.mint())
+		.sample(hand_space, hand.thumb.tip.pose.position.into())
 		.distance;
 	let index_tip_distance = field
-		.sample(hand_space, hand.index.tip.pose.position.mint())
+		.sample(hand_space, hand.index.tip.pose.position.into())
 		.distance;
 	let middle_tip_distance = field
-		.sample(hand_space, hand.middle.tip.pose.position.mint())
+		.sample(hand_space, hand.middle.tip.pose.position.into())
 		.distance;
 	let ring_tip_distance = field
-		.sample(hand_space, hand.ring.tip.pose.position.mint())
+		.sample(hand_space, hand.ring.tip.pose.position.into())
 		.distance;
 
 	(thumb_tip_distance * 0.3)
@@ -723,11 +719,11 @@ fn transform_joint(from: &Spatial, to: &Spatial, field: &Field, joint: &Joint) -
 	let (_, rot, _) = mat.to_scale_rotation_translation();
 	Joint {
 		pose: types::Posef {
-			position: mat.transform_point3a(joint.pose.position.mint()).into(),
-			orientation: (rot * joint.pose.orientation.mint::<Quat>()).into(),
+			position: mat.transform_point3a(joint.pose.position.into()).into(),
+			orientation: (rot * Quat::from(joint.pose.orientation)).into(),
 		},
 		radius: joint.radius,
-		distance: field.sample(from, joint.pose.position.mint()).distance,
+		distance: field.sample(from, joint.pose.position.into()).distance,
 	}
 }
 

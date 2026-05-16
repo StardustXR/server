@@ -75,6 +75,7 @@ fn update_sound_event(
 				))
 				.id();
 			let entity = EntityHandle::new(entity);
+			// TODO: spawn new entity under the spatial
 			sound.spatial.set_entity(entity.clone());
 			sound.entity.set(entity).unwrap();
 		}

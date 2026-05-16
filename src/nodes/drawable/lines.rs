@@ -153,7 +153,7 @@ fn build_line_mesh(
 				.points
 				.iter()
 				.map(|p: &LinePoint| LinePoint {
-					point: transform.transform_point(p.point.mint()).into(),
+					point: transform.transform_point(p.point.into()).into(),
 					thickness: p.thickness,
 					color: p.color,
 				})
@@ -200,13 +200,13 @@ fn build_line_mesh(
 				let last_quat = last.map(|v| {
 					Quat::from_rotation_arc(
 						Vec3::Y,
-						(curr.point.mint::<Vec3>() - v.point.mint::<Vec3>()).normalize(),
+						(Vec3::from(curr.point) - Vec3::from(v.point)).normalize(),
 					)
 				});
 				let next_quat = next.map(|v| {
 					Quat::from_rotation_arc(
 						Vec3::Y,
-						(v.point.mint::<Vec3>() - curr.point.mint::<Vec3>()).normalize(),
+						(Vec3::from(v.point) - Vec3::from(curr.point)).normalize(),
 					)
 				});
 				let quat = match (last_quat, next_quat) {
@@ -234,7 +234,7 @@ fn build_line_mesh(
 				]
 				.map(Vec3::normalize)
 				.map(|v| quat * v);
-				let points = normals.map(|v| (v * curr.thickness) + curr.point.mint::<Vec3>());
+				let points = normals.map(|v| (v * curr.thickness) + Vec3::from(curr.point));
 				vertex_normals.extend(normals);
 				vertex_positions.extend(points);
 				vertex_colors.extend([curr.color.to_bevy().to_linear().to_f32_array(); 8]);
@@ -268,6 +268,7 @@ fn build_line_mesh(
 		let mut entity = match lines.entity.get() {
 			Some(e) => cmds.entity(**e),
 			None => {
+				// TODO: spawn new entity under the spatial
 				cmds.entity(lines.spatial.get_entity().unwrap())
 					.insert(LinesNode(Arc::downgrade(&lines)));
 				let e = cmds.spawn((

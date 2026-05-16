@@ -3,6 +3,6 @@ pub trait ColorConvert {
 }
 impl ColorConvert for stardust_xr_protocol::types::Color {
 	fn to_bevy(&self) -> bevy::color::Color {
-		bevy::color::Color::linear_rgba(self.r, self.g, self.b, self.a)
+		bevy::color::Color::linear_rgba(self.c.r, self.c.g, self.c.b, self.a)
 	}
 }

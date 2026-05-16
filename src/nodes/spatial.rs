@@ -94,9 +94,9 @@ impl TransformExt for Transform {
 	fn to_mat4(&self) -> Mat4 {
 		// Zero scale values break everything
 		Mat4::from_scale_rotation_translation(
-			self.scale.mint::<Vec3>().map(clamp_scale),
-			self.rotation.mint(),
-			self.translation.mint(),
+			Vec3::from(self.scale).map(clamp_scale),
+			self.rotation.into(),
+			self.translation.into(),
 		)
 	}
 }
@@ -104,10 +104,10 @@ impl TransformExt for PartialTransform {
 	fn to_mat4(&self) -> Mat4 {
 		Mat4::from_scale_rotation_translation(
 			self.scale
-				.map(|v| v.mint::<Vec3>().map(clamp_scale))
+				.map(|v| Vec3::from(v).map(clamp_scale))
 				.unwrap_or(Vec3::ONE),
-			self.rotation.map(|v| v.mint()).unwrap_or(Quat::IDENTITY),
-			self.translation.map(|v| v.mint()).unwrap_or(Vec3::ZERO),
+			self.rotation.map(|v| v.into()).unwrap_or(Quat::IDENTITY),
+			self.translation.map(|v| v.into()).unwrap_or(Vec3::ZERO),
 		)
 	}
 }
@@ -357,15 +357,15 @@ impl Spatial {
 			local_transform_in_reference_space.to_scale_rotation_translation();
 
 		if let Some(pos) = transform.translation {
-			reference_space_pos = pos.mint()
+			reference_space_pos = pos.into()
 		}
 		if let Some(rot) = transform.rotation {
-			reference_space_rot = rot.mint()
+			reference_space_rot = rot.into()
 		} else if reference_space_rot.is_nan() {
 			reference_space_rot = Quat::IDENTITY;
 		}
 		if let Some(scl) = transform.scale {
-			reference_space_scl = scl.mint::<Vec3>().map(clamp_scale);
+			reference_space_scl = Vec3::from(scl).map(clamp_scale);
 		}
 
 		local_transform_in_reference_space = Mat4::from_scale_rotation_translation(

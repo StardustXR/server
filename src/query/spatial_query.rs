@@ -382,7 +382,7 @@ impl QueryType {
 						let distance = queryable
 							.field
 							.data
-							.sample(ref_space, p.point.mint())
+							.sample(ref_space, p.point.into())
 							.distance;
 						(distance - p.margin, distance)
 					})
@@ -460,7 +460,7 @@ impl QueryType {
 				interface_id: v.interface_id.get_string().clone(),
 				interface: v.interface_ref.clone(),
 			})
-			.collect();
+			.collect::<Vec<_>>();
 		match (self, data) {
 			(
 				QueryType::Zone {
@@ -622,8 +622,8 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			inner: QueryType::Beam {
 				handler,
 				ref_space: (**ref_space).clone(),
-				origin: origin.mint(),
-				dir: direction.mint(),
+				origin: origin.into(),
+				dir: direction.into(),
 				max_length,
 			},
 			interesting_queryables: RwLock::default(),

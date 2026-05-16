@@ -189,6 +189,7 @@ impl ExtractComponent for CameraReleaseSignal {
 use bevy::render::camera::Camera as BevyCamera;
 fn update_cameras(mut query: Query<(&mut BevyCamera, &mut Projection)>, mut cmds: Commands) {
 	for cam in CAMERA_REGISTRY.get_valid_contents() {
+		// TODO: spawn new entity under the spatial
 		let Some(entity) = cam.spatial.get_entity() else {
 			continue;
 		};
@@ -230,7 +231,7 @@ fn update_cameras(mut query: Query<(&mut BevyCamera, &mut Projection)>, mut cmds
 			warn!("incorrect custom proj");
 			continue;
 		};
-		proj.projection_matrix = view.projection_matrix.mint::<Mat4>() * (offset_mat.inverse());
+		proj.projection_matrix = Mat4::from(view.projection_matrix) * (offset_mat.inverse());
 
 		let Some(view_handle) = tex.try_get_bevy_manual_view() else {
 			continue;

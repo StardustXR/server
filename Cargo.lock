@@ -187,6 +187,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "angle"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0bf965b6b142c8c68150e815ef527d17f0fe74e622b2c5287fd8626cb7c4a5fa"
+dependencies = [
+ "num-traits",
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
 name = "ansi_term"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -919,7 +930,7 @@ dependencies = [
  "bytemuck",
  "futures-lite",
  "guillotiere",
- "half",
+ "half 2.7.1",
  "image",
  "rectangle-pack",
  "serde",
@@ -2579,7 +2590,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2960,7 +2971,7 @@ dependencies = [
 [[package]]
 name = "gluon-codegen-rust"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#94ba7a0a2115aeb000bb920282ad7079b89c5be8"
+source = "git+https://github.com/technobaboo/gluon#1965276bab2b03a151ebb10b5cc02870a7443142"
 dependencies = [
  "convert_case 0.11.0",
  "gluon-parser",
@@ -2974,7 +2985,7 @@ dependencies = [
 [[package]]
 name = "gluon-parser"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#94ba7a0a2115aeb000bb920282ad7079b89c5be8"
+source = "git+https://github.com/technobaboo/gluon#1965276bab2b03a151ebb10b5cc02870a7443142"
 dependencies = [
  "ansi_term",
  "binderbinder",
@@ -2985,7 +2996,7 @@ dependencies = [
 [[package]]
 name = "gluon-wire"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#94ba7a0a2115aeb000bb920282ad7079b89c5be8"
+source = "git+https://github.com/technobaboo/gluon#1965276bab2b03a151ebb10b5cc02870a7443142"
 dependencies = [
  "binderbinder",
  "bitflags 2.11.0",
@@ -2998,7 +3009,7 @@ dependencies = [
 [[package]]
 name = "gluon-wire-derive"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#94ba7a0a2115aeb000bb920282ad7079b89c5be8"
+source = "git+https://github.com/technobaboo/gluon#1965276bab2b03a151ebb10b5cc02870a7443142"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3099,6 +3110,12 @@ dependencies = [
  "tokio-util",
  "tracing",
 ]
+
+[[package]]
+name = "half"
+version = "1.8.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1b43ede17f21864e81be2fa654110bf1e793774238d86ef8555c37e6519c0403"
 
 [[package]]
 name = "half"
@@ -5201,7 +5218,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5214,7 +5231,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5362,6 +5379,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shiva-color-rs"
+version = "0.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d7bea807e4f40f1a3df2717cc134562397b6a8f869f22568388fd5eb14bb1b69"
+dependencies = [
+ "angle",
+ "half 1.8.3",
+ "num-traits",
+ "serde",
+ "serde_derive",
 ]
 
 [[package]]
@@ -5549,6 +5579,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
+ "windows-sys 0.52.0",
  "windows-sys 0.59.0",
 ]
 
@@ -5564,7 +5595,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "0.51.1"
-source = "git+https://github.com/StardustXR/core.git?branch=binder#6dae7eb1eb2ef0a19c4f422a3abd6d843185f043"
+source = "git+https://github.com/StardustXR/core.git?branch=binder#c0fd5b900d33b5c9e3167b80de1a5d1e1941a437"
 dependencies = [
  "binderbinder",
  "fnv",
@@ -5575,6 +5606,7 @@ dependencies = [
  "mint",
  "prettyplease",
  "rustix 1.1.4",
+ "shiva-color-rs",
  "syn",
  "thiserror 2.0.18",
  "tokio",
@@ -5813,7 +5845,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6454,7 +6486,7 @@ dependencies = [
  "bytemuck",
  "crossbeam-queue",
  "foldhash",
- "half",
+ "half 2.7.1",
  "heck 0.4.1",
  "indexmap 2.13.0",
  "libloading",
@@ -6861,7 +6893,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

@@ -543,7 +543,7 @@ impl FieldHandler for FieldObject {
 		let Some(ref_space) = reference_space.owned() else {
 			return FieldSample::infinite();
 		};
-		self.data.sample(&ref_space, point.mint())
+		self.data.sample(&ref_space, point.into())
 	}
 
 	async fn ray_march(
@@ -555,8 +555,8 @@ impl FieldHandler for FieldObject {
 	) -> Option<RayMarchResult> {
 		let ref_space = reference_space.owned()?;
 		Some(self.data.ray_march(Ray {
-			origin: ray_origin.mint(),
-			direction: ray_direction.mint(),
+			origin: ray_origin.into(),
+			direction: ray_direction.into(),
 			space: (**ref_space).clone(),
 		}))
 	}
@@ -594,7 +594,7 @@ impl FieldInterfaceHandler for FieldInterface {
 		let Some(space) = space.owned() else {
 			return FieldSample::infinite();
 		};
-		let point = point.mint();
+		let point = point.into();
 		field.data.sample(&space, point)
 	}
 
@@ -609,8 +609,8 @@ impl FieldInterfaceHandler for FieldInterface {
 		let space = space.owned()?;
 		let field = field.owned()?;
 		Some(field.data.ray_march(Ray {
-			origin: ray_origin.mint(),
-			direction: ray_direction.mint(),
+			origin: ray_origin.into(),
+			direction: ray_direction.into(),
 			space: (**space).clone(),
 		}))
 	}

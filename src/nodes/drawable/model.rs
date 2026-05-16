@@ -312,6 +312,7 @@ fn gen_model_parts(
 					let _ = spatial.set_spatial_parent(&parent_spatial);
 					spatial.set_local_transform(transform.compute_matrix());
 					let entity_handle = EntityHandle::new(entity);
+					// TODO: parent to spatial instead
 					spatial.set_entity(entity_handle.clone());
 					cmds.entity(entity)
 						.insert(SpatialNode(Arc::downgrade(&**spatial)));
@@ -329,6 +330,7 @@ fn gen_model_parts(
 			);
 		}
 		_ = model.parts.set(parts);
+		// TODO: spawn new entity under the spatial
 		model
 			.spatial
 			.set_entity(model.bevy_scene_entity.get().unwrap().clone());
@@ -581,7 +583,7 @@ impl FromStr for TextureSlot {
 #[derive(Debug, Handler)]
 pub struct ModelPart {
 	entity: OnceLock<EntityHandle>,
-    // no handle needed, despawned recusively
+	// no handle needed, despawned recusively
 	mesh_entity: OnceLock<Option<Entity>>,
 	path: String,
 	spatial: BinderObjectRef<SpatialObject>,

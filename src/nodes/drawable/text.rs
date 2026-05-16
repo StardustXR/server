@@ -156,6 +156,7 @@ fn spawn_text(
 			.id();
 		let entity = EntityHandle::new(entity);
 		text.entity.lock().replace(entity.clone());
+		// TODO: parent to spatial instead
 		text.spatial.set_entity(entity);
 	}
 }
