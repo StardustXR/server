@@ -61,7 +61,7 @@ use clap::Parser;
 use directories::ProjectDirs;
 use nodes::spatial::SpatialNodePlugin;
 use objects::{
-	// 	hmd::HmdPlugin,
+	hmd::HmdPlugin,
 	input::{
 		// 		oxr_controller::ControllerPlugin,
 		mouse_pointer::FlatscreenInputPlugin,
@@ -468,7 +468,7 @@ fn bevy_loop(
 		SkyPlugin,
 	));
 	// object plugins
-	// app.add_plugins((PlaySpacePlugin, HmdPlugin));
+	app.add_plugins(/* (PlaySpacePlugin, */ HmdPlugin /* ) */);
 	if !args.disable_hands {
 		app.add_plugins((
 			HandPlugin {

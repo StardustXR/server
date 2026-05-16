@@ -181,12 +181,6 @@ fn apply_materials(
 				.insert(MeshMaterial3d(HOLDOUT_MATERIAL_HANDLE));
 			continue;
 		}
-		if let Some(material) = model_part.pending_material_replacement.lock().take()
-			&& let Some(material) = materials.get(&material)
-		{
-			let handle = material_registry.get_handle(material.clone(), &mut materials);
-			mesh_mat.0 = handle;
-		}
 		for (param_name, param) in model_part.pending_material_parameters.lock().drain() {
 			let mut new_mat = materials.get(&mesh_mat.0).unwrap().clone();
 			apply_to_material(
@@ -288,7 +282,6 @@ fn gen_model_parts(
 						path,
 						spatial: spatial.clone(),
 						pending_material_parameters: Mutex::default(),
-						pending_material_replacement: Mutex::default(),
 						holdout: AtomicBool::new(false),
 						bounds: OnceLock::new(),
 						pending_dmatexes: Mutex::default(),
@@ -593,7 +586,6 @@ pub struct ModelPart {
 	path: String,
 	spatial: BinderObjectRef<SpatialObject>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
-	pending_material_replacement: Mutex<Option<Handle<BevyMaterial>>>,
 	pending_dmatexes: Mutex<
 		HashMap<
 			TextureSlot,
@@ -607,12 +599,6 @@ pub struct ModelPart {
 }
 static ACQUIRE_SEMAPHORES: Mutex<Vec<Semaphore>> = Mutex::new(Vec::new());
 impl ModelPart {
-	pub fn replace_material(&self, replacement: Handle<BevyMaterial>) {
-		self.pending_material_replacement
-			.lock()
-			.replace(replacement);
-		*self.textures.lock() = PartTextures::default();
-	}
 	pub fn set_material_parameter(&self, parameter_name: String, value: MaterialParameter) {
 		debug!(
 			"setting material param: {parameter_name}: {value:?}, node_id: {:?}",

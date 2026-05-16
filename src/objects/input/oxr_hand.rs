@@ -3,6 +3,7 @@ use crate::nodes::ProxyExt;
 use crate::nodes::drawable::model::HoldoutExtension;
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
+use crate::objects::DebugWrapper;
 use crate::openxr_helpers::ConvertTimespec;
 use crate::query::spatial_query::SpatialQueryInterface;
 use crate::{BevyMaterial, PION, PreFrameWait, get_time};
@@ -777,21 +778,4 @@ fn build_hand_datamap(
 		}
 	}
 	map
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-#[derive(Deref, DerefMut)]
-struct DebugWrapper<T>(T);
-impl<T> From<T> for DebugWrapper<T> {
-	fn from(value: T) -> Self {
-		Self(value)
-	}
-}
-impl<T> Debug for DebugWrapper<T> {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		f.debug_tuple("DebugWrapper")
-			.field(&type_name::<T>())
-			.finish()
-	}
 }
