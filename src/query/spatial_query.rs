@@ -22,7 +22,7 @@ use stardust_xr_server_foundation::{
 	registry::{OwnedRegistry, Registry},
 };
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use crate::{
 	PION, interface,
@@ -206,10 +206,9 @@ impl Query {
 			);
 		}
 	}
-	async fn update_hit_queryable(&self, queryable: &Arc<Queryable>) {
+	pub(super) async fn update_hit_queryable(&self, queryable: &Arc<Queryable>) {
 		let interfaces_guard = self.interesting_queryables.read().await;
 		let Some(interfaces) = interfaces_guard.get(&WeakPtrHash(Arc::downgrade(queryable))) else {
-			warn!("tried to update hit state for queryable without interfaces of interest");
 			return;
 		};
 		let r = self.inner.hit(queryable).await;
@@ -757,5 +756,201 @@ impl<T> Eq for WeakPtrHash<T> {}
 impl<T> PartialEq for WeakPtrHash<T> {
 	fn eq(&self, other: &Self) -> bool {
 		self.0.ptr_eq(&other.0)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use crate::nodes::{fields::Field, spatial::Spatial};
+	use glam::{Mat4, Vec3};
+	use stardust_xr_protocol::{field::Shape, spatial_query::Point};
+	use std::sync::Arc;
+
+	fn make_spatial(x: f32, y: f32, z: f32) -> Arc<Spatial> {
+		Spatial::test_new(None, Mat4::from_translation(Vec3::new(x, y, z)))
+	}
+
+	fn make_field(spatial: Arc<Spatial>, shape: Shape) -> Arc<Field> {
+		Arc::new(Field::test_new(spatial, shape))
+	}
+
+	// Mirrors QueryType::Zone hit() math (sans visibility checks).
+	fn zone_check(queryable_spatial: &Spatial, zone_field: &Field, margin: f32) -> bool {
+		let (_s, _r, pos) =
+			Spatial::space_to_space_matrix(Some(queryable_spatial), Some(&zone_field.spatial))
+				.to_scale_rotation_translation();
+		let distance = zone_field.local_sample(pos.into()).distance;
+		distance < margin
+	}
+
+	// Mirrors QueryType::Beam hit() math.
+	fn beam_check(
+		target_field: &Arc<Field>,
+		ref_space: &Arc<Spatial>,
+		origin: Vec3,
+		dir: Vec3,
+		max_length: f32,
+	) -> bool {
+		let result = target_field.ray_march(Ray {
+			origin,
+			direction: dir,
+			space: ref_space.clone(),
+		});
+		result.min_distance <= 0.0 && result.deepest_point_distance <= max_length
+	}
+
+	// Mirrors QueryType::Points hit() math.
+	fn points_check(target_field: &Arc<Field>, ref_space: &Arc<Spatial>, points: &[Point]) -> bool {
+		let best = points
+			.iter()
+			.map(|p| {
+				let d = target_field.sample(ref_space, p.point.into()).distance;
+				(d - p.margin, d)
+			})
+			.reduce(|(s1, d1), (s2, d2)| if s1 < s2 { (s1, d1) } else { (s2, d2) });
+		best.is_some_and(|(d, _)| d < 0.0)
+	}
+
+	// --- zone ---
+
+	#[test]
+	fn zone_object_inside_sphere_hits() {
+		let zone = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let queryable = make_spatial(0.0, 0.0, 0.5);
+		assert!(zone_check(&queryable, &zone, 0.0));
+	}
+
+	#[test]
+	fn zone_object_outside_sphere_misses() {
+		let zone = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let queryable = make_spatial(2.0, 0.0, 0.0);
+		assert!(!zone_check(&queryable, &zone, 0.0));
+	}
+
+	#[test]
+	fn zone_margin_extends_detection_range() {
+		let zone = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		// 0.5 m outside the sphere surface — within margin 1.0
+		let queryable = make_spatial(1.5, 0.0, 0.0);
+		assert!(zone_check(&queryable, &zone, 1.0));
+	}
+
+	#[test]
+	fn zone_object_beyond_margin_misses() {
+		let zone = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		// 1.5 m outside the sphere surface, margin only 1.0
+		let queryable = make_spatial(2.5, 0.0, 0.0);
+		assert!(!zone_check(&queryable, &zone, 1.0));
+	}
+
+	#[test]
+	fn zone_field_offset_from_origin() {
+		// Zone at (3,0,0), queryable at (3,0,0.5) — should be inside
+		let zone = make_field(make_spatial(3.0, 0.0, 0.0), Shape::Sphere { radius: 1.0 });
+		let queryable = make_spatial(3.0, 0.0, 0.5);
+		assert!(zone_check(&queryable, &zone, 0.0));
+	}
+
+	// --- beam ---
+
+	#[test]
+	fn beam_hits_sphere_head_on() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		// Beam from (-3,0,0) along +X — passes through sphere at origin
+		assert!(beam_check(&sphere, &ref_space, Vec3::new(-3.0, 0.0, 0.0), Vec3::X, f32::MAX));
+	}
+
+	#[test]
+	fn beam_misses_sphere_when_offset() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		// Beam offset 2 m on Y — clears the sphere entirely
+		assert!(!beam_check(&sphere, &ref_space, Vec3::new(-3.0, 2.0, 0.0), Vec3::X, f32::MAX));
+	}
+
+	#[test]
+	fn beam_max_length_excludes_far_sphere() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		// Sphere 10 m away along +X
+		let sphere = make_field(make_spatial(10.0, 0.0, 0.0), Shape::Sphere { radius: 1.0 });
+		// max_length = 5.0 — beam stops before reaching the sphere
+		assert!(!beam_check(&sphere, &ref_space, Vec3::ZERO, Vec3::X, 5.0));
+	}
+
+	#[test]
+	fn beam_hits_sphere_within_max_length() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		let sphere = make_field(make_spatial(3.0, 0.0, 0.0), Shape::Sphere { radius: 1.0 });
+		// Sphere near face at 2 m, well within max_length = 10.0
+		assert!(beam_check(&sphere, &ref_space, Vec3::ZERO, Vec3::X, 10.0));
+	}
+
+	// --- points ---
+
+	#[test]
+	fn points_single_point_inside_sphere_hits() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let pts = vec![Point { point: Vec3::ZERO.into(), margin: 0.0 }];
+		assert!(points_check(&sphere, &ref_space, &pts));
+	}
+
+	#[test]
+	fn points_single_point_outside_sphere_misses() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let pts = vec![Point { point: Vec3::new(3.0, 0.0, 0.0).into(), margin: 0.0 }];
+		assert!(!points_check(&sphere, &ref_space, &pts));
+	}
+
+	#[test]
+	fn points_margin_extends_detection_range() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		// Point 0.5 m outside sphere surface; margin = 1.0 → hit
+		let pts = vec![Point { point: Vec3::new(1.5, 0.0, 0.0).into(), margin: 1.0 }];
+		assert!(points_check(&sphere, &ref_space, &pts));
+	}
+
+	#[test]
+	fn points_any_inside_causes_hit() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let pts = vec![
+			Point { point: Vec3::new(5.0, 0.0, 0.0).into(), margin: 0.0 },
+			Point { point: Vec3::ZERO.into(), margin: 0.0 }, // inside
+			Point { point: Vec3::new(-5.0, 0.0, 0.0).into(), margin: 0.0 },
+		];
+		assert!(points_check(&sphere, &ref_space, &pts));
+	}
+
+	#[test]
+	fn points_all_outside_misses() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let pts = vec![
+			Point { point: Vec3::new(5.0, 0.0, 0.0).into(), margin: 0.0 },
+			Point { point: Vec3::new(-5.0, 0.0, 0.0).into(), margin: 0.0 },
+		];
+		assert!(!points_check(&sphere, &ref_space, &pts));
+	}
+
+	// --- WeakPtrHash ---
+
+	#[test]
+	fn weak_ptr_hash_same_allocation_is_equal() {
+		let arc: Arc<u32> = Arc::new(42);
+		let h1 = WeakPtrHash(Arc::downgrade(&arc));
+		let h2 = WeakPtrHash(Arc::downgrade(&arc));
+		assert_eq!(h1, h2);
+	}
+
+	#[test]
+	fn weak_ptr_hash_different_allocations_not_equal() {
+		let a: Arc<u32> = Arc::new(1);
+		let b: Arc<u32> = Arc::new(1);
+		assert_ne!(WeakPtrHash(Arc::downgrade(&a)), WeakPtrHash(Arc::downgrade(&b)));
 	}
 }

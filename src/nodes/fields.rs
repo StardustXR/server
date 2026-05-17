@@ -443,6 +443,17 @@ impl Debug for Field {
 	}
 }
 impl Field {
+	#[cfg(test)]
+	pub(crate) fn test_new(spatial: Arc<Spatial>, shape: Shape) -> Self {
+		use crate::core::registry::Registry;
+		Field {
+			spatial,
+			shape: RwLock::new(shape),
+			shape_changed_callback: Registry::new(),
+			polyline_cache: RwLock::new((0, None)),
+		}
+	}
+
 	pub fn shape_changed_callback(
 		&self,
 		f: impl Fn() + Send + Sync + 'static,

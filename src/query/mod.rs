@@ -18,6 +18,8 @@ use tokio::sync::RwLock;
 use tracing::info;
 
 pub mod spatial_query;
+#[cfg(test)]
+mod tests;
 
 static QUERY_STATE: LazyLock<State> = LazyLock::new(State::default);
 #[derive(Default)]
@@ -80,6 +82,7 @@ impl Queryable {
 		let queries = QUERY_STATE.queries.get_valid_contents();
 		for query in queries {
 			query.update_interfaces(self).await;
+			query.update_hit_queryable(self).await;
 		}
 	}
 }
