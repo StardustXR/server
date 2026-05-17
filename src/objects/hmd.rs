@@ -69,7 +69,7 @@ fn dyn_tracking(
 		let Some(time) = view_space.instance().timestamp_to_xr(time) else {
 			return (None, false);
 		};
-		let Ok(location) = view_space.locate(&base_space, time) else {
+		let Ok(location) = view_space.locate(base_space, time) else {
 			return (None, false);
 		};
 		let valid = location
@@ -93,7 +93,7 @@ fn dyn_tracking(
 	} else {
 		let mat = crate::nodes::spatial::Spatial::space_to_space_matrix(
 			Some(base_spatial),
-			Some(&spatial),
+			Some(spatial),
 		);
 		let (_, rot, pos) = mat.to_scale_rotation_translation();
 		(
@@ -181,7 +181,7 @@ fn update_xr(
 			));
 	}
 	let location = view_space
-		.locate(&base_space, time)
+		.locate(base_space, time)
 		.inspect_err(|err| error!("Error while Locating OpenXR Stage Space {err}"));
 	if let Ok(location) = location {
 		let is_tracked = location

@@ -69,6 +69,7 @@ impl<T: Debug + Send + Sync + 'static> Tracked<T> {
 			.write(true)
 			.read(true)
 			.create(true)
+			.truncate(true)
 			.open(pion_path)
 			.ok()?;
 		let obj2 = inner.to_object_or_ref();
