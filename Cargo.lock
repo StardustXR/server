@@ -1595,7 +1595,7 @@ dependencies = [
 [[package]]
 name = "binderbinder"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/binderbinder#3b3cf21ee04f88c35a018f13f0e113cacb118056"
+source = "git+https://github.com/technobaboo/binderbinder#c5eab359d922500717674db5d8727eb394511bd8"
 dependencies = [
  "bitflags 2.11.0",
  "byteorder",
@@ -2590,7 +2590,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2971,7 +2971,7 @@ dependencies = [
 [[package]]
 name = "gluon"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#ce991864d3a44aa55ca227234ca76859f8e99598"
+source = "git+https://github.com/technobaboo/gluon#2c9896af2b3edd8f1a69b919d9c1422cf68ce674"
 dependencies = [
  "binderbinder",
  "bitflags 2.11.0",
@@ -2984,7 +2984,7 @@ dependencies = [
 [[package]]
 name = "gluon-codegen"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#ce991864d3a44aa55ca227234ca76859f8e99598"
+source = "git+https://github.com/technobaboo/gluon#2c9896af2b3edd8f1a69b919d9c1422cf68ce674"
 dependencies = [
  "convert_case 0.11.0",
  "gluon",
@@ -2998,7 +2998,7 @@ dependencies = [
 [[package]]
 name = "gluon-derive"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#ce991864d3a44aa55ca227234ca76859f8e99598"
+source = "git+https://github.com/technobaboo/gluon#2c9896af2b3edd8f1a69b919d9c1422cf68ce674"
 dependencies = [
  "quote",
  "syn",
@@ -3007,7 +3007,7 @@ dependencies = [
 [[package]]
 name = "gluon-parser"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#ce991864d3a44aa55ca227234ca76859f8e99598"
+source = "git+https://github.com/technobaboo/gluon#2c9896af2b3edd8f1a69b919d9c1422cf68ce674"
 dependencies = [
  "ansi_term",
  "chumsky",
@@ -5216,7 +5216,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5229,7 +5229,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5577,6 +5577,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
+ "windows-sys 0.52.0",
  "windows-sys 0.59.0",
 ]
 
@@ -5839,7 +5840,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6887,7 +6888,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

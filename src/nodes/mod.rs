@@ -80,7 +80,14 @@ macro_rules! impl_proxy {
 			type Owned = $type;
 			fn owned(&self) -> Option<gluon::ObjectRef<Self::Owned>> {
 				match gluon::ObjectOrRef::from(self.clone()) {
-					gluon::ObjectOrRef::Object(obj) => obj.downcast::<Self::Owned>(),
+					gluon::ObjectOrRef::Object(obj) => {
+						if let Some(obj) = obj.downcast::<Self::Owned>() {
+                            Some(obj)
+						} else {
+							tracing::warn!("unable to downcast obj");
+                            None
+						}
+					}
 					// TODO: allow sending weak refs
 					// should never happen with the rust version of gluon tho
 					gluon::ObjectOrRef::WeakObject(_obj) => None,

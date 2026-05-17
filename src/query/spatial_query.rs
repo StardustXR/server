@@ -471,8 +471,8 @@ impl QueryType {
 				HitTestResult::Zone { pos, distance },
 			) => handler.entered(
 				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				FieldRefProxy::from_handler(&queryable.field),
-				SpatialRefProxy::from_handler(&queryable.spatial),
+				FieldRefProxy::from_handler(queryable.field.get_ref()),
+				SpatialRefProxy::from_handler(queryable.spatial.get_ref()),
 				interfaces,
 				pos.into(),
 				distance,
@@ -491,8 +491,8 @@ impl QueryType {
 				},
 			) => handler.intersected(
 				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				FieldRefProxy::from_handler(&queryable.field),
-				SpatialRefProxy::from_handler(&queryable.spatial),
+				FieldRefProxy::from_handler(queryable.field.get_ref()),
+				SpatialRefProxy::from_handler(queryable.spatial.get_ref()),
 				interfaces,
 				deepest_point_distance,
 				distance,
@@ -504,13 +504,13 @@ impl QueryType {
 					points: _,
 				},
 				HitTestResult::Points { distance },
-			) => dbg!(handler.entered(
+			) => handler.entered(
 				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				FieldRefProxy::from_handler(&queryable.field),
-				SpatialRefProxy::from_handler(&queryable.spatial),
+				FieldRefProxy::from_handler(queryable.field.get_ref()),
+				SpatialRefProxy::from_handler(queryable.spatial.get_ref()),
 				interfaces,
 				distance,
-			)),
+			),
 			_ => {
 				error!("tried sending entered event with mismatching QueryType and HitTestResult");
 				Ok(())

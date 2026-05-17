@@ -13,7 +13,7 @@ use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::gizmos::GizmoAsset;
 use bevy::gizmos::retained::Gizmo;
 use glam::{Vec3, Vec3A, vec3a};
-use gluon::Handler;
+use gluon::{Handler, ObjectRef};
 use parking_lot::RwLock;
 use stardust_xr_protocol::field::{
 	Field as FieldProxy, FieldHandler, FieldInterfaceHandler, FieldRef as FieldRefProxy,
@@ -533,6 +533,11 @@ impl FieldObject {
 impl Drop for Field {
 	fn drop(&mut self) {
 		FIELD_REGISTRY_DEBUG_GIZMOS.remove(self);
+	}
+}
+impl FieldObject {
+	pub fn get_ref(&self) -> &ObjectRef<FieldRef> {
+		&self.field_ref
 	}
 }
 impl FieldHandler for FieldObject {
