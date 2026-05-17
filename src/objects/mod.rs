@@ -30,6 +30,7 @@ use crate::{
 
 pub mod hmd;
 pub mod input;
+pub mod stage;
 // pub mod play_space;
 
 #[derive(Debug)]

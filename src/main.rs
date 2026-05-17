@@ -87,9 +87,7 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry
 use zbus::Connection;
 
 use crate::{
-	bevy_int::tracking_offset::TrackingOffsetPlugin,
-	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
-	nodes::{
+	bevy_int::tracking_offset::TrackingOffsetPlugin, core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin}, nodes::{
 		audio::AudioNodePlugin,
 		camera::{CameraInterface, CameraNodePlugin},
 		drawable::{
@@ -97,9 +95,7 @@ use crate::{
 			text::TextNodePlugin,
 		},
 		fields::FieldDebugGizmoPlugin,
-	},
-	openxr_helpers::ConvertTimespec,
-	session::{launch_start, save_session},
+	}, objects::stage::StagePlugin, openxr_helpers::ConvertTimespec, session::{launch_start, save_session}
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -468,7 +464,9 @@ fn bevy_loop(
 		SkyPlugin,
 	));
 	// object plugins
-	app.add_plugins(/* (PlaySpacePlugin, */ HmdPlugin /* ) */);
+	app.add_plugins(HmdPlugin);
+	app.add_plugins(StagePlugin);
+
 	if !args.disable_hands {
 		app.add_plugins((
 			HandPlugin {
