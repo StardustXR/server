@@ -17,10 +17,9 @@ use bevy_mod_xr::hands::{HandBone, HandSide, XrHandBoneEntities, XrHandBoneRadiu
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated, session_available};
 use bevy_mod_xr::spaces::{XrPrimaryReferenceSpace, XrSpace, XrSpaceLocationFlags};
 use bevy_sk::hand::GRADIENT_TEXTURE_HANDLE;
-use binderbinder::binder_object::{BinderObject, BinderObjectRef, ToBinderObjectOrRef};
 use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
-use gluon_wire::{GluonSendError, Handler};
+use gluon::{Handler, ObjectRef};
 use openxr::{HandJointLocation, Posef, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::query::{InterfaceDependency, QueriedInterface, QueryableObjectRef};
@@ -237,7 +236,7 @@ struct Hands {
 	left: OxrHandInput,
 	right: OxrHandInput,
 	base_space: Option<Arc<openxr::Space>>,
-	base_spatial: BinderObjectRef<SpatialObject>,
+	base_spatial: gluon::ObjectRef<SpatialObject>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone, Copy)]
@@ -254,9 +253,9 @@ enum HandMaterial {
 // ── OxrHandInput ──────────────────────────────────────────────────────────────
 
 pub struct OxrHandInput {
-	palm_spatial: BinderObjectRef<SpatialObject>,
+	palm_spatial: gluon::ObjectRef<SpatialObject>,
 	side: HandSide,
-	method: Option<BinderObject<HandInputMethod>>,
+	method: Option<gluon::Object<HandInputMethod>>,
 	captured: bool,
 	material: HandMaterial,
 	was_enabled: bool,
@@ -265,7 +264,7 @@ pub struct OxrHandInput {
 impl OxrHandInput {
 	pub fn new(
 		side: HandSide,
-		base_space: &BinderObjectRef<SpatialRef>,
+		base_space: &ObjectRef<SpatialRef>,
 		materials: &mut Assets<BevyMaterial>,
 		holdout_materials: &mut Assets<HandHoldoutMaterial>,
 		hand_config: &HandRenderConfig,
@@ -303,7 +302,7 @@ impl OxrHandInput {
 		&mut self,
 		time: openxr::Time,
 		materials: &mut ResMut<Assets<BevyMaterial>>,
-		base_space: &BinderObjectRef<SpatialRef>,
+		base_space: &ObjectRef<SpatialRef>,
 	) {
 		let new_hand = self
 			.method
@@ -383,9 +382,9 @@ impl OxrHandInput {
 struct HandInputMethod {
 	side: HandSide,
 	base_space: DebugWrapper<Arc<openxr::Space>>,
-	base_spatial: BinderObjectRef<SpatialRef>,
+	base_spatial: gluon::ObjectRef<SpatialRef>,
 	tracker: DebugWrapper<openxr::HandTracker>,
-	_query: BinderObject<PointsQueryCache>,
+	_query: gluon::Object<PointsQueryCache>,
 	sender: Arc<InputSender<f32>>,
 	hand: RwLock<Option<Hand>>,
 	datamap: RwLock<HandDatamap>,
@@ -395,11 +394,11 @@ struct HandInputMethod {
 
 impl HandInputMethod {
 	fn new(
-		base_spatial: BinderObjectRef<SpatialRef>,
+		base_spatial: gluon::ObjectRef<SpatialRef>,
 		base_space: Arc<openxr::Space>,
 		side: HandSide,
 		tracker: openxr::HandTracker,
-	) -> Result<Self, GluonSendError> {
+	) -> Result<Self, gluon::SendError> {
 		let (query_cache, objects_arc) = QueryCache::new();
 		let sender = Arc::new(InputSender::new(objects_arc));
 
@@ -445,11 +444,7 @@ impl HandInputMethod {
 		})
 	}
 
-	fn locate_hand(
-		&self,
-		relative_to: &BinderObjectRef<SpatialRef>,
-		time: openxr::Time,
-	) -> Option<Hand> {
+	fn locate_hand(&self, relative_to: &ObjectRef<SpatialRef>, time: openxr::Time) -> Option<Hand> {
 		let joints = {
 			let mat = Spatial::space_to_space_matrix(Some(&self.base_spatial), Some(relative_to));
 			self.base_space
@@ -613,11 +608,11 @@ impl InputSource for HandInputMethod {
 }
 
 impl InputMethodHandler for HandInputMethod {
-	async fn request_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
+	async fn request_capture(&self, _ctx: gluon::Context, handler: InputHandler) {
 		self.sender.request_capture(handler).await;
 	}
 
-	async fn release_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
+	async fn release_capture(&self, _ctx: gluon::Context, handler: InputHandler) {
 		self.sender.release_capture(&handler).await;
 		let mut cap = self.capture.write().await;
 		if cap.as_ref() == Some(&handler) {
@@ -627,7 +622,7 @@ impl InputMethodHandler for HandInputMethod {
 
 	async fn get_spatial_data(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		handler: InputHandler,
 		time: Timestamp,
 	) -> Option<SpatialData> {

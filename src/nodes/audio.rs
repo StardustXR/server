@@ -9,8 +9,7 @@ use bevy::audio::{PlaybackMode, Volume};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::XrSpace;
-use binderbinder::binder_object::BinderObjectRef;
-use gluon_wire::Handler;
+use gluon::{Handler, ObjectRef};
 use parking_lot::Mutex;
 
 use bevy::prelude::*;
@@ -108,7 +107,7 @@ impl Sound {
 		spatial: Arc<SpatialObject>,
 		resource_id: Resource,
 		resource_prefixes: &[PathBuf],
-	) -> Option<BinderObjectRef<Sound>> {
+	) -> Option<ObjectRef<Sound>> {
 		let pending_audio_path = get_resource_file(
 			&resource_id,
 			resource_prefixes,
@@ -129,11 +128,11 @@ impl Sound {
 	}
 }
 impl SoundHandler for Sound {
-	async fn play(&self, _ctx: gluon_wire::GluonCtx) {
+	async fn play(&self, _ctx: gluon::Context) {
 		self.play.lock().replace(());
 	}
 
-	async fn stop(&self, _ctx: gluon_wire::GluonCtx) {
+	async fn stop(&self, _ctx: gluon::Context) {
 		self.stop.lock().replace(());
 	}
 }
@@ -147,7 +146,7 @@ interface!(AudioInterface);
 impl AudioInterfaceHandler for AudioInterface {
 	async fn create_sound(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		sound: Resource,
 	) -> SoundProxy {

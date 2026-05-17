@@ -17,7 +17,7 @@ use bevy::{
 };
 use bevy_equirect::EquirectManager;
 use glam::Quat;
-use gluon_wire::Handler;
+use gluon::Handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::{
 	sky::{SkyGuard as SkyGuardProxy, SkyGuardHandler, SkyInterfaceHandler},
@@ -88,11 +88,7 @@ fn apply_sky(
 
 interface!(SkyInterface);
 impl SkyInterfaceHandler for SkyInterface {
-	async fn set_sky_tex(
-		&self,
-		_ctx: gluon_wire::GluonCtx,
-		tex: Resource,
-	) -> Option<SkyGuardProxy> {
+	async fn set_sky_tex(&self, _ctx: gluon::Context, tex: Resource) -> Option<SkyGuardProxy> {
 		if SKYTEX_SET.load(Ordering::Relaxed) {
 			return None;
 		}
@@ -107,11 +103,7 @@ impl SkyInterfaceHandler for SkyInterface {
 		Some(SkyGuardProxy::from_handler(&guard.to_service()))
 	}
 
-	async fn set_sky_light(
-		&self,
-		_ctx: gluon_wire::GluonCtx,
-		tex: Resource,
-	) -> Option<SkyGuardProxy> {
+	async fn set_sky_light(&self, _ctx: gluon::Context, tex: Resource) -> Option<SkyGuardProxy> {
 		if SKYLIGHT_SET.load(Ordering::Relaxed) {
 			return None;
 		}

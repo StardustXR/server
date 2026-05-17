@@ -137,9 +137,8 @@ pin-project-lite = "0.2.16"
 futures-sink = "0.3.31"
 stardust-xr-protocol.workspace = true
 
-pion-binder.git = "https://github.com/technobaboo/pion"
-gluon-wire.git = "https://github.com/technobaboo/gluon"
-binderbinder.git = "https://github.com/technobaboo/binderbinder"
+pion-binder = { git = "https://github.com/technobaboo/pion" }
+gluon = { git = "https://github.com/technobaboo/gluon" }
 
 [workspace.dependencies.stardust-xr-protocol]
 git = "https://github.com/StardustXR/core.git"

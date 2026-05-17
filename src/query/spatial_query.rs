@@ -6,7 +6,7 @@ use std::{
 
 use bevy::prelude::Deref;
 use glam::Vec3;
-use gluon_wire::Handler;
+use gluon::Handler;
 use stardust_xr_protocol::{
 	field::FieldRef as FieldRefProxy,
 	query::{QueriedInterface, QueryableObjectRef},
@@ -399,7 +399,7 @@ impl QueryType {
 			}
 		}
 	}
-	fn left(&self, obj: QueryableObjectRef) -> Result<(), gluon_wire::GluonSendError> {
+	fn left(&self, obj: QueryableObjectRef) -> Result<(), gluon::SendError> {
 		match self {
 			QueryType::Zone {
 				handler,
@@ -425,7 +425,7 @@ impl QueryType {
 		&self,
 		obj: QueryableObjectRef,
 		interfaces: Vec<QueriedInterface>,
-	) -> Result<(), gluon_wire::GluonSendError> {
+	) -> Result<(), gluon::SendError> {
 		match self {
 			QueryType::Zone {
 				handler,
@@ -452,7 +452,7 @@ impl QueryType {
 		interfaces: &Registry<QueryableInterface>,
 		queryable: &Arc<Queryable>,
 		data: HitTestResult,
-	) -> Result<(), gluon_wire::GluonSendError> {
+	) -> Result<(), gluon::SendError> {
 		let interfaces = interfaces
 			.get_valid_contents()
 			.into_iter()
@@ -522,7 +522,7 @@ impl QueryType {
 		&self,
 		queryable: &Arc<Queryable>,
 		data: HitTestResult,
-	) -> Result<(), gluon_wire::GluonSendError> {
+	) -> Result<(), gluon::SendError> {
 		match (self, data) {
 			(
 				QueryType::Zone {
@@ -590,7 +590,7 @@ enum HitTestResult {
 
 interface!(SpatialQueryInterface);
 impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
-	async fn beam_query(&self, _ctx: gluon_wire::GluonCtx, query: BeamQuery) -> SpatialQueryGuard {
+	async fn beam_query(&self, _ctx: gluon::Context, query: BeamQuery) -> SpatialQueryGuard {
 		let BeamQuery {
 			handler,
 			interfaces,
@@ -635,7 +635,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		SpatialQueryGuard::from_handler(&v)
 	}
 
-	async fn zone_query(&self, _ctx: gluon_wire::GluonCtx, query: ZoneQuery) -> SpatialQueryGuard {
+	async fn zone_query(&self, _ctx: gluon::Context, query: ZoneQuery) -> SpatialQueryGuard {
 		let ZoneQuery {
 			handler,
 			interfaces,
@@ -679,7 +679,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 
 	async fn points_query(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		query: PointsQuery,
 	) -> stardust_xr_protocol::spatial_query::PointsQueryHandle {
 		let PointsQuery {
@@ -724,7 +724,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 #[derive(Debug, Handler)]
 struct PointsQueryHandle(Arc<Query>);
 impl PointsQueryHandleHandler for PointsQueryHandle {
-	async fn update_points(&self, _ctx: gluon_wire::GluonCtx, points: Vec<Point>) {
+	async fn update_points(&self, _ctx: gluon::Context, points: Vec<Point>) {
 		if let QueryType::Points {
 			handler: _,
 			ref_space: _,

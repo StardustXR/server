@@ -14,8 +14,7 @@ use std::{
 };
 
 use bevy::prelude::{Deref, DerefMut};
-use binderbinder::binder_object::{BinderObject, ToBinderObjectOrRef};
-use gluon_wire::Handler;
+use gluon::{Handler, OwnedObjectRef};
 use stardust_xr_protocol::{
 	spatial::SpatialRef,
 	tracked::{TrackedGuardHandler, TrackedHandler, TrackedStateReceiver},
@@ -35,7 +34,7 @@ pub mod input;
 
 #[derive(Debug)]
 pub struct Tracked<T: Debug + Send + Sync + 'static> {
-	inner: BinderObject<TrackedInner<T>>,
+	inner: gluon::Object<TrackedInner<T>>,
 	lock: File,
 	_type: PhantomData<T>,
 }
@@ -72,7 +71,7 @@ impl<T: Debug + Send + Sync + 'static> Tracked<T> {
 			.create(true)
 			.open(pion_path)
 			.ok()?;
-		let obj2 = inner.to_binder_object_or_ref();
+		let obj2 = inner.to_object_or_ref();
 		tokio::spawn(async move {
 			if let Err(err) = PION.bind_binder_ref_to_file(file, &obj2).await {
 				error!("somehow failed to setup pion of Trackable: {err}");
@@ -92,17 +91,17 @@ impl<T: Debug + Send + Sync + 'static> Tracked<T> {
 			_ = recv.tracked(tracked);
 		}
 	}
-    pub fn get_data_blocking(&self) -> RwLockReadGuard<'_, T> {
-        self.inner.data.blocking_read()
-    }
-    pub fn get_mut_data_blocking(&self) -> RwLockWriteGuard<'_, T> {
-        self.inner.data.blocking_write()
-    }
+	pub fn get_data_blocking(&self) -> RwLockReadGuard<'_, T> {
+		self.inner.data.blocking_read()
+	}
+	pub fn get_mut_data_blocking(&self) -> RwLockWriteGuard<'_, T> {
+		self.inner.data.blocking_write()
+	}
 }
 impl<T: Debug + Send + Sync + 'static> TrackedHandler for TrackedInner<T> {
 	async fn get(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		handler: TrackedStateReceiver,
 	) -> (
 		SpatialRef,
@@ -123,7 +122,7 @@ impl<T: Debug + Send + Sync + 'static> TrackedHandler for TrackedInner<T> {
 
 	async fn get_pose(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		at: Timestamp,
 		relative_to: SpatialRef,
 	) -> (Option<Posef>, bool) {
@@ -131,7 +130,7 @@ impl<T: Debug + Send + Sync + 'static> TrackedHandler for TrackedInner<T> {
 			return (None, false);
 		};
 		let state = self.data.read().await;
-        (self.pose_callback)(&state, &spatial, at)
+		(self.pose_callback)(&state, &spatial, at)
 	}
 }
 #[derive(Debug, Handler)]

@@ -19,9 +19,8 @@ use bevy::{
 		view::VisibilitySystems,
 	},
 };
-use binderbinder::binder_object::BinderObjectRef;
 use glam::Vec3;
-use gluon_wire::Handler;
+use gluon::Handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::lines::Lines as LinesProxy;
 use stardust_xr_protocol::lines::{Line, LinePoint, LinesHandler, LinesInterfaceHandler};
@@ -353,7 +352,7 @@ pub struct Lines {
 	setup_complete: Notify,
 }
 impl Lines {
-	pub fn new(spatial: Arc<SpatialObject>, lines: Vec<Line>) -> BinderObjectRef<Lines> {
+	pub fn new(spatial: Arc<SpatialObject>, lines: Vec<Line>) -> gluon::ObjectRef<Lines> {
 		let lines = PION.register_object(Lines {
 			spatial: spatial.clone(),
 			data: Mutex::new(lines),
@@ -382,7 +381,7 @@ impl Lines {
 	}
 }
 impl LinesHandler for Lines {
-	async fn set_lines(&self, _ctx: gluon_wire::GluonCtx, lines: Vec<Line>) {
+	async fn set_lines(&self, _ctx: gluon::Context, lines: Vec<Line>) {
 		*self.data.lock() = lines;
 		self.gen_mesh.store(true, Ordering::Relaxed);
 	}
@@ -396,7 +395,7 @@ interface!(LinesInterface);
 impl LinesInterfaceHandler for LinesInterface {
 	async fn create_lines(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		lines: Vec<Line>,
 	) -> LinesProxy {

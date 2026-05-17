@@ -12,9 +12,8 @@ use bevy::ecs::resource::Resource;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::gizmos::GizmoAsset;
 use bevy::gizmos::retained::Gizmo;
-use binderbinder::binder_object::BinderObjectRef;
 use glam::{Vec3, Vec3A, vec3a};
-use gluon_wire::{GluonCtx, Handler};
+use gluon::Handler;
 use parking_lot::RwLock;
 use stardust_xr_protocol::field::{
 	Field as FieldProxy, FieldHandler, FieldInterfaceHandler, FieldRef as FieldRefProxy,
@@ -424,8 +423,8 @@ impl Debug for ShapeChangedCallback {
 #[derive(Debug, Handler)]
 pub struct FieldObject {
 	pub data: Arc<Field>,
-	field_ref: BinderObjectRef<FieldRef>,
-	spatial: BinderObjectRef<SpatialObject>,
+	field_ref: gluon::ObjectRef<FieldRef>,
+	spatial: gluon::ObjectRef<SpatialObject>,
 }
 pub struct Field {
 	pub spatial: Arc<Spatial>,
@@ -493,9 +492,9 @@ impl Field {
 }
 impl FieldObject {
 	pub fn new(
-		spatial: BinderObjectRef<SpatialObject>,
+		spatial: gluon::ObjectRef<SpatialObject>,
 		shape: Shape,
-	) -> BinderObjectRef<FieldObject> {
+	) -> gluon::ObjectRef<FieldObject> {
 		let data = Arc::new(Field {
 			spatial: spatial.handler_arc().spatial_arc().clone(),
 			shape: RwLock::new(shape),
@@ -526,17 +525,17 @@ impl Drop for Field {
 	}
 }
 impl FieldHandler for FieldObject {
-	async fn field_ref(&self, _ctx: GluonCtx) -> FieldRefProxy {
+	async fn field_ref(&self, _ctx: gluon::Context) -> FieldRefProxy {
 		FieldRefProxy::from_handler(&self.field_ref)
 	}
 
-	async fn spatial(&self, _ctx: GluonCtx) -> SpatialProxy {
+	async fn spatial(&self, _ctx: gluon::Context) -> SpatialProxy {
 		SpatialProxy::from_handler(&self.spatial)
 	}
 
 	async fn sample(
 		&self,
-		_ctx: GluonCtx,
+		_ctx: gluon::Context,
 		reference_space: SpatialRefProxy,
 		point: Vec3F,
 	) -> FieldSample {
@@ -548,7 +547,7 @@ impl FieldHandler for FieldObject {
 
 	async fn ray_march(
 		&self,
-		_ctx: GluonCtx,
+		_ctx: gluon::Context,
 		reference_space: SpatialRefProxy,
 		ray_origin: Vec3F,
 		ray_direction: Vec3F,
@@ -561,7 +560,7 @@ impl FieldHandler for FieldObject {
 		}))
 	}
 
-	async fn set_shape(&self, _ctx: GluonCtx, shape: Shape) {
+	async fn set_shape(&self, _ctx: gluon::Context, shape: Shape) {
 		*self.data.shape.write() = shape;
 		let data = self.data.clone();
 		tokio::task::spawn_blocking(move || {
@@ -583,7 +582,7 @@ interface!(FieldInterface);
 impl FieldInterfaceHandler for FieldInterface {
 	async fn sample(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		field: FieldRefProxy,
 		space: SpatialRefProxy,
 		point: Vec3F,
@@ -600,7 +599,7 @@ impl FieldInterfaceHandler for FieldInterface {
 
 	async fn ray_march(
 		&self,
-		_ctx: GluonCtx,
+		_ctx: gluon::Context,
 		field: FieldRefProxy,
 		space: SpatialRefProxy,
 		ray_origin: Vec3F,
@@ -617,7 +616,7 @@ impl FieldInterfaceHandler for FieldInterface {
 
 	async fn create_field(
 		&self,
-		_ctx: GluonCtx,
+		_ctx: gluon::Context,
 		spatial: SpatialProxy,
 		shape: Shape,
 	) -> FieldProxy {

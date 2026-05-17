@@ -1,24 +1,21 @@
-use std::{
-	collections::HashMap,
-	sync::{Arc, LazyLock, Weak},
+use crate::{
+	PION, interface,
+	nodes::{ProxyExt, fields::FieldObject, spatial::SpatialObject},
+	query::spatial_query::Query,
 };
-
 use bevy::prelude::Deref;
-use binderbinder::binder_object::{BinderObject, BinderObjectOrRef, BinderObjectRef};
-use gluon_wire::{GluonCtx, Handler};
+use gluon::{Handler, Object, ObjectOrRef, ObjectRef};
 use stardust_xr_protocol::query::{
 	QueryInterfaceHandler, QueryableError, QueryableInterfaceGuard, QueryableInterfaceGuardHandler,
 	QueryableObject, QueryableObjectHandler, QueryableObjectRef, QueryableObjectRefHandler,
 };
 use stardust_xr_server_foundation::{deduped_string::DedupedStr, registry::Registry};
+use std::{
+	collections::HashMap,
+	sync::{Arc, LazyLock, Weak},
+};
 use tokio::sync::RwLock;
 use tracing::info;
-
-use crate::{
-	PION, interface,
-	nodes::{ProxyExt, fields::FieldRef, spatial::SpatialRef},
-	query::spatial_query::Query,
-};
 
 pub mod spatial_query;
 
@@ -36,15 +33,15 @@ impl QueryableObjectRefHandler for QueryableRef {}
 struct QueryableMut(Arc<Queryable>);
 #[derive(Debug)]
 struct Queryable {
-	queryable_ref: BinderObject<QueryableRef>,
-	spatial: BinderObjectRef<SpatialRef>,
-	field: BinderObjectRef<FieldRef>,
+	queryable_ref: Object<QueryableRef>,
+	spatial: ObjectRef<SpatialObject>,
+	field: ObjectRef<FieldObject>,
 	interfaces: RwLock<Registry<QueryableInterface>>,
 }
 #[derive(Debug)]
 struct QueryableInterface {
 	interface_id: Arc<DedupedStr>,
-	interface_ref: BinderObjectOrRef,
+	interface_ref: ObjectOrRef,
 }
 #[derive(Debug, Handler)]
 struct InterfaceGuard(Option<Arc<QueryableInterface>>, Weak<Queryable>);
@@ -59,14 +56,14 @@ impl Drop for InterfaceGuard {
 	}
 }
 impl QueryableObjectHandler for QueryableMut {
-	async fn queryable_ref(&self, _ctx: gluon_wire::GluonCtx) -> QueryableObjectRef {
+	async fn queryable_ref(&self, _ctx: gluon::Context) -> QueryableObjectRef {
 		QueryableObjectRef::from_handler(&self.queryable_ref)
 	}
 
 	async fn add_interface(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
-		interface: binderbinder::binder_object::BinderObjectOrRef,
+		_ctx: gluon::Context,
+		interface: ObjectOrRef,
 		interface_id: String,
 	) -> QueryableInterfaceGuard {
 		let interface = self.interfaces.write().await.add(QueryableInterface {
@@ -100,12 +97,12 @@ interface!(QueryInterface);
 impl QueryInterfaceHandler for QueryInterface {
 	async fn register_queryable(
 		&self,
-		_ctx: GluonCtx,
-		spatial: stardust_xr_protocol::spatial::SpatialRef,
-		field: stardust_xr_protocol::field::FieldRef,
+		_ctx: gluon::Context,
+		spatial: stardust_xr_protocol::spatial::Spatial,
+		field: stardust_xr_protocol::field::Field,
 	) -> Result<QueryableObject, QueryableError> {
-		let spatial = spatial.owned().ok_or(QueryableError::InvalidField)?;
-		let field = field.owned().ok_or(QueryableError::InvalidField)?;
+		let spatial = spatial.owned().ok_or(QueryableError::NotOwnedSpatial)?;
+		let field = field.owned().ok_or(QueryableError::NotOwnedField)?;
 		let queryable_ref = PION.register_object(QueryableRef);
 		let queryable = Arc::new(Queryable {
 			field,

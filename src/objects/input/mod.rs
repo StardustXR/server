@@ -7,8 +7,7 @@ use crate::nodes::{
 	fields::{Field, FieldRef},
 	spatial::SpatialRef,
 };
-use binderbinder::binder_object::{BinderObjectRef, ToBinderObjectOrRef};
-use gluon_wire::Handler;
+use gluon::{Handler, ObjectRef};
 use stardust_xr_protocol::{
 	field::FieldRef as FieldRefProxy,
 	query::{QueriedInterface, QueryableObjectRef},
@@ -37,8 +36,8 @@ pub struct BeamValue {
 
 pub struct CachedObject<V: Send + Sync + 'static> {
 	pub handler: InputHandler,
-	pub spatial: BinderObjectRef<SpatialRef>,
-	pub field: BinderObjectRef<FieldRef>,
+	pub spatial: ObjectRef<SpatialRef>,
+	pub field: ObjectRef<FieldRef>,
 	pub suggested_bindings: HashMap<String, Vec<String>>,
 	pub value: V,
 }
@@ -128,7 +127,7 @@ pub struct BeamQueryCache(pub QueryCache<BeamValue>);
 impl BeamQueryHandlerHandler for BeamQueryCache {
 	async fn intersected(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		obj: QueryableObjectRef,
 		field: FieldRefProxy,
 		spatial: SpatialRefProxy,
@@ -152,7 +151,7 @@ impl BeamQueryHandlerHandler for BeamQueryCache {
 
 	async fn interfaces_changed(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		_obj: QueryableObjectRef,
 		_interfaces: Vec<QueriedInterface>,
 	) {
@@ -160,7 +159,7 @@ impl BeamQueryHandlerHandler for BeamQueryCache {
 
 	async fn moved(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		obj: QueryableObjectRef,
 		deepest_point_distance: f32,
 		distance: f32,
@@ -176,7 +175,7 @@ impl BeamQueryHandlerHandler for BeamQueryCache {
 			.await;
 	}
 
-	async fn left(&self, _ctx: gluon_wire::GluonCtx, obj: QueryableObjectRef) {
+	async fn left(&self, _ctx: gluon::Context, obj: QueryableObjectRef) {
 		self.0.on_left(&obj).await;
 	}
 }
@@ -189,7 +188,7 @@ pub struct PointsQueryCache(pub QueryCache<f32>);
 impl PointsQueryHandlerHandler for PointsQueryCache {
 	async fn entered(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		obj: QueryableObjectRef,
 		field: FieldRefProxy,
 		spatial: SpatialRefProxy,
@@ -203,17 +202,17 @@ impl PointsQueryHandlerHandler for PointsQueryCache {
 
 	async fn interfaces_changed(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		_obj: QueryableObjectRef,
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
 
-	async fn moved(&self, _ctx: gluon_wire::GluonCtx, obj: QueryableObjectRef, distance: f32) {
+	async fn moved(&self, _ctx: gluon::Context, obj: QueryableObjectRef, distance: f32) {
 		self.0.on_value_changed(&obj, distance).await;
 	}
 
-	async fn left(&self, _ctx: gluon_wire::GluonCtx, obj: QueryableObjectRef) {
+	async fn left(&self, _ctx: gluon::Context, obj: QueryableObjectRef) {
 		self.0.on_left(&obj).await;
 	}
 }

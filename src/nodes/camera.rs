@@ -26,9 +26,8 @@ use bevy::render::camera::RenderTarget;
 use bevy::render::extract_component::ExtractComponent;
 use bevy::render::extract_component::ExtractComponentPlugin;
 use bevy_mod_xr::camera::XrProjection;
-use binderbinder::binder_object::BinderObjectRef;
 use glam::Mat4;
-use gluon_wire::Handler;
+use gluon::Handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::camera::Camera as CameraProxy;
 use stardust_xr_protocol::camera::CameraHandler;
@@ -55,7 +54,7 @@ pub struct Camera {
 	render_target_queue: mpsc::UnboundedSender<(u64, Vec<View>, Arc<Dmatex>, SignalOnDrop)>,
 }
 impl Camera {
-	pub fn new(spatial: Arc<SpatialObject>) -> BinderObjectRef<Camera> {
+	pub fn new(spatial: Arc<SpatialObject>) -> gluon::ObjectRef<Camera> {
 		let (tx, rx) = mpsc::unbounded_channel();
 		let cam = PION.register_object(Camera {
 			spatial,
@@ -69,7 +68,7 @@ impl Camera {
 impl CameraHandler for Camera {
 	async fn request_draw(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		render_target: DmatexRef,
 		acquire_point: u64,
 		release_point: u64,
@@ -107,7 +106,7 @@ exposed_interface!(CameraInterface, "stardust-camera");
 impl CameraInterfaceHandler for CameraInterface {
 	async fn create_camera(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 	) -> CameraProxy {
 		let Some(spatial) = spatial.owned() else {

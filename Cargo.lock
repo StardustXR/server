@@ -1595,7 +1595,7 @@ dependencies = [
 [[package]]
 name = "binderbinder"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/binderbinder#83cfaa9946c7fc5d4065eec6a7cacd7d60547f04"
+source = "git+https://github.com/technobaboo/binderbinder#3b3cf21ee04f88c35a018f13f0e113cacb118056"
 dependencies = [
  "bitflags 2.11.0",
  "byteorder",
@@ -2590,7 +2590,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2969,13 +2969,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "gluon-codegen-rust"
+name = "gluon"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#1965276bab2b03a151ebb10b5cc02870a7443142"
+source = "git+https://github.com/technobaboo/gluon#ce991864d3a44aa55ca227234ca76859f8e99598"
+dependencies = [
+ "binderbinder",
+ "bitflags 2.11.0",
+ "gluon-derive",
+ "rustix 1.1.4",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
+name = "gluon-codegen"
+version = "0.1.0"
+source = "git+https://github.com/technobaboo/gluon#ce991864d3a44aa55ca227234ca76859f8e99598"
 dependencies = [
  "convert_case 0.11.0",
+ "gluon",
  "gluon-parser",
- "gluon-wire",
  "prettyplease",
  "proc-macro2",
  "quote",
@@ -2983,37 +2996,22 @@ dependencies = [
 ]
 
 [[package]]
-name = "gluon-parser"
+name = "gluon-derive"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#1965276bab2b03a151ebb10b5cc02870a7443142"
+source = "git+https://github.com/technobaboo/gluon#ce991864d3a44aa55ca227234ca76859f8e99598"
 dependencies = [
- "ansi_term",
- "binderbinder",
- "chumsky",
- "convert_case 0.11.0",
-]
-
-[[package]]
-name = "gluon-wire"
-version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#1965276bab2b03a151ebb10b5cc02870a7443142"
-dependencies = [
- "binderbinder",
- "bitflags 2.11.0",
- "gluon-wire-derive",
- "rustix 1.1.4",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
-name = "gluon-wire-derive"
-version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#1965276bab2b03a151ebb10b5cc02870a7443142"
-dependencies = [
- "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "gluon-parser"
+version = "0.1.0"
+source = "git+https://github.com/technobaboo/gluon#ce991864d3a44aa55ca227234ca76859f8e99598"
+dependencies = [
+ "ansi_term",
+ "chumsky",
+ "convert_case 0.11.0",
 ]
 
 [[package]]
@@ -5218,7 +5216,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5231,7 +5229,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5579,7 +5577,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.52.0",
  "windows-sys 0.59.0",
 ]
 
@@ -5595,14 +5592,12 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "0.51.1"
-source = "git+https://github.com/StardustXR/core.git?branch=binder#c0fd5b900d33b5c9e3167b80de1a5d1e1941a437"
+source = "git+https://github.com/StardustXR/core.git?branch=binder#d0db1d2d8103d5ac5f8db350af03991681749dc3"
 dependencies = [
- "binderbinder",
  "fnv",
  "glam",
- "gluon-codegen-rust",
- "gluon-parser",
- "gluon-wire",
+ "gluon",
+ "gluon-codegen",
  "mint",
  "prettyplease",
  "rustix 1.1.4",
@@ -5625,7 +5620,6 @@ dependencies = [
  "bevy_mod_openxr",
  "bevy_mod_xr",
  "bevy_sk",
- "binderbinder",
  "clap",
  "color-eyre",
  "console-subscriber",
@@ -5636,7 +5630,7 @@ dependencies = [
  "futures-sink",
  "glam",
  "global_counter",
- "gluon-wire",
+ "gluon",
  "input-event-codes",
  "mint",
  "nanoid",
@@ -5845,7 +5839,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6893,7 +6887,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

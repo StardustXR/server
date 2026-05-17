@@ -27,9 +27,8 @@ use bevy::{
 		render_resource::{AsBindGroup, ShaderRef},
 	},
 };
-use binderbinder::binder_object::{BinderObject, BinderObjectRef};
 use color_eyre::eyre::eyre;
-use gluon_wire::{GluonCtx, Handler};
+use gluon::{Handler, ObjectRef};
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr_protocol::{
@@ -343,14 +342,14 @@ fn gen_model_parts(
 fn gen_path(
 	current_entity: Entity,
 	part_query: &Query<(&Name, Option<&Children>, &Transform), Without<Mesh3d>>,
-	parent: Option<Arc<BinderObject<ModelPart>>>,
+	parent: Option<Arc<gluon::Object<ModelPart>>>,
 	func: &mut dyn FnMut(
 		Entity,
 		&Name,
 		&Transform,
-		Option<Arc<BinderObject<ModelPart>>>,
+		Option<Arc<gluon::Object<ModelPart>>>,
 		Option<&Children>,
-	) -> Option<Arc<BinderObject<ModelPart>>>,
+	) -> Option<Arc<gluon::Object<ModelPart>>>,
 ) {
 	let Ok((name, children, transform)) = part_query.get(current_entity) else {
 		return;
@@ -586,7 +585,7 @@ pub struct ModelPart {
 	// no handle needed, despawned recusively
 	mesh_entity: OnceLock<Option<Entity>>,
 	path: String,
-	spatial: BinderObjectRef<SpatialObject>,
+	spatial: gluon::ObjectRef<SpatialObject>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_dmatexes: Mutex<
 		HashMap<
@@ -650,17 +649,17 @@ impl ModelPart {
 }
 
 impl ModelPartHandler for ModelPart {
-	async fn get_part_path(&self, _ctx: GluonCtx) -> String {
+	async fn get_part_path(&self, _ctx: gluon::Context) -> String {
 		self.path.clone()
 	}
 
-	async fn get_spatial(&self, _ctx: gluon_wire::GluonCtx) -> Spatial {
+	async fn get_spatial(&self, _ctx: gluon::Context) -> Spatial {
 		Spatial::from_handler(&self.spatial)
 	}
 
 	async fn set_material_parameter(
 		&self,
-		_ctx: GluonCtx,
+		_ctx: gluon::Context,
 		parameter_name: String,
 		value: MaterialParameter,
 	) -> Option<MaterialParamError> {
@@ -672,7 +671,7 @@ impl ModelPartHandler for ModelPart {
 		None
 	}
 
-	async fn apply_holdout_material(&self, _ctx: GluonCtx) {
+	async fn apply_holdout_material(&self, _ctx: gluon::Context) {
 		self.holdout.store(true, Ordering::Relaxed);
 	}
 }
@@ -705,19 +704,19 @@ impl MaterialRegistry {
 
 #[derive(Debug, Handler)]
 pub struct Model {
-	spatial: BinderObjectRef<SpatialObject>,
+	spatial: gluon::ObjectRef<SpatialObject>,
 	_resource_id: Resource,
 	bevy_scene_entity: OnceLock<EntityHandle>,
-	parts: OnceLock<Vec<Arc<BinderObject<ModelPart>>>>,
+	parts: OnceLock<Vec<Arc<gluon::Object<ModelPart>>>>,
 	resource_prefixes: Arc<Vec<PathBuf>>,
 	setup_complete_tx: Mutex<Option<oneshot::Sender<()>>>,
 }
 impl Model {
 	pub async fn new(
-		spatial: BinderObjectRef<SpatialObject>,
+		spatial: gluon::ObjectRef<SpatialObject>,
 		resource_id: Resource,
 		base_prefixes: Arc<Vec<PathBuf>>,
-	) -> Result<BinderObjectRef<Model>> {
+	) -> Result<ObjectRef<Model>> {
 		let pending_model_path = get_resource_file(
 			&resource_id,
 			base_prefixes.iter(),
@@ -747,7 +746,7 @@ impl Model {
 	}
 }
 impl ModelHandler for Model {
-	async fn get_part(&self, _ctx: GluonCtx, path: String) -> Option<ModelPartProxy> {
+	async fn get_part(&self, _ctx: gluon::Context, path: String) -> Option<ModelPartProxy> {
 		if let Some(parts) = self.parts.get() {
 			parts
 				.iter()
@@ -761,7 +760,7 @@ impl ModelHandler for Model {
 		}
 	}
 
-	async fn enumerate_parts(&self, _ctx: GluonCtx) -> Vec<ModelPartProxy> {
+	async fn enumerate_parts(&self, _ctx: gluon::Context) -> Vec<ModelPartProxy> {
 		if let Some(parts) = self.parts.get() {
 			parts
 				.iter()
@@ -775,7 +774,7 @@ impl ModelHandler for Model {
 		}
 	}
 
-	async fn set_model_scale(&self, _ctx: GluonCtx, _scale: Vec3F) {
+	async fn set_model_scale(&self, _ctx: gluon::Context, _scale: Vec3F) {
 		// TODO: impl
 		warn!("tried setting model scale, currently unimplemented");
 	}
@@ -784,7 +783,7 @@ interface!(ModelInterface);
 impl ModelInterfaceHandler for ModelInterface {
 	async fn load_model(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		model: stardust_xr_protocol::types::Resource,
 	) -> Result<ModelProxy, ModelLoadError> {

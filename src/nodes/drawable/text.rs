@@ -18,9 +18,8 @@ use bevy_mesh_text_3d::{
 	Align, Attrs, HorizontalAnchorPoint, MeshTextPlugin, Settings as FontSettings, VerticalAlign,
 	VerticalAnchorPoint, generate_meshes,
 };
-use binderbinder::binder_object::BinderObject;
 use core::f32;
-use gluon_wire::Handler;
+use gluon::Handler;
 use parking_lot::Mutex;
 use stardust_xr_protocol::text::Text as TextProxy;
 use stardust_xr_protocol::text::{
@@ -192,7 +191,7 @@ impl TextObject {
 		text: String,
 		style: TextStyle,
 		prefixes: &[PathBuf],
-	) -> BinderObject<TextObject> {
+	) -> gluon::Object<TextObject> {
 		let text = Arc::new(Text {
 			spatial,
 			font_path: style.font.as_ref().and_then(|res| {
@@ -209,12 +208,12 @@ impl TextObject {
 	}
 }
 impl TextHandler for TextObject {
-	async fn set_character_height(&self, _ctx: gluon_wire::GluonCtx, height: f32) {
+	async fn set_character_height(&self, _ctx: gluon::Context, height: f32) {
 		self.0.data.lock().character_height = height;
 		_ = SPAWN_TEXT.send(self.0.clone());
 	}
 
-	async fn set_text(&self, _ctx: gluon_wire::GluonCtx, text: String) {
+	async fn set_text(&self, _ctx: gluon::Context, text: String) {
 		*self.0.text.lock() = text;
 		_ = SPAWN_TEXT.send(self.0.clone());
 	}
@@ -223,7 +222,7 @@ interface!(TextInterface);
 impl TextInterfaceHandler for TextInterface {
 	async fn create_text(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		text: String,
 		style: TextStyle,

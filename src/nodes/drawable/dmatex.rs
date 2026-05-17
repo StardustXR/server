@@ -21,10 +21,9 @@ use bevy_dmabuf::{
 	dmatex::DmatexPlane as BevyDmatexPlane,
 	import::{ImportedDmatexs, ImportedTexture, import_texture},
 };
-use binderbinder::binder_object::BinderObjectRef;
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
-use gluon_wire::{GluonCtx, Handler};
+use gluon::{Handler, ObjectRef};
 use stardust_xr_protocol::dmatex::{
 	DmatexFormat, DmatexInterfaceHandler, DmatexPlane, DmatexRef, DmatexRefHandler, DmatexSize,
 };
@@ -67,7 +66,7 @@ impl Dmatex {
 		array_layers: Option<u32>,
 		planes: Vec<DmatexPlane>,
 		timeline_syncobj_fd: OwnedFd,
-	) -> Result<BinderObjectRef<Self>> {
+	) -> Result<ObjectRef<Self>> {
 		let DmatexSize::Size2D { size } = size else {
 			bail!("non 2d dmatex are not implemented yet");
 		};
@@ -220,7 +219,7 @@ impl_proxy!(DmatexRef, Dmatex);
 impl DmatexInterfaceHandler for DmatexInterface {
 	async fn import_dmatex(
 		&self,
-		_ctx: GluonCtx,
+		_ctx: gluon::Context,
 		size: DmatexSize,
 		format: DmatexFormat,
 		array_layers: u32,
@@ -240,7 +239,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 		DmatexRef::from_handler(&tex)
 	}
 
-	async fn enumerate_formats(&self, _ctx: GluonCtx, render_node: u64) -> Vec<DmatexFormat> {
+	async fn enumerate_formats(&self, _ctx: gluon::Context, render_node: u64) -> Vec<DmatexFormat> {
 		let vk = VULKANO_CONTEXT.wait();
 		if Some(render_node) != vk.get_drm_render_node_id() {
 			error!(
@@ -295,7 +294,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 		DMATEX_FORMAT_CACHE.get().unwrap().clone()
 	}
 
-	async fn primary_render_node_id(&self, _ctx: GluonCtx) -> u64 {
+	async fn primary_render_node_id(&self, _ctx: gluon::Context) -> u64 {
 		// TODO: replace this unwrap? but when would we ever not have an id?
 		VULKANO_CONTEXT.wait().get_drm_render_node_id().unwrap()
 	}

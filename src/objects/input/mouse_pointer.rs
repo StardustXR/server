@@ -9,10 +9,9 @@ use crate::{
 	query::spatial_query::SpatialQueryInterface,
 };
 use bevy::{input::mouse::MouseWheel, prelude::*, window::PrimaryWindow};
-use binderbinder::binder_object::{BinderObject, BinderObjectRef, ToBinderObjectOrRef};
 use color_eyre::eyre::Result;
 use glam::{Mat4, Vec3};
-use gluon_wire::Handler;
+use gluon::{Handler, Object};
 use mint::Vector2;
 use stardust_xr_protocol::{
 	field::FieldRef as FieldRefProxy,
@@ -115,7 +114,7 @@ struct MouseMethod {
 	event: RwLock<MouseEvent>,
 	capture: RwLock<Option<InputHandler>>,
 	sender: Arc<InputSender<BeamValue>>,
-	_beam_query: BinderObject<BeamQueryCache>,
+	_beam_query: Object<BeamQueryCache>,
 	_query_guard: Arc<OnceLock<SpatialQueryGuard>>,
 }
 
@@ -197,11 +196,11 @@ impl InputSource for MouseMethod {
 }
 
 impl InputMethodHandler for MouseMethod {
-	async fn request_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
+	async fn request_capture(&self, _ctx: gluon::Context, handler: InputHandler) {
 		self.sender.request_capture(handler).await;
 	}
 
-	async fn release_capture(&self, _ctx: gluon_wire::GluonCtx, handler: InputHandler) {
+	async fn release_capture(&self, _ctx: gluon::Context, handler: InputHandler) {
 		self.sender.release_capture(&handler).await;
 		let mut cap = self.capture.write().await;
 		if cap.as_ref() == Some(&handler) {
@@ -211,7 +210,7 @@ impl InputMethodHandler for MouseMethod {
 
 	async fn get_spatial_data(
 		&self,
-		_ctx: gluon_wire::GluonCtx,
+		_ctx: gluon::Context,
 		handler: InputHandler,
 		_time: Timestamp,
 	) -> Option<SpatialData> {
@@ -229,8 +228,8 @@ impl InputMethodHandler for MouseMethod {
 
 #[derive(Resource)]
 pub struct MousePointer {
-	spatial: BinderObjectRef<SpatialObject>,
-	method: BinderObject<MouseMethod>,
+	spatial: gluon::ObjectRef<SpatialObject>,
+	method: gluon::Object<MouseMethod>,
 }
 
 impl MousePointer {

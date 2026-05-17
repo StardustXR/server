@@ -13,10 +13,9 @@ use crate::{
 	},
 	query::{QueryInterface, spatial_query::SpatialQueryInterface},
 };
-use binderbinder::binder_object::BinderObjectRef;
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
-use gluon_wire::{GluonCtx, Handler};
+use gluon::{Handler, ObjectRef};
 use rustc_hash::FxHashMap;
 use rustix::process::RawPid;
 use stardust_xr_protocol::{
@@ -103,7 +102,7 @@ impl ConnectedClient {
 		// pid: RawPid,
 		startup_token: Option<String>,
 		base_resource_prefixes: Vec<PathBuf>,
-	) -> Result<(BinderObjectRef<Self>, SpatialRef)> {
+	) -> Result<(ObjectRef<Self>, SpatialRef)> {
 		// let env = get_env(pid).ok();
 		// let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
 		let exe = None;
@@ -175,7 +174,7 @@ impl ConnectedClient {
 	}
 
 	pub fn get_cmdline(&self) -> Option<Vec<String>> {
-        None
+		None
 		// let pid = self.pid;
 		// let exe_proc_path = format!("/proc/{pid}/exe");
 		// let cmdline_proc_path = format!("/proc/{pid}/cmdline");
@@ -187,7 +186,7 @@ impl ConnectedClient {
 		// Some(cmdline_split)
 	}
 	pub fn get_cwd(&self) -> Option<PathBuf> {
-        None
+		None
 		// let pid = self.pid;
 		// let cwd_proc_path = format!("/proc/{pid}/cwd");
 		// std::fs::read_link(cwd_proc_path).ok()
@@ -211,47 +210,47 @@ impl ConnectedClient {
 }
 
 impl ServerHandler for ConnectedClient {
-	async fn spatial_interface(&self, _ctx: GluonCtx) -> SpatialInterfaceProxy {
+	async fn spatial_interface(&self, _ctx: gluon::Context) -> SpatialInterfaceProxy {
 		self.spatial_interface.clone()
 	}
 
-	async fn field_interface(&self, _ctx: GluonCtx) -> FieldInterfaceProxy {
+	async fn field_interface(&self, _ctx: gluon::Context) -> FieldInterfaceProxy {
 		self.field_interface.clone()
 	}
 
-	async fn dmatex_interface(&self, _ctx: GluonCtx) -> DmatexInterfaceProxy {
+	async fn dmatex_interface(&self, _ctx: gluon::Context) -> DmatexInterfaceProxy {
 		self.dmatex_interface.clone()
 	}
 
-	async fn text_interface(&self, _ctx: GluonCtx) -> TextInterfaceProxy {
+	async fn text_interface(&self, _ctx: gluon::Context) -> TextInterfaceProxy {
 		self.text_interface.clone()
 	}
 
-	async fn model_interface(&self, _ctx: GluonCtx) -> ModelInterfaceProxy {
+	async fn model_interface(&self, _ctx: gluon::Context) -> ModelInterfaceProxy {
 		self.model_interface.clone()
 	}
 
-	async fn lines_interface(&self, _ctx: GluonCtx) -> LinesInterfaceProxy {
+	async fn lines_interface(&self, _ctx: gluon::Context) -> LinesInterfaceProxy {
 		self.lines_interface.clone()
 	}
 
-	async fn sky_interface(&self, _ctx: GluonCtx) -> SkyInterfaceProxy {
+	async fn sky_interface(&self, _ctx: gluon::Context) -> SkyInterfaceProxy {
 		self.sky_interface.clone()
 	}
 
-	async fn audio_interface(&self, _ctx: GluonCtx) -> AudioInterfaceProxy {
+	async fn audio_interface(&self, _ctx: gluon::Context) -> AudioInterfaceProxy {
 		self.audio_interface.clone()
 	}
 
-	async fn query_interface(&self, _ctx: GluonCtx) -> QueryInterfaceProxy {
+	async fn query_interface(&self, _ctx: gluon::Context) -> QueryInterfaceProxy {
 		self.query_interface.clone()
 	}
 
-	async fn spatial_query_interface(&self, _ctx: GluonCtx) -> SpatialQueryInterfaceProxy {
+	async fn spatial_query_interface(&self, _ctx: gluon::Context) -> SpatialQueryInterfaceProxy {
 		self.spatial_query_interface.clone()
 	}
 
-	async fn generate_startup_token(&self, _ctx: GluonCtx, root: SpatialRef) -> String {
+	async fn generate_startup_token(&self, _ctx: gluon::Context, root: SpatialRef) -> String {
 		ClientStateParsed::from_deserialized(self, &root).token()
 	}
 }

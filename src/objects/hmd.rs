@@ -15,7 +15,7 @@ use bevy_mod_xr::{
 	session::{XrPreDestroySession, XrSessionCreated, session_running},
 	spaces::{XrPrimaryReferenceSpace, XrSpace},
 };
-use binderbinder::binder_object::{BinderObject, BinderObjectRef};
+use gluon::ObjectRef;
 use openxr::{Posef, ReferenceSpaceType, SpaceLocationFlags};
 use stardust_xr_protocol::spatial::{Spatial, SpatialRef};
 use stardust_xr_protocol::types::Timestamp;
@@ -53,9 +53,9 @@ fn setup(connection: Res<DbusConnection>, mut cmds: Commands) {
 fn dyn_tracking(
 	DebugWrapper((base_space, base_spatial, view_space, spatial)): &DebugWrapper<(
 		Option<openxr::Space>,
-		BinderObjectRef<SpatialObject>,
+		ObjectRef<SpatialObject>,
 		Option<openxr::Space>,
-		BinderObjectRef<SpatialObject>,
+		ObjectRef<SpatialObject>,
 	)>,
 	reference_spatial: &Spatial,
 	time: Timestamp,
@@ -128,14 +128,14 @@ fn destroy_view_space(session: Res<OxrSession>, mut cmds: Commands, mut hmd: Res
 
 #[derive(Resource)]
 struct Hmd {
-	spatial: BinderObjectRef<SpatialObject>,
-	base_spatial: BinderObjectRef<SpatialObject>,
+	spatial: gluon::ObjectRef<SpatialObject>,
+	base_spatial: gluon::ObjectRef<SpatialObject>,
 	tracked: Tracked<
 		DebugWrapper<(
 			Option<openxr::Space>,
-			BinderObjectRef<SpatialObject>,
+			ObjectRef<SpatialObject>,
 			Option<openxr::Space>,
-			BinderObjectRef<SpatialObject>,
+			ObjectRef<SpatialObject>,
 		)>,
 	>,
 }
