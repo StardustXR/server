@@ -50,7 +50,7 @@ struct InterfaceGuard(Option<Arc<QueryableInterface>>, Weak<Queryable>);
 impl QueryableInterfaceGuardHandler for InterfaceGuard {}
 impl Drop for InterfaceGuard {
 	fn drop(&mut self) {
-		info!("dropping interface");
+		info!("Dropping interface");
 		drop(self.0.take());
 		if let Some(queryable) = self.1.upgrade() {
 			tokio::spawn(async move { queryable.notify_interface_changes().await });
@@ -104,6 +104,7 @@ impl QueryInterfaceHandler for QueryInterface {
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		field: stardust_xr_protocol::field::Field,
 	) -> Result<QueryableObject, QueryableError> {
+		info!(?spatial, ?field, "Registered queryable");
 		let spatial = spatial.owned().ok_or(QueryableError::NotOwnedSpatial)?;
 		let field = field.owned().ok_or(QueryableError::NotOwnedField)?;
 		let queryable_ref = PION.register_object(QueryableRef);
