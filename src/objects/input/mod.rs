@@ -85,7 +85,7 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 		&self,
 		obj: QueryableObjectRef,
 		field: FieldRefProxy,
-		spatial: SpatialRefProxy,
+		_spatial: SpatialRefProxy,
 		interfaces: Vec<QueriedInterface>,
 		value: V,
 	) {
@@ -95,11 +95,16 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 		if interface.interface_id != InputHandler::QUERY_INTERFACE {
 			return;
 		}
-		let Some(spatial) = spatial.owned() else {
-			return;
-		};
 		let Some(field) = field.owned() else { return };
 		let handler = InputHandler::from_object_or_ref(interface.interface.clone());
+
+		// Use the handler's declared reference space; all input coords must be relative to it.
+		let Ok(ref_space) = handler.get_spatial().await else {
+			return;
+		};
+		let Some(spatial) = ref_space.owned() else {
+			return;
+		};
 
 		let suggested_bindings = handler.suggested_bindings().await.unwrap_or_default();
 
