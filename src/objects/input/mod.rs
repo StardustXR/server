@@ -21,7 +21,7 @@ use stardust_xr_protocol::{
 use std::{
 	collections::{HashMap, HashSet},
 	fmt,
-	sync::{Arc, Mutex},
+	sync::{Arc, Mutex, RwLock as StdRwLock},
 };
 use tokio::sync::RwLock;
 
@@ -40,6 +40,8 @@ pub struct CachedObject<V: Send + Sync + 'static> {
 	pub field: ObjectRef<FieldRef>,
 	pub suggested_bindings: HashMap<String, Vec<String>>,
 	pub value: V,
+	/// True when the handler has left the spatial query but is retained because it holds a capture.
+	pub left_query: bool,
 }
 
 impl<V: Send + Sync + 'static> fmt::Debug for CachedObject<V> {
@@ -52,6 +54,7 @@ impl<V: Send + Sync + 'static> fmt::Debug for CachedObject<V> {
 
 pub struct QueryCache<V: Send + Sync + 'static> {
 	pub objects: Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>,
+	capture_requests: Arc<StdRwLock<HashSet<InputHandler>>>,
 }
 
 impl<V: Send + Sync + 'static> fmt::Debug for QueryCache<V> {
@@ -64,13 +67,17 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 	pub fn new() -> (
 		Self,
 		Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>,
+		Arc<StdRwLock<HashSet<InputHandler>>>,
 	) {
 		let objects = Arc::new(RwLock::new(HashMap::new()));
+		let capture_requests = Arc::new(StdRwLock::new(HashSet::new()));
 		(
 			Self {
 				objects: objects.clone(),
+				capture_requests: capture_requests.clone(),
 			},
 			objects,
+			capture_requests,
 		)
 	}
 
@@ -104,6 +111,7 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 				field,
 				suggested_bindings,
 				value,
+				left_query: false,
 			},
 		);
 	}
@@ -115,7 +123,28 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 	}
 
 	pub async fn on_left(&self, obj: &QueryableObjectRef) {
-		self.objects.write().await.remove(obj);
+		// Check whether this handler holds an active capture before dropping its entry.
+		// Read the handler out while holding a read lock, then check capture_requests
+		// (a std lock, so no await needed), then promote to write to either mark as
+		// left_query or actually remove.
+		let handler = {
+			let objects = self.objects.read().await;
+			objects.get(obj).map(|e| e.handler.clone())
+		};
+
+		let is_captured = handler
+			.as_ref()
+			.is_some_and(|h| self.capture_requests.read().unwrap().contains(h));
+
+		let mut objects = self.objects.write().await;
+		if is_captured {
+			// Keep the entry so the captured handler keeps receiving input; just flag it.
+			if let Some(entry) = objects.get_mut(obj) {
+				entry.left_query = true;
+			}
+		} else {
+			objects.remove(obj);
+		}
 	}
 }
 
@@ -259,7 +288,7 @@ pub trait InputSource {
 
 pub struct InputSender<V: Send + Sync + 'static> {
 	pub cache: Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>,
-	pub capture_requests: RwLock<HashSet<InputHandler>>,
+	pub capture_requests: Arc<StdRwLock<HashSet<InputHandler>>>,
 	tracker: Mutex<ActiveTracker>,
 }
 
@@ -270,10 +299,13 @@ impl<V: Send + Sync + 'static> fmt::Debug for InputSender<V> {
 }
 
 impl<V: Send + Sync + 'static> InputSender<V> {
-	pub fn new(cache: Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>) -> Self {
+	pub fn new(
+		cache: Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>,
+		capture_requests: Arc<StdRwLock<HashSet<InputHandler>>>,
+	) -> Self {
 		Self {
 			cache,
-			capture_requests: RwLock::new(HashSet::new()),
+			capture_requests,
 			tracker: Mutex::new(ActiveTracker::default()),
 		}
 	}
@@ -286,12 +318,17 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 			.values()
 			.any(|e| e.handler == handler)
 		{
-			self.capture_requests.write().await.insert(handler);
+			self.capture_requests.write().unwrap().insert(handler);
 		}
 	}
 
 	pub async fn release_capture(&self, handler: &InputHandler) {
-		self.capture_requests.write().await.remove(handler);
+		self.capture_requests.write().unwrap().remove(handler);
+		// Remove left_query entries for this handler; they were retained only for the capture.
+		self.cache
+			.write()
+			.await
+			.retain(|_, e| !(e.left_query && &e.handler == handler));
 	}
 
 	pub fn send(
@@ -300,8 +337,24 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 		method: InputMethod,
 		ts: Timestamp,
 	) {
+		let capture_requests = self.capture_requests.read().unwrap();
+
+		// Clean up any left_query entries that lost their capture between on_left and
+		// release_capture running (race condition). This keeps the objects map consistent.
+		{
+			let has_dangling = self
+				.cache
+				.blocking_read()
+				.values()
+				.any(|e| e.left_query && !capture_requests.contains(&e.handler));
+			if has_dangling {
+				self.cache
+					.blocking_write()
+					.retain(|_, e| !e.left_query || capture_requests.contains(&e.handler));
+			}
+		}
+
 		let objects = self.cache.blocking_read();
-		let capture_requests = self.capture_requests.blocking_read();
 
 		let (handler_order, capture) =
 			source.order_handlers_and_captures(&objects, &capture_requests);

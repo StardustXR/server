@@ -237,8 +237,8 @@ impl MousePointer {
 		let spatial = SpatialObject::new(None, Mat4::IDENTITY);
 		let spatial_arc = (**spatial).clone();
 
-		let (query_cache, objects_arc) = QueryCache::new();
-		let sender = Arc::new(InputSender::new(objects_arc));
+		let (query_cache, objects_arc, capture_requests) = QueryCache::new();
+		let sender = Arc::new(InputSender::new(objects_arc, capture_requests));
 
 		let beam_query = PION.register_object(BeamQueryCache(query_cache));
 		let beam_handler_proxy = BeamQueryHandler::from_handler(&beam_query);

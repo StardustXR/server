@@ -399,8 +399,8 @@ impl HandInputMethod {
 		side: HandSide,
 		tracker: openxr::HandTracker,
 	) -> Result<Self, gluon::SendError> {
-		let (query_cache, objects_arc) = QueryCache::new();
-		let sender = Arc::new(InputSender::new(objects_arc));
+		let (query_cache, objects_arc, capture_requests) = QueryCache::new();
+		let sender = Arc::new(InputSender::new(objects_arc, capture_requests));
 
 		let query = PION.register_object(PointsQueryCache(query_cache));
 		let proxy = PointsQueryHandler::from_handler(&query);
