@@ -356,27 +356,15 @@ fn build_datamap(event: &MouseEvent) -> HashMap<String, DatamapData> {
 	);
 	map.insert("grab".to_string(), DatamapData::Float { value: event.grab });
 	map.insert(
-		"scroll_continuous_x".to_string(),
-		DatamapData::Float {
-			value: event.scroll_continuous.x,
+		"scroll_continuous".to_string(),
+		DatamapData::Vec2 {
+			value: [event.scroll_continuous.x, event.scroll_continuous.y].into(),
 		},
 	);
 	map.insert(
-		"scroll_continuous_y".to_string(),
-		DatamapData::Float {
-			value: event.scroll_continuous.y,
-		},
-	);
-	map.insert(
-		"scroll_discrete_x".to_string(),
-		DatamapData::Float {
-			value: event.scroll_discrete.x,
-		},
-	);
-	map.insert(
-		"scroll_discrete_y".to_string(),
-		DatamapData::Float {
-			value: event.scroll_discrete.y,
+		"scroll_discrete".to_string(),
+		DatamapData::Vec2 {
+			value: [event.scroll_discrete.x, event.scroll_discrete.y].into(),
 		},
 	);
 	map
