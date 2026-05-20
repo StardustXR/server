@@ -337,7 +337,10 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 		method: InputMethod,
 		ts: Timestamp,
 	) {
-		let capture_requests = self.capture_requests.read().unwrap();
+		// Snapshot capture_requests immediately so the std lock is never held
+		// across cache reads/writes (which could block tokio worker threads).
+		let capture_requests: HashSet<InputHandler> =
+			self.capture_requests.read().unwrap().clone();
 
 		// Clean up any left_query entries that lost their capture between on_left and
 		// release_capture running (race condition). This keeps the objects map consistent.
@@ -379,7 +382,6 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 		let (added, removed) = self.tracker.lock().unwrap().update(new_set);
 
 		drop(objects);
-		drop(capture_requests);
 
 		tokio::spawn(async move {
 			for (handler, spatial_data, semantic_data) in dispatch {
