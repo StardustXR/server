@@ -635,13 +635,16 @@ impl FieldInterfaceHandler for FieldInterface {
 		_ctx: gluon::Context,
 		spatial: SpatialProxy,
 		shape: Shape,
-	) -> FieldProxy {
+	) -> (FieldProxy, FieldRefProxy) {
 		let Some(spatial) = spatial.owned() else {
 			// TODO: replace with returned error
 			panic!("invalid spatial used for field creation");
 		};
 		let field = FieldObject::new(spatial, shape);
-		FieldProxy::from_handler(&field)
+		(
+			FieldProxy::from_handler(&field),
+			FieldRefProxy::from_handler(field.get_ref()),
+		)
 	}
 }
 

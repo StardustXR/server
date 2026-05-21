@@ -554,14 +554,17 @@ impl SpatialInterfaceHandler for SpatialInterface {
 		_ctx: gluon::Context,
 		parent: SpatialRefProxy,
 		transform: Transform,
-	) -> SpatialProxy {
+	) -> (SpatialProxy, SpatialRefProxy) {
 		let Some(parent) = parent.owned() else {
 			// TODO: return error instead
 			panic!("Invalid SpatialRef used");
 			// return;
 		};
 		let s = SpatialObject::new(Some(&parent.data), transform.to_mat4());
-		SpatialProxy::from_handler(&s)
+		(
+			SpatialProxy::from_handler(&s),
+			SpatialRefProxy::from_handler(s.get_ref()),
+		)
 	}
 
 	async fn get_relative_bounding_box(
