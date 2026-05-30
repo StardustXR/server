@@ -25,7 +25,8 @@ use drm_fourcc::DrmFourcc;
 use glam::UVec2;
 use gluon::{Handler, ObjectRef};
 use stardust_xr_protocol::dmatex::{
-	DmatexFormat, DmatexInterfaceHandler, DmatexPlane, DmatexRef, DmatexRefHandler, DmatexSize,
+	DmatexFormat, DmatexImportError, DmatexInterfaceHandler, DmatexPlane, DmatexRef,
+	DmatexRefHandler, DmatexSize,
 };
 use stardust_xr_server_foundation::{bail, error::Result};
 use timeline_syncobj::{render_node::DrmRenderNode, timeline_syncobj::TimelineSyncObj};
@@ -66,12 +67,14 @@ impl Dmatex {
 		array_layers: Option<u32>,
 		planes: Vec<DmatexPlane>,
 		timeline_syncobj_fd: OwnedFd,
-	) -> Result<ObjectRef<Self>> {
+	) -> Result<ObjectRef<Self>, DmatexImportError> {
 		let DmatexSize::Size2D { size } = size else {
-			bail!("non 2d dmatex are not implemented yet");
+			return Err(DmatexImportError::InvalidSize);
 		};
 		if array_layers.is_some_and(|v| v != 1) {
-			bail!("array layers in dmatex is not implemented yet");
+			return Err(DmatexImportError::UnsupportedArrayLayers {
+				max_supported_layers: 1,
+			});
 		}
 		let vk = VULKANO_CONTEXT.wait();
 		let render_node = match DRM_RENDER_NODE.get() {
@@ -83,7 +86,7 @@ impl Dmatex {
 				let Ok(node) = DrmRenderNode::new(render_node_id & 0xFF)
 					.inspect_err(|err| error!("unable to open render_node: {err}"))
 				else {
-					bail!("unable to open render_node");
+					return Err(DmatexImportError::InvalidFormat);
 				};
 				_ = DRM_RENDER_NODE.set(node);
 				DRM_RENDER_NODE.get().unwrap()
@@ -225,7 +228,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 		array_layers: u32,
 		planes: Vec<DmatexPlane>,
 		timeline_syncobj_fd: OwnedFd,
-	) -> DmatexRef {
+	) -> Result<DmatexRef, DmatexImportError> {
 		let tex = Dmatex::new(
 			size,
 			format.drm_fourcc,
@@ -234,18 +237,22 @@ impl DmatexInterfaceHandler for DmatexInterface {
 			Some(array_layers),
 			planes,
 			timeline_syncobj_fd,
-		)
-		.unwrap();
-		DmatexRef::from_handler(&tex)
+		)?;
+
+		Ok(DmatexRef::from_handler(&tex))
 	}
 
-	async fn enumerate_formats(&self, _ctx: gluon::Context, render_node: u64) -> Vec<DmatexFormat> {
+	async fn enumerate_formats(
+		&self,
+		_ctx: gluon::Context,
+		render_node: u64,
+	) -> Option<Vec<DmatexFormat>> {
 		let vk = VULKANO_CONTEXT.wait();
 		if Some(render_node) != vk.get_drm_render_node_id() {
 			error!(
 				"enumerating formats for devices other than the render_node used by the server is not implemented yet"
 			);
-			return Vec::new();
+			return None;
 		}
 		DMATEX_FORMAT_CACHE.get_or_init(|| {
 			// This is slow, but only runs once!
@@ -291,7 +298,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 				.collect()
 		});
 		// not a huge fan of having to call clone here, not sure if theres a better solution
-		DMATEX_FORMAT_CACHE.get().unwrap().clone()
+		DMATEX_FORMAT_CACHE.get().cloned()
 	}
 
 	async fn primary_render_node_id(&self, _ctx: gluon::Context) -> u64 {

@@ -21,9 +21,10 @@ use bevy_mesh_text_3d::{
 use core::f32;
 use gluon::Handler;
 use parking_lot::Mutex;
-use stardust_xr_protocol::text::Text as TextProxy;
-use stardust_xr_protocol::text::{
-	TextFit, TextHandler, TextInterfaceHandler, TextStyle, XAlign, YAlign,
+use stardust_xr_protocol::{spatial::Spatial, text::Text as TextProxy};
+use stardust_xr_protocol::{
+	text::{TextFit, TextHandler, TextInterfaceHandler, TextStyle, XAlign, YAlign},
+	types::ResourceLoadError,
 };
 use std::{ffi::OsStr, mem, path::PathBuf, sync::Arc};
 
@@ -223,10 +224,10 @@ impl TextInterfaceHandler for TextInterface {
 	async fn create_text(
 		&self,
 		_ctx: gluon::Context,
-		spatial: stardust_xr_protocol::spatial::Spatial,
+		spatial: Spatial,
 		text: String,
 		style: TextStyle,
-	) -> TextProxy {
+	) -> Result<TextProxy, ResourceLoadError> {
 		let Some(spatial) = spatial.owned() else {
 			// TODO: replace with proper error returning
 			panic!("invalid spatial in model loading");

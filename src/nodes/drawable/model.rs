@@ -34,10 +34,10 @@ use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr_protocol::{
 	model::{
 		MaterialParamError, MaterialParameter, Model as ModelProxy, ModelHandler,
-		ModelInterfaceHandler, ModelLoadError, ModelPart as ModelPartProxy, ModelPartHandler,
+		ModelInterfaceHandler, ModelPart as ModelPartProxy, ModelPartHandler,
 	},
 	spatial::Spatial,
-	types::{Resource, Vec3F},
+	types::{Resource, ResourceLoadError, Vec3F},
 };
 use stardust_xr_server_foundation::on_drop::AbortOnDrop;
 use std::{
@@ -786,9 +786,9 @@ impl ModelInterfaceHandler for ModelInterface {
 		_ctx: gluon::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		model: stardust_xr_protocol::types::Resource,
-	) -> Result<ModelProxy, ModelLoadError> {
+	) -> Result<ModelProxy, ResourceLoadError> {
 		let Some(spatial) = spatial.owned() else {
-			return Err(ModelLoadError::InvalidSpatial);
+			return Err(ResourceLoadError::InvalidRef);
 		};
 
 		// TODO: handle
@@ -796,7 +796,7 @@ impl ModelInterfaceHandler for ModelInterface {
 			.await
 			.map_err(|err| {
 				error!("failed to load model: {err}");
-				ModelLoadError::NotFound
+				ResourceLoadError::NotFound
 			})?;
 
 		Ok(ModelProxy::from_handler(&model))

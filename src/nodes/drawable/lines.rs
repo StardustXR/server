@@ -22,8 +22,8 @@ use bevy::{
 use glam::Vec3;
 use gluon::Handler;
 use parking_lot::Mutex;
-use stardust_xr_protocol::lines::Lines as LinesProxy;
 use stardust_xr_protocol::lines::{Line, LinePoint, LinesHandler, LinesInterfaceHandler};
+use stardust_xr_protocol::{lines::Lines as LinesProxy, types::CreateError};
 use std::sync::{
 	Arc, OnceLock, Weak,
 	atomic::{AtomicBool, Ordering},
@@ -398,13 +398,10 @@ impl LinesInterfaceHandler for LinesInterface {
 		_ctx: gluon::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		lines: Vec<Line>,
-	) -> LinesProxy {
-		let Some(spatial) = spatial.owned() else {
-			// TODO: replace with proper error returning
-			panic!("invalid spatial in lines creation");
-		};
+	) -> Result<LinesProxy, CreateError> {
+		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
 		let lines = Lines::new(spatial.handler_arc().clone(), lines);
 		lines.setup_complete.notified().await;
-		LinesProxy::from_handler(&lines)
+		Ok(LinesProxy::from_handler(&lines))
 	}
 }

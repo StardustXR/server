@@ -88,7 +88,13 @@ fn apply_sky(
 
 interface!(SkyInterface);
 impl SkyInterfaceHandler for SkyInterface {
-	async fn set_sky_tex(&self, _ctx: gluon::Context, tex: Resource) -> Option<SkyGuardProxy> {
+	async fn set_sky_tex(
+		&self,
+		_ctx: gluon::Context,
+		tex: Resource,
+		opaque: bool,
+	) -> Option<SkyGuardProxy> {
+		// TODO: actually use opaque
 		if SKYTEX_SET.load(Ordering::Relaxed) {
 			return None;
 		}

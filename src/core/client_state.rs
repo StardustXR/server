@@ -3,7 +3,7 @@ use crate::nodes::{ProxyExt, spatial::SpatialObject};
 use dashmap::DashMap;
 use glam::Mat4;
 use serde::{Deserialize, Serialize};
-use stardust_xr_protocol::spatial::SpatialRef;
+use stardust_xr_protocol::{spatial::SpatialRef, types::CreateError};
 use std::{
 	path::Path,
 	process::Command,
@@ -38,20 +38,22 @@ pub struct ClientStateParsed {
 	// pub spatial_anchors: FxHashMap<String, Mat4>,
 }
 impl ClientStateParsed {
-	pub fn from_deserialized(_client: &ConnectedClient, root: &SpatialRef) -> Self {
-		ClientStateParsed {
+	pub fn from_deserialized(
+		_client: &ConnectedClient,
+		root: &SpatialRef,
+	) -> Result<Self, CreateError> {
+		let root = root.owned().ok_or(CreateError::InvalidRef)?;
+
+		Ok(ClientStateParsed {
 			// launch_info: LaunchInfo::from_client(client),
 			// data: state.data,
-			root: root
-				.owned()
-				.map(|v| v.global_transform())
-				.unwrap_or_default(),
+			root: root.global_transform(),
 			// spatial_anchors: state
 			// 	.spatial_anchors
 			// 	.into_iter()
 			// 	.filter_map(|(k, v)| Some((k, v.owned()?.global_transform())))
 			// 	.collect(),
-		}
+		})
 	}
 
 	pub fn token(self) -> String {

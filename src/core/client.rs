@@ -31,6 +31,7 @@ use stardust_xr_protocol::{
 	spatial::{SpatialInterface as SpatialInterfaceProxy, SpatialRef},
 	spatial_query::SpatialQueryInterface as SpatialQueryInterfaceProxy,
 	text::TextInterface as TextInterfaceProxy,
+	types::CreateError,
 };
 use std::{
 	fmt::Debug,
@@ -250,8 +251,12 @@ impl ServerHandler for ConnectedClient {
 		self.spatial_query_interface.clone()
 	}
 
-	async fn generate_startup_token(&self, _ctx: gluon::Context, root: SpatialRef) -> String {
-		ClientStateParsed::from_deserialized(self, &root).token()
+	async fn generate_startup_token(
+		&self,
+		_ctx: gluon::Context,
+		root: SpatialRef,
+	) -> Result<String, CreateError> {
+		Ok(ClientStateParsed::from_deserialized(self, &root)?.token())
 	}
 }
 impl Drop for ConnectedClient {
