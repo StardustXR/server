@@ -36,7 +36,7 @@ impl Plugin for SkyPlugin {
 }
 
 static QUEUED_SKYLIGHT: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
-static QUEUED_SKYTEX: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
+static QUEUED_SKYTEX: Mutex<Option<Option<(PathBuf)>>> = Mutex::new(None);
 static SKYLIGHT_SET: AtomicBool = AtomicBool::new(false);
 static SKYTEX_SET: AtomicBool = AtomicBool::new(false);
 

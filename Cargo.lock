@@ -5593,7 +5593,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "0.51.1"
-source = "git+https://github.com/StardustXR/core.git?branch=binder#7ae10bb50cdbb8f9f42409ff3adb776d9d9e74e6"
+source = "git+https://github.com/StardustXR/core.git?branch=binder#a0d98e67f5b46978a97c4e97f7e9f20b9f923c82"
 dependencies = [
  "fnv",
  "glam",

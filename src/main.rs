@@ -338,7 +338,8 @@ fn bevy_loop(
 	// make tokio work
 	let handle = tokio::runtime::Handle::current();
 	let enter_runtime_context = Arc::new(move || {
-		// TODO: this might be a memory leak
+		// this might be a memory leak, but should only be run for a limited number of
+        // threads
 		std::mem::forget(handle.enter());
 	});
 	task_pool_plugin.task_pool_options.io.on_thread_spawn = Some(enter_runtime_context.clone());

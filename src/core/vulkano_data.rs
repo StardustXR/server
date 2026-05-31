@@ -37,8 +37,8 @@ impl VulkanoContext {
 	pub fn get_drm_render_node_id(&self) -> Option<u64> {
 		let props = self.phys_dev.properties();
 		// Create dev_t from the primary node major/minor numbers
-		let major = props.render_major.unwrap() as u64;
-		let minor = props.render_minor.unwrap() as u64;
+		let major = props.render_major? as u64;
+		let minor = props.render_minor? as u64;
 		// On Linux, dev_t is created with makedev(major, minor)
 		// which is ((major & 0xfffff000) << 32) | ((major & 0xfff) << 8) | (minor & 0xff)
 		Some(((major & 0xfffff000) << 32) | ((major & 0xfff) << 8) | (minor & 0xff))

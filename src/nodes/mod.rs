@@ -88,8 +88,7 @@ macro_rules! impl_proxy {
                             None
 						}
 					}
-					// TODO: allow sending weak refs
-					// should never happen with the rust version of gluon tho
+					// should never happen with the rust version of gluon
 					gluon::ObjectOrRef::WeakObject(_obj) => None,
 					// spatial owned by different process, this is not allowed
 					gluon::ObjectOrRef::Ref(_binder_ref) => None,

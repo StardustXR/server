@@ -19,7 +19,7 @@ use bevy::{
 };
 use bevy_dmabuf::{
 	dmatex::DmatexPlane as BevyDmatexPlane,
-	import::{ImportedDmatexs, ImportedTexture, import_texture},
+	import::{ImportError, ImportedDmatexs, ImportedTexture, import_texture},
 };
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
@@ -81,8 +81,8 @@ impl Dmatex {
 			Some(v) => v,
 			None => {
 				let Some(render_node_id) = vk.get_drm_render_node_id() else {
-					// TODO: make this not panic
-					panic!("unable to get render_node");
+					// this should never be reached
+					unreachable!()
 				};
 				let Ok(node) = DrmRenderNode::new(render_node_id & 0xFF)
 					.inspect_err(|err| error!("unable to open render_node: {err}"))
@@ -93,7 +93,7 @@ impl Dmatex {
 				DRM_RENDER_NODE.get().unwrap()
 			}
 		};
-		let Ok(tex) = import_texture(
+		let tex = import_texture(
 			RENDER_DEV.wait(),
 			bevy_dmabuf::dmatex::Dmatex {
 				planes: planes
@@ -116,15 +116,29 @@ impl Dmatex {
 			bevy_dmabuf::import::DropCallback(None),
 			bevy_dmabuf::import::DmatexUsage::Sampling,
 		)
-		.inspect_err(|err| error!("unable to import dmatex: {err}")) else {
-			// TODO: make this not panic
-			panic!("unable to import dmatex");
+		.inspect_err(|err| error!("unable to import dmatex: {err}"));
+		let tex = match tex {
+			Ok(t) => t,
+			Err(ImportError::VulkanIncompatibleFormat) => {
+				return Err(DmatexImportError::InvalidFormat);
+			}
+			Err(ImportError::WgpuIncompatibleFormat) => {
+				return Err(DmatexImportError::InvalidFormat);
+			}
+			Err(ImportError::ModifierInvalid) => return Err(DmatexImportError::InvalidFormat),
+			Err(ImportError::UnrecognizedFourcc(_)) => {
+				return Err(DmatexImportError::InvalidFormat);
+			}
+			Err(ImportError::IncorrectNumberOfPlanes) => {
+				return Err(DmatexImportError::InvalidPlanes);
+			}
+			Err(ImportError::NoPlanes) => return Err(DmatexImportError::InvalidPlanes),
+			Err(_) => return Err(DmatexImportError::InternalImportError),
 		};
 		let Ok(sync_obj) = TimelineSyncObj::import(render_node, timeline_syncobj_fd.as_fd())
 			.inspect_err(|err| error!("unable to import timiline syncobj: {err}"))
 		else {
-			// TODO: make this not panic
-			panic!("unable to import timiline syncobj");
+			return Err(DmatexImportError::InvalidTimelineFd);
 		};
 		let tex = PION
 			.register_object(Self {
@@ -305,7 +319,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 	}
 
 	async fn primary_render_node_id(&self, _ctx: gluon::Context) -> u64 {
-		// TODO: replace this unwrap? but when would we ever not have an id?
+		// maybe replace this unwrap? but when would we ever not have an id?
 		VULKANO_CONTEXT.wait().get_drm_render_node_id().unwrap()
 	}
 }

@@ -37,7 +37,7 @@ use stardust_xr_protocol::{
 		ModelInterfaceHandler, ModelPart as ModelPartProxy, ModelPartHandler,
 	},
 	spatial::Spatial,
-	types::{Resource, ResourceLoadError, Vec3F},
+	types::{Resource, ResourceLoadError},
 };
 use stardust_xr_server_foundation::on_drop::AbortOnDrop;
 use std::{
@@ -203,7 +203,6 @@ fn apply_materials(
 					error!("somehow the oneshot channel wasn't empty but also failed to try_recv");
 					continue;
 				};
-				// TODO: handle bevy handles possibly not existing yet
 				let Some(handle) = tex.try_get_bevy_handle() else {
 					error!("tried to apply dmatex before its bevy handle was created");
 					continue;
@@ -564,6 +563,14 @@ impl TextureSlot {
 			TextureSlot::Occlusion => &mut textures.occlusion,
 		}
 	}
+	fn all_names() -> Vec<String> {
+		vec![
+			"diffuse".into(),
+			"emission".into(),
+			"metal".into(),
+			"occlusion".into(),
+		]
+	}
 }
 impl FromStr for TextureSlot {
 	type Err = ();
@@ -600,7 +607,11 @@ pub struct ModelPart {
 }
 static ACQUIRE_SEMAPHORES: Mutex<Vec<Semaphore>> = Mutex::new(Vec::new());
 impl ModelPart {
-	pub fn set_material_parameter(&self, parameter_name: String, value: MaterialParameter) {
+	pub fn set_material_parameter(
+		&self,
+		parameter_name: String,
+		value: MaterialParameter,
+	) -> Result<(), MaterialParamError> {
 		debug!(
 			"setting material param: {parameter_name}: {value:?}, node_id: {:?}",
 			self.mesh_entity.get(),
@@ -613,11 +624,13 @@ impl ModelPart {
 		{
 			let Ok(tex_slot) = TextureSlot::from_str(&parameter_name) else {
 				error!("invalid texture slot: {parameter_name}");
-				return;
+				return Err(MaterialParamError::ParamNotFound {
+					known_params: TextureSlot::all_names(),
+				});
 			};
 			let Some(tex) = dmatex.owned() else {
 				error!("invalid dmatex");
-				return;
+				return Err(MaterialParamError::InvalidValue);
 			};
 			let (tx, rx) = oneshot::channel();
 			let tex = tex.clone();
@@ -644,7 +657,8 @@ impl ModelPart {
 			self.pending_material_parameters
 				.lock()
 				.insert(parameter_name, value);
-		}
+		};
+		Ok(())
 	}
 }
 
@@ -666,8 +680,10 @@ impl ModelPartHandler for ModelPart {
 		if self.holdout.load(Ordering::Relaxed) {
 			return Some(MaterialParamError::Holdout);
 		}
-		// TODO: return other errors
-		self.set_material_parameter(parameter_name, value);
+		// TODO: return errors for unknown params
+		if let Err(err) = self.set_material_parameter(parameter_name, value) {
+			return Some(err);
+		}
 		None
 	}
 
@@ -773,11 +789,6 @@ impl ModelHandler for Model {
 			Vec::new()
 		}
 	}
-
-	async fn set_model_scale(&self, _ctx: gluon::Context, _scale: Vec3F) {
-		// TODO: impl
-		warn!("tried setting model scale, currently unimplemented");
-	}
 }
 interface!(ModelInterface);
 impl ModelInterfaceHandler for ModelInterface {
@@ -789,7 +800,6 @@ impl ModelInterfaceHandler for ModelInterface {
 	) -> Result<ModelProxy, ResourceLoadError> {
 		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
 
-		// TODO: handle
 		let model = Model::new(spatial, model, self.base_resource_prefixes.clone())
 			.await
 			.ok()

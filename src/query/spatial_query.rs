@@ -12,12 +12,8 @@ use stardust_xr_protocol::{
 	query::{QueriedInterface, QueryableObjectRef},
 	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
-		BeamQuery, BeamQueryHandler, Point, PointsQuery,
-		PointsQueryHandle as PointsQueryHandleProxy, PointsQueryHandleHandler, PointsQueryHandler,
-		SpatialQueryGuard, SpatialQueryGuardHandler, SpatialQueryInterfaceHandler, ZoneQuery,
-		ZoneQueryHandler,
+		BeamQuery, BeamQueryHandler, Point, PointsQuery, PointsQueryHandle as PointsQueryHandleProxy, PointsQueryHandleHandler, PointsQueryHandler, QueryError, SpatialQueryGuard, SpatialQueryGuardHandler, SpatialQueryInterfaceHandler, ZoneQuery, ZoneQueryHandler
 	},
-	types::CreateError,
 };
 use stardust_xr_server_foundation::{
 	deduped_string::DedupedStr,
@@ -35,19 +31,6 @@ use crate::{
 	},
 	query::{InterfaceQuery, QUERY_STATE, Queryable, QueryableInterface},
 };
-
-// state changes
-// - [x] interfaces added to object
-// - [x] interfaces dropped from object
-// - [x] object dropped
-// - [x] query created
-// - [x] query dropped
-// - [x] query spatial moved
-// - [x] query field shape changes
-// - [x] object field moved
-// - [x] object field shape changes
-// - [x] register moved handler when object becomes a valid query target
-// - [x] drop moved handler when object becomees an invalid query target
 
 #[derive(Debug)]
 struct QueryableInterest {
@@ -329,7 +312,6 @@ impl QueryType {
 	/// this could take a while to run, might we worth to run in a spawn_blocking?
 	async fn hit(&self, queryable: &Queryable) -> Option<HitTestResult> {
 		match self {
-			// TODO: improve this intersection test a bunch, this is probably completely wrong
 			QueryType::Zone {
 				handler: _,
 				field,
@@ -595,7 +577,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		&self,
 		_ctx: gluon::Context,
 		query: BeamQuery,
-	) -> Result<SpatialQueryGuard, CreateError> {
+	) -> Result<SpatialQueryGuard, QueryError> {
 		let BeamQuery {
 			handler,
 			interfaces,
@@ -604,7 +586,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			origin,
 			max_length,
 		} = query;
-		let ref_space = reference_spatial.owned().ok_or(CreateError::InvalidRef)?;
+		let ref_space = reference_spatial.owned().ok_or(QueryError::InvalidRef)?;
 		let mut interface_ids = Vec::with_capacity(interfaces.len());
 		let mut found_required = false;
 		for i in interfaces {
@@ -615,8 +597,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			});
 		}
 		if !found_required {
-			// TODO: replace with returned error
-			panic!("no required interface")
+            return Err(QueryError::NoRequiredInterfaces);
 		}
 
 		let query = QUERY_STATE.queries.add(Query {
@@ -641,14 +622,14 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		&self,
 		_ctx: gluon::Context,
 		query: ZoneQuery,
-	) -> Result<SpatialQueryGuard, CreateError> {
+	) -> Result<SpatialQueryGuard, QueryError> {
 		let ZoneQuery {
 			handler,
 			interfaces,
 			zone_field,
 			margin,
 		} = query;
-		let field = zone_field.owned().ok_or(CreateError::InvalidRef)?;
+		let field = zone_field.owned().ok_or(QueryError::InvalidRef)?;
 		let mut interface_ids = Vec::with_capacity(interfaces.len());
 		let mut found_required = false;
 		for i in interfaces {
@@ -659,8 +640,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			});
 		}
 		if !found_required {
-			// TODO: replace with returned error
-			panic!("no required interface")
+            return Err(QueryError::NoRequiredInterfaces);
 		}
 
 		let query = QUERY_STATE.queries.add(Query {
@@ -684,14 +664,14 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		&self,
 		_ctx: gluon::Context,
 		query: PointsQuery,
-	) -> Result<PointsQueryHandleProxy, CreateError> {
+	) -> Result<PointsQueryHandleProxy, QueryError> {
 		let PointsQuery {
 			handler,
 			interfaces,
 			reference_spatial,
 			points,
 		} = query;
-		let ref_space = reference_spatial.owned().ok_or(CreateError::InvalidRef)?;
+		let ref_space = reference_spatial.owned().ok_or(QueryError::InvalidRef)?;
 		let mut interface_ids = Vec::with_capacity(interfaces.len());
 		let mut found_required = false;
 		for i in interfaces {
@@ -702,8 +682,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			});
 		}
 		if !found_required {
-			// TODO: replace with returned error
-			panic!("no required interface")
+            return Err(QueryError::NoRequiredInterfaces);
 		}
 		let query = QUERY_STATE.queries.add(Query {
 			interfaces: interface_ids,

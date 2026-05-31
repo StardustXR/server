@@ -102,7 +102,6 @@ impl CameraHandler for Camera {
 }
 static CAMERA_REGISTRY: Registry<Camera> = Registry::new();
 
-// TODO: figure out where to mount this
 exposed_interface!(CameraInterface, "stardust-camera");
 impl CameraInterfaceHandler for CameraInterface {
 	async fn create_camera(
@@ -196,7 +195,6 @@ fn update_cameras(mut query: Query<(&mut BevyCamera, &mut Projection)>, mut cmds
 					Name::new("CameraNode"),
 					Camera3d::default(),
 					BevyCamera {
-						// clear_color: ClearColorConfig::Custom(Color::WHITE),
 						is_active: false,
 						..Default::default()
 					},

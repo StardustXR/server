@@ -451,11 +451,9 @@ impl SpatialHandler for SpatialObject {
 		&self,
 		_ctx: gluon::Context,
 		relative_to: SpatialRefProxy,
-	) -> BoundingBox {
+	) -> Result<BoundingBox, CreateError> {
 		let Some(relative_to) = relative_to.owned() else {
-			// TODO: return error instead
-			panic!("Invalid SpatialRef used");
-			// return;
+			return Err(CreateError::InvalidRef);
 		};
 		let mat = Spatial::space_to_space_matrix(Some(self), Some(&relative_to));
 		let bb = self.get_bounding_box();
@@ -465,31 +463,29 @@ impl SpatialHandler for SpatialObject {
 		])
 		.unwrap();
 
-		BoundingBox {
+		Ok(BoundingBox {
 			center: Vec3::from(bounds.center).into(),
 			extents: Vec3::from(bounds.half_extents * 2.0).into(),
-		}
+		})
 	}
 
 	async fn get_relative_transform(
 		&self,
 		_ctx: gluon::Context,
 		relative_to: SpatialRefProxy,
-	) -> Transform {
+	) -> Result<Transform, CreateError> {
 		let Some(relative_to) = relative_to.owned() else {
-			// TODO: return error instead
-			panic!("Invalid SpatialRef used");
-			// return;
+			return Err(CreateError::InvalidRef);
 		};
 		let (scale, rotation, position) =
 			Spatial::space_to_space_matrix(Some(self), Some(&relative_to))
 				.to_scale_rotation_translation();
 
-		Transform {
+		Ok(Transform {
 			translation: position.into(),
 			rotation: rotation.into(),
 			scale: scale.into(),
-		}
+		})
 	}
 
 	async fn set_parent(&self, _ctx: gluon::Context, parent: SpatialRefProxy) {

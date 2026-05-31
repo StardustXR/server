@@ -103,7 +103,7 @@ impl ConnectedClient {
 		// pid: RawPid,
 		startup_token: Option<String>,
 		base_resource_prefixes: Vec<PathBuf>,
-	) -> Result<(ObjectRef<Self>, SpatialRef)> {
+	) -> (ObjectRef<Self>, SpatialRef) {
 		// let env = get_env(pid).ok();
 		// let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
 		let exe = None;
@@ -171,7 +171,7 @@ impl ConnectedClient {
 			}
 		});
 
-		Ok((client.to_service(), state.apply()))
+		(client.to_service(), state.apply())
 	}
 
 	pub fn get_cmdline(&self) -> Option<Vec<String>> {
@@ -191,13 +191,6 @@ impl ConnectedClient {
 		// let pid = self.pid;
 		// let cwd_proc_path = format!("/proc/{pid}/cwd");
 		// std::fs::read_link(cwd_proc_path).ok()
-	}
-
-	pub fn unresponsive(&self) -> bool {
-		// TODO: reimplement this somehow, probably either based in ping or the binder freeze stuff
-		// let time_since_last_message = self.message_last_received.borrow().elapsed();
-		// time_since_last_message.as_millis() > 500
-		false
 	}
 
 	pub fn frame(&self, info: FrameInfo) {

@@ -25,8 +25,6 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
 
-// TODO: get SDFs working properly with non-uniform scale and so on, output distance relative to the spatial it's compared against
-
 pub struct FieldDebugGizmoPlugin;
 impl Plugin for FieldDebugGizmoPlugin {
 	fn build(&self, app: &mut bevy::app::App) {
