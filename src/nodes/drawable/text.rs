@@ -228,16 +228,13 @@ impl TextInterfaceHandler for TextInterface {
 		text: String,
 		style: TextStyle,
 	) -> Result<TextProxy, ResourceLoadError> {
-		let Some(spatial) = spatial.owned() else {
-			// TODO: replace with proper error returning
-			panic!("invalid spatial in model loading");
-		};
+		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
 		let text = TextObject::new(
 			spatial.handler_arc().clone(),
 			text,
 			style,
 			self.base_prefixes(),
 		);
-		TextProxy::from_handler(&text.to_service())
+		Ok(TextProxy::from_handler(&text.to_service()))
 	}
 }

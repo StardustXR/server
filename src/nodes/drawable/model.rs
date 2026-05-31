@@ -787,17 +787,13 @@ impl ModelInterfaceHandler for ModelInterface {
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		model: stardust_xr_protocol::types::Resource,
 	) -> Result<ModelProxy, ResourceLoadError> {
-		let Some(spatial) = spatial.owned() else {
-			return Err(ResourceLoadError::InvalidRef);
-		};
+		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
 
 		// TODO: handle
 		let model = Model::new(spatial, model, self.base_resource_prefixes.clone())
 			.await
-			.map_err(|err| {
-				error!("failed to load model: {err}");
-				ResourceLoadError::NotFound
-			})?;
+			.ok()
+			.ok_or(ResourceLoadError::NotFound)?;
 
 		Ok(ModelProxy::from_handler(&model))
 	}

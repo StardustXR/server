@@ -12,10 +12,12 @@ use stardust_xr_protocol::{
 	query::{QueriedInterface, QueryableObjectRef},
 	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
-		BeamQuery, BeamQueryHandler, Point, PointsQuery, PointsQueryHandleHandler,
-		PointsQueryHandler, SpatialQueryGuard, SpatialQueryGuardHandler,
-		SpatialQueryInterfaceHandler, ZoneQuery, ZoneQueryHandler,
+		BeamQuery, BeamQueryHandler, Point, PointsQuery,
+		PointsQueryHandle as PointsQueryHandleProxy, PointsQueryHandleHandler, PointsQueryHandler,
+		SpatialQueryGuard, SpatialQueryGuardHandler, SpatialQueryInterfaceHandler, ZoneQuery,
+		ZoneQueryHandler,
 	},
+	types::CreateError,
 };
 use stardust_xr_server_foundation::{
 	deduped_string::DedupedStr,
@@ -589,7 +591,11 @@ enum HitTestResult {
 
 interface!(SpatialQueryInterface);
 impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
-	async fn beam_query(&self, _ctx: gluon::Context, query: BeamQuery) -> SpatialQueryGuard {
+	async fn beam_query(
+		&self,
+		_ctx: gluon::Context,
+		query: BeamQuery,
+	) -> Result<SpatialQueryGuard, CreateError> {
 		let BeamQuery {
 			handler,
 			interfaces,
@@ -598,10 +604,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			origin,
 			max_length,
 		} = query;
-		let Some(ref_space) = reference_spatial.owned() else {
-			// TODO: replace with returned error
-			panic!("invalid SpatialRef used while creating a beam query");
-		};
+		let ref_space = reference_spatial.owned().ok_or(CreateError::InvalidRef)?;
 		let mut interface_ids = Vec::with_capacity(interfaces.len());
 		let mut found_required = false;
 		for i in interfaces {
@@ -631,20 +634,21 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		});
 		query.init().await;
 		let v = PION.register_object(Guard(query)).to_service();
-		SpatialQueryGuard::from_handler(&v)
+		Ok(SpatialQueryGuard::from_handler(&v))
 	}
 
-	async fn zone_query(&self, _ctx: gluon::Context, query: ZoneQuery) -> SpatialQueryGuard {
+	async fn zone_query(
+		&self,
+		_ctx: gluon::Context,
+		query: ZoneQuery,
+	) -> Result<SpatialQueryGuard, CreateError> {
 		let ZoneQuery {
 			handler,
 			interfaces,
 			zone_field,
 			margin,
 		} = query;
-		let Some(field) = zone_field.owned() else {
-			// TODO: replace with returned error
-			panic!("invalid FieldRef used while creating a zone query");
-		};
+		let field = zone_field.owned().ok_or(CreateError::InvalidRef)?;
 		let mut interface_ids = Vec::with_capacity(interfaces.len());
 		let mut found_required = false;
 		for i in interfaces {
@@ -673,24 +677,21 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		});
 		query.init().await;
 		let v = PION.register_object(Guard(query)).to_service();
-		SpatialQueryGuard::from_handler(&v)
+		Ok(SpatialQueryGuard::from_handler(&v))
 	}
 
 	async fn points_query(
 		&self,
 		_ctx: gluon::Context,
 		query: PointsQuery,
-	) -> stardust_xr_protocol::spatial_query::PointsQueryHandle {
+	) -> Result<PointsQueryHandleProxy, CreateError> {
 		let PointsQuery {
 			handler,
 			interfaces,
 			reference_spatial,
 			points,
 		} = query;
-		let Some(ref_space) = reference_spatial.owned() else {
-			// TODO: replace with returned error
-			panic!("invalid SpatialRef used while creating a points query");
-		};
+		let ref_space = reference_spatial.owned().ok_or(CreateError::InvalidRef)?;
 		let mut interface_ids = Vec::with_capacity(interfaces.len());
 		let mut found_required = false;
 		for i in interfaces {
@@ -717,7 +718,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		});
 		query.init().await;
 		let v = PION.register_object(PointsQueryHandle(query)).to_service();
-		stardust_xr_protocol::spatial_query::PointsQueryHandle::from_handler(&v)
+		Ok(PointsQueryHandleProxy::from_handler(&v))
 	}
 }
 #[derive(Debug, Handler)]
@@ -816,21 +817,30 @@ mod tests {
 
 	#[test]
 	fn zone_object_inside_sphere_hits() {
-		let zone = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let zone = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
 		let queryable = make_spatial(0.0, 0.0, 0.5);
 		assert!(zone_check(&queryable, &zone, 0.0));
 	}
 
 	#[test]
 	fn zone_object_outside_sphere_misses() {
-		let zone = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let zone = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
 		let queryable = make_spatial(2.0, 0.0, 0.0);
 		assert!(!zone_check(&queryable, &zone, 0.0));
 	}
 
 	#[test]
 	fn zone_margin_extends_detection_range() {
-		let zone = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let zone = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
 		// 0.5 m outside the sphere surface — within margin 1.0
 		let queryable = make_spatial(1.5, 0.0, 0.0);
 		assert!(zone_check(&queryable, &zone, 1.0));
@@ -838,7 +848,10 @@ mod tests {
 
 	#[test]
 	fn zone_object_beyond_margin_misses() {
-		let zone = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let zone = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
 		// 1.5 m outside the sphere surface, margin only 1.0
 		let queryable = make_spatial(2.5, 0.0, 0.0);
 		assert!(!zone_check(&queryable, &zone, 1.0));
@@ -857,17 +870,35 @@ mod tests {
 	#[test]
 	fn beam_hits_sphere_head_on() {
 		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
-		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let sphere = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
 		// Beam from (-3,0,0) along +X — passes through sphere at origin
-		assert!(beam_check(&sphere, &ref_space, Vec3::new(-3.0, 0.0, 0.0), Vec3::X, f32::MAX));
+		assert!(beam_check(
+			&sphere,
+			&ref_space,
+			Vec3::new(-3.0, 0.0, 0.0),
+			Vec3::X,
+			f32::MAX
+		));
 	}
 
 	#[test]
 	fn beam_misses_sphere_when_offset() {
 		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
-		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let sphere = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
 		// Beam offset 2 m on Y — clears the sphere entirely
-		assert!(!beam_check(&sphere, &ref_space, Vec3::new(-3.0, 2.0, 0.0), Vec3::X, f32::MAX));
+		assert!(!beam_check(
+			&sphere,
+			&ref_space,
+			Vec3::new(-3.0, 2.0, 0.0),
+			Vec3::X,
+			f32::MAX
+		));
 	}
 
 	#[test]
@@ -892,36 +923,66 @@ mod tests {
 	#[test]
 	fn points_single_point_inside_sphere_hits() {
 		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
-		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
-		let pts = vec![Point { point: Vec3::ZERO.into(), margin: 0.0 }];
+		let sphere = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
+		let pts = vec![Point {
+			point: Vec3::ZERO.into(),
+			margin: 0.0,
+		}];
 		assert!(points_check(&sphere, &ref_space, &pts));
 	}
 
 	#[test]
 	fn points_single_point_outside_sphere_misses() {
 		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
-		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
-		let pts = vec![Point { point: Vec3::new(3.0, 0.0, 0.0).into(), margin: 0.0 }];
+		let sphere = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
+		let pts = vec![Point {
+			point: Vec3::new(3.0, 0.0, 0.0).into(),
+			margin: 0.0,
+		}];
 		assert!(!points_check(&sphere, &ref_space, &pts));
 	}
 
 	#[test]
 	fn points_margin_extends_detection_range() {
 		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
-		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let sphere = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
 		// Point 0.5 m outside sphere surface; margin = 1.0 → hit
-		let pts = vec![Point { point: Vec3::new(1.5, 0.0, 0.0).into(), margin: 1.0 }];
+		let pts = vec![Point {
+			point: Vec3::new(1.5, 0.0, 0.0).into(),
+			margin: 1.0,
+		}];
 		assert!(points_check(&sphere, &ref_space, &pts));
 	}
 
 	#[test]
 	fn points_any_inside_causes_hit() {
 		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
-		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let sphere = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
 		let pts = vec![
-			Point { point: Vec3::new(5.0, 0.0, 0.0).into(), margin: 0.0 },
-			Point { point: Vec3::ZERO.into(), margin: 0.0 }, // inside
-			Point { point: Vec3::new(-5.0, 0.0, 0.0).into(), margin: 0.0 },
+			Point {
+				point: Vec3::new(5.0, 0.0, 0.0).into(),
+				margin: 0.0,
+			},
+			Point {
+				point: Vec3::ZERO.into(),
+				margin: 0.0,
+			}, // inside
+			Point {
+				point: Vec3::new(-5.0, 0.0, 0.0).into(),
+				margin: 0.0,
+			},
 		];
 		assert!(points_check(&sphere, &ref_space, &pts));
 	}
@@ -929,10 +990,19 @@ mod tests {
 	#[test]
 	fn points_all_outside_misses() {
 		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
-		let sphere = make_field(Spatial::test_new(None, Mat4::IDENTITY), Shape::Sphere { radius: 1.0 });
+		let sphere = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
 		let pts = vec![
-			Point { point: Vec3::new(5.0, 0.0, 0.0).into(), margin: 0.0 },
-			Point { point: Vec3::new(-5.0, 0.0, 0.0).into(), margin: 0.0 },
+			Point {
+				point: Vec3::new(5.0, 0.0, 0.0).into(),
+				margin: 0.0,
+			},
+			Point {
+				point: Vec3::new(-5.0, 0.0, 0.0).into(),
+				margin: 0.0,
+			},
 		];
 		assert!(!points_check(&sphere, &ref_space, &pts));
 	}
@@ -951,6 +1021,9 @@ mod tests {
 	fn weak_ptr_hash_different_allocations_not_equal() {
 		let a: Arc<u32> = Arc::new(1);
 		let b: Arc<u32> = Arc::new(1);
-		assert_ne!(WeakPtrHash(Arc::downgrade(&a)), WeakPtrHash(Arc::downgrade(&b)));
+		assert_ne!(
+			WeakPtrHash(Arc::downgrade(&a)),
+			WeakPtrHash(Arc::downgrade(&b))
+		);
 	}
 }

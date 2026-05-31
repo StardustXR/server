@@ -272,8 +272,11 @@ impl MousePointer {
 					})
 					.await
 				{
-					Ok(guard) => {
+					Ok(Ok(guard)) => {
 						query_guard.set(guard).ok();
+					}
+					Ok(Err(e)) => {
+						error!("failed to create mouse pointer beam query: {e}");
 					}
 					Err(e) => {
 						error!("failed to create mouse pointer beam query: {e}");

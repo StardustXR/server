@@ -28,7 +28,7 @@ use stardust_xr_protocol::dmatex::{
 	DmatexFormat, DmatexImportError, DmatexInterfaceHandler, DmatexPlane, DmatexRef,
 	DmatexRefHandler, DmatexSize,
 };
-use stardust_xr_server_foundation::{bail, error::Result};
+use stardust_xr_server_foundation::error::Result;
 use timeline_syncobj::{render_node::DrmRenderNode, timeline_syncobj::TimelineSyncObj};
 use tracing::{error, warn};
 use vulkano::{
@@ -81,7 +81,8 @@ impl Dmatex {
 			Some(v) => v,
 			None => {
 				let Some(render_node_id) = vk.get_drm_render_node_id() else {
-					bail!("unable to get render_node");
+					// TODO: make this not panic
+					panic!("unable to get render_node");
 				};
 				let Ok(node) = DrmRenderNode::new(render_node_id & 0xFF)
 					.inspect_err(|err| error!("unable to open render_node: {err}"))
@@ -116,12 +117,14 @@ impl Dmatex {
 			bevy_dmabuf::import::DmatexUsage::Sampling,
 		)
 		.inspect_err(|err| error!("unable to import dmatex: {err}")) else {
-			bail!("unable to import dmatex");
+			// TODO: make this not panic
+			panic!("unable to import dmatex");
 		};
 		let Ok(sync_obj) = TimelineSyncObj::import(render_node, timeline_syncobj_fd.as_fd())
 			.inspect_err(|err| error!("unable to import timiline syncobj: {err}"))
 		else {
-			bail!("unable to import timiline syncobj");
+			// TODO: make this not panic
+			panic!("unable to import timiline syncobj");
 		};
 		let tex = PION
 			.register_object(Self {

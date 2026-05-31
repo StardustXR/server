@@ -34,6 +34,7 @@ use stardust_xr_protocol::camera::CameraHandler;
 use stardust_xr_protocol::camera::CameraInterfaceHandler;
 use stardust_xr_protocol::camera::View;
 use stardust_xr_protocol::dmatex::DmatexRef;
+use stardust_xr_protocol::types::CreateError;
 use stardust_xr_server_foundation::registry::Registry;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -108,13 +109,10 @@ impl CameraInterfaceHandler for CameraInterface {
 		&self,
 		_ctx: gluon::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
-	) -> CameraProxy {
-		let Some(spatial) = spatial.owned() else {
-			// TODO: just return an error
-			panic!("Invalid Spatial use to create camera");
-		};
+	) -> Result<CameraProxy, CreateError> {
+		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
 		let cam = Camera::new(spatial.handler_arc().clone());
-		CameraProxy::from_handler(&cam)
+		Ok(CameraProxy::from_handler(&cam))
 	}
 }
 pub struct CameraNodePlugin;

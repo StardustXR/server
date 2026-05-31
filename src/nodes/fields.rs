@@ -16,11 +16,11 @@ use glam::{Vec3, Vec3A, vec3a};
 use gluon::{Handler, ObjectRef};
 use parking_lot::RwLock;
 use stardust_xr_protocol::field::{
-	Field as FieldProxy, FieldHandler, FieldInterfaceHandler, FieldRef as FieldRefProxy,
-	FieldRefHandler, FieldSample, RayMarchResult, Shape,
+	CreatedField, Field as FieldProxy, FieldHandler, FieldInterfaceHandler,
+	FieldRef as FieldRefProxy, FieldRefHandler, FieldSample, RayMarchResult, Shape,
 };
 use stardust_xr_protocol::spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy};
-use stardust_xr_protocol::types::Vec3F;
+use stardust_xr_protocol::types::{CreateError, Vec3F};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
@@ -635,16 +635,13 @@ impl FieldInterfaceHandler for FieldInterface {
 		_ctx: gluon::Context,
 		spatial: SpatialProxy,
 		shape: Shape,
-	) -> (FieldProxy, FieldRefProxy) {
-		let Some(spatial) = spatial.owned() else {
-			// TODO: replace with returned error
-			panic!("invalid spatial used for field creation");
-		};
+	) -> Result<CreatedField, CreateError> {
+		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
 		let field = FieldObject::new(spatial, shape);
-		(
-			FieldProxy::from_handler(&field),
-			FieldRefProxy::from_handler(field.get_ref()),
-		)
+		Ok(CreatedField {
+			field: FieldProxy::from_handler(&field),
+			field_ref: FieldRefProxy::from_handler(field.get_ref()),
+		})
 	}
 }
 

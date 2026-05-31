@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 use bevy::prelude::*;
 use bevy::transform::components::Transform as BevyTransform;
 use stardust_xr_protocol::audio::{AudioInterfaceHandler, Sound as SoundProxy, SoundHandler};
-use stardust_xr_protocol::types::Resource;
+use stardust_xr_protocol::types::{Resource, ResourceLoadError};
 use std::sync::{Arc, OnceLock};
 use std::{ffi::OsStr, path::PathBuf};
 
@@ -149,16 +149,10 @@ impl AudioInterfaceHandler for AudioInterface {
 		_ctx: gluon::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		sound: Resource,
-	) -> SoundProxy {
-		let Some(spatial) = spatial.owned() else {
-			// TODO: replace with error
-			panic!("tried to create sound with invalid spatial");
-		};
-		let Some(sound) = Sound::new(spatial.handler_arc().clone(), sound, self.base_prefixes())
-		else {
-			// TODO: replace with error
-			panic!("sound resource not found");
-		};
-		SoundProxy::from_handler(&sound)
+	) -> Result<SoundProxy, ResourceLoadError> {
+		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
+		let sound = Sound::new(spatial.handler_arc().clone(), sound, self.base_prefixes())
+			.ok_or(ResourceLoadError::NotFound)?;
+		Ok(SoundProxy::from_handler(&sound))
 	}
 }

@@ -11,9 +11,11 @@ use glam::{Mat4, Quat};
 use gluon::{Handler, ObjectRef};
 use parking_lot::Mutex;
 use stardust_xr_protocol::spatial::{
-	BoundingBox, PartialTransform, Spatial as SpatialProxy, SpatialHandler,
-	SpatialInterfaceHandler, SpatialRef as SpatialRefProxy, SpatialRefHandler, Transform,
+	BoundingBox, CreatedSpatial, PartialTransform, Spatial as SpatialProxy, SpatialHandler,
+	SpatialInterfaceHandler, SpatialRef as SpatialRefProxy, SpatialRefHandler, SpatialRefOpError,
+	Transform,
 };
+use stardust_xr_protocol::types::CreateError;
 use stardust_xr_server_foundation::bail;
 use std::fmt::Debug;
 use std::sync::{Arc, Weak};
@@ -554,17 +556,13 @@ impl SpatialInterfaceHandler for SpatialInterface {
 		_ctx: gluon::Context,
 		parent: SpatialRefProxy,
 		transform: Transform,
-	) -> (SpatialProxy, SpatialRefProxy) {
-		let Some(parent) = parent.owned() else {
-			// TODO: return error instead
-			panic!("Invalid SpatialRef used");
-			// return;
-		};
+	) -> Result<CreatedSpatial, CreateError> {
+		let parent = parent.owned().ok_or(CreateError::InvalidRef)?;
 		let s = SpatialObject::new(Some(&parent.data), transform.to_mat4());
-		(
-			SpatialProxy::from_handler(&s),
-			SpatialRefProxy::from_handler(s.get_ref()),
-		)
+		Ok(CreatedSpatial {
+			spatial: SpatialProxy::from_handler(&s),
+			spatial_ref: SpatialRefProxy::from_handler(s.get_ref()),
+		})
 	}
 
 	async fn get_relative_bounding_box(
@@ -572,17 +570,13 @@ impl SpatialInterfaceHandler for SpatialInterface {
 		_ctx: gluon::Context,
 		relative_to: SpatialRefProxy,
 		spatial: SpatialRefProxy,
-	) -> BoundingBox {
-		let Some(relative_to) = relative_to.owned() else {
-			// TODO: return error instead
-			panic!("Invalid SpatialRef used");
-			// return;
-		};
-		let Some(spatial) = spatial.owned() else {
-			// TODO: return error instead
-			panic!("Invalid SpatialRef used");
-			// return;
-		};
+	) -> Result<BoundingBox, SpatialRefOpError> {
+		let relative_to = relative_to
+			.owned()
+			.ok_or(SpatialRefOpError::RelativeToInvalid)?;
+		let spatial = spatial
+			.owned()
+			.ok_or(SpatialRefOpError::SpatialRefInvalid)?;
 		let mat = Spatial::space_to_space_matrix(Some(&spatial), Some(&relative_to));
 		let bb = spatial.get_bounding_box();
 		let bounds = Aabb::enclosing([
@@ -591,10 +585,10 @@ impl SpatialInterfaceHandler for SpatialInterface {
 		])
 		.unwrap();
 
-		BoundingBox {
+		Ok(BoundingBox {
 			center: Vec3::from(bounds.center).into(),
 			extents: Vec3::from(bounds.half_extents * 2.0).into(),
-		}
+		})
 	}
 
 	async fn get_relative_transform(
@@ -602,26 +596,22 @@ impl SpatialInterfaceHandler for SpatialInterface {
 		_ctx: gluon::Context,
 		relative_to: SpatialRefProxy,
 		spatial: SpatialRefProxy,
-	) -> Transform {
-		let Some(relative_to) = relative_to.owned() else {
-			// TODO: return error instead
-			panic!("Invalid SpatialRef used");
-			// return;
-		};
-		let Some(spatial) = spatial.owned() else {
-			// TODO: return error instead
-			panic!("Invalid SpatialRef used");
-			// return;
-		};
+	) -> Result<Transform, SpatialRefOpError> {
+		let relative_to = relative_to
+			.owned()
+			.ok_or(SpatialRefOpError::RelativeToInvalid)?;
+		let spatial = spatial
+			.owned()
+			.ok_or(SpatialRefOpError::SpatialRefInvalid)?;
 		let (scale, rotation, position) =
 			Spatial::space_to_space_matrix(Some(&spatial), Some(&relative_to))
 				.to_scale_rotation_translation();
 
-		Transform {
+		Ok(Transform {
 			translation: position.into(),
 			rotation: rotation.into(),
 			scale: scale.into(),
-		}
+		})
 	}
 }
 

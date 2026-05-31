@@ -424,7 +424,7 @@ impl HandInputMethod {
 					})
 					.await
 					.inspect_err(|err| error!("failed to create query: {err}"));
-				if let Ok(handle) = handle {
+				if let Ok(Ok(handle)) = handle {
 					query_handle.set(handle);
 				}
 			}
