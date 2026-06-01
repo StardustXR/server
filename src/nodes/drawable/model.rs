@@ -247,6 +247,9 @@ fn gen_model_parts(
 		let Some(model) = model_node.0.upgrade() else {
 			continue;
 		};
+		let Some(parent) = model.spatial.get_entity() else {
+			continue;
+		};
 		if model.parts.get().is_some() {
 			continue;
 		}
@@ -310,7 +313,8 @@ fn gen_model_parts(
 					let _ = spatial.set_spatial_parent(&parent_spatial);
 					spatial.set_local_transform(transform.compute_matrix());
 					let entity_handle = EntityHandle::new(entity);
-					// TODO: parent to spatial instead
+					// Setting the spatial entity here is fine, since this spatial was
+					// specifically created for this model part
 					spatial.set_entity(entity_handle.clone());
 					cmds.entity(entity)
 						.insert(SpatialNode(Arc::downgrade(&**spatial)));
@@ -328,10 +332,8 @@ fn gen_model_parts(
 			);
 		}
 		_ = model.parts.set(parts);
-		// TODO: spawn new entity under the spatial
-		model
-			.spatial
-			.set_entity(model.bevy_scene_entity.get().unwrap().clone());
+		cmds.entity(model.bevy_scene_entity.get().unwrap().entity())
+			.insert(ChildOf(parent));
 		if let Some(tx) = model.setup_complete_tx.lock().take() {
 			let _ = tx.send(());
 		}
@@ -612,6 +614,10 @@ impl ModelPart {
 		parameter_name: String,
 		value: MaterialParameter,
 	) -> Result<(), MaterialParamError> {
+		if self.mesh_entity.get().is_some_and(|v| v.is_none()) {
+			warn!(self.path, "tried to set material param on non-mesh part");
+			return Ok(());
+		}
 		debug!(
 			"setting material param: {parameter_name}: {value:?}, node_id: {:?}",
 			self.mesh_entity.get(),

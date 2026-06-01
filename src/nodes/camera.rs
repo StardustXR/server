@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use crate::PION;
+use crate::bevy_int::entity_handle::EntityHandle;
 use crate::core::vulkano_data::VULKANO_CONTEXT;
 use crate::exposed_interface;
 use crate::nodes::ProxyExt;
@@ -14,6 +15,7 @@ use bevy::app::Update;
 use bevy::core_pipeline::core_3d::Camera3d;
 use bevy::ecs::component::Component;
 use bevy::ecs::entity::Entity;
+use bevy::ecs::hierarchy::ChildOf;
 use bevy::ecs::name::Name;
 use bevy::ecs::schedule::IntoScheduleConfigs;
 use bevy::ecs::system::Commands;
@@ -37,6 +39,7 @@ use stardust_xr_protocol::dmatex::DmatexRef;
 use stardust_xr_protocol::types::CreateError;
 use stardust_xr_server_foundation::registry::Registry;
 use std::sync::Arc;
+use std::sync::OnceLock;
 use tokio::sync::mpsc;
 use tracing::error;
 use tracing::warn;
@@ -53,6 +56,7 @@ pub struct Camera {
 	queued_render_targets:
 		Mutex<mpsc::UnboundedReceiver<(u64, Vec<View>, Arc<Dmatex>, SignalOnDrop)>>,
 	render_target_queue: mpsc::UnboundedSender<(u64, Vec<View>, Arc<Dmatex>, SignalOnDrop)>,
+	entity: OnceLock<EntityHandle>,
 }
 impl Camera {
 	pub fn new(spatial: Arc<SpatialObject>) -> gluon::ObjectRef<Camera> {
@@ -61,6 +65,7 @@ impl Camera {
 			spatial,
 			queued_render_targets: Mutex::new(rx),
 			render_target_queue: tx,
+			entity: OnceLock::new(),
 		});
 		CAMERA_REGISTRY.add_raw(cam.handler_arc());
 		cam.to_service()
@@ -185,13 +190,13 @@ impl ExtractComponent for CameraReleaseSignal {
 use bevy::render::camera::Camera as BevyCamera;
 fn update_cameras(mut query: Query<(&mut BevyCamera, &mut Projection)>, mut cmds: Commands) {
 	for cam in CAMERA_REGISTRY.get_valid_contents() {
-		// TODO: spawn new entity under the spatial
-		let Some(entity) = cam.spatial.get_entity() else {
+		let Some(parent) = cam.spatial.get_entity() else {
 			continue;
 		};
-		let Ok((mut camera, mut projection)) = query.get_mut(entity) else {
-			_ = cmds.get_entity(entity).map(|mut c| {
-				c.insert((
+		let entity = **cam.entity.get_or_init(|| {
+			let e = cmds
+				.spawn((
+					ChildOf(parent),
 					Name::new("CameraNode"),
 					Camera3d::default(),
 					BevyCamera {
@@ -199,8 +204,12 @@ fn update_cameras(mut query: Query<(&mut BevyCamera, &mut Projection)>, mut cmds
 						..Default::default()
 					},
 					Projection::custom(XrProjection::default()),
-				));
-			});
+				))
+				.id();
+
+			EntityHandle::new(e)
+		});
+		let Ok((mut camera, mut projection)) = query.get_mut(entity) else {
 			continue;
 		};
 		// camera.is_active = false;

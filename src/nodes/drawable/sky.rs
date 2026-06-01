@@ -44,17 +44,13 @@ impl Plugin for SkyPlugin {
 	}
 }
 
-fn new_cams(
-	v: Trigger<OnInsert, Camera3d>,
-	sky: Res<Sky>,
-	mut cmds: Commands,
-) {
-    if let Some(skybox) = sky.skybox.clone() {
-        cmds.entity(v.target()).insert(skybox);
-    }
-    if let Some(light) = sky.light.clone() {
-        cmds.entity(v.target()).insert(light);
-    }
+fn new_cams(v: Trigger<OnInsert, Camera3d>, sky: Res<Sky>, mut cmds: Commands) {
+	if let Some(skybox) = sky.skybox.clone() {
+		cmds.entity(v.target()).insert(skybox);
+	}
+	if let Some(light) = sky.light.clone() {
+		cmds.entity(v.target()).insert(light);
+	}
 }
 
 static QUEUED_SKYLIGHT: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
@@ -84,13 +80,12 @@ fn modify_blend_modes(
 	}
 }
 
-// TODO: make this work with cameras spawned after setting the sky texture
 fn apply_sky(
 	mut equirect: ResMut<EquirectManager>,
 	mut ambient_light: ResMut<AmbientLight>,
 	mut sky: ResMut<Sky>,
-	mut blend_modes: ResMut<OxrEnvironmentBlendModes>,
-	session_conf: Res<OxrSessionConfig>,
+	mut blend_modes: Option<ResMut<OxrEnvironmentBlendModes>>,
+	session_conf: Option<Res<OxrSessionConfig>>,
 	cameras: Query<Entity, With<Camera3d>>,
 	mut cmds: Commands,
 ) {
@@ -106,13 +101,21 @@ fn apply_sky(
 				cmds.entity(cam).insert(skybox.clone());
 			}
 			sky.skybox.replace(skybox);
-			modify_blend_modes(&mut blend_modes, &session_conf, opaque);
+			if let Some(mut blend_modes) = blend_modes.as_mut()
+				&& let Some(session_conf) = session_conf.as_ref()
+			{
+				modify_blend_modes(&mut blend_modes, &session_conf, opaque);
+			}
 		} else {
 			for cam in cameras {
 				cmds.entity(cam).remove::<Skybox>();
 			}
 			sky.skybox.take();
-			modify_blend_modes(&mut blend_modes, &session_conf, false);
+			if let Some(mut blend_modes) = blend_modes.as_mut()
+				&& let Some(session_conf) = session_conf.as_ref()
+			{
+				modify_blend_modes(&mut blend_modes, &session_conf, false);
+			}
 		}
 	}
 	if let Some(light) = QUEUED_SKYLIGHT.lock().take() {
@@ -149,7 +152,6 @@ impl SkyInterfaceHandler for SkyInterface {
 		tex: types::Resource,
 		opaque: bool,
 	) -> Option<SkyGuardProxy> {
-		// TODO: actually use opaque
 		if SKYTEX_SET.load(Ordering::Relaxed) {
 			return None;
 		}

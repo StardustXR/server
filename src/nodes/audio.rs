@@ -56,9 +56,13 @@ fn update_sound_event(
 ) {
 	for sound in SOUND_REGISTRY.get_valid_contents() {
 		if sound.entity.get().is_none() {
+			let Some(parent) = sound.spatial.get_entity() else {
+				continue;
+			};
 			let handle = asset_server.load(sound.pending_audio_path.as_path());
 			let entity = cmds
 				.spawn((
+					ChildOf(parent),
 					Name::new("Audio Node"),
 					SpatialNode(Arc::downgrade(&**sound.spatial)),
 					AudioPlayer::new(handle),
@@ -74,8 +78,6 @@ fn update_sound_event(
 				))
 				.id();
 			let entity = EntityHandle::new(entity);
-			// TODO: spawn new entity under the spatial
-			sound.spatial.set_entity(entity.clone());
 			sound.entity.set(entity).unwrap();
 		}
 		if let Some(sink) = sound.entity.get().and_then(|e| sinks.get(e.get()).ok()) {

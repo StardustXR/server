@@ -267,9 +267,13 @@ fn build_line_mesh(
 		let mut entity = match lines.entity.get() {
 			Some(e) => cmds.entity(**e),
 			None => {
-				// TODO: spawn new entity under the spatial
-				cmds.entity(lines.spatial.get_entity().unwrap())
-					.insert(LinesNode(Arc::downgrade(&lines)));
+				let ent = cmds
+					.spawn((
+						ChildOf(lines.spatial.get_entity().unwrap()),
+						LinesNode(Arc::downgrade(&lines)),
+					))
+					.id();
+				_ = lines.spatial_child_entity.set(EntityHandle::new(ent));
 				let e = cmds.spawn((
 					Name::new("LinesNode"),
 					MeshMaterial3d(materials.add(ExtendedMaterial {
@@ -283,7 +287,7 @@ fn build_line_mesh(
 						extension: LineExtension {},
 					})),
 				));
-				_ = lines.entity.set(EntityHandle::new(e.id()));
+				_ = lines.entity.set(EntityHandle::new(dbg!(e.id())));
 
 				e
 			}
@@ -347,6 +351,7 @@ pub struct Lines {
 	data: Mutex<Vec<Line>>,
 	gen_mesh: AtomicBool,
 	entity: OnceLock<EntityHandle>,
+	spatial_child_entity: OnceLock<EntityHandle>,
 	bounds: Mutex<Option<Aabb>>,
 	bounding_calc: OnceLock<BoundingBoxCalc>,
 	setup_complete: Notify,
@@ -358,6 +363,7 @@ impl Lines {
 			data: Mutex::new(lines),
 			gen_mesh: AtomicBool::new(true),
 			entity: OnceLock::new(),
+			spatial_child_entity: OnceLock::new(),
 			bounds: Mutex::new(Some(Aabb::default())),
 			bounding_calc: OnceLock::new(),
 			setup_complete: Notify::new(),
@@ -401,6 +407,7 @@ impl LinesInterfaceHandler for LinesInterface {
 	) -> Result<LinesProxy, CreateError> {
 		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
 		let lines = Lines::new(spatial.handler_arc().clone(), lines);
+        tracing::info!("creating lines node");
 		lines.setup_complete.notified().await;
 		Ok(LinesProxy::from_handler(&lines))
 	}

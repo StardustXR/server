@@ -58,6 +58,9 @@ fn spawn_text(
 	mut font_registry: Local<FontDatabaseRegistry>,
 ) {
 	while let Some(text) = mpsc.read() {
+		let Some(spatial_entity) = text.spatial.get_entity() else {
+			continue;
+		};
 		if let Some(entity) = text.entity.lock().take() {
 			cmds.entity(*entity).despawn();
 		}
@@ -149,6 +152,7 @@ fn spawn_text(
 			.collect::<Vec<_>>();
 		let entity = cmds
 			.spawn((
+				ChildOf(spatial_entity),
 				Name::new("TextNode"),
 				SpatialNode(Arc::downgrade(&**text.spatial)),
 			))
@@ -156,8 +160,6 @@ fn spawn_text(
 			.id();
 		let entity = EntityHandle::new(entity);
 		text.entity.lock().replace(entity.clone());
-		// TODO: parent to spatial instead
-		text.spatial.set_entity(entity);
 	}
 }
 
