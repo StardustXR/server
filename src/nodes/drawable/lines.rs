@@ -287,7 +287,7 @@ fn build_line_mesh(
 						extension: LineExtension {},
 					})),
 				));
-				_ = lines.entity.set(EntityHandle::new(dbg!(e.id())));
+				_ = lines.entity.set(EntityHandle::new(e.id()));
 
 				e
 			}
@@ -407,7 +407,7 @@ impl LinesInterfaceHandler for LinesInterface {
 	) -> Result<LinesProxy, CreateError> {
 		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
 		let lines = Lines::new(spatial.handler_arc().clone(), lines);
-        tracing::info!("creating lines node");
+		tracing::info!("creating lines node");
 		lines.setup_complete.notified().await;
 		Ok(LinesProxy::from_handler(&lines))
 	}
