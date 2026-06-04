@@ -186,6 +186,9 @@ impl SpatialObject {
 			bounding_box_calc: Registry::new(),
 			moved_callback: Registry::new(),
 		});
+		if let Some(parent) = parent {
+			parent.children.add_raw(&data);
+		}
 		SPATIAL_REGISTRY.add_raw(&data);
 		let spatial_ref = PION
 			.register_object(SpatialRef { data: data.clone() })
