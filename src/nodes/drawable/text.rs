@@ -57,8 +57,10 @@ fn spawn_text(
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut font_registry: Local<FontDatabaseRegistry>,
 ) {
+	let mut resend = Vec::new();
 	while let Some(text) = mpsc.read() {
 		let Some(spatial_entity) = text.spatial.get_entity() else {
+			resend.push(text);
 			continue;
 		};
 		if let Some(entity) = text.entity.lock().take() {
@@ -161,6 +163,9 @@ fn spawn_text(
 		let entity = EntityHandle::new(entity);
 		text.entity.lock().replace(entity.clone());
 	}
+	for text in resend {
+		_ = SPAWN_TEXT.send(text);
+	}
 }
 
 #[derive(Default)]
@@ -231,6 +236,7 @@ impl TextInterfaceHandler for TextInterface {
 		style: TextStyle,
 	) -> Result<TextProxy, ResourceLoadError> {
 		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
+		info!(?text, "creating text");
 		let text = TextObject::new(
 			spatial.handler_arc().clone(),
 			text,

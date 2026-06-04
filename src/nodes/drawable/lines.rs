@@ -269,6 +269,7 @@ fn build_line_mesh(
 			None => {
 				let ent = cmds
 					.spawn((
+                        Name::new("LinesNodeProxy"),
 						ChildOf(lines.spatial.get_entity().unwrap()),
 						LinesNode(Arc::downgrade(&lines)),
 					))
