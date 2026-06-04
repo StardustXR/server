@@ -2589,7 +2589,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2970,7 +2970,7 @@ dependencies = [
 [[package]]
 name = "gluon"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#a7e54c6d2745be9ec54d7ba62eb7c63dd1607abc"
+source = "git+https://github.com/technobaboo/gluon#7910659982fbfa2d6e31f8741636f6af6b6836a8"
 dependencies = [
  "binderbinder",
  "bitflags 2.11.0",
@@ -2983,7 +2983,7 @@ dependencies = [
 [[package]]
 name = "gluon-codegen"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#a7e54c6d2745be9ec54d7ba62eb7c63dd1607abc"
+source = "git+https://github.com/technobaboo/gluon#7910659982fbfa2d6e31f8741636f6af6b6836a8"
 dependencies = [
  "convert_case 0.11.0",
  "gluon",
@@ -2997,7 +2997,7 @@ dependencies = [
 [[package]]
 name = "gluon-derive"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#a7e54c6d2745be9ec54d7ba62eb7c63dd1607abc"
+source = "git+https://github.com/technobaboo/gluon#7910659982fbfa2d6e31f8741636f6af6b6836a8"
 dependencies = [
  "quote",
  "syn",
@@ -3006,7 +3006,7 @@ dependencies = [
 [[package]]
 name = "gluon-parser"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon#a7e54c6d2745be9ec54d7ba62eb7c63dd1607abc"
+source = "git+https://github.com/technobaboo/gluon#7910659982fbfa2d6e31f8741636f6af6b6836a8"
 dependencies = [
  "ansi_term",
  "chumsky",
@@ -5215,7 +5215,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5228,7 +5228,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5576,6 +5576,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
+ "windows-sys 0.52.0",
  "windows-sys 0.59.0",
 ]
 
@@ -5591,7 +5592,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "0.51.1"
-source = "git+https://github.com/StardustXR/core.git?branch=binder#aeee9c94f57d53a2baad4f517c67f345f72b2fa9"
+source = "git+https://github.com/StardustXR/core.git?branch=binder#3eca39701956c395750109296ec3046e757e0b22"
 dependencies = [
  "fnv",
  "glam",
@@ -5839,7 +5840,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6887,7 +6888,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
