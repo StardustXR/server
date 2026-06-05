@@ -72,8 +72,6 @@ use objects::{
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use pion_binder::PionBinderDevice;
 use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
-// use stardust_xr_gluon::object_registry::ObjectRegistry;
-// use stardust_xr_wire::server::LockedSocket;
 use std::{
 	ops::DerefMut as _,
 	path::PathBuf,
@@ -87,7 +85,9 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry
 use zbus::Connection;
 
 use crate::{
-	bevy_int::tracking_offset::TrackingOffsetPlugin, core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin}, nodes::{
+	bevy_int::tracking_offset::TrackingOffsetPlugin,
+	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
+	nodes::{
 		audio::AudioNodePlugin,
 		camera::{CameraInterface, CameraNodePlugin},
 		drawable::{
@@ -95,7 +95,10 @@ use crate::{
 			text::TextNodePlugin,
 		},
 		fields::FieldDebugGizmoPlugin,
-	}, objects::stage::StagePlugin, openxr_helpers::ConvertTimespec, session::{launch_start, save_session}
+	},
+	objects::stage::StagePlugin,
+	openxr_helpers::ConvertTimespec,
+	session::{launch_start, save_session},
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -284,7 +287,6 @@ fn bevy_loop(
 	_project_dirs: Option<ProjectDirs>,
 	args: CliArgs,
 	dbus_connection: Connection,
-	// object_registry: Arc<ObjectRegistry>,
 ) -> AppExit {
 	let mut app = App::new();
 	app.insert_resource(DbusConnection(dbus_connection));
@@ -339,7 +341,7 @@ fn bevy_loop(
 	let handle = tokio::runtime::Handle::current();
 	let enter_runtime_context = Arc::new(move || {
 		// this might be a memory leak, but should only be run for a limited number of
-        // threads
+		// threads
 		std::mem::forget(handle.enter());
 	});
 	task_pool_plugin.task_pool_options.io.on_thread_spawn = Some(enter_runtime_context.clone());
