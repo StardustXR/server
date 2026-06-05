@@ -7,7 +7,7 @@ use crate::nodes::{
 	fields::{Field, FieldRef},
 	spatial::SpatialRef,
 };
-use gluon::{Handler, ObjectRef};
+use gluon::{Handler, ObjectRef, ToObjectOrRef as _};
 use stardust_xr_protocol::{
 	field::FieldRef as FieldRefProxy,
 	query::{QueriedInterface, QueryableObjectRef},
@@ -342,10 +342,30 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 		method: InputMethod,
 		ts: Timestamp,
 	) {
+		// Sweep handlers whose client died without on_left being called (e.g. silent
+		// binder drop, missed notification). Runs every frame so the cleanup is
+		// eventually consistent regardless of whether on_left fires.
+		{
+			let has_dead = self
+				.cache
+				.blocking_read()
+				.values()
+				.any(|e| !e.handler.to_binder_object_or_ref().alive());
+			if has_dead {
+				let mut cap = self.capture_requests.write().unwrap();
+				self.cache.blocking_write().retain(|_, e| {
+					let alive = e.handler.to_binder_object_or_ref().alive();
+					if !alive {
+						cap.remove(&e.handler);
+					}
+					alive
+				});
+			}
+		}
+
 		// Snapshot capture_requests immediately so the std lock is never held
 		// across cache reads/writes (which could block tokio worker threads).
-		let capture_requests: HashSet<InputHandler> =
-			self.capture_requests.read().unwrap().clone();
+		let capture_requests: HashSet<InputHandler> = self.capture_requests.read().unwrap().clone();
 
 		// Clean up any left_query entries that lost their capture between on_left and
 		// release_capture running (race condition). This keeps the objects map consistent.
