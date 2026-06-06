@@ -1,3 +1,5 @@
+#![allow(clippy::mutable_key_type)]
+
 pub mod mouse_pointer;
 // pub mod oxr_controller;
 pub mod oxr_hand;
@@ -19,8 +21,8 @@ use stardust_xr_protocol::{
 		BeamQueryHandler, BeamQueryHandlerHandler, PointsQueryHandler, PointsQueryHandlerHandler,
 	},
 	suis::{
-		DatamapData, InputHandler, InputMethod, InputMethodCapture,
-		InputMethodCaptureHandler, SemanticData, SpatialData,
+		DatamapData, InputHandler, InputMethod, InputMethodCapture, InputMethodCaptureHandler,
+		SemanticData, SpatialData,
 	},
 	types::Timestamp,
 };
@@ -337,20 +339,26 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 	}
 
 	pub async fn grant_capture(&self, handler: InputHandler) -> Option<InputMethodCapture> {
-		if !self.cache.read().await.values().any(|e| e.handler == handler) {
+		if !self
+			.cache
+			.read()
+			.await
+			.values()
+			.any(|e| e.handler == handler)
+		{
 			return None;
 		}
-		self.capture_requests.write().unwrap().insert(handler.clone());
-		let guard = CaptureGuard {
-			handler,
-			release_tx: self.release_tx.clone(),
-		};
-		let capture_obj = PION.register_object(guard);
-		let capture = InputMethodCapture::from_handler(&capture_obj);
-		tokio::spawn(async move {
-			capture_obj.strong_refs_hit_zero().await;
-			drop(capture_obj);
-		});
+		self.capture_requests
+			.write()
+			.unwrap()
+			.insert(handler.clone());
+		let guard = PION
+			.register_object(CaptureGuard {
+				handler,
+				release_tx: self.release_tx.clone(),
+			})
+			.to_service();
+		let capture = InputMethodCapture::from_handler(&guard);
 		Some(capture)
 	}
 
