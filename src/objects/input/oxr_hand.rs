@@ -30,7 +30,7 @@ use stardust_xr_protocol::spatial_query::{
 };
 use stardust_xr_protocol::suis::{
 	Chirality, DatamapData, Finger, Hand, InputDataType, InputHandler, InputMethod,
-	InputMethodHandler, Joint, SemanticData, SpatialData, Thumb,
+	InputMethodCapture, InputMethodHandler, Joint, SemanticData, SpatialData, Thumb,
 };
 use stardust_xr_protocol::types::{self, Timestamp, Vec3F};
 use std::any::type_name;
@@ -354,7 +354,7 @@ impl OxrHandInput {
 		}
 
 		if let HandMaterial::Normal(material_handle) = &self.material {
-			let captured = method.capture.blocking_read().is_some();
+			let captured = method.sender.active_capture.blocking_read().is_some();
 			if captured && !self.captured {
 				materials.get_mut(material_handle).unwrap().base_color =
 					Srgba::rgb(0., 1., 0.75).into();
@@ -388,7 +388,6 @@ struct HandInputMethod {
 	sender: Arc<InputSender<f32>>,
 	hand: RwLock<Option<Hand>>,
 	datamap: RwLock<HandDatamap>,
-	capture: RwLock<Option<InputHandler>>,
 	query_handle: Arc<OnceLock<PointsQueryHandle>>,
 }
 
@@ -439,7 +438,6 @@ impl HandInputMethod {
 			sender,
 			hand: RwLock::new(None),
 			datamap: RwLock::new(HandDatamap::default()),
-			capture: RwLock::new(None),
 			query_handle,
 		})
 	}
@@ -545,16 +543,16 @@ impl InputSource for HandInputMethod {
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let hand = *self.hand.blocking_read();
 		let Some(hand) = hand else {
-			self.capture.blocking_write().take();
+			self.sender.active_capture.blocking_write().take();
 			return (vec![], None);
 		};
 
-		let current_capture = self.capture.blocking_read().clone();
+		let current_capture = self.sender.active_capture.blocking_read().clone();
 		let capture = if let Some(cap) = current_capture {
 			if objects.values().any(|e| e.handler == cap) {
 				Some(cap)
 			} else {
-				self.capture.blocking_write().take();
+				self.sender.active_capture.blocking_write().take();
 				None
 			}
 		} else {
@@ -563,7 +561,7 @@ impl InputSource for HandInputMethod {
 				.find(|r| objects.values().any(|e| &e.handler == *r))
 				.cloned();
 			if let Some(ref p) = promoted {
-				*self.capture.blocking_write() = Some(p.clone());
+				*self.sender.active_capture.blocking_write() = Some(p.clone());
 			}
 			promoted
 		};
@@ -598,26 +596,19 @@ impl InputSource for HandInputMethod {
 		}
 	}
 
-	fn datamap(
-		&self,
-		suggested_bindings: &HashMap<String, Vec<String>>,
-	) -> HashMap<String, DatamapData> {
+	fn datamap(&self) -> HashMap<String, DatamapData> {
 		let data = *self.datamap.blocking_read();
-		build_hand_datamap(&data, suggested_bindings)
+		build_hand_datamap(&data)
 	}
 }
 
 impl InputMethodHandler for HandInputMethod {
-	async fn request_capture(&self, _ctx: gluon::Context, handler: InputHandler) {
-		self.sender.request_capture(handler).await;
-	}
-
-	async fn release_capture(&self, _ctx: gluon::Context, handler: InputHandler) {
-		self.sender.release_capture(&handler).await;
-		let mut cap = self.capture.write().await;
-		if cap.as_ref() == Some(&handler) {
-			cap.take();
-		}
+	async fn request_capture(
+		&self,
+		_ctx: gluon::Context,
+		handler: InputHandler,
+	) -> Option<InputMethodCapture> {
+		self.sender.grant_capture(handler).await
 	}
 
 	async fn get_spatial_data(
@@ -626,7 +617,7 @@ impl InputMethodHandler for HandInputMethod {
 		handler: InputHandler,
 		time: Timestamp,
 	) -> Option<SpatialData> {
-		let cap = self.capture.read().await.clone();
+		let cap = self.sender.active_capture.read().await.clone();
 		if cap.as_ref().is_some_and(|c| c != &handler) {
 			return None;
 		}
@@ -722,51 +713,19 @@ fn transform_joint(from: &Spatial, to: &Spatial, field: &Field, joint: &Joint) -
 	}
 }
 
-fn build_hand_datamap(
-	data: &HandDatamap,
-	suggested_bindings: &HashMap<String, Vec<String>>,
-) -> HashMap<String, DatamapData> {
-	let mut grab_bindings = HashSet::new();
-	let mut pinch_bindings = HashSet::new();
-	for (name, bindings) in suggested_bindings {
-		for binding in bindings {
-			if binding == "pinch_strength" || binding == "pinch" {
-				pinch_bindings.insert(name.clone());
-			}
-			if binding == "grab_strength" || binding == "grab" {
-				grab_bindings.insert(name.clone());
-			}
-		}
-	}
-
-	let mut map = HashMap::new();
-	map.insert(
-		"pinch_strength".to_string(),
-		DatamapData::Float {
-			value: data.pinch_strength,
-		},
-	);
-	map.insert(
-		"grab_strength".to_string(),
-		DatamapData::Float {
-			value: data.grab_strength,
-		},
-	);
-	for binding in grab_bindings {
-		if let DatamapData::Float { value } = map
-			.entry(binding)
-			.or_insert(DatamapData::Float { value: 0.0 })
-		{
-			*value = data.grab_strength.max(*value);
-		}
-	}
-	for binding in pinch_bindings {
-		if let DatamapData::Float { value } = map
-			.entry(binding)
-			.or_insert(DatamapData::Float { value: 0.0 })
-		{
-			*value = data.pinch_strength.max(*value);
-		}
-	}
-	map
+fn build_hand_datamap(data: &HandDatamap) -> HashMap<String, DatamapData> {
+	HashMap::from([
+		(
+			"pinch_strength".to_string(),
+			DatamapData::Float {
+				value: data.pinch_strength,
+			},
+		),
+		(
+			"grab_strength".to_string(),
+			DatamapData::Float {
+				value: data.grab_strength,
+			},
+		),
+	])
 }

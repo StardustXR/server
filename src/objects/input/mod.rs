@@ -2,10 +2,13 @@ pub mod mouse_pointer;
 // pub mod oxr_controller;
 pub mod oxr_hand;
 
-use crate::nodes::{
-	ProxyExt as _,
-	fields::{Field, FieldRef},
-	spatial::SpatialRef,
+use crate::{
+	PION,
+	nodes::{
+		ProxyExt as _,
+		fields::{Field, FieldRef},
+		spatial::SpatialRef,
+	},
 };
 use gluon::{Handler, ObjectRef, ToObjectOrRef as _};
 use stardust_xr_protocol::{
@@ -15,7 +18,10 @@ use stardust_xr_protocol::{
 	spatial_query::{
 		BeamQueryHandler, BeamQueryHandlerHandler, PointsQueryHandler, PointsQueryHandlerHandler,
 	},
-	suis::{DatamapData, InputHandler, InputMethod, SemanticData, SpatialData},
+	suis::{
+		DatamapData, InputHandler, InputMethod, InputMethodCapture,
+		InputMethodCaptureHandler, SemanticData, SpatialData,
+	},
 	types::Timestamp,
 };
 use std::{
@@ -23,7 +29,7 @@ use std::{
 	fmt,
 	sync::{Arc, Mutex, RwLock as StdRwLock},
 };
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, mpsc};
 
 // ── Value types ──────────────────────────────────────────────────────────────
 
@@ -38,7 +44,6 @@ pub struct CachedObject<V: Send + Sync + 'static> {
 	pub handler: InputHandler,
 	pub spatial: ObjectRef<SpatialRef>,
 	pub field: ObjectRef<FieldRef>,
-	pub suggested_bindings: HashMap<String, Vec<String>>,
 	pub value: V,
 	/// True when the handler has left the spatial query but is retained because it holds a capture.
 	pub left_query: bool,
@@ -106,15 +111,12 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 			return;
 		};
 
-		let suggested_bindings = handler.suggested_bindings().await.unwrap_or_default();
-
 		self.objects.write().await.insert(
 			obj,
 			CachedObject {
 				handler,
 				spatial,
 				field,
-				suggested_bindings,
 				value,
 				left_query: false,
 			},
@@ -283,10 +285,22 @@ pub trait InputSource {
 
 	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> SpatialData;
 
-	fn datamap(
-		&self,
-		suggested_bindings: &HashMap<String, Vec<String>>,
-	) -> HashMap<String, DatamapData>;
+	fn datamap(&self) -> HashMap<String, DatamapData>;
+}
+
+// ── CaptureGuard ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Handler)]
+pub struct CaptureGuard {
+	handler: InputHandler,
+	release_tx: mpsc::UnboundedSender<InputHandler>,
+}
+impl InputMethodCaptureHandler for CaptureGuard {}
+
+impl Drop for CaptureGuard {
+	fn drop(&mut self) {
+		let _ = self.release_tx.send(self.handler.clone());
+	}
 }
 
 // ── InputSender ───────────────────────────────────────────────────────────────
@@ -294,6 +308,9 @@ pub trait InputSource {
 pub struct InputSender<V: Send + Sync + 'static> {
 	pub cache: Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>,
 	pub capture_requests: Arc<StdRwLock<HashSet<InputHandler>>>,
+	pub active_capture: RwLock<Option<InputHandler>>,
+	release_tx: mpsc::UnboundedSender<InputHandler>,
+	release_rx: Mutex<mpsc::UnboundedReceiver<InputHandler>>,
 	tracker: Mutex<ActiveTracker>,
 }
 
@@ -308,32 +325,33 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 		cache: Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>,
 		capture_requests: Arc<StdRwLock<HashSet<InputHandler>>>,
 	) -> Self {
+		let (release_tx, release_rx) = mpsc::unbounded_channel();
 		Self {
 			cache,
 			capture_requests,
+			active_capture: RwLock::new(None),
+			release_tx,
+			release_rx: Mutex::new(release_rx),
 			tracker: Mutex::new(ActiveTracker::default()),
 		}
 	}
 
-	pub async fn request_capture(&self, handler: InputHandler) {
-		if self
-			.cache
-			.read()
-			.await
-			.values()
-			.any(|e| e.handler == handler)
-		{
-			self.capture_requests.write().unwrap().insert(handler);
+	pub async fn grant_capture(&self, handler: InputHandler) -> Option<InputMethodCapture> {
+		if !self.cache.read().await.values().any(|e| e.handler == handler) {
+			return None;
 		}
-	}
-
-	pub async fn release_capture(&self, handler: &InputHandler) {
-		self.capture_requests.write().unwrap().remove(handler);
-		// Remove left_query entries for this handler; they were retained only for the capture.
-		self.cache
-			.write()
-			.await
-			.retain(|_, e| !(e.left_query && &e.handler == handler));
+		self.capture_requests.write().unwrap().insert(handler.clone());
+		let guard = CaptureGuard {
+			handler,
+			release_tx: self.release_tx.clone(),
+		};
+		let capture_obj = PION.register_object(guard);
+		let capture = InputMethodCapture::from_handler(&capture_obj);
+		tokio::spawn(async move {
+			capture_obj.strong_refs_hit_zero().await;
+			drop(capture_obj);
+		});
+		Some(capture)
 	}
 
 	pub fn send(
@@ -342,6 +360,21 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 		method: InputMethod,
 		ts: Timestamp,
 	) {
+		// Drain released captures (CaptureGuard dropped by client).
+		{
+			let mut rx = self.release_rx.lock().unwrap();
+			while let Ok(released) = rx.try_recv() {
+				self.capture_requests.write().unwrap().remove(&released);
+				self.cache
+					.blocking_write()
+					.retain(|_, e| !(e.left_query && e.handler == released));
+				let mut cap = self.active_capture.blocking_write();
+				if cap.as_ref() == Some(&released) {
+					cap.take();
+				}
+			}
+		}
+
 		// Sweep handlers whose client died without on_left being called (e.g. silent
 		// binder drop, missed notification). Runs every frame so the cleanup is
 		// eventually consistent regardless of whether on_left fires.
@@ -367,21 +400,6 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 		// across cache reads/writes (which could block tokio worker threads).
 		let capture_requests: HashSet<InputHandler> = self.capture_requests.read().unwrap().clone();
 
-		// Clean up any left_query entries that lost their capture between on_left and
-		// release_capture running (race condition). This keeps the objects map consistent.
-		{
-			let has_dangling = self
-				.cache
-				.blocking_read()
-				.values()
-				.any(|e| e.left_query && !capture_requests.contains(&e.handler));
-			if has_dangling {
-				self.cache
-					.blocking_write()
-					.retain(|_, e| !e.left_query || capture_requests.contains(&e.handler));
-			}
-		}
-
 		let objects = self.cache.blocking_read();
 
 		let (handler_order, capture) =
@@ -393,7 +411,7 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 			.filter_map(|(i, handler)| {
 				let entry = objects.values().find(|e| &e.handler == handler)?;
 				let spatial_data = source.spatial_data(&entry.spatial, &entry.field.data);
-				let datamap = source.datamap(&entry.suggested_bindings);
+				let datamap = source.datamap();
 				let semantic_data = SemanticData {
 					datamap,
 					order: i as u32,

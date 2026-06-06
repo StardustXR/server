@@ -22,8 +22,8 @@ use stardust_xr_protocol::{
 		SpatialQueryInterface as SpatialQueryInterfaceProxy,
 	},
 	suis::{
-		DatamapData, InputDataType, InputHandler, InputMethod, InputMethodHandler, Pointer,
-		SpatialData,
+		DatamapData, InputDataType, InputHandler, InputMethod, InputMethodCapture,
+		InputMethodHandler, Pointer, SpatialData,
 	},
 	types::{Timestamp, Vec3F},
 };
@@ -112,7 +112,6 @@ impl Default for MouseEvent {
 struct MouseMethod {
 	spatial_arc: Arc<Spatial>,
 	event: RwLock<MouseEvent>,
-	capture: RwLock<Option<InputHandler>>,
 	sender: Arc<InputSender<BeamValue>>,
 	_beam_query: Object<BeamQueryCache>,
 	_query_guard: Arc<OnceLock<SpatialQueryGuard>>,
@@ -126,13 +125,13 @@ impl InputSource for MouseMethod {
 		objects: &HashMap<QueryableObjectRef, CachedObject<Self::QueryValue>>,
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
-		let current_capture = self.capture.blocking_read().clone();
+		let current_capture = self.sender.active_capture.blocking_read().clone();
 
 		let capture = if let Some(cap) = current_capture {
 			if objects.values().any(|e| e.handler == cap) {
 				Some(cap)
 			} else {
-				self.capture.blocking_write().take();
+				self.sender.active_capture.blocking_write().take();
 				None
 			}
 		} else {
@@ -141,7 +140,7 @@ impl InputSource for MouseMethod {
 				.find(|r| objects.values().any(|e| &e.handler == *r))
 				.cloned();
 			if let Some(ref p) = promoted {
-				*self.capture.blocking_write() = Some(p.clone());
+				*self.sender.active_capture.blocking_write() = Some(p.clone());
 			}
 			promoted
 		};
@@ -186,26 +185,19 @@ impl InputSource for MouseMethod {
 		}
 	}
 
-	fn datamap(
-		&self,
-		_suggested_bindings: &HashMap<String, Vec<String>>,
-	) -> HashMap<String, DatamapData> {
+	fn datamap(&self) -> HashMap<String, DatamapData> {
 		let event = *self.event.blocking_read();
 		build_datamap(&event)
 	}
 }
 
 impl InputMethodHandler for MouseMethod {
-	async fn request_capture(&self, _ctx: gluon::Context, handler: InputHandler) {
-		self.sender.request_capture(handler).await;
-	}
-
-	async fn release_capture(&self, _ctx: gluon::Context, handler: InputHandler) {
-		self.sender.release_capture(&handler).await;
-		let mut cap = self.capture.write().await;
-		if cap.as_ref() == Some(&handler) {
-			cap.take();
-		}
+	async fn request_capture(
+		&self,
+		_ctx: gluon::Context,
+		handler: InputHandler,
+	) -> Option<InputMethodCapture> {
+		self.sender.grant_capture(handler).await
 	}
 
 	async fn get_spatial_data(
@@ -214,7 +206,7 @@ impl InputMethodHandler for MouseMethod {
 		handler: InputHandler,
 		_time: Timestamp,
 	) -> Option<SpatialData> {
-		let cap = self.capture.read().await.clone();
+		let cap = self.sender.active_capture.read().await.clone();
 		if cap.as_ref().is_some_and(|c| c != &handler) {
 			return None;
 		}
@@ -288,7 +280,6 @@ impl MousePointer {
 		let method = PION.register_object(MouseMethod {
 			spatial_arc,
 			event: RwLock::new(MouseEvent::default()),
-			capture: RwLock::new(None),
 			sender,
 			_beam_query: beam_query,
 			_query_guard: query_guard,
