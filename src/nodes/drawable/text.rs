@@ -148,14 +148,19 @@ fn spawn_text(
 		let letters = char_meshes
 			.into_iter()
 			.map(|v| {
-				cmds.spawn((Mesh3d(v.mesh), MeshMaterial3d(v.material), v.transform))
-					.id()
+				cmds.spawn((
+					Name::new("TextChar"),
+					Mesh3d(v.mesh),
+					MeshMaterial3d(v.material),
+					v.transform,
+				))
+				.id()
 			})
 			.collect::<Vec<_>>();
 		let entity = cmds
 			.spawn((
 				ChildOf(spatial_entity),
-				Name::new("TextNode"),
+				Name::new("Text"),
 				SpatialNode(Arc::downgrade(&**text.spatial)),
 			))
 			.add_children(&letters)
