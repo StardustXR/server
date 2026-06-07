@@ -297,6 +297,7 @@ impl Query {
 			.collect();
 		for (queryable, interfaces) in init_queryables {
 			if let Some(data) = self.inner.hit(&queryable).await {
+				self.matching_queryables.add_raw(&queryable);
 				_ = self.inner.match_gained(&interfaces, &queryable, data);
 			}
 		}
