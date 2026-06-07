@@ -638,7 +638,6 @@ impl ModelPart {
 			let (tx, rx) = oneshot::channel();
 			let tex = tex.clone();
 			let task = tokio::spawn(async move {
-				let release = tex.signal_on_drop(release_point);
 				let Ok(future) = tex
 					.timeline_sync()
 					.wait_async(acquire_point)
@@ -647,6 +646,11 @@ impl ModelPart {
 					return;
 				};
 				future.await;
+				let Ok(release_point) = release_point.consume().await else {
+					error!("failed to get release point");
+					return;
+				};
+				let release = tex.signal_on_drop(release_point);
 				let sema = tex.get_acquire_semaphore(acquire_point);
 				ACQUIRE_SEMAPHORES.lock().push(sema);
 				tx.send((release, tex.handler_arc().clone())).unwrap();

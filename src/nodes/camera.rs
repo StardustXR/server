@@ -36,6 +36,7 @@ use stardust_xr_protocol::camera::CameraHandler;
 use stardust_xr_protocol::camera::CameraInterfaceHandler;
 use stardust_xr_protocol::camera::View;
 use stardust_xr_protocol::dmatex::DmatexRef;
+use stardust_xr_protocol::dmatex::DmatexSubmitRelease;
 use stardust_xr_protocol::types::CreateError;
 use stardust_xr_server_foundation::registry::Registry;
 use std::sync::Arc;
@@ -77,7 +78,7 @@ impl CameraHandler for Camera {
 		_ctx: gluon::Context,
 		render_target: DmatexRef,
 		acquire_point: u64,
-		release_point: u64,
+		release_point: DmatexSubmitRelease,
 		views: Vec<View>,
 	) {
 		let Some(tex) = render_target.owned() else {
@@ -85,6 +86,10 @@ impl CameraHandler for Camera {
 			return;
 		};
 		let tx = self.render_target_queue.clone();
+		let Ok(release_point) = release_point.consume().await else {
+			error!("failed to get release point");
+			return;
+		};
 		let release_on_drop = tex.signal_on_drop(release_point);
 		tokio::spawn(async move {
 			let Ok(future) = tex
