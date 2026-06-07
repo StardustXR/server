@@ -84,6 +84,31 @@ const EPSILON: f32 = 0.00001;
 pub trait TransformExt {
 	fn to_mat4(&self) -> Mat4;
 }
+pub fn aabb_corners(aabb: &Aabb) -> [Vec3; 8] {
+	let min: Vec3 = aabb.min().into();
+	let max: Vec3 = aabb.max().into();
+	[
+		Vec3::new(min.x, min.y, min.z),
+		Vec3::new(min.x, min.y, max.z),
+		Vec3::new(min.x, max.y, min.z),
+		Vec3::new(min.x, max.y, max.z),
+		Vec3::new(max.x, min.y, min.z),
+		Vec3::new(max.x, min.y, max.z),
+		Vec3::new(max.x, max.y, min.z),
+		Vec3::new(max.x, max.y, max.z),
+	]
+}
+
+fn merge_aabb(base: Aabb, other: &Aabb, transform: Option<&Mat4>) -> Aabb {
+	let corners = aabb_corners(other).map(|c| transform.map_or(c, |m| m.transform_point3(c)));
+	Aabb::enclosing(
+		corners
+			.into_iter()
+			.chain([base.min().into(), base.max().into()]),
+	)
+	.unwrap_or(base)
+}
+
 fn clamp_scale(scale: f32) -> f32 {
 	if scale.abs() <= EPSILON {
 		EPSILON * scale.signum()
@@ -251,33 +276,13 @@ impl Spatial {
 
 	// the output bounds are probably way bigger than they need to be
 	pub fn get_bounding_box(&self) -> Aabb {
-		// let Some(node) = self.node() else {
-		// 	return Aabb::default();
-		// };
-		// let mut bounds = match self.bounding_box_calc.get() {
-		// 	Some(f) => f(&node).await,
-		// 	None => Aabb::default(),
-		// };
 		let mut bounds = Aabb::default();
 		for f in self.bounding_box_calc.get_valid_contents() {
-			let b = f();
-			bounds = Aabb::enclosing(
-				[b.min(), b.max(), bounds.min(), bounds.max()]
-					.into_iter()
-					.map(Vec3::from),
-			)
-			.unwrap_or(bounds);
+			bounds = merge_aabb(bounds, &f(), None);
 		}
 		for child in self.children.get_valid_contents() {
 			let mat = child.local_transform();
-			let child_aabb = Box::pin(child.get_bounding_box());
-			bounds = Aabb::enclosing([
-				bounds.min().into(),
-				bounds.max().into(),
-				mat.transform_point3(child_aabb.min().into()),
-				mat.transform_point3(child_aabb.max().into()),
-			])
-			.unwrap();
+			bounds = merge_aabb(bounds, &child.get_bounding_box(), Some(&mat));
 		}
 		bounds
 	}

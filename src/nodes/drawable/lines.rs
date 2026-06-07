@@ -269,7 +269,7 @@ fn build_line_mesh(
 			None => {
 				let ent = cmds
 					.spawn((
-                        Name::new("LinesNodeProxy"),
+						Name::new("LinesNodeProxy"),
 						ChildOf(lines.spatial.get_entity().unwrap()),
 						LinesNode(Arc::downgrade(&lines)),
 					))
@@ -354,35 +354,34 @@ pub struct Lines {
 	entity: OnceLock<EntityHandle>,
 	spatial_child_entity: OnceLock<EntityHandle>,
 	bounds: Mutex<Option<Aabb>>,
-	bounding_calc: OnceLock<BoundingBoxCalc>,
+	_bounding_calc: BoundingBoxCalc,
 	setup_complete: Notify,
 }
 impl Lines {
 	pub fn new(spatial: Arc<SpatialObject>, lines: Vec<Line>) -> gluon::ObjectRef<Lines> {
-		let lines = PION.register_object(Lines {
-			spatial: spatial.clone(),
-			data: Mutex::new(lines),
-			gen_mesh: AtomicBool::new(true),
-			entity: OnceLock::new(),
-			spatial_child_entity: OnceLock::new(),
-			bounds: Mutex::new(Some(Aabb::default())),
-			bounding_calc: OnceLock::new(),
-			setup_complete: Notify::new(),
-		});
-		let lines_arc = lines.handler_arc().clone();
-		LINES_REGISTRY.add_raw(&lines_arc);
-		let lines_weak = Arc::downgrade(&lines_arc);
-		let bounding_calc = spatial.custom_bounding_box(move || {
-			let Some(lines) = lines_weak.upgrade() else {
-				return Default::default();
-			};
-			let bounds = *lines.bounds.lock();
-			match bounds {
-				Some(aabb) => aabb,
-				None => lines.bounds.lock().unwrap_or_default(),
+		let lines = Arc::new_cyclic(|weak: &Weak<Lines>| {
+			let weak = weak.clone();
+			let bounding_calc = spatial.custom_bounding_box(move || {
+				let Some(lines) = weak.upgrade() else {
+					return Default::default();
+				};
+				lines.bounds.lock().unwrap_or_default()
+			});
+			Lines {
+				spatial: spatial.clone(),
+				data: Mutex::new(lines),
+				gen_mesh: AtomicBool::new(true),
+				entity: OnceLock::new(),
+				spatial_child_entity: OnceLock::new(),
+				bounds: Mutex::new(Some(Aabb::default())),
+				_bounding_calc: bounding_calc,
+				setup_complete: Notify::new(),
 			}
 		});
-		_ = lines.bounding_calc.set(bounding_calc);
+
+		let lines = PION.register_object::<Self>(lines);
+		let lines_arc = lines.handler_arc().clone();
+		LINES_REGISTRY.add_raw(&lines_arc);
 
 		lines.to_service()
 	}

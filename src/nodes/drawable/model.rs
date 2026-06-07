@@ -13,7 +13,7 @@ use crate::{
 			ModelNodeSystemSet,
 			dmatex::{Dmatex, DmatexExt as _, SignalOnDrop},
 		},
-		spatial::{BoundingBoxCalc, SpatialNode, SpatialObject},
+		spatial::{BoundingBoxCalc, SpatialNode, SpatialObject, aabb_corners},
 	},
 };
 use bevy::{
@@ -295,10 +295,7 @@ fn gen_model_parts(
 							.flat_map(|v| v.iter())
 							.filter_map(|e| part_mesh_query.get(e).ok())
 							.flat_map(|(transform, aabb)| {
-								[
-									transform.transform_point(aabb.min().into()),
-									transform.transform_point(aabb.max().into()),
-								]
+								aabb_corners(aabb).map(|corner| transform.transform_point(corner))
 							}),
 					)
 					.unwrap_or_default();
