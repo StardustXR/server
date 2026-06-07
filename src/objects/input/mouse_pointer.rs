@@ -149,12 +149,13 @@ impl InputSource for MouseMethod {
 		let mut order: Vec<_> = if let Some(ref cap) = capture {
 			objects
 				.values()
-				.filter(|e| &e.handler == cap)
+				.filter(|e| e.spatial.is_some() && &e.handler == cap)
 				.map(|e| (e.value.deepest_point_distance, e.handler.clone()))
 				.collect()
 		} else {
 			objects
 				.values()
+				.filter(|e| e.spatial.is_some())
 				.map(|e| (e.value.deepest_point_distance, e.handler.clone()))
 				.collect()
 		};
@@ -213,7 +214,7 @@ impl InputMethodHandler for MouseMethod {
 		}
 		let objects = self.sender.cache.read().await;
 		let entry = objects.values().find(|e| e.handler == handler)?;
-		Some(self.spatial_data(&entry.spatial, &entry.field.data))
+		Some(self.spatial_data(entry.spatial.as_ref().map(|s| &**s)?, &entry.field.data))
 	}
 }
 

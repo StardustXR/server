@@ -45,7 +45,8 @@ pub struct BeamValue {
 
 pub struct CachedObject<V: Send + Sync + 'static> {
 	pub handler: InputHandler,
-	pub spatial: ObjectRef<SpatialRef>,
+	/// None while the get_spatial RPC is in-flight; filtered from dispatch until populated.
+	pub spatial: Option<ObjectRef<SpatialRef>>,
 	pub field: ObjectRef<FieldRef>,
 	pub value: V,
 	/// True when the handler has left the spatial query but is retained because it holds a capture.
@@ -106,24 +107,35 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 		let Some(field) = field.owned() else { return };
 		let handler = InputHandler::from_object_or_ref(interface.interface.clone());
 
-		// Use the handler's declared reference space; all input coords must be relative to it.
-		let Ok(ref_space) = handler.get_spatial().await else {
-			return;
-		};
-		let Some(spatial) = ref_space.owned() else {
-			return;
-		};
-
+		// Insert a sentinel (spatial: None) before the async RPC so that on_left can find
+		// and remove this entry even if it fires while get_spatial is in-flight.
 		self.objects.write().await.insert(
-			obj,
+			obj.clone(),
 			CachedObject {
-				handler,
-				spatial,
+				handler: handler.clone(),
+				spatial: None,
 				field,
 				value,
 				left_query: false,
 			},
 		);
+
+		let Ok(ref_space) = handler.get_spatial().await else {
+			self.objects.write().await.remove(&obj);
+			return;
+		};
+		let Some(spatial) = ref_space.owned() else {
+			self.objects.write().await.remove(&obj);
+			return;
+		};
+
+		// Populate spatial only if the sentinel we inserted is still there (on_left may have
+		// removed it while we were awaiting).
+		if let Some(entry) = self.objects.write().await.get_mut(&obj) {
+			if entry.spatial.is_none() {
+				entry.spatial = Some(spatial);
+			}
+		}
 	}
 
 	pub async fn on_value_changed(&self, obj: &QueryableObjectRef, new_value: V) {
@@ -421,7 +433,7 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 					.enumerate()
 					.filter_map(|(i, handler)| {
 						let entry = objects.values().find(|e| &e.handler == handler)?;
-						let spatial_data = source.spatial_data(&entry.spatial, &entry.field.data);
+						let spatial_data = source.spatial_data(entry.spatial.as_ref().map(|s| &**s)?, &entry.field.data);
 						let datamap = source.datamap();
 						let semantic_data = SemanticData {
 							datamap,

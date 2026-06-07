@@ -569,7 +569,7 @@ impl InputSource for HandInputMethod {
 		if let Some(ref cap) = capture {
 			let handlers: Vec<_> = objects
 				.values()
-				.filter(|e| &e.handler == cap)
+				.filter(|e| e.spatial.is_some() && &e.handler == cap)
 				.map(|e| e.handler.clone())
 				.collect();
 			return (handlers, capture);
@@ -577,6 +577,7 @@ impl InputSource for HandInputMethod {
 
 		let mut order: Vec<_> = objects
 			.values()
+			.filter(|e| e.spatial.is_some())
 			.map(|e| {
 				let dist = hand_sort_distance(&self.base_spatial, &e.field.data, &hand);
 				(dist, e.handler.clone())
@@ -624,11 +625,13 @@ impl InputMethodHandler for HandInputMethod {
 		self.hand.read().await.as_ref()?;
 		let objects = self.sender.cache.read().await;
 		let entry = objects.values().find(|e| e.handler == handler)?;
+		let spatial_obj = entry.spatial.as_ref()?;
+		let spatial: &Spatial = spatial_obj;
 		let hand = self.locate_hand(
-			&entry.spatial,
+			spatial_obj,
 			self.base_space.instance().timestamp_to_xr(time)?,
 		)?;
-		let hand = localize_hand(&entry.spatial, &hand, &entry.spatial, &entry.field.data);
+		let hand = localize_hand(spatial, &hand, spatial, &entry.field.data);
 		Some(SpatialData {
 			distance: hand_real_distance(&hand),
 			input: InputDataType::Hand { data: hand },
