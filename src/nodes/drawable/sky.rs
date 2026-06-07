@@ -101,20 +101,20 @@ fn apply_sky(
 				cmds.entity(cam).insert(skybox.clone());
 			}
 			sky.skybox.replace(skybox);
-			if let Some(mut blend_modes) = blend_modes.as_mut()
+			if let Some(blend_modes) = blend_modes.as_mut()
 				&& let Some(session_conf) = session_conf.as_ref()
 			{
-				modify_blend_modes(&mut blend_modes, &session_conf, opaque);
+				modify_blend_modes(blend_modes, session_conf, opaque);
 			}
 		} else {
 			for cam in cameras {
 				cmds.entity(cam).remove::<Skybox>();
 			}
 			sky.skybox.take();
-			if let Some(mut blend_modes) = blend_modes.as_mut()
+			if let Some(blend_modes) = blend_modes.as_mut()
 				&& let Some(session_conf) = session_conf.as_ref()
 			{
-				modify_blend_modes(&mut blend_modes, &session_conf, false);
+				modify_blend_modes(blend_modes, session_conf, false);
 			}
 		}
 	}
