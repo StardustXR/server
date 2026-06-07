@@ -338,6 +338,9 @@ impl QueryType {
 				dir,
 				max_length,
 			} => {
+				if !queryable.spatial.visible() {
+					return None;
+				}
 				if !queryable.field.data.spatial.visible() {
 					return None;
 				}
