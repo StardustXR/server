@@ -192,9 +192,12 @@ impl Query {
 		}
 	}
 	pub(super) async fn update_hit_queryable(&self, queryable: &Arc<Queryable>) {
-		let interfaces_guard = self.interesting_queryables.read().await;
-		let Some(interfaces) = interfaces_guard.get(&WeakPtrHash(Arc::downgrade(queryable))) else {
-			return;
+		let interfaces = {
+			let guard = self.interesting_queryables.read().await;
+			let Some(interest) = guard.get(&WeakPtrHash(Arc::downgrade(queryable))) else {
+				return;
+			};
+			interest.interfaces.get_valid_contents()
 		};
 		let r = self.inner.hit(queryable).await;
 		match (r, self.matching_queryables.contains(queryable)) {
@@ -213,23 +216,20 @@ impl Query {
 				info!("inserting queryable");
 				self.matching_queryables.add_raw(queryable);
 				info!("inserted queryable");
-				_ = self
-					.inner
-					.match_gained(&interfaces.interfaces, queryable, v);
+				_ = self.inner.match_gained(&interfaces, queryable, v);
 			}
 			(None, false) => {}
 		}
 	}
 	async fn self_moved(&self) {
-		for queryable in self
+		let queryables: Vec<_> = self
 			.interesting_queryables
 			.read()
 			.await
 			.keys()
 			.flat_map(|v| v.upgrade())
-		{
-			// this also gets self.interested_interfaces, but it also gets it as
-			// readonly, so its fine
+			.collect();
+		for queryable in queryables {
 			self.update_hit_queryable(&queryable).await;
 		}
 	}
@@ -288,17 +288,16 @@ impl Query {
 		for q in queryables.get_vec() {
 			self.update_interfaces(&q).await;
 		}
-		for (queryable, interfaces) in self
+		let init_queryables: Vec<_> = self
 			.interesting_queryables
 			.read()
 			.await
 			.iter()
-			.flat_map(|(k, v)| Some((k.upgrade()?, v)))
-		{
+			.flat_map(|(k, v)| Some((k.upgrade()?, v.interfaces.get_valid_contents())))
+			.collect();
+		for (queryable, interfaces) in init_queryables {
 			if let Some(data) = self.inner.hit(&queryable).await {
-				_ = self
-					.inner
-					.match_gained(&interfaces.interfaces, &queryable, data);
+				_ = self.inner.match_gained(&interfaces, &queryable, data);
 			}
 		}
 	}
@@ -432,13 +431,12 @@ impl QueryType {
 	}
 	fn match_gained(
 		&self,
-		interfaces: &Registry<QueryableInterface>,
+		interfaces: &[Arc<QueryableInterface>],
 		queryable: &Arc<Queryable>,
 		data: HitTestResult,
 	) -> Result<(), gluon::SendError> {
 		let interfaces = interfaces
-			.get_valid_contents()
-			.into_iter()
+			.iter()
 			.map(|v| QueriedInterface {
 				interface_id: v.interface_id.get_string().clone(),
 				interface: v.interface_ref.clone(),
