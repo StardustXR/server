@@ -32,6 +32,7 @@ use std::{
 	sync::{Arc, OnceLock},
 };
 use tokio::sync::RwLock;
+use tracing::instrument;
 
 pub struct FlatscreenInputPlugin;
 impl Plugin for FlatscreenInputPlugin {
@@ -288,6 +289,7 @@ impl MousePointer {
 		Ok(MousePointer { spatial, method })
 	}
 
+	#[instrument(name = "update pointer", level = "debug", skip_all)]
 	pub fn update(
 		&mut self,
 		ray: Ray3d,

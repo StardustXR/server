@@ -179,7 +179,7 @@ async fn main() -> Result<AppExit, JoinError> {
 	#[cfg(feature = "profile_app")]
 	let registry = registry.with(
 		tracing_tracy::TracyLayer::new(tracing_tracy::DefaultConfig::default())
-			.with_filter(LevelFilter::DEBUG),
+			.with_filter(LevelFilter::TRACE),
 	);
 
 	#[cfg(feature = "profile_tokio")]

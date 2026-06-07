@@ -32,6 +32,7 @@ use std::{
 	sync::{Arc, Mutex, RwLock as StdRwLock},
 };
 use tokio::sync::{RwLock, mpsc};
+use tracing::{debug_span, instrument};
 
 // ── Value types ──────────────────────────────────────────────────────────────
 
@@ -298,7 +299,6 @@ pub struct CaptureGuard {
 	release_tx: mpsc::UnboundedSender<InputHandler>,
 }
 impl InputMethodCaptureHandler for CaptureGuard {}
-
 impl Drop for CaptureGuard {
 	fn drop(&mut self) {
 		let _ = self.release_tx.send(self.handler.clone());
@@ -362,6 +362,7 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 		Some(capture)
 	}
 
+	#[instrument(name = "send input sender", level = "debug", skip_all)]
 	pub fn send(
 		&self,
 		source: &impl InputSource<QueryValue = V>,
@@ -369,7 +370,7 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 		ts: Timestamp,
 	) {
 		// Drain released captures (CaptureGuard dropped by client).
-		{
+		debug_span!("drain released captures").in_scope(|| {
 			let mut rx = self.release_rx.lock().unwrap();
 			while let Ok(released) = rx.try_recv() {
 				self.capture_requests.write().unwrap().remove(&released);
@@ -381,12 +382,12 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 					cap.take();
 				}
 			}
-		}
+		});
 
 		// Sweep handlers whose client died without on_left being called (e.g. silent
 		// binder drop, missed notification). Runs every frame so the cleanup is
 		// eventually consistent regardless of whether on_left fires.
-		{
+		debug_span!("drain dead input handler clients").in_scope(|| {
 			let has_dead = self
 				.cache
 				.blocking_read()
@@ -402,7 +403,7 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 					alive
 				});
 			}
-		}
+		});
 
 		// Snapshot capture_requests immediately so the std lock is never held
 		// across cache reads/writes (which could block tokio worker threads).
@@ -410,41 +411,44 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 
 		let objects = self.cache.blocking_read();
 
-		let (handler_order, capture) =
-			source.order_handlers_and_captures(&objects, &capture_requests);
+		let (handler_order, capture) = debug_span!("order handlers and captures")
+			.in_scope(|| source.order_handlers_and_captures(&objects, &capture_requests));
 
-		let dispatch: Vec<(InputHandler, SpatialData, SemanticData)> = handler_order
-			.iter()
-			.enumerate()
-			.filter_map(|(i, handler)| {
-				let entry = objects.values().find(|e| &e.handler == handler)?;
-				let spatial_data = source.spatial_data(&entry.spatial, &entry.field.data);
-				let datamap = source.datamap();
-				let semantic_data = SemanticData {
-					datamap,
-					order: i as u32,
-					captured: capture.as_ref().is_some_and(|c| c == handler),
-				};
-				Some((handler.clone(), spatial_data, semantic_data))
-			})
-			.collect();
+		let dispatch: Vec<(InputHandler, SpatialData, SemanticData)> =
+			debug_span!("prepare input for dispatch").in_scope(|| {
+				handler_order
+					.iter()
+					.enumerate()
+					.filter_map(|(i, handler)| {
+						let entry = objects.values().find(|e| &e.handler == handler)?;
+						let spatial_data = source.spatial_data(&entry.spatial, &entry.field.data);
+						let datamap = source.datamap();
+						let semantic_data = SemanticData {
+							datamap,
+							order: i as u32,
+							captured: capture.as_ref().is_some_and(|c| c == handler),
+						};
+						Some((handler.clone(), spatial_data, semantic_data))
+					})
+					.collect()
+			});
 
 		let new_set: HashSet<InputHandler> = handler_order.into_iter().collect();
-		let (added, removed) = self.tracker.lock().unwrap().update(new_set);
+		let (added, removed) = debug_span!("track added/removed")
+			.in_scope(|| self.tracker.lock().unwrap().update(new_set));
 
 		drop(objects);
 
-		tokio::spawn(async move {
-			for (handler, spatial_data, semantic_data) in dispatch {
-				if added.contains(&handler) {
-					handler.input_gained(method.clone(), ts, spatial_data, semantic_data);
-				} else {
-					handler.input_updated(method.clone(), ts, spatial_data, semantic_data);
-				}
+		let _guard = debug_span!("send update events to objects", count = dispatch.len()).entered();
+		for (handler, spatial_data, semantic_data) in dispatch {
+			if added.contains(&handler) {
+				handler.input_gained(method.clone(), ts, spatial_data, semantic_data);
+			} else {
+				handler.input_updated(method.clone(), ts, spatial_data, semantic_data);
 			}
-			for handler in removed {
-				handler.input_left(method.clone(), ts);
-			}
-		});
+		}
+		for handler in removed {
+			handler.input_left(method.clone(), ts);
+		}
 	}
 }
