@@ -285,9 +285,9 @@ impl Spatial {
 		let Some(entity) = self.entity.lock().as_ref().map(|v| v.get()) else {
 			return;
 		};
-		let enabled = self.local_visible();
-		let transform = if enabled {
-			Some(BevyTransform::from_matrix(self.local_transform()))
+		let mat = self.local_transform();
+		let transform = if Self::mat_visible(&mat) {
+			Some(BevyTransform::from_matrix(mat))
 		} else {
 			None
 		};
@@ -305,14 +305,14 @@ impl Spatial {
 		*self.transform.lock()
 	}
 
-	fn local_visible(&self) -> bool {
-		// Check our own scale by looking at matrix column lengths
-		let mat = self.local_transform();
-		let x_scale = mat.x_axis.length_squared();
-		let y_scale = mat.y_axis.length_squared();
-		let z_scale = mat.z_axis.length_squared();
+	fn mat_visible(mat: &Mat4) -> bool {
+		mat.x_axis.length_squared() > EPSILON
+			|| mat.y_axis.length_squared() > EPSILON
+			|| mat.z_axis.length_squared() > EPSILON
+	}
 
-		x_scale > EPSILON || y_scale > EPSILON || z_scale > EPSILON
+	fn local_visible(&self) -> bool {
+		Self::mat_visible(&self.local_transform())
 	}
 	/// Check if this node or any ancestor has zero scale (for visibility culling)
 	pub fn visible(&self) -> bool {
