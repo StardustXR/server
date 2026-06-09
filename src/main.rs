@@ -9,6 +9,7 @@ mod objects;
 mod openxr_helpers;
 mod query;
 mod session;
+mod keymap_store;
 
 use bevy::{
 	MinimalPlugins,
@@ -85,9 +86,7 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry
 use zbus::Connection;
 
 use crate::{
-	bevy_int::tracking_offset::TrackingOffsetPlugin,
-	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
-	nodes::{
+	bevy_int::tracking_offset::TrackingOffsetPlugin, core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin}, keymap_store::KeymapStore, nodes::{
 		audio::AudioNodePlugin,
 		camera::{CameraInterface, CameraNodePlugin},
 		drawable::{
@@ -95,10 +94,7 @@ use crate::{
 			text::TextNodePlugin,
 		},
 		fields::FieldDebugGizmoPlugin,
-	},
-	objects::stage::StagePlugin,
-	openxr_helpers::ConvertTimespec,
-	session::{launch_start, save_session},
+	}, objects::stage::StagePlugin, openxr_helpers::ConvertTimespec, session::{launch_start, save_session}
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -215,6 +211,11 @@ async fn main() -> Result<AppExit, JoinError> {
 		pion_file_path = ?cam_interface.pion_path.display(),
 		"Stardust server camera pion file created"
 	);
+	let keymap_store = KeymapStore::expose(&instance).await;
+	info!(
+		pion_file_path = ?keymap_store.pion_path.display(),
+		"Stardust server camera pion file created"
+	);
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");
 	if project_dirs.is_none() {
@@ -258,6 +259,7 @@ async fn main() -> Result<AppExit, JoinError> {
 		let _ = startup_child.kill();
 	}
 
+	drop(keymap_store);
 	drop(cam_interface);
 	drop(server_interface);
 	info!("Cleanly shut down Stardust");
