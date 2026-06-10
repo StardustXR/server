@@ -45,7 +45,7 @@ fn spawn_cam(mut cmds: Commands) {
 			fov: 100f32.to_radians(),
 			..Default::default()
 		}),
-		Transform::from_xyz(0.0, 1.6, 0.0),
+		Transform::from_xyz(0.0, 0.0, 0.0),
 	));
 }
 

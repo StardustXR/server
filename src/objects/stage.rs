@@ -26,7 +26,8 @@ impl Plugin for StagePlugin {
 	fn build(&self, app: &mut App) {
 		app.add_systems(XrPreDestroySession, destroy_stage_space);
 		app.add_systems(XrSessionCreated, create_stage_space);
-		app.add_systems(PreFrameWait, update.run_if(session_running));
+		app.add_systems(PreFrameWait, update_xr.run_if(session_running));
+		app.add_systems(PreFrameWait, update_flat.run_if(not(session_running)));
 		app.add_systems(Startup, setup);
 	}
 }
@@ -138,7 +139,15 @@ struct Stage {
 	>,
 }
 
-fn update(
+fn update_flat(stage: Res<Stage>) {
+	stage.tracked.tracked_blocking(false);
+	stage
+		.spatial
+		.set_local_transform(Mat4::from_translation(Vec3::NEG_Y * 1.6));
+	stage.base_spatial.set_local_transform(Mat4::IDENTITY);
+}
+
+fn update_xr(
 	session: Option<Res<OxrSession>>,
 	ref_space: Option<Res<XrPrimaryReferenceSpace>>,
 	stage: Res<Stage>,
