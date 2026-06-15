@@ -1,26 +1,26 @@
 use std::{
-	collections::HashMap,
-	hash::{BuildHasher, Hash, Hasher, RandomState},
+	collections::{HashMap, hash_map::Entry},
+	fmt::Debug,
+	future::Future,
+	pin::Pin,
 	sync::{Arc, OnceLock, Weak},
 };
 
-use bevy::prelude::Deref;
 use glam::Vec3;
-use gluon::Handler;
+use gluon::{Handler, SendError};
+use parking_lot::Mutex;
 use stardust_xr_protocol::{
 	field::FieldRef as FieldRefProxy,
-	query::{QueriedInterface, QueryableObjectRef},
+	query::{InterfaceDependency, QueriedInterface, QueryableObjectRef},
 	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
-		BeamQuery, BeamQueryHandler, Point, PointsQuery, PointsQueryHandle as PointsQueryHandleProxy, PointsQueryHandleHandler, PointsQueryHandler, QueryError, SpatialQueryGuard, SpatialQueryGuardHandler, SpatialQueryInterfaceHandler, ZoneQuery, ZoneQueryHandler
+		BeamQuery, BeamQueryHandler, Point, PointsQuery,
+		PointsQueryHandle as PointsQueryHandleProxy, PointsQueryHandleHandler, PointsQueryHandler,
+		QueryError, SpatialQueryGuard, SpatialQueryGuardHandler, SpatialQueryInterfaceHandler,
+		ZoneQuery, ZoneQueryHandler,
 	},
 };
-use stardust_xr_server_foundation::{
-	deduped_string::DedupedStr,
-	registry::{OwnedRegistry, Registry},
-};
-use tokio::sync::RwLock;
-use tracing::{error, info};
+use stardust_xr_server_foundation::deduped_string::DedupedStr;
 
 use crate::{
 	PION, interface,
@@ -32,546 +32,517 @@ use crate::{
 	query::{InterfaceQuery, QUERY_STATE, Queryable, QueryableInterface},
 };
 
-#[derive(Debug)]
-struct QueryableInterest {
-	interfaces: Registry<QueryableInterface>,
-	_move_handle: MovedCallback,
-	_shape_callback: ShapeChangedCallback,
+/// A single boxed future. Only `AnyQuery::update_interfaces` needs to be both async
+/// (it reads the queryable's interface lock) and object-safe, so this is the one place
+/// we pay for a heap-allocated future.
+type BoxFut<'a> = Pin<Box<dyn Future<Output = ()> + Send + Sync + 'a>>;
+
+/// The per-kind behaviour of a query. Each kind owns its own hit-data type, so a
+/// Beam hit can never be handed to a Zone handler — the mismatch is a type error
+/// rather than a runtime check. Implementing this trait is the *only* thing a new
+/// query kind has to do: discovery, the entered/moved/left state machine, interface
+/// tracking, and callback wiring are all provided by [`Query`].
+trait QueryKind: Send + Sync + Debug + 'static {
+	/// Kind-specific evidence that a queryable currently matches. Only obtainable
+	/// from [`QueryKind::hit`], and consumed by [`entered`](QueryKind::entered) /
+	/// [`moved`](QueryKind::moved), so those events cannot be emitted without a hit.
+	type Hit;
+
+	/// The spatial whose movement re-evaluates the whole query, plus an optional
+	/// field whose shape change does the same (Zone). Wired once by [`register_query`].
+	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>);
+
+	/// Geometric test for a single queryable. `None` means it does not match.
+	fn hit(&self, queryable: &Queryable) -> Option<Self::Hit>;
+
+	fn entered(
+		&self,
+		queryable: &Queryable,
+		interfaces: Vec<QueriedInterface>,
+		hit: Self::Hit,
+	) -> Result<(), SendError>;
+	fn moved(&self, queryable: &Queryable, hit: Self::Hit) -> Result<(), SendError>;
+	fn interfaces_changed(
+		&self,
+		obj: QueryableObjectRef,
+		interfaces: Vec<QueriedInterface>,
+	) -> Result<(), SendError>;
+	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError>;
 }
+
+/// Per-(query, queryable) tracking state — the single source of truth. A queryable is
+/// *interested in* this query iff it has an entry here (it satisfies every required
+/// interface); it is *matched* iff `matched` is true. `matched` is only ever flipped
+/// inside [`Query::reconcile`], in lockstep with the emitted event, so state and
+/// notifications cannot disagree.
 #[derive(Debug)]
-pub(super) struct Query {
+struct Tracked {
+	queryable: Weak<Queryable>,
+	/// Last-reported set of matching interfaces, in query dependency order. Stored as
+	/// the wire form (not `Arc<QueryableInterface>`) so it does not keep the
+	/// queryable's interface alive — that's what lets a dropped interface guard be
+	/// observed as the interface going missing.
+	interfaces: Vec<QueriedInterface>,
+	matched: bool,
+	_move: MovedCallback,
+	_shape: ShapeChangedCallback,
+}
+
+#[derive(Debug)]
+struct Query<K: QueryKind> {
 	interfaces: Vec<InterfaceQuery>,
-	interesting_queryables: RwLock<HashMap<WeakPtrHash<Queryable>, QueryableInterest>>,
-	matching_queryables: Registry<Queryable>,
-	self_moved_handle: OnceLock<MovedCallback>,
-	inner: QueryType,
+	tracked: Mutex<HashMap<u64, Tracked>>,
+	/// Keeps the query's own anchor callbacks (move + optional shape) alive.
+	self_callbacks: OnceLock<(MovedCallback, Option<ShapeChangedCallback>)>,
+	kind: K,
 }
-#[derive(Debug)]
-enum QueryType {
-	Zone {
-		handler: ZoneQueryHandler,
-		field: Arc<Field>,
-		margin: f32,
-		_shape_changed: OnceLock<ShapeChangedCallback>,
-	},
-	Beam {
-		handler: BeamQueryHandler,
-		ref_space: Arc<Spatial>,
-		origin: Vec3,
-		dir: Vec3,
-		max_length: f32,
-	},
-	Points {
-		handler: PointsQueryHandler,
-		ref_space: Arc<Spatial>,
-		points: RwLock<Vec<Point>>,
-	},
+
+/// Object-safe facade over `Query<K>` so the global registry can hold mixed kinds.
+/// `K::Hit` never escapes `Query<K>`'s own methods, keeping this trait object-safe.
+pub(super) trait AnyQuery: Send + Sync {
+	/// Re-sync interest + interfaces for one queryable, then re-evaluate the hit.
+	fn update_interfaces(self: Arc<Self>, queryable: Arc<Queryable>) -> BoxFut<'static>;
+	/// A queryable is going away: drop its tracking and fire `left` if it was matched.
+	fn queryable_destroyed(self: Arc<Self>, queryable: &Queryable);
 }
-impl Query {
-	pub fn queryable_destroyed(self: Arc<Self>, queryable: &Queryable) {
-		if self.matching_queryables.contains(queryable) {
-			self.matching_queryables.remove(queryable);
-			_ = self
-				.inner
-				.left(QueryableObjectRef::from_handler(&queryable.queryable_ref));
-		}
-		let queryable_addr = (queryable) as *const _ as usize;
-		tokio::spawn(async move {
-			self.interesting_queryables
-				.write()
-				.await
-				.retain(|k, _| k.as_ptr().addr() != queryable_addr);
-		});
+impl<K: QueryKind> AnyQuery for Query<K> {
+	fn update_interfaces(self: Arc<Self>, queryable: Arc<Queryable>) -> BoxFut<'static> {
+		Box::pin(async move { self.update_interfaces_impl(&queryable).await })
 	}
-	pub async fn update_interfaces(self: &Arc<Self>, queryable: &Arc<Queryable>) {
-		let v = queryable
+	fn queryable_destroyed(self: Arc<Self>, queryable: &Queryable) {
+		let removed = self.tracked.lock().remove(&queryable.id);
+		if let Some(tracked) = removed
+			&& tracked.matched
+		{
+			_ = self.kind.left(queryable.obj_ref());
+		}
+	}
+}
+
+impl<K: QueryKind> Query<K> {
+	/// Re-test one queryable's geometry and emit the resulting transition. This is the
+	/// only place `Tracked::matched` changes. `hit` is synchronous, so the whole
+	/// transition runs under one short lock with no `.await` held across it.
+	fn reconcile(&self, queryable: &Arc<Queryable>) {
+		let mut tracked = self.tracked.lock();
+		let Some(entry) = tracked.get_mut(&queryable.id) else {
+			return;
+		};
+		match (self.kind.hit(queryable), entry.matched) {
+			(Some(hit), false) => {
+				let interfaces = entry.interfaces.clone();
+				entry.matched = true;
+				_ = self.kind.entered(queryable, interfaces, hit);
+			}
+			(Some(hit), true) => {
+				_ = self.kind.moved(queryable, hit);
+			}
+			(None, true) => {
+				entry.matched = false;
+				_ = self.kind.left(queryable.obj_ref());
+			}
+			(None, false) => {}
+		}
+	}
+
+	/// Bring one queryable's interest + interface set up to date, then re-evaluate it.
+	async fn update_interfaces_impl(self: &Arc<Self>, queryable: &Arc<Queryable>) {
+		let have: HashMap<Arc<DedupedStr>, Arc<QueryableInterface>> = queryable
 			.interfaces
 			.read()
 			.await
 			.get_valid_contents()
 			.into_iter()
-			.map(|v| (v.interface_id.clone(), v))
-			.collect::<HashMap<_, _>>();
-		let queryable_key = WeakPtrHash(Arc::downgrade(queryable));
-		let state = RandomState::new();
-
-		let hash = if let Some(v) = self.interesting_queryables.read().await.get(&queryable_key) {
-			let mut hasher = state.build_hasher();
-			v.interfaces
-				.get_valid_contents()
-				.iter()
-				.for_each(|v| v.interface_id.hash(&mut hasher));
-			v.interfaces.clear();
-			Some(hasher.finish())
-		} else {
-			None
-		};
-		for i in self.interfaces.iter() {
-			if !v.contains_key(&i.id) && !i.optional {
-				if self.matching_queryables.contains(queryable) {
-					self.matching_queryables.remove(queryable);
-					_ = self
-						.inner
-						.left(QueryableObjectRef::from_handler(&queryable.queryable_ref));
-				}
-				self.interesting_queryables
-					.write()
-					.await
-					.remove(&queryable_key);
-				return;
-			}
-			if let Some(v) = v.get(&i.id) {
-				self.interesting_queryables
-					.write()
-					.await
-					.entry(queryable_key.clone())
-					.or_insert_with(|| QueryableInterest {
-						interfaces: Registry::new(),
-						_move_handle: queryable.field.data.spatial.moved_callback({
-							let query = Arc::downgrade(self);
-							let queryable = Arc::downgrade(queryable);
-							move || {
-								if let Some(query) = query.upgrade()
-									&& let Some(queryable) = queryable.upgrade()
-								{
-									tokio::spawn(async move {
-										query.update_hit_queryable(&queryable).await;
-									});
-								}
-							}
-						}),
-						_shape_callback: queryable.field.data.shape_changed_callback({
-							let query = Arc::downgrade(self);
-							let queryable = Arc::downgrade(queryable);
-							move || {
-								if let Some(query) = query.upgrade()
-									&& let Some(queryable) = queryable.upgrade()
-								{
-									tokio::spawn(async move {
-										query.update_hit_queryable(&queryable).await;
-									});
-								}
-							}
-						}),
-					})
-					.interfaces
-					.add_raw(v);
-			}
-		}
-		let new_hash = if let Some(v) = self.interesting_queryables.read().await.get(&queryable_key)
-		{
-			let mut hasher = state.build_hasher();
-			v.interfaces
-				.get_valid_contents()
-				.iter()
-				.for_each(|v| v.interface_id.hash(&mut hasher));
-			Some(hasher.finish())
-		} else {
-			error!("somehow reached second hash point without being interested in the queryable");
-			None
-		};
-		if hash.is_some_and(|hash| Some(hash) != new_hash) {
-			let interfaces = self
-				.interesting_queryables
-				.read()
-				.await
-				.get(&queryable_key)
-				.unwrap()
-				.interfaces
-				.get_valid_contents()
-				.into_iter()
-				.map(|v| QueriedInterface {
-					interface_id: v.interface_id.get_string().clone(),
-					interface: v.interface_ref.clone(),
-				})
-				.collect();
-			_ = self.inner.interfaces_changed(
-				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				interfaces,
-			);
-		}
-	}
-	pub(super) async fn update_hit_queryable(&self, queryable: &Arc<Queryable>) {
-		let interfaces = {
-			let guard = self.interesting_queryables.read().await;
-			let Some(interest) = guard.get(&WeakPtrHash(Arc::downgrade(queryable))) else {
-				return;
-			};
-			interest.interfaces.get_valid_contents()
-		};
-		let r = self.inner.hit(queryable).await;
-		match (r, self.matching_queryables.contains(queryable)) {
-			(None, true) => {
-				info!("removing queryable");
-				self.matching_queryables.remove(queryable);
-				info!("removed queryable");
-				_ = self
-					.inner
-					.left(QueryableObjectRef::from_handler(&queryable.queryable_ref));
-			}
-			(Some(v), true) => {
-				_ = self.inner.moved(queryable, v);
-			}
-			(Some(v), false) => {
-				info!("inserting queryable");
-				self.matching_queryables.add_raw(queryable);
-				info!("inserted queryable");
-				_ = self.inner.match_gained(&interfaces, queryable, v);
-			}
-			(None, false) => {}
-		}
-	}
-	async fn self_moved(&self) {
-		let queryables: Vec<_> = self
-			.interesting_queryables
-			.read()
-			.await
-			.keys()
-			.flat_map(|v| v.upgrade())
+			.map(|i| (i.interface_id.clone(), i))
 			.collect();
-		for queryable in queryables {
-			self.update_hit_queryable(&queryable).await;
-		}
-	}
-	async fn init(self: &Arc<Self>) {
-		_ = self.self_moved_handle.set(
-			match &self.inner {
-				QueryType::Zone {
-					handler: _,
-					field,
-					margin: _,
-					_shape_changed,
-				} => {
-					_ = _shape_changed.set(field.shape_changed_callback({
-						let query = Arc::downgrade(self);
-						move || {
-							if let Some(q) = query.upgrade() {
-								tokio::spawn(async move {
-									q.self_moved().await;
-								});
-							}
-						}
-					}));
-					&field.spatial
-				}
-				QueryType::Beam {
-					handler: _,
-					ref_space: origin,
-					origin: _,
-					dir: _,
-					max_length: _,
-				} => origin,
-				QueryType::Points {
-					handler: _,
-					ref_space,
-					points: _,
-				} => ref_space,
+
+		let Some(matched) = compute_interfaces(&self.interfaces, &have) else {
+			// No longer interested (a required interface went missing): stop tracking
+			// it, and tell the client it left if it had been matched.
+			let removed = self.tracked.lock().remove(&queryable.id);
+			if let Some(tracked) = removed
+				&& tracked.matched
+			{
+				_ = self.kind.left(queryable.obj_ref());
 			}
-			.moved_callback({
-				let query = Arc::downgrade(self);
-				move || {
-					if let Some(q) = query.upgrade() {
-						tokio::spawn(async move {
-							q.self_moved().await;
-						});
+			return;
+		};
+
+		let interfaces = proto_interfaces(&matched);
+		{
+			let mut tracked = self.tracked.lock();
+			match tracked.entry(queryable.id) {
+				Entry::Occupied(mut occupied) => {
+					let entry = occupied.get_mut();
+					if entry.interfaces != interfaces {
+						entry.interfaces = interfaces.clone();
+						_ = self.kind.interfaces_changed(queryable.obj_ref(), interfaces);
 					}
 				}
-			}),
-		);
-		let queryables = OwnedRegistry::new();
-		for i in self.interfaces.iter() {
-			let v = QUERY_STATE.interface_to_queryable.read().await;
-			for q in v.get(&i.id).iter().flat_map(|v| v.get_valid_contents()) {
-				queryables.add_raw(q);
-			}
-		}
-		for q in queryables.get_vec() {
-			self.update_interfaces(&q).await;
-		}
-		let init_queryables: Vec<_> = self
-			.interesting_queryables
-			.read()
-			.await
-			.iter()
-			.flat_map(|(k, v)| Some((k.upgrade()?, v.interfaces.get_valid_contents())))
-			.collect();
-		for (queryable, interfaces) in init_queryables {
-			if let Some(data) = self.inner.hit(&queryable).await {
-				self.matching_queryables.add_raw(&queryable);
-				_ = self.inner.match_gained(&interfaces, &queryable, data);
-			}
-		}
-	}
-}
-impl Drop for Query {
-	fn drop(&mut self) {
-		QUERY_STATE.queries.remove(self);
-	}
-}
-impl QueryType {
-	/// this could take a while to run, might we worth to run in a spawn_blocking?
-	async fn hit(&self, queryable: &Queryable) -> Option<HitTestResult> {
-		match self {
-			QueryType::Zone {
-				handler: _,
-				field,
-				margin,
-				_shape_changed: _,
-			} => {
-				if !queryable.spatial.visible() {
-					return None;
-				}
-				if !field.spatial.visible() {
-					return None;
-				}
-				let (_scale, _rotation, pos) =
-					Spatial::space_to_space_matrix(Some(&queryable.spatial), Some(&field.spatial))
-						.to_scale_rotation_translation();
-				let distance = field.local_sample(pos.into()).distance;
-
-				(distance < *margin).then_some(HitTestResult::Zone { pos, distance })
-			}
-			QueryType::Beam {
-				handler: _,
-				ref_space,
-				origin,
-				dir,
-				max_length,
-			} => {
-				if !queryable.spatial.visible() {
-					return None;
-				}
-				if !queryable.field.data.spatial.visible() {
-					return None;
-				}
-				let ray_march = queryable.field.data.ray_march(Ray {
-					origin: *origin,
-					direction: *dir,
-					space: ref_space.clone(),
-				});
-				(ray_march.min_distance <= 0.0 && ray_march.deepest_point_distance <= *max_length)
-					.then_some(HitTestResult::Beam {
-						deepest_point_distance: ray_march.deepest_point_distance,
-						distance: ray_march.min_distance,
-					})
-			}
-			QueryType::Points {
-				handler: _,
-				ref_space,
-				points,
-			} => {
-				let distance = points
-					.read()
-					.await
-					.iter()
-					.map(|p| {
-						let distance = queryable
-							.field
-							.data
-							.sample(ref_space, p.point.into())
-							.distance;
-						(distance - p.margin, distance)
-					})
-					.reduce(|(sort1, distance1), (sort2, distance2)| {
-						if sort1 < sort2 {
-							(sort1, distance1)
-						} else {
-							(sort2, distance2)
-						}
+				Entry::Vacant(slot) => {
+					slot.insert(Tracked {
+						queryable: Arc::downgrade(queryable),
+						interfaces,
+						matched: false,
+						_move: self.watch_queryable_moved(queryable),
+						_shape: self.watch_queryable_shape(queryable),
 					});
-				distance
-					.filter(|(distance, _)| *distance < 0.0)
-					.map(|(_, distance)| HitTestResult::Points { distance })
+				}
+			}
+		}
+
+		self.reconcile(queryable);
+	}
+
+	/// Re-evaluate every tracked queryable — used when the query's own anchor moves
+	/// or its zone field reshapes.
+	fn self_moved(&self) {
+		let queryables: Vec<Arc<Queryable>> = self
+			.tracked
+			.lock()
+			.values()
+			.filter_map(|tracked| tracked.queryable.upgrade())
+			.collect();
+		for queryable in queryables {
+			self.reconcile(&queryable);
+		}
+	}
+
+	/// Wire the query's own anchor callbacks and back-fill against the queryables that
+	/// already exist. Both first contact and later updates go through
+	/// `update_interfaces_impl`, so they cannot diverge.
+	async fn init(self: &Arc<Self>) {
+		let (anchor_spatial, anchor_field) = self.kind.anchors();
+		let moved = anchor_spatial.moved_callback(self.self_moved_closure());
+		let shape = anchor_field.map(|field| field.shape_changed_callback(self.self_moved_closure()));
+		_ = self.self_callbacks.set((moved, shape));
+
+		for queryable in QUERY_STATE.all_queryables.get_valid_contents() {
+			self.update_interfaces_impl(&queryable).await;
+		}
+	}
+
+	fn watch_queryable_moved(self: &Arc<Self>, queryable: &Arc<Queryable>) -> MovedCallback {
+		queryable
+			.field
+			.data
+			.spatial
+			.moved_callback(self.requery_closure(queryable))
+	}
+	fn watch_queryable_shape(self: &Arc<Self>, queryable: &Arc<Queryable>) -> ShapeChangedCallback {
+		queryable
+			.field
+			.data
+			.shape_changed_callback(self.requery_closure(queryable))
+	}
+	/// Closure that re-tests a single queryable against this query when that queryable
+	/// moves or reshapes. Deferred onto the runtime so it never runs while the mover
+	/// holds a spatial lock.
+	fn requery_closure(
+		self: &Arc<Self>,
+		queryable: &Arc<Queryable>,
+	) -> impl Fn() + Send + Sync + 'static {
+		let query = Arc::downgrade(self);
+		let queryable = Arc::downgrade(queryable);
+		move || {
+			if let Some(query) = query.upgrade()
+				&& let Some(queryable) = queryable.upgrade()
+			{
+				tokio::spawn(async move { query.reconcile(&queryable) });
 			}
 		}
 	}
-	fn left(&self, obj: QueryableObjectRef) -> Result<(), gluon::SendError> {
-		match self {
-			QueryType::Zone {
-				handler,
-				field: _,
-				margin: _,
-				_shape_changed: _,
-			} => handler.left(obj),
-			QueryType::Beam {
-				handler,
-				ref_space: _,
-				origin: _,
-				dir: _,
-				max_length: _,
-			} => handler.left(obj),
-			QueryType::Points {
-				handler,
-				ref_space: _,
-				points: _,
-			} => handler.left(obj),
+	/// Closure that re-evaluates the whole query when its own anchor moves/reshapes.
+	fn self_moved_closure(self: &Arc<Self>) -> impl Fn() + Send + Sync + 'static {
+		let query = Arc::downgrade(self);
+		move || {
+			if let Some(query) = query.upgrade() {
+				tokio::spawn(async move { query.self_moved() });
+			}
 		}
+	}
+}
+impl<K: QueryKind> Drop for Query<K> {
+	fn drop(&mut self) {
+		let this: &dyn AnyQuery = self;
+		QUERY_STATE.queries.remove(this);
+	}
+}
+
+/// Resolve a query's interface dependencies against the interfaces a queryable
+/// actually has. Returns the matching set (required + present optionals, in
+/// dependency order), or `None` if a *required* interface is missing — the single
+/// place that decision is made.
+fn compute_interfaces(
+	deps: &[InterfaceQuery],
+	have: &HashMap<Arc<DedupedStr>, Arc<QueryableInterface>>,
+) -> Option<Vec<Arc<QueryableInterface>>> {
+	let mut out = Vec::new();
+	for dep in deps {
+		match have.get(&dep.id) {
+			Some(interface) => out.push(interface.clone()),
+			None if dep.optional => {}
+			None => return None,
+		}
+	}
+	Some(out)
+}
+
+fn proto_interfaces(interfaces: &[Arc<QueryableInterface>]) -> Vec<QueriedInterface> {
+	interfaces
+		.iter()
+		.map(|interface| QueriedInterface {
+			interface_id: interface.interface_id.get_string().clone(),
+			interface: interface.interface_ref.clone(),
+		})
+		.collect()
+}
+
+/// Parse protocol interface dependencies, enforcing that at least one is required.
+async fn parse_interfaces(
+	deps: Vec<InterfaceDependency>,
+) -> Result<Vec<InterfaceQuery>, QueryError> {
+	let mut interfaces = Vec::with_capacity(deps.len());
+	let mut found_required = false;
+	for dep in deps {
+		found_required |= !dep.optional;
+		interfaces.push(InterfaceQuery {
+			id: DedupedStr::get(dep.id).await,
+			optional: dep.optional,
+		});
+	}
+	if !found_required {
+		return Err(QueryError::NoRequiredInterfaces);
+	}
+	Ok(interfaces)
+}
+
+/// Build a query of the given kind, register it globally, wire its anchor callbacks,
+/// and back-fill against existing queryables — the one place this ritual lives, so a
+/// new query kind can't skip a step.
+async fn register_query<K: QueryKind>(
+	kind: K,
+	deps: Vec<InterfaceDependency>,
+) -> Result<Arc<Query<K>>, QueryError> {
+	let interfaces = parse_interfaces(deps).await?;
+	let query = Arc::new(Query {
+		interfaces,
+		tracked: Mutex::new(HashMap::new()),
+		self_callbacks: OnceLock::new(),
+		kind,
+	});
+	let dyn_query: Arc<dyn AnyQuery> = query.clone();
+	QUERY_STATE.queries.add_raw(&dyn_query);
+	query.init().await;
+	Ok(query)
+}
+
+// === query kinds ===
+
+#[derive(Debug)]
+struct BeamKind {
+	handler: BeamQueryHandler,
+	ref_space: Arc<Spatial>,
+	origin: Vec3,
+	dir: Vec3,
+	max_length: f32,
+}
+struct BeamHit {
+	deepest_point_distance: f32,
+	distance: f32,
+}
+impl QueryKind for BeamKind {
+	type Hit = BeamHit;
+	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>) {
+		(&self.ref_space, None)
+	}
+	fn hit(&self, queryable: &Queryable) -> Option<BeamHit> {
+		if !queryable.spatial.visible() {
+			return None;
+		}
+		if !queryable.field.data.spatial.visible() {
+			return None;
+		}
+		let ray_march = queryable.field.data.ray_march(Ray {
+			origin: self.origin,
+			direction: self.dir,
+			space: self.ref_space.clone(),
+		});
+		(ray_march.min_distance <= 0.0 && ray_march.deepest_point_distance <= self.max_length)
+			.then_some(BeamHit {
+				deepest_point_distance: ray_march.deepest_point_distance,
+				distance: ray_march.min_distance,
+			})
+	}
+	fn entered(
+		&self,
+		queryable: &Queryable,
+		interfaces: Vec<QueriedInterface>,
+		hit: BeamHit,
+	) -> Result<(), SendError> {
+		self.handler.intersected(
+			queryable.obj_ref(),
+			queryable.field_ref(),
+			queryable.spatial_ref(),
+			interfaces,
+			hit.deepest_point_distance,
+			hit.distance,
+		)
+	}
+	fn moved(&self, queryable: &Queryable, hit: BeamHit) -> Result<(), SendError> {
+		self.handler
+			.moved(queryable.obj_ref(), hit.deepest_point_distance, hit.distance)
 	}
 	fn interfaces_changed(
 		&self,
 		obj: QueryableObjectRef,
 		interfaces: Vec<QueriedInterface>,
-	) -> Result<(), gluon::SendError> {
-		match self {
-			QueryType::Zone {
-				handler,
-				field: _,
-				margin: _,
-				_shape_changed: _,
-			} => handler.interfaces_changed(obj, interfaces),
-			QueryType::Beam {
-				handler,
-				ref_space: _,
-				origin: _,
-				dir: _,
-				max_length: _,
-			} => handler.interfaces_changed(obj, interfaces),
-			QueryType::Points {
-				handler,
-				ref_space: _,
-				points: _,
-			} => handler.interfaces_changed(obj, interfaces),
-		}
+	) -> Result<(), SendError> {
+		self.handler.interfaces_changed(obj, interfaces)
 	}
-	fn match_gained(
-		&self,
-		interfaces: &[Arc<QueryableInterface>],
-		queryable: &Arc<Queryable>,
-		data: HitTestResult,
-	) -> Result<(), gluon::SendError> {
-		let interfaces = interfaces
-			.iter()
-			.map(|v| QueriedInterface {
-				interface_id: v.interface_id.get_string().clone(),
-				interface: v.interface_ref.clone(),
-			})
-			.collect::<Vec<_>>();
-		match (self, data) {
-			(
-				QueryType::Zone {
-					handler,
-					field: _,
-					margin: _,
-					_shape_changed: _,
-				},
-				HitTestResult::Zone { pos, distance },
-			) => handler.entered(
-				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				FieldRefProxy::from_handler(queryable.field.get_ref()),
-				SpatialRefProxy::from_handler(queryable.spatial.get_ref()),
-				interfaces,
-				pos.into(),
-				distance,
-			),
-			(
-				QueryType::Beam {
-					handler,
-					ref_space: _,
-					origin: _,
-					dir: _,
-					max_length: _,
-				},
-				HitTestResult::Beam {
-					deepest_point_distance,
-					distance,
-				},
-			) => handler.intersected(
-				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				FieldRefProxy::from_handler(queryable.field.get_ref()),
-				SpatialRefProxy::from_handler(queryable.spatial.get_ref()),
-				interfaces,
-				deepest_point_distance,
-				distance,
-			),
-			(
-				QueryType::Points {
-					handler,
-					ref_space: _,
-					points: _,
-				},
-				HitTestResult::Points { distance },
-			) => handler.entered(
-				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				FieldRefProxy::from_handler(queryable.field.get_ref()),
-				SpatialRefProxy::from_handler(queryable.spatial.get_ref()),
-				interfaces,
-				distance,
-			),
-			_ => {
-				error!("tried sending entered event with mismatching QueryType and HitTestResult");
-				Ok(())
-			}
-		}
-	}
-	fn moved(
-		&self,
-		queryable: &Arc<Queryable>,
-		data: HitTestResult,
-	) -> Result<(), gluon::SendError> {
-		match (self, data) {
-			(
-				QueryType::Zone {
-					handler,
-					field: _,
-					margin: _,
-					_shape_changed: _,
-				},
-				HitTestResult::Zone { pos, distance },
-			) => handler.moved(
-				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				pos.into(),
-				distance,
-			),
-			(
-				QueryType::Beam {
-					handler,
-					ref_space: _,
-					origin: _,
-					dir: _,
-					max_length: _,
-				},
-				HitTestResult::Beam {
-					deepest_point_distance,
-					distance,
-				},
-			) => handler.moved(
-				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				deepest_point_distance,
-				distance,
-			),
-			(
-				QueryType::Points {
-					handler,
-					ref_space: _,
-					points: _,
-				},
-				HitTestResult::Points { distance },
-			) => handler.moved(
-				QueryableObjectRef::from_handler(&queryable.queryable_ref),
-				distance,
-			),
-			_ => {
-				error!("tried sending moved event with mismatching QueryType and HitTestResult");
-				Ok(())
-			}
-		}
+	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError> {
+		self.handler.left(obj)
 	}
 }
 
 #[derive(Debug)]
-enum HitTestResult {
-	Zone {
-		pos: Vec3,
-		distance: f32,
-	},
-	Beam {
-		deepest_point_distance: f32,
-		distance: f32,
-	},
-	Points {
-		distance: f32,
-	},
+struct ZoneKind {
+	handler: ZoneQueryHandler,
+	field: Arc<Field>,
+	margin: f32,
 }
+struct ZoneHit {
+	pos: Vec3,
+	distance: f32,
+}
+impl QueryKind for ZoneKind {
+	type Hit = ZoneHit;
+	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>) {
+		(&self.field.spatial, Some(&self.field))
+	}
+	fn hit(&self, queryable: &Queryable) -> Option<ZoneHit> {
+		if !queryable.spatial.visible() {
+			return None;
+		}
+		if !self.field.spatial.visible() {
+			return None;
+		}
+		let (_scale, _rotation, pos) =
+			Spatial::space_to_space_matrix(Some(&queryable.spatial), Some(&self.field.spatial))
+				.to_scale_rotation_translation();
+		let distance = self.field.local_sample(pos.into()).distance;
+		(distance < self.margin).then_some(ZoneHit { pos, distance })
+	}
+	fn entered(
+		&self,
+		queryable: &Queryable,
+		interfaces: Vec<QueriedInterface>,
+		hit: ZoneHit,
+	) -> Result<(), SendError> {
+		self.handler.entered(
+			queryable.obj_ref(),
+			queryable.field_ref(),
+			queryable.spatial_ref(),
+			interfaces,
+			hit.pos.into(),
+			hit.distance,
+		)
+	}
+	fn moved(&self, queryable: &Queryable, hit: ZoneHit) -> Result<(), SendError> {
+		self.handler
+			.moved(queryable.obj_ref(), hit.pos.into(), hit.distance)
+	}
+	fn interfaces_changed(
+		&self,
+		obj: QueryableObjectRef,
+		interfaces: Vec<QueriedInterface>,
+	) -> Result<(), SendError> {
+		self.handler.interfaces_changed(obj, interfaces)
+	}
+	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError> {
+		self.handler.left(obj)
+	}
+}
+
+#[derive(Debug)]
+struct PointsKind {
+	handler: PointsQueryHandler,
+	ref_space: Arc<Spatial>,
+	points: Mutex<Vec<Point>>,
+}
+struct PointsHit {
+	distance: f32,
+}
+impl QueryKind for PointsKind {
+	type Hit = PointsHit;
+	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>) {
+		(&self.ref_space, None)
+	}
+	fn hit(&self, queryable: &Queryable) -> Option<PointsHit> {
+		self.points
+			.lock()
+			.iter()
+			.map(|p| {
+				let distance = queryable
+					.field
+					.data
+					.sample(&self.ref_space, p.point.into())
+					.distance;
+				(distance - p.margin, distance)
+			})
+			.reduce(|(sort1, distance1), (sort2, distance2)| {
+				if sort1 < sort2 {
+					(sort1, distance1)
+				} else {
+					(sort2, distance2)
+				}
+			})
+			.filter(|(sort, _)| *sort < 0.0)
+			.map(|(_, distance)| PointsHit { distance })
+	}
+	fn entered(
+		&self,
+		queryable: &Queryable,
+		interfaces: Vec<QueriedInterface>,
+		hit: PointsHit,
+	) -> Result<(), SendError> {
+		self.handler.entered(
+			queryable.obj_ref(),
+			queryable.field_ref(),
+			queryable.spatial_ref(),
+			interfaces,
+			hit.distance,
+		)
+	}
+	fn moved(&self, queryable: &Queryable, hit: PointsHit) -> Result<(), SendError> {
+		self.handler.moved(queryable.obj_ref(), hit.distance)
+	}
+	fn interfaces_changed(
+		&self,
+		obj: QueryableObjectRef,
+		interfaces: Vec<QueriedInterface>,
+	) -> Result<(), SendError> {
+		self.handler.interfaces_changed(obj, interfaces)
+	}
+	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError> {
+		self.handler.left(obj)
+	}
+}
+
+/// Proxy-building helpers shared by every query kind.
+impl Queryable {
+	fn obj_ref(&self) -> QueryableObjectRef {
+		QueryableObjectRef::from_handler(&self.queryable_ref)
+	}
+	fn field_ref(&self) -> FieldRefProxy {
+		FieldRefProxy::from_handler(self.field.get_ref())
+	}
+	fn spatial_ref(&self) -> SpatialRefProxy {
+		SpatialRefProxy::from_handler(self.spatial.get_ref())
+	}
+}
+
+// === protocol surface ===
 
 interface!(SpatialQueryInterface);
 impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
@@ -589,35 +560,19 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			max_length,
 		} = query;
 		let ref_space = reference_spatial.owned().ok_or(QueryError::InvalidRef)?;
-		let mut interface_ids = Vec::with_capacity(interfaces.len());
-		let mut found_required = false;
-		for i in interfaces {
-			found_required |= !i.optional;
-			interface_ids.push(InterfaceQuery {
-				id: DedupedStr::get(i.id).await,
-				optional: i.optional,
-			});
-		}
-		if !found_required {
-            return Err(QueryError::NoRequiredInterfaces);
-		}
-
-		let query = QUERY_STATE.queries.add(Query {
-			interfaces: interface_ids,
-			inner: QueryType::Beam {
+		let query = register_query(
+			BeamKind {
 				handler,
 				ref_space: (**ref_space).clone(),
 				origin: origin.into(),
 				dir: direction.into(),
 				max_length,
 			},
-			interesting_queryables: RwLock::default(),
-			matching_queryables: Registry::new(),
-			self_moved_handle: OnceLock::new(),
-		});
-		query.init().await;
-		let v = PION.register_object(Guard(query)).to_service();
-		Ok(SpatialQueryGuard::from_handler(&v))
+			interfaces,
+		)
+		.await?;
+		let guard = PION.register_object(Guard(query)).to_service();
+		Ok(SpatialQueryGuard::from_handler(&guard))
 	}
 
 	async fn zone_query(
@@ -632,34 +587,17 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			margin,
 		} = query;
 		let field = zone_field.owned().ok_or(QueryError::InvalidRef)?;
-		let mut interface_ids = Vec::with_capacity(interfaces.len());
-		let mut found_required = false;
-		for i in interfaces {
-			found_required |= !i.optional;
-			interface_ids.push(InterfaceQuery {
-				id: DedupedStr::get(i.id).await,
-				optional: i.optional,
-			});
-		}
-		if !found_required {
-            return Err(QueryError::NoRequiredInterfaces);
-		}
-
-		let query = QUERY_STATE.queries.add(Query {
-			interfaces: interface_ids,
-			inner: QueryType::Zone {
+		let query = register_query(
+			ZoneKind {
 				handler,
 				field: field.data.clone(),
 				margin,
-				_shape_changed: OnceLock::new(),
 			},
-			interesting_queryables: RwLock::default(),
-			matching_queryables: Registry::new(),
-			self_moved_handle: OnceLock::new(),
-		});
-		query.init().await;
-		let v = PION.register_object(Guard(query)).to_service();
-		Ok(SpatialQueryGuard::from_handler(&v))
+			interfaces,
+		)
+		.await?;
+		let guard = PION.register_object(Guard(query)).to_service();
+		Ok(SpatialQueryGuard::from_handler(&guard))
 	}
 
 	async fn points_query(
@@ -674,72 +612,33 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			points,
 		} = query;
 		let ref_space = reference_spatial.owned().ok_or(QueryError::InvalidRef)?;
-		let mut interface_ids = Vec::with_capacity(interfaces.len());
-		let mut found_required = false;
-		for i in interfaces {
-			found_required |= !i.optional;
-			interface_ids.push(InterfaceQuery {
-				id: DedupedStr::get(i.id).await,
-				optional: i.optional,
-			});
-		}
-		if !found_required {
-            return Err(QueryError::NoRequiredInterfaces);
-		}
-		let query = QUERY_STATE.queries.add(Query {
-			interfaces: interface_ids,
-			inner: QueryType::Points {
+		let query = register_query(
+			PointsKind {
 				handler,
 				ref_space: (**ref_space).clone(),
-				points: RwLock::new(points),
+				points: Mutex::new(points),
 			},
-			interesting_queryables: RwLock::default(),
-			matching_queryables: Registry::new(),
-			self_moved_handle: OnceLock::new(),
-		});
-		query.init().await;
-		let v = PION.register_object(PointsQueryHandle(query)).to_service();
-		Ok(PointsQueryHandleProxy::from_handler(&v))
+			interfaces,
+		)
+		.await?;
+		let handle = PION.register_object(PointsQueryHandle(query)).to_service();
+		Ok(PointsQueryHandleProxy::from_handler(&handle))
 	}
 }
+
 #[derive(Debug, Handler)]
-struct PointsQueryHandle(Arc<Query>);
+struct PointsQueryHandle(Arc<Query<PointsKind>>);
 impl PointsQueryHandleHandler for PointsQueryHandle {
 	async fn update_points(&self, _ctx: gluon::Context, points: Vec<Point>) {
-		if let QueryType::Points {
-			handler: _,
-			ref_space: _,
-			points: inner_points,
-		} = &self.0.inner
-		{
-			*inner_points.write().await = points;
-			self.0.self_moved().await;
-		}
+		*self.0.kind.points.lock() = points;
+		self.0.self_moved();
 	}
 }
+
 #[expect(unused)]
 #[derive(Debug, Handler)]
-struct Guard(Arc<Query>);
-impl SpatialQueryGuardHandler for Guard {}
-
-#[derive(Debug, Deref)]
-struct WeakPtrHash<T>(Weak<T>);
-impl<T> Clone for WeakPtrHash<T> {
-	fn clone(&self) -> Self {
-		Self(self.0.clone())
-	}
-}
-impl<T> Hash for WeakPtrHash<T> {
-	fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-		state.write_usize(self.0.as_ptr().addr());
-	}
-}
-impl<T> Eq for WeakPtrHash<T> {}
-impl<T> PartialEq for WeakPtrHash<T> {
-	fn eq(&self, other: &Self) -> bool {
-		self.0.ptr_eq(&other.0)
-	}
-}
+struct Guard<K: QueryKind>(Arc<Query<K>>);
+impl<K: QueryKind> SpatialQueryGuardHandler for Guard<K> {}
 
 #[cfg(test)]
 mod tests {
@@ -757,7 +656,7 @@ mod tests {
 		Arc::new(Field::test_new(spatial, shape))
 	}
 
-	// Mirrors QueryType::Zone hit() math (sans visibility checks).
+	// Mirrors ZoneKind::hit() math (sans visibility checks).
 	fn zone_check(queryable_spatial: &Spatial, zone_field: &Field, margin: f32) -> bool {
 		let (_s, _r, pos) =
 			Spatial::space_to_space_matrix(Some(queryable_spatial), Some(&zone_field.spatial))
@@ -766,7 +665,7 @@ mod tests {
 		distance < margin
 	}
 
-	// Mirrors QueryType::Beam hit() math.
+	// Mirrors BeamKind::hit() math.
 	fn beam_check(
 		target_field: &Arc<Field>,
 		ref_space: &Arc<Spatial>,
@@ -782,7 +681,7 @@ mod tests {
 		result.min_distance <= 0.0 && result.deepest_point_distance <= max_length
 	}
 
-	// Mirrors QueryType::Points hit() math.
+	// Mirrors PointsKind::hit() math.
 	fn points_check(target_field: &Arc<Field>, ref_space: &Arc<Spatial>, points: &[Point]) -> bool {
 		let best = points
 			.iter()
@@ -986,25 +885,5 @@ mod tests {
 			},
 		];
 		assert!(!points_check(&sphere, &ref_space, &pts));
-	}
-
-	// --- WeakPtrHash ---
-
-	#[test]
-	fn weak_ptr_hash_same_allocation_is_equal() {
-		let arc: Arc<u32> = Arc::new(42);
-		let h1 = WeakPtrHash(Arc::downgrade(&arc));
-		let h2 = WeakPtrHash(Arc::downgrade(&arc));
-		assert_eq!(h1, h2);
-	}
-
-	#[test]
-	fn weak_ptr_hash_different_allocations_not_equal() {
-		let a: Arc<u32> = Arc::new(1);
-		let b: Arc<u32> = Arc::new(1);
-		assert_ne!(
-			WeakPtrHash(Arc::downgrade(&a)),
-			WeakPtrHash(Arc::downgrade(&b))
-		);
 	}
 }

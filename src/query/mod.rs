@@ -1,7 +1,7 @@
 use crate::{
 	PION, interface,
 	nodes::{ProxyExt, fields::FieldObject, spatial::SpatialObject},
-	query::spatial_query::Query,
+	query::spatial_query::AnyQuery,
 };
 use bevy::prelude::Deref;
 use gluon::{Handler, Object, ObjectOrRef, ObjectRef};
@@ -11,7 +11,6 @@ use stardust_xr_protocol::query::{
 };
 use stardust_xr_server_foundation::{deduped_string::DedupedStr, registry::Registry};
 use std::{
-	collections::HashMap,
 	sync::{
 		Arc, LazyLock, Weak,
 		atomic::{AtomicU64, Ordering},
@@ -30,11 +29,10 @@ static QUERY_STATE: LazyLock<State> = LazyLock::new(State::default);
 static NEXT_QUERYABLE_ID: AtomicU64 = AtomicU64::new(0);
 #[derive(Default)]
 struct State {
-	interface_to_queryable: RwLock<HashMap<Arc<DedupedStr>, Registry<Queryable>>>,
 	/// Every live queryable, so a freshly-created query can discover the ones that
 	/// already exist (self-inserts on registration, drops out via `Drop`).
 	all_queryables: Registry<Queryable>,
-	queries: Registry<Query>,
+	queries: Registry<dyn AnyQuery>,
 }
 #[derive(Debug, Handler)]
 struct QueryableRef;
@@ -91,8 +89,7 @@ impl Queryable {
 	async fn notify_interface_changes(self: &Arc<Queryable>) {
 		let queries = QUERY_STATE.queries.get_valid_contents();
 		for query in queries {
-			query.update_interfaces(self).await;
-			query.update_hit_queryable(self).await;
+			query.update_interfaces(self.clone()).await;
 		}
 	}
 }
