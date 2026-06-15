@@ -12,7 +12,10 @@ use stardust_xr_protocol::query::{
 use stardust_xr_server_foundation::{deduped_string::DedupedStr, registry::Registry};
 use std::{
 	collections::HashMap,
-	sync::{Arc, LazyLock, Weak},
+	sync::{
+		Arc, LazyLock, Weak,
+		atomic::{AtomicU64, Ordering},
+	},
 };
 use tokio::sync::RwLock;
 use tracing::info;
@@ -22,9 +25,15 @@ pub mod spatial_query;
 mod tests;
 
 static QUERY_STATE: LazyLock<State> = LazyLock::new(State::default);
+/// Hands out a stable, never-reused id to each queryable so query bookkeeping can
+/// key on identity without relying on (recyclable) pointer addresses.
+static NEXT_QUERYABLE_ID: AtomicU64 = AtomicU64::new(0);
 #[derive(Default)]
 struct State {
 	interface_to_queryable: RwLock<HashMap<Arc<DedupedStr>, Registry<Queryable>>>,
+	/// Every live queryable, so a freshly-created query can discover the ones that
+	/// already exist (self-inserts on registration, drops out via `Drop`).
+	all_queryables: Registry<Queryable>,
 	queries: Registry<Query>,
 }
 #[derive(Debug, Handler)]
@@ -35,6 +44,7 @@ impl QueryableObjectRefHandler for QueryableRef {}
 struct QueryableMut(Arc<Queryable>);
 #[derive(Debug)]
 struct Queryable {
+	id: u64,
 	queryable_ref: Object<QueryableRef>,
 	spatial: ObjectRef<SpatialObject>,
 	field: ObjectRef<FieldObject>,
@@ -88,6 +98,7 @@ impl Queryable {
 }
 impl Drop for Queryable {
 	fn drop(&mut self) {
+		QUERY_STATE.all_queryables.remove(self);
 		QUERY_STATE
 			.queries
 			.get_valid_contents()
@@ -109,11 +120,13 @@ impl QueryInterfaceHandler for QueryInterface {
 		let field = field.owned().ok_or(QueryableError::NotOwnedField)?;
 		let queryable_ref = PION.register_object(QueryableRef);
 		let queryable = Arc::new(Queryable {
+			id: NEXT_QUERYABLE_ID.fetch_add(1, Ordering::Relaxed),
 			field,
 			spatial,
 			interfaces: RwLock::default(),
 			queryable_ref,
 		});
+		QUERY_STATE.all_queryables.add_raw(&queryable);
 		let obj = PION.register_object(QueryableMut(queryable));
 		Ok(QueryableObject::from_handler(&obj.to_service()))
 	}
