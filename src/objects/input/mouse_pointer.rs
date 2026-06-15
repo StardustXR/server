@@ -128,6 +128,8 @@ impl InputSource for MouseMethod {
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let current_capture = self.sender.active_capture.blocking_read().clone();
 
+		dbg!(&capture_requests);
+
 		let capture = if let Some(cap) = current_capture {
 			if objects.values().any(|e| e.handler == cap) {
 				Some(cap)
@@ -214,7 +216,7 @@ impl InputMethodHandler for MouseMethod {
 		}
 		let objects = self.sender.cache.read().await;
 		let entry = objects.values().find(|e| e.handler == handler)?;
-		Some(self.spatial_data(entry.spatial.as_ref().map(|s| &**s)?, &entry.field.data))
+		Some(self.spatial_data(entry.spatial.as_deref()?, &entry.field.data))
 	}
 }
 

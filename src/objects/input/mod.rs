@@ -131,10 +131,10 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 
 		// Populate spatial only if the sentinel we inserted is still there (on_left may have
 		// removed it while we were awaiting).
-		if let Some(entry) = self.objects.write().await.get_mut(&obj) {
-			if entry.spatial.is_none() {
-				entry.spatial = Some(spatial);
-			}
+		if let Some(entry) = self.objects.write().await.get_mut(&obj)
+			&& entry.spatial.is_none()
+		{
+			entry.spatial = Some(spatial);
 		}
 	}
 
@@ -433,7 +433,8 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 					.enumerate()
 					.filter_map(|(i, handler)| {
 						let entry = objects.values().find(|e| &e.handler == handler)?;
-						let spatial_data = source.spatial_data(entry.spatial.as_ref().map(|s| &**s)?, &entry.field.data);
+						let spatial_data =
+							source.spatial_data(entry.spatial.as_deref()?, &entry.field.data);
 						let datamap = source.datamap();
 						let semantic_data = SemanticData {
 							datamap,
