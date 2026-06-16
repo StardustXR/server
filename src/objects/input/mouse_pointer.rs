@@ -128,8 +128,6 @@ impl InputSource for MouseMethod {
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let current_capture = self.sender.active_capture.blocking_read().clone();
 
-		dbg!(&capture_requests);
-
 		let capture = if let Some(cap) = current_capture {
 			if objects.values().any(|e| e.handler == cap) {
 				Some(cap)
