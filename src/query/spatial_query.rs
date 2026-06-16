@@ -176,7 +176,9 @@ impl<K: QueryKind> Query<K> {
 					let entry = occupied.get_mut();
 					if entry.interfaces != interfaces {
 						entry.interfaces = interfaces.clone();
-						_ = self.kind.interfaces_changed(queryable.obj_ref(), interfaces);
+						_ = self
+							.kind
+							.interfaces_changed(queryable.obj_ref(), interfaces);
 					}
 				}
 				Entry::Vacant(slot) => {
@@ -214,7 +216,8 @@ impl<K: QueryKind> Query<K> {
 	async fn init(self: &Arc<Self>) {
 		let (anchor_spatial, anchor_field) = self.kind.anchors();
 		let moved = anchor_spatial.moved_callback(self.self_moved_closure());
-		let shape = anchor_field.map(|field| field.shape_changed_callback(self.self_moved_closure()));
+		let shape =
+			anchor_field.map(|field| field.shape_changed_callback(self.self_moved_closure()));
 		_ = self.self_callbacks.set((moved, shape));
 
 		for queryable in QUERY_STATE.all_queryables.get_valid_contents() {
@@ -390,8 +393,11 @@ impl QueryKind for BeamKind {
 		)
 	}
 	fn moved(&self, queryable: &Queryable, hit: BeamHit) -> Result<(), SendError> {
-		self.handler
-			.moved(queryable.obj_ref(), hit.deepest_point_distance, hit.distance)
+		self.handler.moved(
+			queryable.obj_ref(),
+			hit.deepest_point_distance,
+			hit.distance,
+		)
 	}
 	fn interfaces_changed(
 		&self,
@@ -560,6 +566,13 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			max_length,
 		} = query;
 		let ref_space = reference_spatial.owned().ok_or(QueryError::InvalidRef)?;
+		tracing::debug!(
+			?interfaces,
+			?direction,
+			?origin,
+			max_length,
+			"Creating BeamQuery"
+		);
 		let query = register_query(
 			BeamKind {
 				handler,
@@ -587,6 +600,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			margin,
 		} = query;
 		let field = zone_field.owned().ok_or(QueryError::InvalidRef)?;
+		tracing::debug!(?interfaces, ?margin, "Creating ZoneQuery");
 		let query = register_query(
 			ZoneKind {
 				handler,
@@ -612,6 +626,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			points,
 		} = query;
 		let ref_space = reference_spatial.owned().ok_or(QueryError::InvalidRef)?;
+		tracing::debug!(?interfaces, ?points, "Creating PointsQuery");
 		let query = register_query(
 			PointsKind {
 				handler,

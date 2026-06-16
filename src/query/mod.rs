@@ -10,14 +10,12 @@ use stardust_xr_protocol::query::{
 	QueryableObject, QueryableObjectHandler, QueryableObjectRef, QueryableObjectRefHandler,
 };
 use stardust_xr_server_foundation::{deduped_string::DedupedStr, registry::Registry};
-use std::{
-	sync::{
-		Arc, LazyLock, Weak,
-		atomic::{AtomicU64, Ordering},
-	},
+use std::sync::{
+	Arc, LazyLock, Weak,
+	atomic::{AtomicU64, Ordering},
 };
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::debug;
 
 pub mod spatial_query;
 #[cfg(test)]
@@ -58,8 +56,12 @@ struct InterfaceGuard(Option<Arc<QueryableInterface>>, Weak<Queryable>);
 impl QueryableInterfaceGuardHandler for InterfaceGuard {}
 impl Drop for InterfaceGuard {
 	fn drop(&mut self) {
-		info!("Dropping interface");
-		drop(self.0.take());
+		let i = self.0.take().unwrap();
+
+		debug!(
+			interface = i.interface_id.get_string(),
+			"Dropping queryable interface"
+		);
 		if let Some(queryable) = self.1.upgrade() {
 			tokio::spawn(async move { queryable.notify_interface_changes().await });
 		}
@@ -76,6 +78,7 @@ impl QueryableObjectHandler for QueryableMut {
 		interface: ObjectOrRef,
 		interface_id: String,
 	) -> QueryableInterfaceGuard {
+		debug!(?self, interface = interface_id, "Registered interface");
 		let interface = self.interfaces.write().await.add(QueryableInterface {
 			interface_id: DedupedStr::get(interface_id).await,
 			interface_ref: interface,
@@ -112,7 +115,7 @@ impl QueryInterfaceHandler for QueryInterface {
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		field: stardust_xr_protocol::field::Field,
 	) -> Result<QueryableObject, QueryableError> {
-		info!(?spatial, ?field, "Registered queryable");
+		debug!(?spatial, ?field, "Registered queryable");
 		let spatial = spatial.owned().ok_or(QueryableError::NotOwnedSpatial)?;
 		let field = field.owned().ok_or(QueryableError::NotOwnedField)?;
 		let queryable_ref = PION.register_object(QueryableRef);
