@@ -107,18 +107,34 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 		let Some(field) = field.owned() else { return };
 		let handler = InputHandler::from_object_or_ref(interface.interface.clone());
 
-		// Insert a sentinel (spatial: None) before the async RPC so that on_left can find
-		// and remove this entry even if it fires while get_spatial is in-flight.
-		self.objects.write().await.insert(
-			obj.clone(),
-			CachedObject {
-				handler: handler.clone(),
-				spatial: None,
-				field,
-				value,
-				left_query: false,
-			},
-		);
+		{
+			let mut objects = self.objects.write().await;
+			if let Some(entry) = objects.get_mut(&obj) {
+				// Re-entered the query — the beam flaps across a field boundary, so on_entered
+				// fires again for an object we already track. Keep the existing spatial: nulling
+				// it would momentarily drop a captured/retained handler out of dispatch and emit
+				// a spurious input_left. Just refresh field/value and clear the left flag. No need
+				// to re-run get_spatial; the handler's reference spatial is stable.
+				entry.field = field;
+				entry.value = value;
+				entry.left_query = false;
+				return;
+			}
+
+			// First time seeing this object: insert a sentinel (spatial: None) before the async
+			// get_spatial RPC so on_left can find and remove this entry even if it fires while
+			// get_spatial is in-flight.
+			objects.insert(
+				obj.clone(),
+				CachedObject {
+					handler: handler.clone(),
+					spatial: None,
+					field,
+					value,
+					left_query: false,
+				},
+			);
+		}
 
 		let Ok(ref_space) = handler.get_spatial().await else {
 			self.objects.write().await.remove(&obj);
@@ -145,20 +161,15 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 	}
 
 	pub async fn on_left(&self, obj: &QueryableObjectRef) {
-		// Check whether this handler holds an active capture before dropping its entry.
-		// Read the handler out while holding a read lock, then check capture_requests
-		// (a std lock, so no await needed), then promote to write to either mark as
-		// left_query or actually remove.
-		let handler = {
-			let objects = self.objects.read().await;
-			objects.get(obj).map(|e| e.handler.clone())
-		};
-
-		let is_captured = handler
-			.as_ref()
-			.is_some_and(|h| self.capture_requests.read().unwrap().contains(h));
-
+		// Decide retention while holding the cache write lock so the capture_requests check is
+		// serialized against grant_capture (which inserts under the same lock). Otherwise a
+		// field-exit landing mid-grant could observe an empty capture_requests and wrongly drop
+		// the entry of a handler that is in the process of capturing.
 		let mut objects = self.objects.write().await;
+		let Some(handler) = objects.get(obj).map(|e| e.handler.clone()) else {
+			return;
+		};
+		let is_captured = self.capture_requests.read().unwrap().contains(&handler);
 		if is_captured {
 			// Keep the entry so the captured handler keeps receiving input; just flag it.
 			if let Some(entry) = objects.get_mut(obj) {
@@ -351,19 +362,20 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 	}
 
 	pub async fn grant_capture(&self, handler: InputHandler) -> Option<InputMethodCapture> {
-		if !self
-			.cache
-			.read()
-			.await
-			.values()
-			.any(|e| e.handler == handler)
+		// Hold the cache write lock across the membership check and the capture_requests insert
+		// so on_left (which checks capture_requests under the same lock) can't slip in between
+		// and drop this handler's entry on a concurrent field-exit. See on_left for the other
+		// half of this serialization.
 		{
-			return None;
+			let cache = self.cache.write().await;
+			if !cache.values().any(|e| e.handler == handler) {
+				return None;
+			}
+			self.capture_requests
+				.write()
+				.unwrap()
+				.insert(handler.clone());
 		}
-		self.capture_requests
-			.write()
-			.unwrap()
-			.insert(handler.clone());
 		let guard = PION
 			.register_object(CaptureGuard {
 				handler,
