@@ -147,6 +147,9 @@ struct CliArgs {
 	/// Run a script when ready for clients to connect. If this is not set the script at $HOME/.config/stardust/startup will be ran if it exists.
 	#[clap(id = "PATH", short = 'e', long = "execute-startup-script", action)]
 	startup_script: Option<PathBuf>,
+	/// disable recenter on startup
+	#[clap(long)]
+	disable_startup_recenter: bool,
 
 	/// Restore the session with the given ID (or `latest`), ignoring the startup script. Sessions are stored in directories at `~/.local/state/stardust/`.
 	#[clap(id = "SESSION_ID", long = "restore", action)]
@@ -488,9 +491,12 @@ fn bevy_loop(
 	if !args.disable_controllers {
 		app.add_plugins(ControllerPlugin);
 	}
+	if !args.disable_startup_recenter {
+		app.add_plugins(TrackingOffsetPlugin);
+	}
 
 	// feature plugins
-	app.add_plugins((TrackingOffsetPlugin, FieldDebugGizmoPlugin));
+	app.add_plugins(FieldDebugGizmoPlugin);
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
