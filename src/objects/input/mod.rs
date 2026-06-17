@@ -1,7 +1,7 @@
 #![allow(clippy::mutable_key_type)]
 
 pub mod mouse_pointer;
-// pub mod oxr_controller;
+pub mod oxr_controller;
 pub mod oxr_hand;
 
 use crate::{

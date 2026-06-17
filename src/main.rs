@@ -4,12 +4,12 @@
 #![allow(clippy::type_complexity)]
 mod bevy_int;
 mod core;
+mod keymap_store;
 mod nodes;
 mod objects;
 mod openxr_helpers;
 mod query;
 mod session;
-mod keymap_store;
 
 use bevy::{
 	MinimalPlugins,
@@ -64,10 +64,10 @@ use nodes::spatial::SpatialNodePlugin;
 use objects::{
 	hmd::HmdPlugin,
 	input::{
-		// 		oxr_controller::ControllerPlugin,
-		mouse_pointer::FlatscreenInputPlugin,
+		mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
 		oxr_hand::HandPlugin,
 	},
+	stage::StagePlugin,
 	// 	play_space::PlaySpacePlugin,
 };
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
@@ -86,7 +86,10 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry
 use zbus::Connection;
 
 use crate::{
-	bevy_int::tracking_offset::TrackingOffsetPlugin, core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin}, keymap_store::KeymapStore, nodes::{
+	bevy_int::tracking_offset::TrackingOffsetPlugin,
+	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
+	keymap_store::KeymapStore,
+	nodes::{
 		audio::AudioNodePlugin,
 		camera::{CameraInterface, CameraNodePlugin},
 		drawable::{
@@ -94,7 +97,9 @@ use crate::{
 			text::TextNodePlugin,
 		},
 		fields::FieldDebugGizmoPlugin,
-	}, objects::stage::StagePlugin, openxr_helpers::ConvertTimespec, session::{launch_start, save_session}
+	},
+	openxr_helpers::ConvertTimespec,
+	session::{launch_start, save_session},
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -480,9 +485,9 @@ fn bevy_loop(
 			bevy_sk::hand::HandPlugin,
 		));
 	}
-	// if !args.disable_controllers {
-	// 	app.add_plugins(ControllerPlugin);
-	// }
+	if !args.disable_controllers {
+		app.add_plugins(ControllerPlugin);
+	}
 
 	// feature plugins
 	app.add_plugins((TrackingOffsetPlugin, FieldDebugGizmoPlugin));
