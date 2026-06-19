@@ -156,69 +156,71 @@ fn build_line_mesh(
 					thickness: p.thickness,
 					color: p.color,
 				})
+				// Drop genuinely non-finite points (NaN/inf coming from the client
+				// or a degenerate transform) so they can't poison the tube math.
+				// This is distinct from coincident points, which we keep below.
+				.filter(|p| Vec3::from(p.point).is_finite())
 				.collect::<Vec<_>>();
 
 			let start_set = indices_set;
-			// Create a sliding window of points to process each segment of the line
-			// For cyclic lines: wraps around by connecting last point back to first
-			// For non-cyclic lines: handles endpoints with None values
-			let point_windows = {
-				let mut out = Vec::new();
-				let mut last = line.cyclic.then(|| line_points.last()).flatten();
-				let mut peekable = line_points.iter().peekable();
-				while let Some(curr) = peekable.next() {
-					// Skip this point if it has the same position as the previous point
-					if let Some(prev) = last
-						&& prev.point == curr.point
-					{
-						last = Some(curr);
-						continue;
-					}
-
-					let mut end = false;
-					// Determine the next point - either the next in sequence or
-					// for cyclic lines, wrap back to first point at the end
-					let next = match peekable.peek() {
-						Some(v) => Some(*v),
-						None => {
-							end = true;
-							line.cyclic.then(|| line_points.first()).flatten()
-						}
-					};
-
-					out.push((last, curr, next, end));
-					last = Some(curr);
-				}
-				out
-			};
-			// if we can't make a full line, don't bother trying
-			if point_windows.len() < 2 {
+			let n = line_points.len();
+			// A line needs at least two points to form a tube.
+			if n < 2 {
 				continue;
 			}
-			for (last, curr, next, last_point) in point_windows {
-				let last_quat = last.map(|v| {
-					Quat::from_rotation_arc(
-						Vec3::Y,
-						(Vec3::from(curr.point) - Vec3::from(v.point)).normalize(),
-					)
-				});
-				let next_quat = next.map(|v| {
-					Quat::from_rotation_arc(
-						Vec3::Y,
-						(Vec3::from(v.point) - Vec3::from(curr.point)).normalize(),
-					)
-				});
+
+			// Direction of the segment *entering* point `i` (curr - prev), using the
+			// nearest preceding point that is at a *different* position. Coincident
+			// points (same position, authored to make the tube step in thickness or
+			// colour) are stepped over rather than skipped, so we never normalize a
+			// zero-length segment and every point in a coincident run ends up with
+			// the same orientation/normal.
+			let incoming_dir = |i: usize| -> Option<Vec3> {
+				let curr = Vec3::from(line_points[i].point);
+				(1..n).find_map(|steps| {
+					let j = if line.cyclic {
+						(i + n - steps) % n
+					} else if i >= steps {
+						i - steps
+					} else {
+						return None;
+					};
+					let prev = Vec3::from(line_points[j].point);
+					(prev != curr).then(|| (curr - prev).normalize())
+				})
+			};
+			// Direction of the segment *leaving* point `i` (next - curr), using the
+			// nearest following point at a different position.
+			let outgoing_dir = |i: usize| -> Option<Vec3> {
+				let curr = Vec3::from(line_points[i].point);
+				(1..n).find_map(|steps| {
+					let j = if line.cyclic {
+						(i + steps) % n
+					} else if i + steps < n {
+						i + steps
+					} else {
+						return None;
+					};
+					let next = Vec3::from(line_points[j].point);
+					(next != curr).then(|| (next - curr).normalize())
+				})
+			};
+
+			for (i, curr) in line_points.iter().enumerate() {
+				let last_quat = incoming_dir(i).map(|d| Quat::from_rotation_arc(Vec3::Y, d));
+				let next_quat = outgoing_dir(i).map(|d| Quat::from_rotation_arc(Vec3::Y, d));
 				let quat = match (last_quat, next_quat) {
+					// No distinct neighbour in either direction => every point in this
+					// line shares one position, so there is no tube to orient.
 					(None, None) => {
-						error!("no previous or next point in line");
+						error!("degenerate line: all points coincident");
 						break;
 					}
-					(None, Some(next)) => next,
-					(Some(last), None) => last,
+					(None, Some(q)) | (Some(q), None) => q,
 					(Some(last), Some(next)) => last.lerp(next, 0.5),
 				};
 				if !quat.is_finite() {
-					error!("non finite quat: next: {next:?}, last: {last:?}, curr: {curr:?},");
+					error!("non finite quat at point {i}: curr: {curr:?}");
 					break;
 				}
 				let normals = [
@@ -237,13 +239,17 @@ fn build_line_mesh(
 				vertex_normals.extend(normals);
 				vertex_positions.extend(points);
 				vertex_colors.extend([curr.color.to_bevy().to_linear().to_f32_array(); 8]);
-				// Only connect vertices between segments if this isn't the end point
+				// Connect this ring forward to the next one, except at the final
+				// point of the line: a non-cyclic line is closed off by the caps and
+				// a cyclic line is wrapped by cyclic_indices, both added below.
+				let last_point = i == n - 1;
 				if !last_point {
 					vertex_indices.extend(indices(indices_set));
 				}
 				indices_set += 1;
 			}
-			if indices_set > 0 {
+			// Only finish the tube if this line actually emitted any rings.
+			if indices_set > start_set {
 				// Handle the connection between start and end points:
 				// - For cyclic lines: connect last segment back to first
 				// - For non-cyclic lines: add caps at both ends
