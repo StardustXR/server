@@ -28,9 +28,7 @@ use bevy::{
 	pbr::PbrPlugin,
 	prelude::*,
 	render::{
-		RenderDebugFlags, RenderPlugin,
-		pipelined_rendering::{PipelinedRenderThreadOnCreateCallback, PipelinedRenderingPlugin},
-		settings::{Backends, RenderCreation, WgpuSettings},
+		RenderDebugFlags, RenderPlugin, pipelined_rendering::{PipelinedRenderThreadOnCreateCallback, PipelinedRenderingPlugin}, primitives::Aabb, settings::{Backends, RenderCreation, WgpuSettings}
 	},
 	scene::ScenePlugin,
 	window::{CompositeAlphaMode, PresentMode},
@@ -150,6 +148,10 @@ struct CliArgs {
 	/// disable recenter on startup
 	#[clap(long)]
 	disable_startup_recenter: bool,
+
+	/// show bounding boxes
+	#[clap(long)]
+	aabb_debug: bool,
 
 	/// Restore the session with the given ID (or `latest`), ignoring the startup script. Sessions are stored in directories at `~/.local/state/stardust/`.
 	#[clap(id = "SESSION_ID", long = "restore", action)]
@@ -501,6 +503,9 @@ fn bevy_loop(
 		ready_notifier.notify_waiters();
 	});
 	app.add_observer(cam_settings);
+	if args.aabb_debug {
+		app.add_observer(show_aabb);
+	}
 	app.add_systems(
 		XrFirst,
 		xr_step
@@ -509,6 +514,11 @@ fn bevy_loop(
 	);
 
 	app.run()
+}
+
+fn show_aabb(trigger: Trigger<OnAdd, Aabb>, mut cmds: Commands) {
+	cmds.entity(trigger.target())
+		.insert(ShowAabbGizmo::default());
 }
 
 fn cam_settings(
