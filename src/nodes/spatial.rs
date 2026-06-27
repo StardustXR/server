@@ -255,6 +255,15 @@ impl Spatial {
 	pub fn moved_callback(&self, f: impl Fn() + Send + Sync + 'static) -> MovedCallback {
 		let arc = MovedCallback(Arc::new(f));
 		self.moved_callback.add_raw(&arc.0);
+		// Propagate up the ancestor chain so moving *any* ancestor fires this callback,
+		// not just this node directly. The registry keys on the callback pointer, so
+		// re-adding the same Arc is idempotent, and the entries are weak — when `arc` is
+		// dropped, every ancestor's entry dies on its own without explicit cleanup.
+		let mut ancestor = self.get_parent();
+		while let Some(node) = ancestor {
+			node.moved_callback.add_raw(&arc.0);
+			ancestor = node.get_parent();
+		}
 		arc
 	}
 	pub fn set_entity(&self, entity: EntityHandle) {
@@ -406,15 +415,28 @@ impl Spatial {
 		self.parent.lock().clone()
 	}
 	fn set_parent(self: &Arc<Self>, new_parent: &Arc<Spatial>) {
-		if let Some(parent) = self.get_parent() {
-			parent.children.remove(self);
-			for f in self.moved_callback.get_valid_contents() {
-				parent.moved_callback.remove(&*f);
+		// This node's registry holds its own moved callbacks plus those aggregated up from
+		// its entire subtree. Reparenting moves that whole set off the old ancestor chain
+		// and onto the new one, so ancestor-movement notifications keep working regardless
+		// of when callbacks were registered relative to parenting.
+		let subtree_callbacks = self.moved_callback.get_valid_contents();
+		if let Some(old_parent) = self.get_parent() {
+			old_parent.children.remove(self);
+			let mut ancestor = Some(old_parent);
+			while let Some(node) = ancestor {
+				for f in &subtree_callbacks {
+					node.moved_callback.remove(&**f);
+				}
+				ancestor = node.get_parent();
 			}
 		}
 		new_parent.children.add_raw(self);
-		for f in self.moved_callback.get_valid_contents() {
-			new_parent.moved_callback.add_raw(&f);
+		let mut ancestor = Some(new_parent.clone());
+		while let Some(node) = ancestor {
+			for f in &subtree_callbacks {
+				node.moved_callback.add_raw(f);
+			}
+			ancestor = node.get_parent();
 		}
 
 		*self.parent.lock() = Some(new_parent.clone());
@@ -620,4 +642,124 @@ impl SpatialInterfaceHandler for SpatialInterface {
 }
 
 impl_proxy!(SpatialProxy, SpatialObject);
+
+#[cfg(test)]
+mod moved_callback_tests {
+	use super::*;
+	use std::sync::atomic::{AtomicUsize, Ordering};
+
+	fn counter() -> (Arc<AtomicUsize>, impl Fn() + Send + Sync + 'static) {
+		let count = Arc::new(AtomicUsize::new(0));
+		let cb = {
+			let count = count.clone();
+			move || {
+				count.fetch_add(1, Ordering::Relaxed);
+			}
+		};
+		(count, cb)
+	}
+
+	// The original bug: a callback registered on a child *after* it was parented must
+	// still fire when the ancestor moves.
+	#[test]
+	fn callback_registered_after_parenting_fires_on_ancestor_move() {
+		let parent = Spatial::test_new(None, Mat4::IDENTITY);
+		let child = Spatial::test_new(None, Mat4::IDENTITY);
+		child.set_spatial_parent(&parent).unwrap();
+
+		let (count, cb) = counter();
+		let _guard = child.moved_callback(cb);
+
+		parent.set_local_transform(Mat4::from_translation(Vec3::X));
+		assert_eq!(count.load(Ordering::Relaxed), 1);
+	}
+
+	// Propagation has to reach through multiple ancestor levels.
+	#[test]
+	fn callback_fires_for_grandparent_move() {
+		let grandparent = Spatial::test_new(None, Mat4::IDENTITY);
+		let parent = Spatial::test_new(None, Mat4::IDENTITY);
+		let child = Spatial::test_new(None, Mat4::IDENTITY);
+		parent.set_spatial_parent(&grandparent).unwrap();
+		child.set_spatial_parent(&parent).unwrap();
+
+		let (count, cb) = counter();
+		let _guard = child.moved_callback(cb);
+
+		grandparent.set_local_transform(Mat4::from_translation(Vec3::Y));
+		assert_eq!(count.load(Ordering::Relaxed), 1);
+	}
+
+	// Reparenting must detach the callback from the old chain and attach it to the new.
+	#[test]
+	fn reparenting_moves_callback_between_chains() {
+		let old_parent = Spatial::test_new(None, Mat4::IDENTITY);
+		let new_parent = Spatial::test_new(None, Mat4::IDENTITY);
+		let child = Spatial::test_new(None, Mat4::IDENTITY);
+		child.set_spatial_parent(&old_parent).unwrap();
+
+		let (count, cb) = counter();
+		let _guard = child.moved_callback(cb);
+
+		child.set_spatial_parent(&new_parent).unwrap();
+
+		// Old parent no longer drives the callback.
+		old_parent.set_local_transform(Mat4::from_translation(Vec3::X));
+		assert_eq!(count.load(Ordering::Relaxed), 0);
+
+		// New parent does.
+		new_parent.set_local_transform(Mat4::from_translation(Vec3::X));
+		assert_eq!(count.load(Ordering::Relaxed), 1);
+	}
+
+	// A subtree's aggregated callbacks travel with it when an intermediate node moves.
+	#[test]
+	fn reparenting_subtree_carries_descendant_callbacks() {
+		let root = Spatial::test_new(None, Mat4::IDENTITY);
+		let parent = Spatial::test_new(None, Mat4::IDENTITY);
+		let child = Spatial::test_new(None, Mat4::IDENTITY);
+		child.set_spatial_parent(&parent).unwrap();
+
+		// Register on the deepest node *before* `parent` joins `root`.
+		let (count, cb) = counter();
+		let _guard = child.moved_callback(cb);
+
+		parent.set_spatial_parent(&root).unwrap();
+
+		root.set_local_transform(Mat4::from_translation(Vec3::Z));
+		assert_eq!(count.load(Ordering::Relaxed), 1);
+	}
+
+	// Moving a child must not fire callbacks that live on its ancestors.
+	#[test]
+	fn child_move_does_not_fire_ancestor_callback() {
+		let parent = Spatial::test_new(None, Mat4::IDENTITY);
+		let child = Spatial::test_new(None, Mat4::IDENTITY);
+		child.set_spatial_parent(&parent).unwrap();
+
+		let (count, cb) = counter();
+		let _guard = parent.moved_callback(cb);
+
+		child.set_local_transform(Mat4::from_translation(Vec3::X));
+		assert_eq!(count.load(Ordering::Relaxed), 0);
+
+		parent.set_local_transform(Mat4::from_translation(Vec3::X));
+		assert_eq!(count.load(Ordering::Relaxed), 1);
+	}
+
+	// Dropping the guard must stop the callback firing, including from ancestors.
+	#[test]
+	fn dropping_guard_detaches_from_ancestors() {
+		let parent = Spatial::test_new(None, Mat4::IDENTITY);
+		let child = Spatial::test_new(None, Mat4::IDENTITY);
+		child.set_spatial_parent(&parent).unwrap();
+
+		let (count, cb) = counter();
+		let guard = child.moved_callback(cb);
+		drop(guard);
+
+		parent.set_local_transform(Mat4::from_translation(Vec3::X));
+		assert_eq!(count.load(Ordering::Relaxed), 0);
+	}
+}
 impl_proxy!(SpatialRefProxy, SpatialRef);
