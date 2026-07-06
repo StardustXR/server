@@ -25,8 +25,8 @@ use drm_fourcc::DrmFourcc;
 use glam::UVec2;
 use gluon::{Handler, ObjectRef};
 use stardust_xr_protocol::dmatex::{
-	DmatexFormat, DmatexImportError, DmatexInterfaceHandler, DmatexPlane, DmatexRef,
-	DmatexRefHandler, DmatexSize,
+	DmatexFormat, DmatexFormatInfo, DmatexImportError, DmatexInterfaceHandler, DmatexPlanes,
+	DmatexRef, DmatexRefHandler, DmatexSize,
 };
 use stardust_xr_server_foundation::error::Result;
 use timeline_syncobj::{render_node::DrmRenderNode, timeline_syncobj::TimelineSyncObj};
@@ -65,7 +65,7 @@ impl Dmatex {
 		srgb: bool,
 		// TODO: impl
 		array_layers: Option<u32>,
-		planes: Vec<DmatexPlane>,
+		planes: DmatexPlanes,
 		timeline_syncobj_fd: OwnedFd,
 	) -> Result<ObjectRef<Self>, DmatexImportError> {
 		let DmatexSize::Size2D { size } = size else {
@@ -93,18 +93,30 @@ impl Dmatex {
 				DRM_RENDER_NODE.get().unwrap()
 			}
 		};
+		let planes = match planes {
+			DmatexPlanes::Simple { dmabuf_fd, planes } => planes
+				.into_iter()
+				.map(|p| BevyDmatexPlane {
+					dmabuf_fd: dmabuf_fd.try_clone().unwrap().into(),
+					modifier,
+					offset: p.offset as u32,
+					stride: p.row_size as i32,
+				})
+				.collect(),
+			DmatexPlanes::Disjoint { planes } => planes
+				.into_iter()
+				.map(|p| BevyDmatexPlane {
+					dmabuf_fd: p.dmabuf_fd.into(),
+					modifier,
+					offset: p.plane.offset as u32,
+					stride: p.plane.row_size as i32,
+				})
+				.collect(),
+		};
 		let tex = import_texture(
 			RENDER_DEV.wait(),
 			bevy_dmabuf::dmatex::Dmatex {
-				planes: planes
-					.into_iter()
-					.map(|p| BevyDmatexPlane {
-						dmabuf_fd: p.dmabuf_fd.into(),
-						modifier,
-						offset: p.offset as u32,
-						stride: p.row_size as i32,
-					})
-					.collect(),
+				planes,
 				res: bevy_dmabuf::dmatex::Resolution {
 					x: size.x,
 					y: size.y,
@@ -243,7 +255,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 		size: DmatexSize,
 		format: DmatexFormat,
 		array_layers: u32,
-		planes: Vec<DmatexPlane>,
+		planes: DmatexPlanes,
 		timeline_syncobj_fd: OwnedFd,
 	) -> Result<DmatexRef, DmatexImportError> {
 		let tex = Dmatex::new(
@@ -263,7 +275,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 		&self,
 		_ctx: gluon::Context,
 		render_node: u64,
-	) -> Option<Vec<DmatexFormat>> {
+	) -> Option<Vec<DmatexFormatInfo>> {
 		let vk = VULKANO_CONTEXT.wait();
 		if Some(render_node) != vk.get_drm_render_node_id() {
 			error!(
@@ -294,19 +306,25 @@ impl DmatexInterfaceHandler for DmatexInterface {
 							Vec::new()
 						}
 						.into_iter()
-						.map(move |v| DmatexFormat {
+						.map(move |v| DmatexFormatInfo {
 							drm_fourcc: *fourcc as u32,
 							drm_modifier: v.drm_format_modifier,
-							is_srgb: true,
+							supports_srgb: true,
+							supports_disjoint: false,
+							supports_sampling: true,
+							supports_rendering: true,
 						})
 						.chain(
 							props
 								.drm_format_modifier_properties
 								.into_iter()
-								.map(move |v| DmatexFormat {
+								.map(move |v| DmatexFormatInfo {
 									drm_fourcc: *fourcc as u32,
 									drm_modifier: v.drm_format_modifier,
-									is_srgb: false,
+									supports_srgb: false,
+									supports_disjoint: false,
+									supports_sampling: true,
+									supports_rendering: true,
 								}),
 						),
 					)
@@ -323,7 +341,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 		VULKANO_CONTEXT.wait().get_drm_render_node_id().unwrap()
 	}
 }
-static DMATEX_FORMAT_CACHE: OnceLock<Vec<DmatexFormat>> = OnceLock::new();
+static DMATEX_FORMAT_CACHE: OnceLock<Vec<DmatexFormatInfo>> = OnceLock::new();
 pub struct DmatexPlugin;
 impl Plugin for DmatexPlugin {
 	fn build(&self, app: &mut bevy::app::App) {
