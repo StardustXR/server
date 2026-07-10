@@ -24,6 +24,7 @@ use stardust_xr_protocol::types::{CreateError, Vec3F};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 
 pub struct FieldDebugGizmoPlugin;
 impl Plugin for FieldDebugGizmoPlugin {
@@ -127,7 +128,11 @@ fn sync_field_gizmos(
 	}
 }
 
-fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3A>> {
+/// Bails out early if `f` is the last strong reference remaining (i.e. every
+/// `FieldObject`/`FieldRef` that pointed at it has already been dropped), since
+/// that means the field is dead in all but name and there's no point spending
+/// more time computing lines nobody will ever see — better to let it drop promptly.
+fn compute_field_polylines(f: &Arc<Field>) -> Vec<Vec<Vec3A>> {
 	const FAR: f32 = 100.0;
 	const PAD: f32 = 1.1;
 	const MIN_EXT: f32 = 0.005;
@@ -156,6 +161,9 @@ fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3A>> {
 	let mut all_chains: Vec<Vec<Vec3A>> = Vec::new();
 
 	for z in slice_positions(bz_neg, bz_pos).chain([-(bz_neg / PAD), bz_pos / PAD]) {
+		if Arc::strong_count(f) <= 1 {
+			return all_chains;
+		}
 		for chain in chain_segments(marching_squares_slice(
 			|p| f.local_sample(p).distance,
 			(-bx_neg, bx_pos, -by_neg, by_pos),
@@ -167,6 +175,9 @@ fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3A>> {
 	}
 
 	for y in slice_positions(by_neg, by_pos).chain([-(by_neg / PAD), by_pos / PAD]) {
+		if Arc::strong_count(f) <= 1 {
+			return all_chains;
+		}
 		for chain in chain_segments(marching_squares_slice(
 			|p| f.local_sample(p).distance,
 			(-bx_neg, bx_pos, -bz_neg, bz_pos),
@@ -178,6 +189,9 @@ fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3A>> {
 	}
 
 	for x in slice_positions(bx_neg, bx_pos).chain([-(bx_neg / PAD), bx_pos / PAD]) {
+		if Arc::strong_count(f) <= 1 {
+			return all_chains;
+		}
 		for chain in chain_segments(marching_squares_slice(
 			|p| f.local_sample(p).distance,
 			(-by_neg, by_pos, -bz_neg, bz_pos),
@@ -191,8 +205,65 @@ fn compute_field_polylines(f: &Field) -> Vec<Vec<Vec3A>> {
 	all_chains
 }
 
+const RECALC_IDLE: u8 = 0;
+const RECALC_RUNNING: u8 = 1;
+const RECALC_RUNNING_DIRTY: u8 = 2;
+
+/// Request a recalculation of the field's debug polylines, coalescing requests that
+/// arrive while a recalculation is already in flight instead of queuing up extra
+/// blocking tasks (which would otherwise pile up and lag everything down if the
+/// field's shape changes faster than the marching-squares pass can keep up).
+fn request_field_polylines_recalc(field: &Arc<Field>) {
+	loop {
+		match field.recalc_state.compare_exchange(
+			RECALC_IDLE,
+			RECALC_RUNNING,
+			Ordering::AcqRel,
+			Ordering::Acquire,
+		) {
+			Ok(_) => {
+				let field = field.clone();
+				tokio::task::spawn_blocking(move || run_field_polylines_recalc(&field));
+				return;
+			}
+			Err(RECALC_RUNNING) => {
+				match field.recalc_state.compare_exchange(
+					RECALC_RUNNING,
+					RECALC_RUNNING_DIRTY,
+					Ordering::AcqRel,
+					Ordering::Acquire,
+				) {
+					Ok(_) => return,
+					Err(_) => continue,
+				}
+			}
+			Err(_) => return, // already RECALC_RUNNING_DIRTY, nothing more to do
+		}
+	}
+}
+
 /// this needs to be called from a blocking context, else it panics
-fn spawn_field_polylines(field: &Field) {
+fn run_field_polylines_recalc(field: &Arc<Field>) {
+	loop {
+		spawn_field_polylines(field);
+		match field.recalc_state.compare_exchange(
+			RECALC_RUNNING,
+			RECALC_IDLE,
+			Ordering::AcqRel,
+			Ordering::Acquire,
+		) {
+			Ok(_) => return,
+			Err(_) => {
+				// a request arrived mid-computation; recompute once more instead of
+				// letting it queue up another task.
+				field.recalc_state.store(RECALC_RUNNING, Ordering::Release);
+				continue;
+			}
+		}
+	}
+}
+
+fn spawn_field_polylines(field: &Arc<Field>) {
 	let mut cache = field.polyline_cache.write();
 	cache.0 += 1;
 	let chains = compute_field_polylines(field);
@@ -429,6 +500,7 @@ pub struct Field {
 	pub shape: RwLock<Shape>,
 	shape_changed_callback: Registry<dyn Fn() + Send + Sync + 'static>,
 	polyline_cache: RwLock<(u64, Option<Vec<Vec<Vec3A>>>)>,
+	recalc_state: AtomicU8,
 }
 
 impl Debug for Field {
@@ -449,6 +521,7 @@ impl Field {
 			shape: RwLock::new(shape),
 			shape_changed_callback: Registry::new(),
 			polyline_cache: RwLock::new((0, None)),
+			recalc_state: AtomicU8::new(RECALC_IDLE),
 		}
 	}
 
@@ -509,14 +582,10 @@ impl FieldObject {
 			shape: RwLock::new(shape),
 			polyline_cache: RwLock::new((0, None)),
 			shape_changed_callback: Registry::new(),
+			recalc_state: AtomicU8::new(RECALC_IDLE),
 		});
 		FIELD_REGISTRY_DEBUG_GIZMOS.add_raw(&data);
-		tokio::task::spawn_blocking({
-			let data = data.clone();
-			move || {
-				spawn_field_polylines(&data);
-			}
-		});
+		request_field_polylines_recalc(&data);
 		let field_ref = PION
 			.register_object(FieldRef { data: data.clone() })
 			.to_service();
@@ -576,10 +645,7 @@ impl FieldHandler for FieldObject {
 
 	async fn set_shape(&self, _ctx: gluon::Context, shape: Shape) {
 		*self.data.shape.write() = shape;
-		let data = self.data.clone();
-		tokio::task::spawn_blocking(move || {
-			spawn_field_polylines(&data);
-		});
+		request_field_polylines_recalc(&self.data);
 		for f in self.data.shape_changed_callback.get_valid_contents() {
 			f()
 		}
@@ -665,6 +731,7 @@ mod tests {
 			shape: RwLock::new(shape),
 			shape_changed_callback: Registry::new(),
 			polyline_cache: RwLock::new((0, None)),
+			recalc_state: AtomicU8::new(RECALC_IDLE),
 		}
 	}
 
