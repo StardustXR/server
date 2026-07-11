@@ -442,6 +442,11 @@ impl Spatial {
 		}
 
 		*self.parent.lock() = Some(new_parent.clone());
+		// Reparenting changes this subtree's global pose even though no local transform
+		// was touched, so anything watching for movement must be told.
+		for f in &subtree_callbacks {
+			f();
+		}
 		self.mark_dirty();
 	}
 
@@ -703,15 +708,17 @@ mod moved_callback_tests {
 		let (count, cb) = counter();
 		let _guard = child.moved_callback(cb);
 
+		// The reparent itself changes the child's global pose → fires once.
 		child.set_spatial_parent(&new_parent).unwrap();
+		assert_eq!(count.load(Ordering::Relaxed), 1);
 
 		// Old parent no longer drives the callback.
 		old_parent.set_local_transform(Mat4::from_translation(Vec3::X));
-		assert_eq!(count.load(Ordering::Relaxed), 0);
+		assert_eq!(count.load(Ordering::Relaxed), 1);
 
 		// New parent does.
 		new_parent.set_local_transform(Mat4::from_translation(Vec3::X));
-		assert_eq!(count.load(Ordering::Relaxed), 1);
+		assert_eq!(count.load(Ordering::Relaxed), 2);
 	}
 
 	// A subtree's aggregated callbacks travel with it when an intermediate node moves.
@@ -726,10 +733,12 @@ mod moved_callback_tests {
 		let (count, cb) = counter();
 		let _guard = child.moved_callback(cb);
 
+		// The reparent moves the whole subtree → the descendant's callback fires once.
 		parent.set_spatial_parent(&root).unwrap();
+		assert_eq!(count.load(Ordering::Relaxed), 1);
 
 		root.set_local_transform(Mat4::from_translation(Vec3::Z));
-		assert_eq!(count.load(Ordering::Relaxed), 1);
+		assert_eq!(count.load(Ordering::Relaxed), 2);
 	}
 
 	// Moving a child must not fire callbacks that live on its ancestors.
@@ -746,6 +755,20 @@ mod moved_callback_tests {
 		assert_eq!(count.load(Ordering::Relaxed), 0);
 
 		parent.set_local_transform(Mat4::from_translation(Vec3::X));
+		assert_eq!(count.load(Ordering::Relaxed), 1);
+	}
+
+	// Reparenting changes the node's global pose, so it must fire the node's own
+	// moved callbacks even though no local transform was set.
+	#[test]
+	fn reparenting_fires_moved_callback() {
+		let new_parent = Spatial::test_new(None, Mat4::from_translation(Vec3::X * 100.0));
+		let node = Spatial::test_new(None, Mat4::IDENTITY);
+
+		let (count, cb) = counter();
+		let _guard = node.moved_callback(cb);
+
+		node.set_spatial_parent(&new_parent).unwrap();
 		assert_eq!(count.load(Ordering::Relaxed), 1);
 	}
 
