@@ -12,7 +12,7 @@ use stardust_xr_protocol::{
 		InterfaceDependency, QueryInterfaceHandler, QueryableInterfaceGuard,
 		QueryableInterfaceGuardHandler, QueriedInterface, QueryableObjectRef,
 	},
-	spatial::Spatial as SpatialProxy,
+	spatial::{PartialTransform, Spatial as SpatialProxy, SpatialHandler as _},
 	spatial_query::{
 		BeamQuery, BeamQueryHandler, BeamQueryHandlerHandler,
 		PointsQuery, PointsQueryHandler, PointsQueryHandlerHandler,
@@ -267,6 +267,118 @@ fn zone_no_entered_wrong_interface() {
 	});
 }
 
+#[test]
+fn zone_left_when_queryable_moves_out() {
+	RT.block_on(async {
+		let (tx, mut rx) = mpsc::channel(4);
+		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+
+		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
+		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
+		let zone_field_ref = zone_field.field_ref(ctx()).await;
+
+		let sq = SpatialQueryInterface::new(&prefixes());
+		let _guard = sq.zone_query(ctx(), ZoneQuery {
+			handler: ZoneQueryHandler::from_handler(&handler),
+			interfaces: vec![InterfaceDependency { id: "e2e.zone.move_out".into(), optional: false }],
+			zone_field: zone_field_ref,
+			margin: 0.0,
+		}).await;
+
+		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.move_out").await;
+
+		tokio::time::timeout(HIT, rx.recv()).await
+			.expect("timed out waiting for entered")
+			.expect("channel closed");
+
+		// Move the queryable well outside the zone → left fires.
+		h.spatial.set_local_transform(ctx(), PartialTransform {
+			translation: Some(Vec3F { x: 50.0, y: 0.0, z: 0.0 }),
+			rotation: None,
+			scale: None,
+		}).await;
+
+		let ev = tokio::time::timeout(HIT, rx.recv()).await
+			.expect("timed out waiting for left")
+			.expect("channel closed");
+		assert!(matches!(ev, ZoneEvent::Left));
+	});
+}
+
+#[test]
+fn zone_left_when_queryable_hidden() {
+	RT.block_on(async {
+		let (tx, mut rx) = mpsc::channel(4);
+		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+
+		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
+		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
+		let zone_field_ref = zone_field.field_ref(ctx()).await;
+
+		let sq = SpatialQueryInterface::new(&prefixes());
+		let _guard = sq.zone_query(ctx(), ZoneQuery {
+			handler: ZoneQueryHandler::from_handler(&handler),
+			interfaces: vec![InterfaceDependency { id: "e2e.zone.hidden".into(), optional: false }],
+			zone_field: zone_field_ref,
+			margin: 0.0,
+		}).await;
+
+		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.hidden").await;
+
+		tokio::time::timeout(HIT, rx.recv()).await
+			.expect("timed out waiting for entered")
+			.expect("channel closed");
+
+		// Zero scale hides the queryable → left fires even though it never moved.
+		h.spatial.set_local_transform(ctx(), PartialTransform {
+			translation: None,
+			rotation: None,
+			scale: Some(Vec3F { x: 0.0, y: 0.0, z: 0.0 }),
+		}).await;
+
+		let ev = tokio::time::timeout(HIT, rx.recv()).await
+			.expect("timed out waiting for left")
+			.expect("channel closed");
+		assert!(matches!(ev, ZoneEvent::Left));
+	});
+}
+
+#[test]
+fn zone_left_when_queryable_reparented_away() {
+	RT.block_on(async {
+		let (tx, mut rx) = mpsc::channel(4);
+		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+
+		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
+		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
+		let zone_field_ref = zone_field.field_ref(ctx()).await;
+
+		let sq = SpatialQueryInterface::new(&prefixes());
+		let _guard = sq.zone_query(ctx(), ZoneQuery {
+			handler: ZoneQueryHandler::from_handler(&handler),
+			interfaces: vec![InterfaceDependency { id: "e2e.zone.reparent".into(), optional: false }],
+			zone_field: zone_field_ref,
+			margin: 0.0,
+		}).await;
+
+		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.reparent").await;
+
+		tokio::time::timeout(HIT, rx.recv()).await
+			.expect("timed out waiting for entered")
+			.expect("channel closed");
+
+		// Reparent under a far-away parent — the queryable's local transform is
+		// unchanged, but its global pose leaves the zone → left fires.
+		let far_parent = SpatialObject::new(None, Mat4::from_translation(Vec3::new(100.0, 0.0, 0.0)));
+		h.spatial.set_parent(ctx(), SpatialRefProxy::from_handler(far_parent.get_ref())).await;
+
+		let ev = tokio::time::timeout(HIT, rx.recv()).await
+			.expect("timed out waiting for left")
+			.expect("channel closed");
+		assert!(matches!(ev, ZoneEvent::Left));
+	});
+}
+
 // === beam query ===
 
 #[test]
@@ -350,6 +462,37 @@ fn points_entered_when_point_inside_field() {
 			.expect("timed out waiting for entered")
 			.expect("channel closed");
 		assert!(matches!(ev, PointsEvent::Entered { .. }));
+	});
+}
+
+#[test]
+fn points_no_entered_when_queryable_hidden() {
+	RT.block_on(async {
+		let (tx, mut rx) = mpsc::channel(4);
+		let handler = PION.register_object(TestPointsHandler(tx)).to_service();
+
+		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
+
+		// Queryable would match the point, but is hidden by zero scale first.
+		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 1.0 }, "e2e.points.hidden").await;
+		h.spatial.set_local_transform(ctx(), PartialTransform {
+			translation: None,
+			rotation: None,
+			scale: Some(Vec3F { x: 0.0, y: 0.0, z: 0.0 }),
+		}).await;
+
+		let sq = SpatialQueryInterface::new(&prefixes());
+		let _handle = sq.points_query(ctx(), PointsQuery {
+			handler: PointsQueryHandler::from_handler(&handler),
+			interfaces: vec![InterfaceDependency { id: "e2e.points.hidden".into(), optional: false }],
+			reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+			points: vec![Point { point: Vec3F { x: 0.0, y: 0.0, z: 0.0 }, margin: 0.0 }],
+		}).await;
+
+		assert!(
+			tokio::time::timeout(NO_HIT, rx.recv()).await.is_err(),
+			"expected no entered for hidden queryable"
+		);
 	});
 }
 

@@ -53,6 +53,9 @@ trait QueryKind: Send + Sync + Debug + 'static {
 	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>);
 
 	/// Geometric test for a single queryable. `None` means it does not match.
+	/// Purely geometric — visibility (of the anchor, the queryable's spatial, and the
+	/// queryable's field) is checked once in [`Query::hit_visible`], so kinds must not
+	/// (and cannot forget to) re-check it.
 	fn hit(&self, queryable: &Queryable) -> Option<Self::Hit>;
 
 	fn entered(
@@ -120,6 +123,18 @@ impl<K: QueryKind> AnyQuery for Query<K> {
 }
 
 impl<K: QueryKind> Query<K> {
+	/// A queryable can only match while both its spatial and its field are visible, and
+	/// the query's own anchor is too — checked here once so no [`QueryKind::hit`] can
+	/// forget it (they only do geometry).
+	fn hit_visible(&self, queryable: &Queryable) -> Option<K::Hit> {
+		let (anchor, _) = self.kind.anchors();
+		(anchor.visible()
+			&& queryable.spatial.visible()
+			&& queryable.field.data.spatial.visible())
+		.then(|| self.kind.hit(queryable))
+		.flatten()
+	}
+
 	/// Re-test one queryable's geometry and emit the resulting transition. This is the
 	/// only place `Tracked::matched` changes. `hit` is synchronous, so the whole
 	/// transition runs under one short lock with no `.await` held across it.
@@ -128,7 +143,7 @@ impl<K: QueryKind> Query<K> {
 		let Some(entry) = tracked.get_mut(&queryable.id) else {
 			return;
 		};
-		match (self.kind.hit(queryable), entry.matched) {
+		match (self.hit_visible(queryable), entry.matched) {
 			(Some(hit), false) => {
 				let interfaces = entry.interfaces.clone();
 				entry.matched = true;
@@ -146,7 +161,14 @@ impl<K: QueryKind> Query<K> {
 	}
 
 	/// Bring one queryable's interest + interface set up to date, then re-evaluate it.
+	///
+	/// Snapshot and apply run under the queryable's `update_lock`: every interface
+	/// change strictly precedes the re-sync it spawns, so with re-syncs serialized
+	/// (and the snapshot taken *inside* the critical section) the last one to run
+	/// always applies the true final interface set — a stale snapshot can never
+	/// overwrite a newer one.
 	async fn update_interfaces_impl(self: &Arc<Self>, queryable: &Arc<Queryable>) {
+		let _sync = queryable.update_lock.lock().await;
 		let have: HashMap<Arc<DedupedStr>, Arc<QueryableInterface>> = queryable
 			.interfaces
 			.read()
@@ -176,9 +198,14 @@ impl<K: QueryKind> Query<K> {
 					let entry = occupied.get_mut();
 					if entry.interfaces != interfaces {
 						entry.interfaces = interfaces.clone();
-						_ = self
-							.kind
-							.interfaces_changed(queryable.obj_ref(), interfaces);
+						// The client only knows about queryables it has been sent
+						// `entered` for; an unmatched one's changes are stored
+						// silently and ride along with the eventual `entered`.
+						if entry.matched {
+							_ = self
+								.kind
+								.interfaces_changed(queryable.obj_ref(), interfaces);
+						}
 					}
 				}
 				Entry::Vacant(slot) => {
@@ -360,12 +387,6 @@ impl QueryKind for BeamKind {
 		(&self.ref_space, None)
 	}
 	fn hit(&self, queryable: &Queryable) -> Option<BeamHit> {
-		if !queryable.spatial.visible() {
-			return None;
-		}
-		if !queryable.field.data.spatial.visible() {
-			return None;
-		}
 		let ray_march = queryable.field.data.ray_march(Ray {
 			origin: self.origin,
 			direction: self.dir,
@@ -427,12 +448,6 @@ impl QueryKind for ZoneKind {
 		(&self.field.spatial, Some(&self.field))
 	}
 	fn hit(&self, queryable: &Queryable) -> Option<ZoneHit> {
-		if !queryable.spatial.visible() {
-			return None;
-		}
-		if !self.field.spatial.visible() {
-			return None;
-		}
 		let (_scale, _rotation, pos) =
 			Spatial::space_to_space_matrix(Some(&queryable.spatial), Some(&self.field.spatial))
 				.to_scale_rotation_translation();

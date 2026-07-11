@@ -45,6 +45,12 @@ struct Queryable {
 	spatial: ObjectRef<SpatialObject>,
 	field: ObjectRef<FieldObject>,
 	interfaces: RwLock<Registry<QueryableInterface>>,
+	/// Serializes interface re-syncs for this queryable (see
+	/// `Query::update_interfaces_impl`). Interface *removal* is an `Arc` drop, not a
+	/// write to `interfaces`, so the `RwLock` alone cannot order a snapshot against a
+	/// concurrent change — without this, a stale snapshot could be applied last and
+	/// the tracked interface set would disagree with reality until the next change.
+	update_lock: tokio::sync::Mutex<()>,
 }
 #[derive(Debug)]
 struct QueryableInterface {
@@ -125,6 +131,7 @@ impl QueryInterfaceHandler for QueryInterface {
 			spatial,
 			interfaces: RwLock::default(),
 			queryable_ref,
+			update_lock: tokio::sync::Mutex::new(()),
 		});
 		QUERY_STATE.all_queryables.add_raw(&queryable);
 		let obj = PION.register_object(QueryableMut(queryable));
