@@ -1595,13 +1595,14 @@ dependencies = [
 [[package]]
 name = "binderbinder"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/binderbinder#81d56a9bb0a595d99b318bd51f2392606cd7a628"
+source = "git+https://github.com/technobaboo/binderbinder#b3b109347bccf29c99b79d7f80d5c90a6842849f"
 dependencies = [
  "bitflags 2.11.0",
  "dashmap",
  "rustix 1.1.4",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
 ]
