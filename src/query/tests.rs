@@ -379,6 +379,61 @@ fn zone_left_when_queryable_reparented_away() {
 	});
 }
 
+// End-to-end latency of a zone transition: queryable moves → moved callback →
+// spawned reconcile → handler event delivered. Run with:
+// cargo test --profile benching -- --ignored bench_ --nocapture --test-threads=1
+#[test]
+#[ignore]
+fn bench_query_e2e_zone_transition_roundtrip() {
+	RT.block_on(async {
+		let (tx, mut rx) = mpsc::channel(4);
+		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+
+		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
+		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
+		let zone_field_ref = zone_field.field_ref(ctx()).await;
+
+		let sq = SpatialQueryInterface::new(&prefixes());
+		let _guard = sq.zone_query(ctx(), ZoneQuery {
+			handler: ZoneQueryHandler::from_handler(&handler),
+			interfaces: vec![InterfaceDependency { id: "bench.zone.roundtrip".into(), optional: false }],
+			zone_field: zone_field_ref,
+			margin: 0.0,
+		}).await;
+
+		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "bench.zone.roundtrip").await;
+		tokio::time::timeout(HIT, rx.recv()).await
+			.expect("timed out waiting for initial entered")
+			.expect("channel closed");
+
+		let translate = |x: f32| PartialTransform {
+			translation: Some(Vec3F { x, y: 0.0, z: 0.0 }),
+			rotation: None,
+			scale: None,
+		};
+
+		const TRANSITIONS: u32 = 400;
+		let start = std::time::Instant::now();
+		for _ in 0..TRANSITIONS / 2 {
+			h.spatial.set_local_transform(ctx(), translate(50.0)).await;
+			let ev = tokio::time::timeout(HIT, rx.recv()).await
+				.expect("timed out waiting for left")
+				.expect("channel closed");
+			assert!(matches!(ev, ZoneEvent::Left));
+
+			h.spatial.set_local_transform(ctx(), translate(0.0)).await;
+			let ev = tokio::time::timeout(HIT, rx.recv()).await
+				.expect("timed out waiting for entered")
+				.expect("channel closed");
+			assert!(matches!(ev, ZoneEvent::Entered { .. }));
+		}
+		println!(
+			"zone e2e transition roundtrip                        {:>10.1} µs/transition   ({TRANSITIONS} transitions)",
+			start.elapsed().as_micros() as f64 / f64::from(TRANSITIONS)
+		);
+	});
+}
+
 // === beam query ===
 
 #[test]

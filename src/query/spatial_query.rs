@@ -897,6 +897,113 @@ mod tests {
 		assert!(points_check(&sphere, &ref_space, &pts));
 	}
 
+	// --- benches ---
+	// Micro-benchmarks for the per-reconcile hit math. Run with:
+	// cargo test --profile benching -- --ignored bench_ --nocapture --test-threads=1
+
+	use crate::core::microbench::bench;
+
+	#[test]
+	#[ignore]
+	fn bench_query_zone_hit() {
+		let zone_sphere = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
+		let zone_box = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Box {
+				size: Vec3::ONE.into(),
+			},
+		);
+		let inside = make_spatial(0.0, 0.0, 0.5);
+		let outside = make_spatial(10.0, 0.0, 0.0);
+		bench("zone hit (sphere, inside)", || {
+			zone_check(&inside, &zone_sphere, 0.0)
+		});
+		bench("zone hit (sphere, outside)", || {
+			zone_check(&outside, &zone_sphere, 0.0)
+		});
+		bench("zone hit (box, inside)", || {
+			zone_check(&inside, &zone_box, 0.0)
+		});
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_query_beam_hit() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		let sphere = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
+		bench("beam ray_march (sphere, hit)", || {
+			beam_check(
+				&sphere,
+				&ref_space,
+				Vec3::new(-3.0, 0.0, 0.0),
+				Vec3::X,
+				f32::MAX,
+			)
+		});
+		// A miss marches until escape — usually the more expensive path.
+		bench("beam ray_march (sphere, miss)", || {
+			beam_check(
+				&sphere,
+				&ref_space,
+				Vec3::new(-3.0, 2.0, 0.0),
+				Vec3::X,
+				f32::MAX,
+			)
+		});
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_query_points_hit() {
+		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);
+		let sphere = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 1.0 },
+		);
+		// 8 points like a controller/hand joint cluster, one inside.
+		let points: Vec<Point> = (0..8)
+			.map(|i| Point {
+				point: Vec3::new(i as f32 * 0.5, 0.0, 0.0).into(),
+				margin: 0.1,
+			})
+			.collect();
+		bench("points hit (8 points vs sphere)", || {
+			points_check(&sphere, &ref_space, &points)
+		});
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_query_zone_sweep() {
+		// The cost of one `self_moved` re-evaluation sweep: a zone query's anchor moved
+		// and every tracked queryable is geometry-tested again.
+		let zone = make_field(
+			Spatial::test_new(None, Mat4::IDENTITY),
+			Shape::Sphere { radius: 2.0 },
+		);
+		for count in [100usize, 1000] {
+			// Deterministic scatter, roughly half inside the zone.
+			let queryables: Vec<Arc<Spatial>> = (0..count)
+				.map(|i| {
+					let f = i as f32 / count as f32;
+					make_spatial(f * 4.0 - 2.0, (f * 37.0) % 3.0, (f * 53.0) % 3.0)
+				})
+				.collect();
+			bench(&format!("zone sweep ({count} queryables)"), || {
+				queryables
+					.iter()
+					.filter(|q| zone_check(q, &zone, 0.0))
+					.count()
+			});
+		}
+	}
+
 	#[test]
 	fn points_all_outside_misses() {
 		let ref_space = Spatial::test_new(None, Mat4::IDENTITY);

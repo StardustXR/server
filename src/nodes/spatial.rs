@@ -788,3 +788,131 @@ mod moved_callback_tests {
 	}
 }
 impl_proxy!(SpatialRefProxy, SpatialRef);
+
+// Micro-benchmarks for the hot spatial operations. Run with:
+// cargo test --profile benching -- --ignored bench_ --nocapture --test-threads=1
+#[cfg(test)]
+mod spatial_benches {
+	use super::*;
+	use crate::core::microbench::bench;
+
+	/// A parent→child chain of `depth` nodes, each offset 1 m on X. Returned root-first
+	/// so the caller keeps every node alive; last element is the deepest node.
+	fn chain(depth: usize) -> Vec<Arc<Spatial>> {
+		let mut nodes = vec![Spatial::test_new(None, Mat4::from_translation(Vec3::X))];
+		for _ in 1..depth {
+			let parent = nodes.last().unwrap().clone();
+			nodes.push(Spatial::test_new(
+				Some(parent),
+				Mat4::from_translation(Vec3::X),
+			));
+		}
+		nodes
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_spatial_global_transform() {
+		for depth in [1, 8, 32] {
+			let nodes = chain(depth);
+			let deepest = nodes.last().unwrap();
+			bench(&format!("global_transform (depth {depth})"), || {
+				deepest.global_transform()
+			});
+		}
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_spatial_space_to_space_matrix() {
+		// Two independent depth-8 branches, as in a typical queryable-vs-zone test.
+		let from = chain(8);
+		let to = chain(8);
+		let (from, to) = (from.last().unwrap(), to.last().unwrap());
+		bench("space_to_space_matrix (two depth-8 chains)", || {
+			Spatial::space_to_space_matrix(Some(from), Some(to))
+		});
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_spatial_visible() {
+		for depth in [1, 8, 32] {
+			let nodes = chain(depth);
+			let deepest = nodes.last().unwrap();
+			bench(&format!("visible (depth {depth})"), || deepest.visible());
+		}
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_spatial_set_local_transform() {
+		let node = Spatial::test_new(None, Mat4::IDENTITY);
+		let mat = Mat4::from_translation(Vec3::X);
+		bench("set_local_transform (no callbacks)", || {
+			node.set_local_transform(mat)
+		});
+
+		// Callbacks registered on 64 descendants all aggregate onto the root, so this
+		// is the cost of moving a node with a subtree of 64 watchers.
+		let root = Spatial::test_new(None, Mat4::IDENTITY);
+		let children: Vec<Arc<Spatial>> = (0..64)
+			.map(|_| Spatial::test_new(Some(root.clone()), Mat4::IDENTITY))
+			.collect();
+		let _guards: Vec<MovedCallback> = children
+			.iter()
+			.map(|child| child.moved_callback(|| {}))
+			.collect();
+		bench("set_local_transform (64 descendant callbacks)", || {
+			root.set_local_transform(mat)
+		});
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_spatial_reparent() {
+		// Ping-pong a subtree with 16 watched descendants between two parents —
+		// exercises the ancestor-chain callback rewiring plus the new callback fire.
+		let parent_a = Spatial::test_new(None, Mat4::IDENTITY);
+		let parent_b = Spatial::test_new(None, Mat4::from_translation(Vec3::X));
+		let node = Spatial::test_new(None, Mat4::IDENTITY);
+		node.set_spatial_parent(&parent_a).unwrap();
+		let children: Vec<Arc<Spatial>> = (0..16)
+			.map(|_| {
+				let child = Spatial::test_new(None, Mat4::IDENTITY);
+				child.set_spatial_parent(&node).unwrap();
+				child
+			})
+			.collect();
+		let _guards: Vec<MovedCallback> = children
+			.iter()
+			.map(|child| child.moved_callback(|| {}))
+			.collect();
+
+		let mut on_a = true;
+		bench("set_spatial_parent (16 descendant callbacks)", || {
+			let target = if on_a { &parent_b } else { &parent_a };
+			on_a = !on_a;
+			node.set_spatial_parent(target).unwrap();
+		});
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_spatial_get_bounding_box() {
+		let root = Spatial::test_new(None, Mat4::IDENTITY);
+		let children: Vec<Arc<Spatial>> = (0..16)
+			.map(|i| {
+				let child =
+					Spatial::test_new(None, Mat4::from_translation(Vec3::X * i as f32));
+				child.set_spatial_parent(&root).unwrap();
+				child
+			})
+			.collect();
+		let _guards: Vec<BoundingBoxCalc> = children
+			.iter()
+			.map(|child| child.custom_bounding_box(Aabb::default))
+			.collect();
+		bench("get_bounding_box (16 children)", || root.get_bounding_box());
+	}
+}

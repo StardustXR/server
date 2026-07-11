@@ -35,6 +35,15 @@ debug = true
 [profile.dev.package."*"]
 opt-level = 3
 
+# For the in-crate micro-benchmarks (see src/core/microbench.rs):
+# cargo test --profile benching -- --ignored bench_ --nocapture --test-threads=1
+[profile.benching]
+inherits = "release"
+lto = false
+codegen-units = 16
+panic = "unwind"
+debug = false
+
 [patch.crates-io]
 bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", rev = "fa4ce03c" }
 bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", rev = "fa4ce03c" }
