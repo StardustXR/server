@@ -330,15 +330,17 @@ impl Spatial {
 	}
 	/// Check if this node or any ancestor has zero scale (for visibility culling)
 	pub fn visible(&self) -> bool {
-		// Check parent chain
-		if let Some(parent) = self.get_parent()
-			&& !parent.local_visible()
-		{
+		if !self.local_visible() {
 			return false;
 		}
-
-		// Check our own scale by looking at matrix column lengths
-		self.local_visible()
+		let mut ancestor = self.get_parent();
+		while let Some(node) = ancestor {
+			if !node.local_visible() {
+				return false;
+			}
+			ancestor = node.get_parent();
+		}
+		true
 	}
 	pub fn global_transform(&self) -> Mat4 {
 		let parent_transform = self
