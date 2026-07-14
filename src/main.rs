@@ -28,7 +28,10 @@ use bevy::{
 	pbr::PbrPlugin,
 	prelude::*,
 	render::{
-		RenderDebugFlags, RenderPlugin, pipelined_rendering::{PipelinedRenderThreadOnCreateCallback, PipelinedRenderingPlugin}, primitives::Aabb, settings::{Backends, RenderCreation, WgpuSettings}
+		RenderDebugFlags, RenderPlugin,
+		pipelined_rendering::{PipelinedRenderThreadOnCreateCallback, PipelinedRenderingPlugin},
+		primitives::Aabb,
+		settings::{Backends, RenderCreation, WgpuSettings},
 	},
 	scene::ScenePlugin,
 	window::{CompositeAlphaMode, PresentMode},

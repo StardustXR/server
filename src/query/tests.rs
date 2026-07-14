@@ -5,23 +5,26 @@ use crate::{
 };
 use glam::{Mat4, Vec3};
 use gluon::{Context, Handler, Object};
-use std::{path::PathBuf, sync::{Arc, LazyLock}, time::Duration};
 use stardust_xr_protocol::{
+	field::FieldRef as FieldRefProxy,
 	field::{Field as FieldProxy, FieldHandler, Shape},
 	query::{
-		InterfaceDependency, QueryInterfaceHandler, QueryableInterfaceGuard,
-		QueryableInterfaceGuardHandler, QueriedInterface, QueryableObjectRef,
+		InterfaceDependency, QueriedInterface, QueryInterfaceHandler, QueryableInterfaceGuard,
+		QueryableInterfaceGuardHandler, QueryableObjectRef,
 	},
+	spatial::SpatialRef as SpatialRefProxy,
 	spatial::{PartialTransform, Spatial as SpatialProxy, SpatialHandler as _},
 	spatial_query::{
-		BeamQuery, BeamQueryHandler, BeamQueryHandlerHandler,
-		PointsQuery, PointsQueryHandler, PointsQueryHandlerHandler,
-		SpatialQueryInterfaceHandler, ZoneQuery, ZoneQueryHandler, ZoneQueryHandlerHandler,
-		Point,
+		BeamQuery, BeamQueryHandler, BeamQueryHandlerHandler, Point, PointsQuery,
+		PointsQueryHandler, PointsQueryHandlerHandler, SpatialQueryInterfaceHandler, ZoneQuery,
+		ZoneQueryHandler, ZoneQueryHandlerHandler,
 	},
 	types::Vec3F,
-	field::FieldRef as FieldRefProxy,
-	spatial::SpatialRef as SpatialRefProxy,
+};
+use std::{
+	path::PathBuf,
+	sync::{Arc, LazyLock},
+	time::Duration,
 };
 use tokio::sync::mpsc;
 
@@ -34,7 +37,10 @@ static RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 });
 
 fn ctx() -> Context {
-	Context { sender_pid: 0, sender_euid: 0 }
+	Context {
+		sender_pid: 0,
+		sender_euid: 0,
+	}
 }
 
 fn prefixes() -> Arc<Vec<PathBuf>> {
@@ -57,13 +63,24 @@ enum ZoneEvent {
 struct TestZoneHandler(mpsc::Sender<ZoneEvent>);
 impl ZoneQueryHandlerHandler for TestZoneHandler {
 	async fn entered(
-		&self, _ctx: Context,
-		_obj: QueryableObjectRef, _field: FieldRefProxy, _spatial: SpatialRefProxy,
-		_interfaces: Vec<QueriedInterface>, _pos: Vec3F, distance: f32,
+		&self,
+		_ctx: Context,
+		_obj: QueryableObjectRef,
+		_field: FieldRefProxy,
+		_spatial: SpatialRefProxy,
+		_interfaces: Vec<QueriedInterface>,
+		_pos: Vec3F,
+		distance: f32,
 	) {
 		let _ = self.0.send(ZoneEvent::Entered { distance }).await;
 	}
-	async fn interfaces_changed(&self, _ctx: Context, _obj: QueryableObjectRef, _interfaces: Vec<QueriedInterface>) {}
+	async fn interfaces_changed(
+		&self,
+		_ctx: Context,
+		_obj: QueryableObjectRef,
+		_interfaces: Vec<QueriedInterface>,
+	) {
+	}
 	async fn moved(&self, _ctx: Context, _obj: QueryableObjectRef, _pos: Vec3F, _distance: f32) {}
 	async fn left(&self, _ctx: Context, _obj: QueryableObjectRef) {
 		let _ = self.0.send(ZoneEvent::Left).await;
@@ -80,13 +97,24 @@ enum BeamEvent {
 struct TestBeamHandler(mpsc::Sender<BeamEvent>);
 impl BeamQueryHandlerHandler for TestBeamHandler {
 	async fn intersected(
-		&self, _ctx: Context,
-		_obj: QueryableObjectRef, _field: FieldRefProxy, _spatial: SpatialRefProxy,
-		_interfaces: Vec<QueriedInterface>, _deepest: f32, distance: f32,
+		&self,
+		_ctx: Context,
+		_obj: QueryableObjectRef,
+		_field: FieldRefProxy,
+		_spatial: SpatialRefProxy,
+		_interfaces: Vec<QueriedInterface>,
+		_deepest: f32,
+		distance: f32,
 	) {
 		let _ = self.0.send(BeamEvent::Intersected { distance }).await;
 	}
-	async fn interfaces_changed(&self, _ctx: Context, _obj: QueryableObjectRef, _interfaces: Vec<QueriedInterface>) {}
+	async fn interfaces_changed(
+		&self,
+		_ctx: Context,
+		_obj: QueryableObjectRef,
+		_interfaces: Vec<QueriedInterface>,
+	) {
+	}
 	async fn moved(&self, _ctx: Context, _obj: QueryableObjectRef, _deepest: f32, _distance: f32) {}
 	async fn left(&self, _ctx: Context, _obj: QueryableObjectRef) {
 		let _ = self.0.send(BeamEvent::Left).await;
@@ -103,13 +131,23 @@ enum PointsEvent {
 struct TestPointsHandler(mpsc::Sender<PointsEvent>);
 impl PointsQueryHandlerHandler for TestPointsHandler {
 	async fn entered(
-		&self, _ctx: Context,
-		_obj: QueryableObjectRef, _field: FieldRefProxy, _spatial: SpatialRefProxy,
-		_interfaces: Vec<QueriedInterface>, distance: f32,
+		&self,
+		_ctx: Context,
+		_obj: QueryableObjectRef,
+		_field: FieldRefProxy,
+		_spatial: SpatialRefProxy,
+		_interfaces: Vec<QueriedInterface>,
+		distance: f32,
 	) {
 		let _ = self.0.send(PointsEvent::Entered { distance }).await;
 	}
-	async fn interfaces_changed(&self, _ctx: Context, _obj: QueryableObjectRef, _interfaces: Vec<QueriedInterface>) {}
+	async fn interfaces_changed(
+		&self,
+		_ctx: Context,
+		_obj: QueryableObjectRef,
+		_interfaces: Vec<QueriedInterface>,
+	) {
+	}
 	async fn moved(&self, _ctx: Context, _obj: QueryableObjectRef, _distance: f32) {}
 	async fn left(&self, _ctx: Context, _obj: QueryableObjectRef) {
 		let _ = self.0.send(PointsEvent::Left).await;
@@ -136,14 +174,27 @@ async fn make_queryable(translation: Vec3, shape: Shape, iface_id: &str) -> Quer
 
 	let q_iface = QueryInterface::new(&prefixes());
 	let queryable = q_iface
-		.register_queryable(ctx(), SpatialProxy::from_handler(&spatial), FieldProxy::from_handler(&field))
+		.register_queryable(
+			ctx(),
+			SpatialProxy::from_handler(&spatial),
+			FieldProxy::from_handler(&field),
+		)
 		.await
 		.expect("register_queryable failed");
 
 	let iface_obj = PION.register_object(DummyInterface);
-	let interface_guard = queryable.add_interface(&iface_obj, iface_id).await.expect("add_interface failed");
+	let interface_guard = queryable
+		.add_interface(&iface_obj, iface_id)
+		.await
+		.expect("add_interface failed");
 
-	QueryableHandle { spatial, field, queryable, iface_obj, interface_guard }
+	QueryableHandle {
+		spatial,
+		field,
+		queryable,
+		iface_obj,
+		interface_guard,
+	}
 }
 
 const HIT: Duration = Duration::from_millis(500);
@@ -162,16 +213,25 @@ fn zone_entered_when_queryable_inside() {
 		let zone_field_ref = zone_field.field_ref(ctx()).await;
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _guard = sq.zone_query(ctx(), ZoneQuery {
-			handler: ZoneQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.zone.inside".into(), optional: false }],
-			zone_field: zone_field_ref,
-			margin: 0.0,
-		}).await;
+		let _guard = sq
+			.zone_query(
+				ctx(),
+				ZoneQuery {
+					handler: ZoneQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.zone.inside".into(),
+						optional: false,
+					}],
+					zone_field: zone_field_ref,
+					margin: 0.0,
+				},
+			)
+			.await;
 
 		let _h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.inside").await;
 
-		let ev = tokio::time::timeout(HIT, rx.recv()).await
+		let ev = tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for entered")
 			.expect("channel closed");
 		assert!(matches!(ev, ZoneEvent::Entered { .. }));
@@ -189,14 +249,27 @@ fn zone_no_entered_when_queryable_outside() {
 		let zone_field_ref = zone_field.field_ref(ctx()).await;
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _guard = sq.zone_query(ctx(), ZoneQuery {
-			handler: ZoneQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.zone.outside".into(), optional: false }],
-			zone_field: zone_field_ref,
-			margin: 0.0,
-		}).await;
+		let _guard = sq
+			.zone_query(
+				ctx(),
+				ZoneQuery {
+					handler: ZoneQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.zone.outside".into(),
+						optional: false,
+					}],
+					zone_field: zone_field_ref,
+					margin: 0.0,
+				},
+			)
+			.await;
 
-		let _h = make_queryable(Vec3::new(5.0, 0.0, 0.0), Shape::Sphere { radius: 0.5 }, "e2e.zone.outside").await;
+		let _h = make_queryable(
+			Vec3::new(5.0, 0.0, 0.0),
+			Shape::Sphere { radius: 0.5 },
+			"e2e.zone.outside",
+		)
+		.await;
 
 		assert!(
 			tokio::time::timeout(NO_HIT, rx.recv()).await.is_err(),
@@ -216,23 +289,33 @@ fn zone_left_fires_when_interface_removed() {
 		let zone_field_ref = zone_field.field_ref(ctx()).await;
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _guard = sq.zone_query(ctx(), ZoneQuery {
-			handler: ZoneQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.zone.left".into(), optional: false }],
-			zone_field: zone_field_ref,
-			margin: 0.0,
-		}).await;
+		let _guard = sq
+			.zone_query(
+				ctx(),
+				ZoneQuery {
+					handler: ZoneQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.zone.left".into(),
+						optional: false,
+					}],
+					zone_field: zone_field_ref,
+					margin: 0.0,
+				},
+			)
+			.await;
 
 		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.left").await;
 
-		tokio::time::timeout(HIT, rx.recv()).await
+		tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for entered")
 			.expect("channel closed");
 
 		// Dropping the interface guard removes the required interface → left fires.
 		drop(h.interface_guard);
 
-		let ev = tokio::time::timeout(HIT, rx.recv()).await
+		let ev = tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for left")
 			.expect("channel closed");
 		assert!(matches!(ev, ZoneEvent::Left));
@@ -250,12 +333,20 @@ fn zone_no_entered_wrong_interface() {
 		let zone_field_ref = zone_field.field_ref(ctx()).await;
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _guard = sq.zone_query(ctx(), ZoneQuery {
-			handler: ZoneQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.zone.required".into(), optional: false }],
-			zone_field: zone_field_ref,
-			margin: 0.0,
-		}).await;
+		let _guard = sq
+			.zone_query(
+				ctx(),
+				ZoneQuery {
+					handler: ZoneQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.zone.required".into(),
+						optional: false,
+					}],
+					zone_field: zone_field_ref,
+					margin: 0.0,
+				},
+			)
+			.await;
 
 		// Queryable has wrong interface ID
 		let _h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.wrong").await;
@@ -278,27 +369,51 @@ fn zone_left_when_queryable_moves_out() {
 		let zone_field_ref = zone_field.field_ref(ctx()).await;
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _guard = sq.zone_query(ctx(), ZoneQuery {
-			handler: ZoneQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.zone.move_out".into(), optional: false }],
-			zone_field: zone_field_ref,
-			margin: 0.0,
-		}).await;
+		let _guard = sq
+			.zone_query(
+				ctx(),
+				ZoneQuery {
+					handler: ZoneQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.zone.move_out".into(),
+						optional: false,
+					}],
+					zone_field: zone_field_ref,
+					margin: 0.0,
+				},
+			)
+			.await;
 
-		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.move_out").await;
+		let h = make_queryable(
+			Vec3::ZERO,
+			Shape::Sphere { radius: 0.5 },
+			"e2e.zone.move_out",
+		)
+		.await;
 
-		tokio::time::timeout(HIT, rx.recv()).await
+		tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for entered")
 			.expect("channel closed");
 
 		// Move the queryable well outside the zone → left fires.
-		h.spatial.set_local_transform(ctx(), PartialTransform {
-			translation: Some(Vec3F { x: 50.0, y: 0.0, z: 0.0 }),
-			rotation: None,
-			scale: None,
-		}).await;
+		h.spatial
+			.set_local_transform(
+				ctx(),
+				PartialTransform {
+					translation: Some(Vec3F {
+						x: 50.0,
+						y: 0.0,
+						z: 0.0,
+					}),
+					rotation: None,
+					scale: None,
+				},
+			)
+			.await;
 
-		let ev = tokio::time::timeout(HIT, rx.recv()).await
+		let ev = tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for left")
 			.expect("channel closed");
 		assert!(matches!(ev, ZoneEvent::Left));
@@ -316,27 +431,46 @@ fn zone_left_when_queryable_hidden() {
 		let zone_field_ref = zone_field.field_ref(ctx()).await;
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _guard = sq.zone_query(ctx(), ZoneQuery {
-			handler: ZoneQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.zone.hidden".into(), optional: false }],
-			zone_field: zone_field_ref,
-			margin: 0.0,
-		}).await;
+		let _guard = sq
+			.zone_query(
+				ctx(),
+				ZoneQuery {
+					handler: ZoneQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.zone.hidden".into(),
+						optional: false,
+					}],
+					zone_field: zone_field_ref,
+					margin: 0.0,
+				},
+			)
+			.await;
 
 		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.hidden").await;
 
-		tokio::time::timeout(HIT, rx.recv()).await
+		tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for entered")
 			.expect("channel closed");
 
 		// Zero scale hides the queryable → left fires even though it never moved.
-		h.spatial.set_local_transform(ctx(), PartialTransform {
-			translation: None,
-			rotation: None,
-			scale: Some(Vec3F { x: 0.0, y: 0.0, z: 0.0 }),
-		}).await;
+		h.spatial
+			.set_local_transform(
+				ctx(),
+				PartialTransform {
+					translation: None,
+					rotation: None,
+					scale: Some(Vec3F {
+						x: 0.0,
+						y: 0.0,
+						z: 0.0,
+					}),
+				},
+			)
+			.await;
 
-		let ev = tokio::time::timeout(HIT, rx.recv()).await
+		let ev = tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for left")
 			.expect("channel closed");
 		assert!(matches!(ev, ZoneEvent::Left));
@@ -354,25 +488,43 @@ fn zone_left_when_queryable_reparented_away() {
 		let zone_field_ref = zone_field.field_ref(ctx()).await;
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _guard = sq.zone_query(ctx(), ZoneQuery {
-			handler: ZoneQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.zone.reparent".into(), optional: false }],
-			zone_field: zone_field_ref,
-			margin: 0.0,
-		}).await;
+		let _guard = sq
+			.zone_query(
+				ctx(),
+				ZoneQuery {
+					handler: ZoneQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.zone.reparent".into(),
+						optional: false,
+					}],
+					zone_field: zone_field_ref,
+					margin: 0.0,
+				},
+			)
+			.await;
 
-		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.reparent").await;
+		let h = make_queryable(
+			Vec3::ZERO,
+			Shape::Sphere { radius: 0.5 },
+			"e2e.zone.reparent",
+		)
+		.await;
 
-		tokio::time::timeout(HIT, rx.recv()).await
+		tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for entered")
 			.expect("channel closed");
 
 		// Reparent under a far-away parent — the queryable's local transform is
 		// unchanged, but its global pose leaves the zone → left fires.
-		let far_parent = SpatialObject::new(None, Mat4::from_translation(Vec3::new(100.0, 0.0, 0.0)));
-		h.spatial.set_parent(ctx(), SpatialRefProxy::from_handler(far_parent.get_ref())).await;
+		let far_parent =
+			SpatialObject::new(None, Mat4::from_translation(Vec3::new(100.0, 0.0, 0.0)));
+		h.spatial
+			.set_parent(ctx(), SpatialRefProxy::from_handler(far_parent.get_ref()))
+			.await;
 
-		let ev = tokio::time::timeout(HIT, rx.recv()).await
+		let ev = tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for left")
 			.expect("channel closed");
 		assert!(matches!(ev, ZoneEvent::Left));
@@ -445,19 +597,36 @@ fn beam_intersected_when_queryable_in_path() {
 		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _guard = sq.beam_query(ctx(), BeamQuery {
-			handler: BeamQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.beam.hit".into(), optional: false }],
-			reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
-			origin: Vec3F { x: -5.0, y: 0.0, z: 0.0 },
-			direction: Vec3F { x: 1.0, y: 0.0, z: 0.0 },
-			max_length: f32::MAX,
-		}).await;
+		let _guard = sq
+			.beam_query(
+				ctx(),
+				BeamQuery {
+					handler: BeamQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.beam.hit".into(),
+						optional: false,
+					}],
+					reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+					origin: Vec3F {
+						x: -5.0,
+						y: 0.0,
+						z: 0.0,
+					},
+					direction: Vec3F {
+						x: 1.0,
+						y: 0.0,
+						z: 0.0,
+					},
+					max_length: f32::MAX,
+				},
+			)
+			.await;
 
 		// Sphere at origin; beam along +X from −5 passes through it.
 		let _h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 1.0 }, "e2e.beam.hit").await;
 
-		let ev = tokio::time::timeout(HIT, rx.recv()).await
+		let ev = tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for intersected")
 			.expect("channel closed");
 		assert!(matches!(ev, BeamEvent::Intersected { .. }));
@@ -473,17 +642,38 @@ fn beam_no_intersected_when_queryable_offset() {
 		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _guard = sq.beam_query(ctx(), BeamQuery {
-			handler: BeamQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.beam.miss".into(), optional: false }],
-			reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
-			origin: Vec3F { x: -5.0, y: 0.0, z: 0.0 },
-			direction: Vec3F { x: 1.0, y: 0.0, z: 0.0 },
-			max_length: f32::MAX,
-		}).await;
+		let _guard = sq
+			.beam_query(
+				ctx(),
+				BeamQuery {
+					handler: BeamQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.beam.miss".into(),
+						optional: false,
+					}],
+					reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+					origin: Vec3F {
+						x: -5.0,
+						y: 0.0,
+						z: 0.0,
+					},
+					direction: Vec3F {
+						x: 1.0,
+						y: 0.0,
+						z: 0.0,
+					},
+					max_length: f32::MAX,
+				},
+			)
+			.await;
 
 		// Sphere offset 5 m on Y — beam misses entirely.
-		let _h = make_queryable(Vec3::new(0.0, 5.0, 0.0), Shape::Sphere { radius: 1.0 }, "e2e.beam.miss").await;
+		let _h = make_queryable(
+			Vec3::new(0.0, 5.0, 0.0),
+			Shape::Sphere { radius: 1.0 },
+			"e2e.beam.miss",
+		)
+		.await;
 
 		assert!(
 			tokio::time::timeout(NO_HIT, rx.recv()).await.is_err(),
@@ -503,17 +693,33 @@ fn points_entered_when_point_inside_field() {
 		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _handle = sq.points_query(ctx(), PointsQuery {
-			handler: PointsQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.points.hit".into(), optional: false }],
-			reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
-			points: vec![Point { point: Vec3F { x: 0.0, y: 0.0, z: 0.0 }, margin: 0.0 }],
-		}).await;
+		let _handle = sq
+			.points_query(
+				ctx(),
+				PointsQuery {
+					handler: PointsQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.points.hit".into(),
+						optional: false,
+					}],
+					reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+					points: vec![Point {
+						point: Vec3F {
+							x: 0.0,
+							y: 0.0,
+							z: 0.0,
+						},
+						margin: 0.0,
+					}],
+				},
+			)
+			.await;
 
 		// Sphere at origin, point (0,0,0) is inside.
 		let _h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 1.0 }, "e2e.points.hit").await;
 
-		let ev = tokio::time::timeout(HIT, rx.recv()).await
+		let ev = tokio::time::timeout(HIT, rx.recv())
+			.await
 			.expect("timed out waiting for entered")
 			.expect("channel closed");
 		assert!(matches!(ev, PointsEvent::Entered { .. }));
@@ -529,20 +735,49 @@ fn points_no_entered_when_queryable_hidden() {
 		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 
 		// Queryable would match the point, but is hidden by zero scale first.
-		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 1.0 }, "e2e.points.hidden").await;
-		h.spatial.set_local_transform(ctx(), PartialTransform {
-			translation: None,
-			rotation: None,
-			scale: Some(Vec3F { x: 0.0, y: 0.0, z: 0.0 }),
-		}).await;
+		let h = make_queryable(
+			Vec3::ZERO,
+			Shape::Sphere { radius: 1.0 },
+			"e2e.points.hidden",
+		)
+		.await;
+		h.spatial
+			.set_local_transform(
+				ctx(),
+				PartialTransform {
+					translation: None,
+					rotation: None,
+					scale: Some(Vec3F {
+						x: 0.0,
+						y: 0.0,
+						z: 0.0,
+					}),
+				},
+			)
+			.await;
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _handle = sq.points_query(ctx(), PointsQuery {
-			handler: PointsQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.points.hidden".into(), optional: false }],
-			reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
-			points: vec![Point { point: Vec3F { x: 0.0, y: 0.0, z: 0.0 }, margin: 0.0 }],
-		}).await;
+		let _handle = sq
+			.points_query(
+				ctx(),
+				PointsQuery {
+					handler: PointsQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.points.hidden".into(),
+						optional: false,
+					}],
+					reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+					points: vec![Point {
+						point: Vec3F {
+							x: 0.0,
+							y: 0.0,
+							z: 0.0,
+						},
+						margin: 0.0,
+					}],
+				},
+			)
+			.await;
 
 		assert!(
 			tokio::time::timeout(NO_HIT, rx.recv()).await.is_err(),
@@ -560,12 +795,27 @@ fn points_no_entered_when_point_outside_field() {
 		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 
 		let sq = SpatialQueryInterface::new(&prefixes());
-		let _handle = sq.points_query(ctx(), PointsQuery {
-			handler: PointsQueryHandler::from_handler(&handler),
-			interfaces: vec![InterfaceDependency { id: "e2e.points.miss".into(), optional: false }],
-			reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
-			points: vec![Point { point: Vec3F { x: 5.0, y: 0.0, z: 0.0 }, margin: 0.0 }],
-		}).await;
+		let _handle = sq
+			.points_query(
+				ctx(),
+				PointsQuery {
+					handler: PointsQueryHandler::from_handler(&handler),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.points.miss".into(),
+						optional: false,
+					}],
+					reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+					points: vec![Point {
+						point: Vec3F {
+							x: 5.0,
+							y: 0.0,
+							z: 0.0,
+						},
+						margin: 0.0,
+					}],
+				},
+			)
+			.await;
 
 		// Sphere at origin; point (5,0,0) is outside.
 		let _h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 1.0 }, "e2e.points.miss").await;

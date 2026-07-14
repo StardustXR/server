@@ -128,11 +128,9 @@ impl<K: QueryKind> Query<K> {
 	/// forget it (they only do geometry).
 	fn hit_visible(&self, queryable: &Queryable) -> Option<K::Hit> {
 		let (anchor, _) = self.kind.anchors();
-		(anchor.visible()
-			&& queryable.spatial.visible()
-			&& queryable.field.data.spatial.visible())
-		.then(|| self.kind.hit(queryable))
-		.flatten()
+		(anchor.visible() && queryable.spatial.visible() && queryable.field.data.spatial.visible())
+			.then(|| self.kind.hit(queryable))
+			.flatten()
 	}
 
 	/// Re-test one queryable's geometry and emit the resulting transition. This is the

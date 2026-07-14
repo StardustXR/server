@@ -82,10 +82,10 @@ macro_rules! impl_proxy {
 				match gluon::ObjectOrRef::from(self.clone()) {
 					gluon::ObjectOrRef::Object(obj) => {
 						if let Some(obj) = obj.downcast::<Self::Owned>() {
-                            Some(obj)
+							Some(obj)
 						} else {
 							tracing::warn!("unable to downcast obj");
-                            None
+							None
 						}
 					}
 					// should never happen with the rust version of gluon

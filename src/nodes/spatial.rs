@@ -903,8 +903,7 @@ mod spatial_benches {
 		let root = Spatial::test_new(None, Mat4::IDENTITY);
 		let children: Vec<Arc<Spatial>> = (0..16)
 			.map(|i| {
-				let child =
-					Spatial::test_new(None, Mat4::from_translation(Vec3::X * i as f32));
+				let child = Spatial::test_new(None, Mat4::from_translation(Vec3::X * i as f32));
 				child.set_spatial_parent(&root).unwrap();
 				child
 			})
