@@ -12,7 +12,7 @@ use std::{
 
 use binderbinder::binder_object::WeakBinderObject;
 use dashmap::DashMap;
-use gluon::{Handler, ObjectRef};
+use gluon::Handler;
 use rustix::{
 	fs::{MemfdFlags, memfd_create},
 	mm::{self, MapFlags, ProtFlags, mmap},
@@ -35,9 +35,7 @@ pub struct KeymapStore {
 	pub pion_path: PathBuf,
 }
 
-// remove this expect when its actually used
-#[expect(unused)]
-pub static KEYMAP_STORE: OnceLock<ObjectRef<KeymapStore>> = OnceLock::new();
+pub static KEYMAP_STORE: OnceLock<Arc<KeymapStore>> = OnceLock::new();
 impl KeymapStore {
 	pub const SERVICE_NAME: &str = "stardust-keymap-store";
 	pub async fn expose(instance: &str) -> gluon::Object<Self> {
@@ -67,7 +65,44 @@ impl KeymapStore {
 				"failed to register {} with pion",
 				stringify!($type)
 			));
+		_ = KEYMAP_STORE.set(interface.clone());
 		interface
+	}
+
+	/// Register a keymap already in xkb TextV1 form (including the trailing NUL),
+	/// deduplicated against previously exchanged keymaps. The token stays alive as
+	/// long as the returned proxy is held.
+	pub fn register_keymap_bytes(
+		&self,
+		bytes_with_nul: &[u8],
+	) -> Result<KeymapProxy, KeymapExchangeError> {
+		let hash = self.hasher.hash_one(bytes_with_nul);
+		if let Some(binder_obj) = self.map.get(&hash).map(|v| v.value().2.clone())
+			&& let Some(binder_obj) = binder_obj.upgrade()
+			&& let Some(keymap) = binder_obj.downcast::<KeymapToken>()
+		{
+			return Ok(KeymapProxy::from_handler(&keymap));
+		}
+		let memfd = memfd_create("keymap", MemfdFlags::CLOEXEC).map_err(|err| {
+			tracing::error!("failed to create memfd: {err}");
+			KeymapExchangeError::InvalidKeymap
+		})?;
+		let mut file = File::from(memfd);
+		file.write_all(bytes_with_nul).map_err(|err| {
+			tracing::error!("failed to write to custom memfd: {err}");
+			KeymapExchangeError::InvalidKeymap
+		})?;
+		let keymap_obj = PION
+			.register_object(KeymapToken {
+				id: hash,
+				map: self.map.clone(),
+			})
+			.to_service();
+		self.map.insert(
+			hash,
+			(file, bytes_with_nul.len() as u32, keymap_obj.downgrade()),
+		);
+		Ok(KeymapProxy::from_handler(&keymap_obj))
 	}
 }
 impl KeymapStoreHandler for KeymapStore {
@@ -80,13 +115,6 @@ impl KeymapStoreHandler for KeymapStore {
 			tracing::error!("failed to map fd {err}");
 			KeymapExchangeError::InvalidKeymap
 		})?;
-		let hash = self.hasher.hash_one(mmap.slice());
-		if let Some(binder_obj) = self.map.get(&hash).map(|v| v.value().2.clone())
-			&& let Some(binder_obj) = binder_obj.upgrade()
-			&& let Some(keymap) = binder_obj.downcast::<KeymapToken>()
-		{
-			return Ok(KeymapProxy::from_handler(&keymap));
-		}
 		let cstr = CStr::from_bytes_with_nul(mmap.slice()).map_err(|err| {
 			tracing::error!("failed to create keymap cstr: {err}");
 			KeymapExchangeError::InvalidKeymap
@@ -108,24 +136,7 @@ impl KeymapStoreHandler for KeymapStore {
 			tracing::error!("invalid keymap: {err}");
 			KeymapExchangeError::InvalidKeymap
 		})?;
-		let memfd = memfd_create("keymap", MemfdFlags::CLOEXEC).map_err(|err| {
-			tracing::error!("failed to create memfd: {err}");
-			KeymapExchangeError::InvalidKeymap
-		})?;
-		let mut file = File::from(memfd);
-		file.write_all(mmap.slice()).map_err(|err| {
-			tracing::error!("failed to write to custom memfd: {err}");
-			KeymapExchangeError::InvalidKeymap
-		})?;
-		let keymap_obj = PION
-			.register_object(KeymapToken {
-				id: hash,
-				map: self.map.clone(),
-			})
-			.to_service();
-		self.map
-			.insert(hash, (file, keymap.size, keymap_obj.downgrade()));
-		Ok(KeymapProxy::from_handler(&keymap_obj))
+		self.register_keymap_bytes(mmap.slice())
 	}
 
 	async fn get(&self, _ctx: gluon::Context, keymap: KeymapProxy) -> Option<XkbcommonKeymapFd> {

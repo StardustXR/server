@@ -5591,6 +5591,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "stardust-xr-molecules-protocols"
+version = "0.1.0"
+dependencies = [
+ "gluon",
+ "gluon-codegen",
+ "stardust-xr-protocol",
+ "tracing",
+]
+
+[[package]]
 name = "stardust-xr-protocol"
 version = "0.51.1"
 source = "git+https://github.com/StardustXR/core.git?branch=binder#7fa65ccdeeea7c901d36947ab0ef94f373a57373"
@@ -5647,6 +5657,7 @@ dependencies = [
  "serde",
  "serde_repr",
  "slotmap",
+ "stardust-xr-molecules-protocols",
  "stardust-xr-protocol",
  "stardust-xr-server-foundation",
  "thiserror 2.0.18",

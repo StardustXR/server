@@ -132,7 +132,7 @@ zbus = { version = "5.11.0", features = [
 	"tokio",
 ], default-features = false }
 directories = "6.0.0"
-xkbcommon-rs = "0.1.0"
+xkbcommon-rs = { version = "0.1.0", features = ["server"] }
 cosmic-text = "0.14.2"
 timeline_syncobj = { version = "0.1.0", features = ["tokio"] }
 
@@ -145,6 +145,7 @@ rustix = { version = "1.0.8", features = ["time"] }
 pin-project-lite = "0.2.16"
 futures-sink = "0.3.31"
 stardust-xr-protocol.workspace = true
+stardust-xr-molecules-protocols = { path = "../molecules/protocols" }
 
 binderbinder = { git = "https://github.com/technobaboo/binderbinder" }
 pion-binder = { git = "https://github.com/technobaboo/pion" }
