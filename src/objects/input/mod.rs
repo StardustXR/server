@@ -386,6 +386,14 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 		Some(capture)
 	}
 
+	/// Force-release the active capture, as if the capturing client dropped its
+	/// guard. Takes effect on the next `send` (which drains the release channel).
+	pub fn stop_active_capture(&self) {
+		if let Some(handler) = self.active_capture.blocking_read().clone() {
+			let _ = self.release_tx.send(handler);
+		}
+	}
+
 	#[instrument(name = "send input sender", level = "debug", skip_all)]
 	pub fn send(
 		&self,

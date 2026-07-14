@@ -61,8 +61,16 @@ const KEYBOARD_FOCUS_MARGIN: f32 = 0.05;
 pub struct FlatscreenInputPlugin;
 impl Plugin for FlatscreenInputPlugin {
 	fn build(&self, app: &mut App) {
-		app.add_systems(Startup, setup);
-		app.add_systems(Update, update_pointer);
+		app.add_systems(Startup, (setup, setup_capture_indicator));
+		app.add_systems(
+			Update,
+			(
+				stop_capture_hotkey,
+				update_pointer,
+				update_capture_indicator,
+			)
+				.chain(),
+		);
 	}
 }
 
@@ -98,7 +106,23 @@ fn update_pointer(
 		key_events.clear();
 		return;
 	};
-	pointer.update(ray, &mouse_buttons, scroll, key_events);
+	pointer.update(ray, &mouse_buttons, &keyboard_buttons, scroll, key_events);
+}
+
+/// Ctrl+Escape force-releases the active pointer capture. Runs before
+/// `update_pointer` so the release is drained by this frame's `send`.
+fn stop_capture_hotkey(
+	keyboard_buttons: Res<ButtonInput<KeyCode>>,
+	pointer: Option<Res<MousePointer>>,
+) {
+	let ctrl = keyboard_buttons.pressed(KeyCode::ControlLeft)
+		|| keyboard_buttons.pressed(KeyCode::ControlRight);
+	if !(ctrl && keyboard_buttons.just_pressed(KeyCode::Escape)) {
+		return;
+	}
+	if let Some(pointer) = pointer {
+		pointer.method.sender.stop_active_capture();
+	}
 }
 
 fn get_viewport_pos(logical_pos: Vec2, cam: &Camera) -> Option<Vec2> {
@@ -109,6 +133,44 @@ fn get_viewport_pos(logical_pos: Vec2, cam: &Camera) -> Option<Vec2> {
 		Some(logical_pos - viewport_rect.min)
 	} else {
 		Some(logical_pos)
+	}
+}
+
+// ── Capture indicator ─────────────────────────────────────────────────────────
+
+/// Bottom-right overlay showing which client currently captures the pointer.
+#[derive(Component)]
+struct CaptureIndicator;
+
+fn setup_capture_indicator(mut cmds: Commands) {
+	cmds.spawn((
+		CaptureIndicator,
+		Name::new("Capture Indicator"),
+		Text::new(""),
+		TextFont {
+			font_size: 14.0,
+			..Default::default()
+		},
+		TextColor(Color::WHITE),
+		Node {
+			position_type: PositionType::Absolute,
+			bottom: Val::Px(8.0),
+			right: Val::Px(8.0),
+			..Default::default()
+		},
+	));
+}
+
+fn update_capture_indicator(
+	pointer: Option<Res<MousePointer>>,
+	mut text: Single<&mut Text, With<CaptureIndicator>>,
+) {
+	let label = pointer
+		.and_then(|p| p.captured_by())
+		.map(|(name, pid)| format!("captured by {name}, {pid}"))
+		.unwrap_or_default();
+	if text.0 != label {
+		text.0 = label;
 	}
 }
 
@@ -233,6 +295,9 @@ struct MouseMethod {
 	spatial_arc: Arc<Spatial>,
 	event: RwLock<MouseEvent>,
 	sender: Arc<InputSender<BeamValue>>,
+	/// Program name + PID of each client that requested a capture, keyed by its
+	/// handler; looked up when that handler's capture becomes active.
+	capture_pids: Mutex<HashMap<InputHandler, (String, i32)>>,
 	_beam_query: Object<BeamQueryCache>,
 	_query_guard: Arc<OnceLock<SpatialQueryGuard>>,
 }
@@ -315,10 +380,19 @@ impl InputSource for MouseMethod {
 impl InputMethodHandler for MouseMethod {
 	async fn request_capture(
 		&self,
-		_ctx: gluon::Context,
+		ctx: gluon::Context,
 		handler: InputHandler,
 	) -> Option<InputMethodCapture> {
-		self.sender.grant_capture(handler).await
+		let capture = self.sender.grant_capture(handler.clone()).await?;
+		let pid = dbg!(ctx.sender_pid);
+		let name = std::fs::read_to_string(format!("/proc/{pid}/comm"))
+			.map(|s| s.trim().to_string())
+			.unwrap_or_else(|_| "unknown".to_string());
+		self.capture_pids
+			.lock()
+			.unwrap()
+			.insert(handler, (name, pid));
+		Some(capture)
 	}
 
 	async fn get_spatial_data(
@@ -344,6 +418,9 @@ pub struct MousePointer {
 	spatial: gluon::ObjectRef<SpatialObject>,
 	method: gluon::Object<MouseMethod>,
 	keyboard: KeyboardFocus,
+	/// An Escape press was swallowed as part of the Ctrl+Escape capture-stop
+	/// hotkey; swallow its release too (even if Ctrl is let go first).
+	swallow_escape_release: bool,
 }
 
 impl MousePointer {
@@ -433,6 +510,7 @@ impl MousePointer {
 			spatial_arc,
 			event: RwLock::new(MouseEvent::default()),
 			sender,
+			capture_pids: Mutex::new(HashMap::new()),
 			_beam_query: beam_query,
 			_query_guard: query_guard,
 		});
@@ -456,6 +534,7 @@ impl MousePointer {
 			spatial,
 			method,
 			keyboard,
+			swallow_escape_release: false,
 		})
 	}
 
@@ -464,6 +543,7 @@ impl MousePointer {
 		&mut self,
 		ray: Ray3d,
 		mouse_buttons: &ButtonInput<MouseButton>,
+		keyboard_buttons: &ButtonInput<KeyCode>,
 		mut scroll: EventReader<MouseWheel>,
 		key_events: EventReader<KeyboardInput>,
 	) {
@@ -500,7 +580,32 @@ impl MousePointer {
 		sender.send(&**self.method, input_method, Timestamp::now());
 
 		self.update_keyboard_focus();
-		self.send_key_events(key_events);
+		let ctrl_pressed = keyboard_buttons.pressed(KeyCode::ControlLeft)
+			|| keyboard_buttons.pressed(KeyCode::ControlRight);
+		self.send_key_events(key_events, ctrl_pressed);
+
+		// Drop pid entries for handlers whose capture request is gone (released or
+		// client died); send() above already swept capture_requests.
+		{
+			let requests = self.method.sender.capture_requests.read().unwrap();
+			self.method
+				.capture_pids
+				.lock()
+				.unwrap()
+				.retain(|handler, _| requests.contains(handler));
+		}
+	}
+
+	/// Program name and PID of the client whose handler currently captures the
+	/// pointer, if any.
+	pub fn captured_by(&self) -> Option<(String, i32)> {
+		let capture = self.method.sender.active_capture.blocking_read().clone()?;
+		self.method
+			.capture_pids
+			.lock()
+			.unwrap()
+			.get(&capture)
+			.cloned()
 	}
 
 	/// Move the keyboard focus point to the pointer's current beam hit — keyboard
@@ -534,10 +639,23 @@ impl MousePointer {
 		_ = handle.update_points(points);
 	}
 
-	fn send_key_events(&mut self, mut key_events: EventReader<KeyboardInput>) {
+	fn send_key_events(&mut self, mut key_events: EventReader<KeyboardInput>, ctrl_pressed: bool) {
 		for event in key_events.read() {
 			if event.repeat {
 				continue;
+			}
+			// Ctrl+Escape is the capture-stop hotkey (see stop_capture_hotkey);
+			// swallow the press and its matching release so focused keyboard
+			// handlers never see it.
+			if event.key_code == KeyCode::Escape {
+				if event.state.is_pressed() && ctrl_pressed {
+					self.swallow_escape_release = true;
+					continue;
+				}
+				if !event.state.is_pressed() && self.swallow_escape_release {
+					self.swallow_escape_release = false;
+					continue;
+				}
 			}
 			let Some(keycode) = map_key(event.key_code) else {
 				warn!("unable to map key code: {:?}", event.key_code);
