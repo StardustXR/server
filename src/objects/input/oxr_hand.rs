@@ -22,6 +22,7 @@ use glam::{Mat4, Quat, Vec3};
 use gluon::{Handler, ObjectRef};
 use openxr::{HandJointLocation, Posef, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
+use stardust_xr_protocol::field::FieldSample;
 use stardust_xr_protocol::query::{InterfaceDependency, QueriedInterface, QueryableObjectRef};
 use stardust_xr_protocol::spatial::SpatialRef as SpatialRefProxy;
 use stardust_xr_protocol::spatial_query::{
@@ -385,7 +386,7 @@ struct HandInputMethod {
 	base_spatial: gluon::ObjectRef<SpatialRef>,
 	tracker: DebugWrapper<openxr::HandTracker>,
 	_query: gluon::Object<PointsQueryCache>,
-	sender: Arc<InputSender<f32>>,
+	sender: Arc<InputSender<FieldSample>>,
 	hand: RwLock<Option<Hand>>,
 	datamap: RwLock<HandDatamap>,
 	query_handle: Arc<OnceLock<PointsQueryHandle>>,
@@ -534,11 +535,11 @@ impl HandInputMethod {
 }
 
 impl InputSource for HandInputMethod {
-	type QueryValue = f32;
+	type QueryValue = FieldSample;
 
 	fn order_handlers_and_captures(
 		&self,
-		objects: &HashMap<QueryableObjectRef, CachedObject<f32>>,
+		objects: &HashMap<QueryableObjectRef, CachedObject<FieldSample>>,
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let hand = *self.hand.blocking_read();

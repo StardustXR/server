@@ -33,7 +33,7 @@ use gluon::{Handler, Object, ObjectRef};
 use openxr::{Action, ActiveActionSet, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::{
-	field::FieldRef as FieldRefProxy,
+	field::{FieldRef as FieldRefProxy, FieldSample},
 	model::{MaterialParameter, ModelHandler},
 	query::{InterfaceDependency, QueryableObjectRef},
 	spatial::{PartialTransform, SpatialRef as SpatialRefProxy},
@@ -570,7 +570,7 @@ impl OxrControllerInput {
 			}
 			if let Some(handle) = method.query_handle.get() {
 				handle.update_points([Point {
-					point: pose.position.into(),
+					point: pose.position,
 					margin: 0.5,
 				}]);
 			}
@@ -628,7 +628,7 @@ struct ControllerInputMethod {
 	base_spatial: gluon::ObjectRef<SpatialRef>,
 	space: DebugWrapper<openxr::Space>,
 	_query: gluon::Object<PointsQueryCache>,
-	sender: Arc<InputSender<f32>>,
+	sender: Arc<InputSender<FieldSample>>,
 	pose: RwLock<Option<Posef>>,
 	datamap: RwLock<ControllerDatamap>,
 	query_handle: Arc<OnceLock<PointsQueryHandle>>,
@@ -723,7 +723,7 @@ impl ControllerInputMethod {
 	}
 }
 impl InputSource for ControllerInputMethod {
-	type QueryValue = f32;
+	type QueryValue = FieldSample;
 
 	fn order_handlers_and_captures(
 		&self,

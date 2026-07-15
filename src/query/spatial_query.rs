@@ -10,7 +10,7 @@ use glam::Vec3;
 use gluon::{Handler, SendError};
 use parking_lot::Mutex;
 use stardust_xr_protocol::{
-	field::FieldRef as FieldRefProxy,
+	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
 	query::{InterfaceDependency, QueriedInterface, QueryableObjectRef},
 	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
@@ -375,48 +375,36 @@ struct BeamKind {
 	dir: Vec3,
 	max_length: f32,
 }
-struct BeamHit {
-	deepest_point_distance: f32,
-	distance: f32,
-}
 impl QueryKind for BeamKind {
-	type Hit = BeamHit;
+	type Hit = RayMarchResult;
 	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>) {
 		(&self.ref_space, None)
 	}
-	fn hit(&self, queryable: &Queryable) -> Option<BeamHit> {
+	fn hit(&self, queryable: &Queryable) -> Option<RayMarchResult> {
 		let ray_march = queryable.field.data.ray_march(Ray {
 			origin: self.origin,
 			direction: self.dir,
 			space: self.ref_space.clone(),
 		});
 		(ray_march.min_distance <= 0.0 && ray_march.deepest_point_distance <= self.max_length)
-			.then_some(BeamHit {
-				deepest_point_distance: ray_march.deepest_point_distance,
-				distance: ray_march.min_distance,
-			})
+			.then_some(ray_march)
 	}
 	fn entered(
 		&self,
 		queryable: &Queryable,
 		interfaces: Vec<QueriedInterface>,
-		hit: BeamHit,
+		hit: RayMarchResult,
 	) -> Result<(), SendError> {
 		self.handler.intersected(
 			queryable.obj_ref(),
 			queryable.field_ref(),
 			queryable.spatial_ref(),
 			interfaces,
-			hit.deepest_point_distance,
-			hit.distance,
+			hit,
 		)
 	}
-	fn moved(&self, queryable: &Queryable, hit: BeamHit) -> Result<(), SendError> {
-		self.handler.moved(
-			queryable.obj_ref(),
-			hit.deepest_point_distance,
-			hit.distance,
-		)
+	fn moved(&self, queryable: &Queryable, hit: RayMarchResult) -> Result<(), SendError> {
+		self.handler.moved(queryable.obj_ref(), hit)
 	}
 	fn interfaces_changed(
 		&self,
@@ -436,40 +424,35 @@ struct ZoneKind {
 	field: Arc<Field>,
 	margin: f32,
 }
-struct ZoneHit {
-	pos: Vec3,
-	distance: f32,
-}
 impl QueryKind for ZoneKind {
-	type Hit = ZoneHit;
+	type Hit = (Vec3, FieldSample);
 	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>) {
 		(&self.field.spatial, Some(&self.field))
 	}
-	fn hit(&self, queryable: &Queryable) -> Option<ZoneHit> {
+	fn hit(&self, queryable: &Queryable) -> Option<(Vec3, FieldSample)> {
 		let (_scale, _rotation, pos) =
 			Spatial::space_to_space_matrix(Some(&queryable.spatial), Some(&self.field.spatial))
 				.to_scale_rotation_translation();
-		let distance = self.field.local_sample(pos.into()).distance;
-		(distance < self.margin).then_some(ZoneHit { pos, distance })
+		let sample = self.field.local_sample(pos.into());
+		(sample.distance < self.margin).then_some((pos, sample))
 	}
 	fn entered(
 		&self,
 		queryable: &Queryable,
 		interfaces: Vec<QueriedInterface>,
-		hit: ZoneHit,
+		hit: (Vec3, FieldSample),
 	) -> Result<(), SendError> {
 		self.handler.entered(
 			queryable.obj_ref(),
 			queryable.field_ref(),
 			queryable.spatial_ref(),
 			interfaces,
-			hit.pos.into(),
-			hit.distance,
+			hit.0.into(),
+			hit.1,
 		)
 	}
-	fn moved(&self, queryable: &Queryable, hit: ZoneHit) -> Result<(), SendError> {
-		self.handler
-			.moved(queryable.obj_ref(), hit.pos.into(), hit.distance)
+	fn moved(&self, queryable: &Queryable, hit: (Vec3, FieldSample)) -> Result<(), SendError> {
+		self.handler.moved(queryable.obj_ref(), hit.0.into(), hit.1)
 	}
 	fn interfaces_changed(
 		&self,
@@ -489,52 +472,45 @@ struct PointsKind {
 	ref_space: Arc<Spatial>,
 	points: Mutex<Vec<Point>>,
 }
-struct PointsHit {
-	distance: f32,
-}
 impl QueryKind for PointsKind {
-	type Hit = PointsHit;
+	type Hit = FieldSample;
 	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>) {
 		(&self.ref_space, None)
 	}
-	fn hit(&self, queryable: &Queryable) -> Option<PointsHit> {
+	fn hit(&self, queryable: &Queryable) -> Option<FieldSample> {
 		self.points
 			.lock()
 			.iter()
 			.map(|p| {
-				let distance = queryable
-					.field
-					.data
-					.sample(&self.ref_space, p.point.into())
-					.distance;
-				(distance - p.margin, distance)
+				let sample = queryable.field.data.sample(&self.ref_space, p.point.into());
+				(sample.distance - p.margin, sample)
 			})
-			.reduce(|(sort1, distance1), (sort2, distance2)| {
+			.reduce(|(sort1, sample1), (sort2, sample2)| {
 				if sort1 < sort2 {
-					(sort1, distance1)
+					(sort1, sample1)
 				} else {
-					(sort2, distance2)
+					(sort2, sample2)
 				}
 			})
 			.filter(|(sort, _)| *sort < 0.0)
-			.map(|(_, distance)| PointsHit { distance })
+			.map(|(_, sample)| sample)
 	}
 	fn entered(
 		&self,
 		queryable: &Queryable,
 		interfaces: Vec<QueriedInterface>,
-		hit: PointsHit,
+		hit: FieldSample,
 	) -> Result<(), SendError> {
 		self.handler.entered(
 			queryable.obj_ref(),
 			queryable.field_ref(),
 			queryable.spatial_ref(),
 			interfaces,
-			hit.distance,
+			hit,
 		)
 	}
-	fn moved(&self, queryable: &Queryable, hit: PointsHit) -> Result<(), SendError> {
-		self.handler.moved(queryable.obj_ref(), hit.distance)
+	fn moved(&self, queryable: &Queryable, hit: FieldSample) -> Result<(), SendError> {
+		self.handler.moved(queryable.obj_ref(), hit)
 	}
 	fn interfaces_changed(
 		&self,

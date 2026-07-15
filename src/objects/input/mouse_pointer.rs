@@ -1,4 +1,4 @@
-use super::{BeamQueryCache, BeamValue, CachedObject, InputSender, InputSource, QueryCache};
+use super::{BeamQueryCache, CachedObject, InputSender, InputSource, QueryCache};
 use crate::{
 	PION,
 	bevy_int::flatscreen_cam::FlatscreenCam,
@@ -26,7 +26,7 @@ use stardust_xr_molecules_protocols::keyboard_handler::{
 	ModifierState,
 };
 use stardust_xr_protocol::{
-	field::FieldRef as FieldRefProxy,
+	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
 	keymap::Keymap as KeymapProxy,
 	query::{InterfaceDependency, QueriedInterface, QueryableObjectRef},
 	spatial::SpatialRef as SpatialRefProxy,
@@ -202,7 +202,7 @@ impl Default for MouseEvent {
 /// current hit point. The closest one gets the key events.
 #[derive(Debug, Default, Handler)]
 struct KeyboardQueryCache {
-	handlers: Mutex<HashMap<QueryableObjectRef, (KeyboardHandlerProxy, f32)>>,
+	handlers: Mutex<HashMap<QueryableObjectRef, (KeyboardHandlerProxy, FieldSample)>>,
 }
 
 impl KeyboardQueryCache {
@@ -211,7 +211,7 @@ impl KeyboardQueryCache {
 			.lock()
 			.unwrap()
 			.values()
-			.min_by(|(_, d1), (_, d2)| d1.total_cmp(d2))
+			.min_by(|(_, s1), (_, s2)| s1.distance.total_cmp(&s2.distance))
 			.map(|(handler, _)| handler.clone())
 	}
 }
@@ -224,7 +224,7 @@ impl PointsQueryHandlerHandler for KeyboardQueryCache {
 		_field: FieldRefProxy,
 		_spatial: SpatialRefProxy,
 		interfaces: Vec<QueriedInterface>,
-		distance: f32,
+		sample: FieldSample,
 	) {
 		let Some(interface) = interfaces.first() else {
 			return;
@@ -233,10 +233,7 @@ impl PointsQueryHandlerHandler for KeyboardQueryCache {
 			return;
 		}
 		let handler = KeyboardHandlerProxy::from_object_or_ref(interface.interface.clone());
-		self.handlers
-			.lock()
-			.unwrap()
-			.insert(obj, (handler, distance));
+		self.handlers.lock().unwrap().insert(obj, (handler, sample));
 	}
 
 	async fn interfaces_changed(
@@ -247,9 +244,9 @@ impl PointsQueryHandlerHandler for KeyboardQueryCache {
 	) {
 	}
 
-	async fn moved(&self, _ctx: gluon::Context, obj: QueryableObjectRef, distance: f32) {
+	async fn moved(&self, _ctx: gluon::Context, obj: QueryableObjectRef, sample: FieldSample) {
 		if let Some(entry) = self.handlers.lock().unwrap().get_mut(&obj) {
-			entry.1 = distance;
+			entry.1 = sample;
 		}
 	}
 
@@ -294,7 +291,7 @@ impl KeyboardFocus {
 struct MouseMethod {
 	spatial_arc: Arc<Spatial>,
 	event: RwLock<MouseEvent>,
-	sender: Arc<InputSender<BeamValue>>,
+	sender: Arc<InputSender<RayMarchResult>>,
 	/// Program name + PID of each client that requested a capture, keyed by its
 	/// handler; looked up when that handler's capture becomes active.
 	capture_pids: Mutex<HashMap<InputHandler, (String, i32)>>,
@@ -303,7 +300,7 @@ struct MouseMethod {
 }
 
 impl InputSource for MouseMethod {
-	type QueryValue = BeamValue;
+	type QueryValue = RayMarchResult;
 
 	fn order_handlers_and_captures(
 		&self,
@@ -334,16 +331,19 @@ impl InputSource for MouseMethod {
 			objects
 				.values()
 				.filter(|e| e.spatial.is_some() && &e.handler == cap)
-				.map(|e| (e.value.deepest_point_distance, e.handler.clone()))
+				.map(|e| (e.value, e.handler.clone()))
 				.collect()
 		} else {
 			objects
 				.values()
 				.filter(|e| e.spatial.is_some())
-				.map(|e| (e.value.deepest_point_distance, e.handler.clone()))
+				.map(|e| (e.value, e.handler.clone()))
 				.collect()
 		};
-		order.sort_by(|(d1, _), (d2, _)| d1.total_cmp(d2));
+		order.sort_by(|(s1, _), (s2, _)| {
+			s1.deepest_point_distance
+				.total_cmp(&s2.deepest_point_distance)
+		});
 
 		(order.into_iter().map(|(_, h)| h).collect(), capture)
 	}

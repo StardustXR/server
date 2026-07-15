@@ -14,7 +14,7 @@ use crate::{
 };
 use gluon::{Handler, ObjectRef, ToObjectOrRef as _};
 use stardust_xr_protocol::{
-	field::FieldRef as FieldRefProxy,
+	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
 	query::{QueriedInterface, QueryableObjectRef},
 	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
@@ -33,13 +33,6 @@ use std::{
 };
 use tokio::sync::{RwLock, mpsc};
 use tracing::{debug_span, instrument};
-
-// ── Value types ──────────────────────────────────────────────────────────────
-
-pub struct BeamValue {
-	pub deepest_point_distance: f32,
-	pub distance: f32,
-}
 
 // ── CachedObject ─────────────────────────────────────────────────────────────
 
@@ -184,7 +177,7 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 // ── BeamQueryCache ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Handler)]
-pub struct BeamQueryCache(pub QueryCache<BeamValue>);
+pub struct BeamQueryCache(pub QueryCache<RayMarchResult>);
 
 impl BeamQueryHandlerHandler for BeamQueryCache {
 	async fn intersected(
@@ -194,20 +187,10 @@ impl BeamQueryHandlerHandler for BeamQueryCache {
 		field: FieldRefProxy,
 		spatial: SpatialRefProxy,
 		interfaces: Vec<QueriedInterface>,
-		deepest_point_distance: f32,
-		distance: f32,
+		march_result: RayMarchResult,
 	) {
 		self.0
-			.on_entered(
-				obj,
-				field,
-				spatial,
-				interfaces,
-				BeamValue {
-					deepest_point_distance,
-					distance,
-				},
-			)
+			.on_entered(obj, field, spatial, interfaces, march_result)
 			.await;
 	}
 
@@ -223,18 +206,9 @@ impl BeamQueryHandlerHandler for BeamQueryCache {
 		&self,
 		_ctx: gluon::Context,
 		obj: QueryableObjectRef,
-		deepest_point_distance: f32,
-		distance: f32,
+		march_result: RayMarchResult,
 	) {
-		self.0
-			.on_value_changed(
-				&obj,
-				BeamValue {
-					deepest_point_distance,
-					distance,
-				},
-			)
-			.await;
+		self.0.on_value_changed(&obj, march_result).await;
 	}
 
 	async fn left(&self, _ctx: gluon::Context, obj: QueryableObjectRef) {
@@ -245,7 +219,7 @@ impl BeamQueryHandlerHandler for BeamQueryCache {
 // ── PointsQueryCache ──────────────────────────────────────────────────────────
 
 #[derive(Debug, Handler)]
-pub struct PointsQueryCache(pub QueryCache<f32>);
+pub struct PointsQueryCache(pub QueryCache<FieldSample>);
 
 impl PointsQueryHandlerHandler for PointsQueryCache {
 	async fn entered(
@@ -255,10 +229,10 @@ impl PointsQueryHandlerHandler for PointsQueryCache {
 		field: FieldRefProxy,
 		spatial: SpatialRefProxy,
 		interfaces: Vec<QueriedInterface>,
-		distance: f32,
+		sample: FieldSample,
 	) {
 		self.0
-			.on_entered(obj, field, spatial, interfaces, distance)
+			.on_entered(obj, field, spatial, interfaces, sample)
 			.await;
 	}
 
@@ -270,8 +244,8 @@ impl PointsQueryHandlerHandler for PointsQueryCache {
 	) {
 	}
 
-	async fn moved(&self, _ctx: gluon::Context, obj: QueryableObjectRef, distance: f32) {
-		self.0.on_value_changed(&obj, distance).await;
+	async fn moved(&self, _ctx: gluon::Context, obj: QueryableObjectRef, sample: FieldSample) {
+		self.0.on_value_changed(&obj, sample).await;
 	}
 
 	async fn left(&self, _ctx: gluon::Context, obj: QueryableObjectRef) {

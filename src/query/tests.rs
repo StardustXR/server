@@ -6,14 +6,18 @@ use crate::{
 use glam::{Mat4, Vec3};
 use gluon::{Context, Handler, Object};
 use stardust_xr_protocol::{
-	field::FieldRef as FieldRefProxy,
-	field::{Field as FieldProxy, FieldHandler, Shape},
+	field::{
+		Field as FieldProxy, FieldHandler, FieldRef as FieldRefProxy, FieldSample, RayMarchResult,
+		Shape,
+	},
 	query::{
 		InterfaceDependency, QueriedInterface, QueryInterfaceHandler, QueryableInterfaceGuard,
 		QueryableInterfaceGuardHandler, QueryableObjectRef,
 	},
-	spatial::SpatialRef as SpatialRefProxy,
-	spatial::{PartialTransform, Spatial as SpatialProxy, SpatialHandler as _},
+	spatial::{
+		PartialTransform, Spatial as SpatialProxy, SpatialHandler as _,
+		SpatialRef as SpatialRefProxy,
+	},
 	spatial_query::{
 		BeamQuery, BeamQueryHandler, BeamQueryHandlerHandler, Point, PointsQuery,
 		PointsQueryHandler, PointsQueryHandlerHandler, SpatialQueryInterfaceHandler, ZoneQuery,
@@ -55,7 +59,7 @@ impl QueryableInterfaceGuardHandler for DummyInterface {}
 
 #[derive(Debug, Clone)]
 enum ZoneEvent {
-	Entered { distance: f32 },
+	Entered { sample: FieldSample },
 	Left,
 }
 
@@ -70,9 +74,9 @@ impl ZoneQueryHandlerHandler for TestZoneHandler {
 		_spatial: SpatialRefProxy,
 		_interfaces: Vec<QueriedInterface>,
 		_pos: Vec3F,
-		distance: f32,
+		sample: FieldSample,
 	) {
-		let _ = self.0.send(ZoneEvent::Entered { distance }).await;
+		let _ = self.0.send(ZoneEvent::Entered { sample }).await;
 	}
 	async fn interfaces_changed(
 		&self,
@@ -81,7 +85,14 @@ impl ZoneQueryHandlerHandler for TestZoneHandler {
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
-	async fn moved(&self, _ctx: Context, _obj: QueryableObjectRef, _pos: Vec3F, _distance: f32) {}
+	async fn moved(
+		&self,
+		_ctx: Context,
+		_obj: QueryableObjectRef,
+		_pos: Vec3F,
+		_sample: FieldSample,
+	) {
+	}
 	async fn left(&self, _ctx: Context, _obj: QueryableObjectRef) {
 		let _ = self.0.send(ZoneEvent::Left).await;
 	}
@@ -89,7 +100,7 @@ impl ZoneQueryHandlerHandler for TestZoneHandler {
 
 #[derive(Debug, Clone)]
 enum BeamEvent {
-	Intersected { distance: f32 },
+	Intersected { march_result: RayMarchResult },
 	Left,
 }
 
@@ -103,10 +114,9 @@ impl BeamQueryHandlerHandler for TestBeamHandler {
 		_field: FieldRefProxy,
 		_spatial: SpatialRefProxy,
 		_interfaces: Vec<QueriedInterface>,
-		_deepest: f32,
-		distance: f32,
+		march_result: RayMarchResult,
 	) {
-		let _ = self.0.send(BeamEvent::Intersected { distance }).await;
+		let _ = self.0.send(BeamEvent::Intersected { march_result }).await;
 	}
 	async fn interfaces_changed(
 		&self,
@@ -115,7 +125,7 @@ impl BeamQueryHandlerHandler for TestBeamHandler {
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
-	async fn moved(&self, _ctx: Context, _obj: QueryableObjectRef, _deepest: f32, _distance: f32) {}
+	async fn moved(&self, _ctx: Context, _obj: QueryableObjectRef, _march_result: RayMarchResult) {}
 	async fn left(&self, _ctx: Context, _obj: QueryableObjectRef) {
 		let _ = self.0.send(BeamEvent::Left).await;
 	}
@@ -123,7 +133,7 @@ impl BeamQueryHandlerHandler for TestBeamHandler {
 
 #[derive(Debug, Clone)]
 enum PointsEvent {
-	Entered { distance: f32 },
+	Entered { sample: FieldSample },
 	Left,
 }
 
@@ -137,9 +147,9 @@ impl PointsQueryHandlerHandler for TestPointsHandler {
 		_field: FieldRefProxy,
 		_spatial: SpatialRefProxy,
 		_interfaces: Vec<QueriedInterface>,
-		distance: f32,
+		sample: FieldSample,
 	) {
-		let _ = self.0.send(PointsEvent::Entered { distance }).await;
+		let _ = self.0.send(PointsEvent::Entered { sample }).await;
 	}
 	async fn interfaces_changed(
 		&self,
@@ -148,7 +158,7 @@ impl PointsQueryHandlerHandler for TestPointsHandler {
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
-	async fn moved(&self, _ctx: Context, _obj: QueryableObjectRef, _distance: f32) {}
+	async fn moved(&self, _ctx: Context, _obj: QueryableObjectRef, _sample: FieldSample) {}
 	async fn left(&self, _ctx: Context, _obj: QueryableObjectRef) {
 		let _ = self.0.send(PointsEvent::Left).await;
 	}
