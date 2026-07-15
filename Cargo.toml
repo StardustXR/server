@@ -147,7 +147,6 @@ rustix = { version = "1.0.8", features = ["time"] }
 pin-project-lite = "0.2.16"
 futures-sink = "0.3.31"
 stardust-xr-protocol.workspace = true
-stardust-xr-molecules-protocols = { path = "../molecules/protocols" }
 
 binderbinder = { git = "https://github.com/technobaboo/binderbinder" }
 pion-binder = { git = "https://github.com/technobaboo/pion" }
@@ -155,6 +154,9 @@ gluon = { git = "https://github.com/technobaboo/gluon" }
 
 [workspace.dependencies.stardust-xr-protocol]
 git = "https://github.com/StardustXR/core.git"
+branch = "binder"
+[dependencies.stardust-xr-molecules-protocols]
+git = "https://github.com/StardustXR/molecules.git"
 branch = "binder"
 
 [dependencies.stardust-xr-server-foundation]

@@ -690,6 +690,7 @@ impl MousePointer {
 					.keyboard
 					.xkb_state
 					.serialize_mods(StateComponent::MODS_LOCKED),
+				layout_group: 0,
 			};
 			_ = handler
 				.key(
