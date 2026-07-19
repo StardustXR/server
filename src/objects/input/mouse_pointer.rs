@@ -262,6 +262,8 @@ struct KeyboardFocus {
 	cache: Object<KeyboardQueryCache>,
 	points_handle: Arc<OnceLock<PointsQueryHandleProxy>>,
 	xkb_state: XkbState,
+	/// workaround for buggy modifier state on kde plasma (potentially others) with winit
+	super_mod_mask: u32,
 	keymap_string: String,
 	keymap_proxy: OnceLock<KeymapProxy>,
 }
@@ -522,12 +524,18 @@ impl MousePointer {
 		let keymap_string = xkb_keymap
 			.get_as_string(KeymapFormat::TextV1)
 			.map_err(|e| eyre!("failed to serialize default keymap: {e:?}"))?;
+
+		let super_mod_mask = !xkb_keymap
+			.mod_get_index("Mod4")
+			.map(|v| 1u32 << v)
+			.unwrap_or(0);
 		let keyboard = KeyboardFocus {
 			cache: keyboard_cache,
 			points_handle,
 			xkb_state: XkbState::new(xkb_keymap),
 			keymap_string,
 			keymap_proxy: OnceLock::new(),
+			super_mod_mask,
 		};
 
 		Ok(MousePointer {
@@ -677,20 +685,27 @@ impl MousePointer {
 			let Some(keymap) = self.keyboard.keymap_proxy() else {
 				continue;
 			};
+			let mod_mask = self.keyboard.super_mod_mask;
 			let modifiers = ModifierState {
 				depressed: self
 					.keyboard
 					.xkb_state
-					.serialize_mods(StateComponent::MODS_DEPRESSED),
+					.serialize_mods(StateComponent::MODS_DEPRESSED)
+					& mod_mask,
 				latched: self
 					.keyboard
 					.xkb_state
-					.serialize_mods(StateComponent::MODS_LATCHED),
+					.serialize_mods(StateComponent::MODS_LATCHED)
+					& mod_mask,
 				locked: self
 					.keyboard
 					.xkb_state
-					.serialize_mods(StateComponent::MODS_LOCKED),
-				layout_group: 0,
+					.serialize_mods(StateComponent::MODS_LOCKED)
+					& mod_mask,
+				layout_group: self
+					.keyboard
+					.xkb_state
+					.serialize_layout(StateComponent::LAYOUT_EFFECTIVE) as u32,
 			};
 			_ = handler
 				.key(
@@ -747,7 +762,7 @@ fn build_datamap(event: &MouseEvent) -> HashMap<String, DatamapData> {
 fn map_key(key: KeyCode) -> Option<u32> {
 	use KeyCode as Key;
 	match key {
-		Key::Unidentified(NativeKeyCode::Xkb(code)) => Some(code),
+		Key::Unidentified(NativeKeyCode::Xkb(code)) => Some(code - 8),
 		Key::Backspace => Some(input_event_codes::KEY_BACKSPACE!()),
 		Key::Tab => Some(input_event_codes::KEY_TAB!()),
 		Key::Enter => Some(input_event_codes::KEY_ENTER!()),
