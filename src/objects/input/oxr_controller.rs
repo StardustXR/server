@@ -761,12 +761,7 @@ impl InputSource for ControllerInputMethod {
 		};
 
 		if let Some(ref cap) = capture {
-			let handlers: Vec<_> = objects
-				.values()
-				.filter(|e| e.spatial.is_some() && &e.handler == cap)
-				.map(|e| e.handler.clone())
-				.collect();
-			return (handlers, capture);
+			return (capture.iter().cloned().collect(), capture);
 		}
 
 		let mut order: Vec<_> = objects

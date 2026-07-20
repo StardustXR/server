@@ -335,19 +335,15 @@ impl InputSource for MouseMethod {
 			promoted
 		};
 
-		let mut order: Vec<_> = if let Some(ref cap) = capture {
-			objects
-				.values()
-				.filter(|e| e.spatial.is_some() && &e.handler == cap)
-				.map(|e| (e.value, e.handler.clone()))
-				.collect()
-		} else {
-			objects
-				.values()
-				.filter(|e| e.spatial.is_some())
-				.map(|e| (e.value, e.handler.clone()))
-				.collect()
-		};
+		if let Some(ref cap) = capture {
+			return (capture.iter().cloned().collect(), capture);
+		}
+
+		let mut order: Vec<_> = objects
+			.values()
+			.filter(|e| e.spatial.is_some())
+			.map(|e| (e.value, e.handler.clone()))
+			.collect();
 		order.sort_by(|(s1, _), (s2, _)| {
 			s1.deepest_point_distance
 				.total_cmp(&s2.deepest_point_distance)
