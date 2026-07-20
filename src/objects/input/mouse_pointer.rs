@@ -319,10 +319,16 @@ impl InputSource for MouseMethod {
 				None
 			}
 		} else {
-			let promoted = capture_requests
-				.iter()
-				.find(|r| objects.values().any(|e| &e.handler == *r))
-				.cloned();
+			let mut order: Vec<_> = objects
+				.values()
+				.filter(|e| e.spatial.is_some() && capture_requests.contains(&e.handler))
+				.map(|e| {
+					let dist = e.value.deepest_point_distance;
+					(dist, e.handler.clone())
+				})
+				.collect();
+			order.sort_by(|(d1, _), (d2, _)| d1.total_cmp(d2));
+			let promoted = order.first().map(|(_, v)| v.clone());
 			if let Some(ref p) = promoted {
 				*self.sender.active_capture.blocking_write() = Some(p.clone());
 			}
