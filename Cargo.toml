@@ -26,8 +26,8 @@ bevy_debugging = ["bevy/bevy_remote", "bevy/track_location"]
 
 [profile.release]
 opt-level = "s"
-lto = true
-codegen-units = 1
+# lto = true
+# codegen-units = 1
 panic = "abort"
 # strip = "symbols"
 debug = true
