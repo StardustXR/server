@@ -24,7 +24,7 @@ use stardust_xr_protocol::types::{CreateError, Vec3F};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 pub struct FieldDebugGizmoPlugin;
 impl Plugin for FieldDebugGizmoPlugin {
@@ -209,11 +209,18 @@ const RECALC_IDLE: u8 = 0;
 const RECALC_RUNNING: u8 = 1;
 const RECALC_RUNNING_DIRTY: u8 = 2;
 
+/// Mirrors `FieldDebugGizmosEnabled` outside of Bevy so `request_field_polylines_recalc`
+/// can skip the marching-squares pass entirely when nobody's watching the D-Bus viz.
+static GIZMO_VIZ_ENABLED: AtomicBool = AtomicBool::new(false);
+
 /// Request a recalculation of the field's debug polylines, coalescing requests that
 /// arrive while a recalculation is already in flight instead of queuing up extra
 /// blocking tasks (which would otherwise pile up and lag everything down if the
 /// field's shape changes faster than the marching-squares pass can keep up).
 fn request_field_polylines_recalc(field: &Arc<Field>) {
+	if !GIZMO_VIZ_ENABLED.load(Ordering::Acquire) {
+		return;
+	}
 	loop {
 		match field.recalc_state.compare_exchange(
 			RECALC_IDLE,
@@ -459,9 +466,15 @@ struct FieldDebugGizmos {
 #[zbus::interface(name = "org.stardustxr.debug.FieldDebugGizmos")]
 impl FieldDebugGizmos {
 	fn enable(&mut self) {
+		GIZMO_VIZ_ENABLED.store(true, Ordering::Release);
+		// polylines weren't kept up to date while disabled, so seed them now
+		for field in FIELD_REGISTRY_DEBUG_GIZMOS.get_valid_contents() {
+			request_field_polylines_recalc(&field);
+		}
 		_ = self.state.send(true);
 	}
 	fn disable(&mut self) {
+		GIZMO_VIZ_ENABLED.store(false, Ordering::Release);
 		_ = self.state.send(false);
 	}
 }
