@@ -799,19 +799,39 @@ impl ModelHandler for Model {
 }
 interface!(ModelInterface);
 impl ModelInterfaceHandler for ModelInterface {
-	async fn load_model(
+	fn load_model_oneway(
 		&self,
 		_ctx: gluon::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		model: stardust_xr_protocol::types::Resource,
+		reply: gluon::ReplySender<
+			std::result::Result<ModelProxy, stardust_xr_protocol::types::ResourceLoadError>,
+		>,
+	) -> impl Future<Output = std::result::Result<(), gluon::SendError>> + Send + Sync {
+		let base_resource_prefixes = self.base_resource_prefixes.clone();
+		async move {
+			tokio::spawn(async move {
+				let Some(spatial) = spatial.owned() else {
+					_ = reply.send(Err(ResourceLoadError::InvalidRef));
+					return;
+				};
+
+				let Ok(model) = Model::new(spatial, model, base_resource_prefixes).await else {
+					_ = reply.send(Err(ResourceLoadError::NotFound));
+					return;
+				};
+
+				_ = reply.send(Ok(ModelProxy::from_handler(&model)));
+			});
+			Ok(())
+		}
+	}
+	async fn load_model(
+		&self,
+		_ctx: gluon::Context,
+		_spatial: stardust_xr_protocol::spatial::Spatial,
+		_model: stardust_xr_protocol::types::Resource,
 	) -> Result<ModelProxy, ResourceLoadError> {
-		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
-
-		let model = Model::new(spatial, model, self.base_resource_prefixes.clone())
-			.await
-			.ok()
-			.ok_or(ResourceLoadError::NotFound)?;
-
-		Ok(ModelProxy::from_handler(&model))
+		unimplemented!()
 	}
 }
