@@ -794,6 +794,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_dylib"
+version = "0.16.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1dc3602098b2604941b2829a04ac316de1e36aad949cbffce8861896b9b32532"
+dependencies = [
+ "bevy_internal",
+]
+
+[[package]]
 name = "bevy_ecs"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1598,7 +1607,7 @@ dependencies = [
 [[package]]
 name = "binderbinder"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/binderbinder#028a7ebb81cf7f2c68aab2a685eee4690863203d"
+source = "git+https://github.com/technobaboo/binderbinder#b1e425fba9b1e34df3e030f9b9e303ff736e0083"
 dependencies = [
  "bitflags 2.11.0",
  "dashmap",
@@ -3340,7 +3349,7 @@ dependencies = [
  "hyper",
  "libc",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tokio",
  "tower-service",
  "tracing",
@@ -5632,6 +5641,7 @@ dependencies = [
  "bevy-dmabuf",
  "bevy-equirect",
  "bevy-mesh-text-3d",
+ "bevy_dylib",
  "bevy_mod_openxr",
  "bevy_mod_xr",
  "bevy_sk",
