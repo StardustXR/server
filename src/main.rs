@@ -107,6 +107,9 @@ use crate::{
 	session::{launch_start, save_session},
 };
 
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[derive(Debug, Clone, Parser)]
 #[clap(author, version, about, long_about = None)]
 struct CliArgs {

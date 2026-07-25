@@ -152,6 +152,7 @@ stardust-xr-protocol.workspace = true
 binderbinder = { git = "https://github.com/technobaboo/binderbinder" }
 pion-binder = { git = "https://github.com/technobaboo/pion" }
 gluon = { git = "https://github.com/technobaboo/gluon" }
+mimalloc = { version = "0.1.52", features = ["override"] }
 
 [workspace.dependencies.stardust-xr-protocol]
 git = "https://github.com/StardustXR/core.git"
