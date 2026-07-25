@@ -67,22 +67,22 @@ impl ClientStateParsed {
 		// client_state.data = std::fs::read(file.with_extension("bin")).ok();
 		Some(client_state)
 	}
-	pub fn to_file(&self, directory: &Path) {
-		// let app_name = self
-		// 	.launch_info
-		// 	.as_ref()
-		// 	.map(|l| l.cmdline.first().unwrap().split('/').next_back().unwrap())
-		// 	.unwrap_or("unknown");
-		let app_name = "unknown";
-		let state_file_prefix = directory.join(format!("{app_name}-{}", nanoid::nanoid!()));
-		let state_metadata_path = state_file_prefix.with_extension("toml");
-		// let state_data_path = state_file_prefix.with_extension("bin");
+	// pub fn to_file(&self, directory: &Path) {
+	// 	// let app_name = self
+	// 	// 	.launch_info
+	// 	// 	.as_ref()
+	// 	// 	.map(|l| l.cmdline.first().unwrap().split('/').next_back().unwrap())
+	// 	// 	.unwrap_or("unknown");
+	// 	let app_name = "unknown";
+	// 	let state_file_prefix = directory.join(format!("{app_name}-{}", nanoid::nanoid!()));
+	// 	let state_metadata_path = state_file_prefix.with_extension("toml");
+	// 	// let state_data_path = state_file_prefix.with_extension("bin");
 
-		std::fs::write(state_metadata_path, toml::to_string(&self).unwrap()).unwrap();
-		// if let Some(data) = self.data.as_deref() {
-		// 	std::fs::write(state_data_path, data).unwrap();
-		// }
-	}
+	// 	std::fs::write(state_metadata_path, toml::to_string(&self).unwrap()).unwrap();
+	// 	// if let Some(data) = self.data.as_deref() {
+	// 	// 	std::fs::write(state_data_path, data).unwrap();
+	// 	// }
+	// }
 
 	pub fn apply(&self) -> SpatialRef {
 		let root_spatial = SpatialObject::new(None, self.root);

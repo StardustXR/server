@@ -59,7 +59,7 @@ impl QueryableInterfaceGuardHandler for DummyInterface {}
 
 #[derive(Debug, Clone)]
 enum ZoneEvent {
-	Entered { sample: FieldSample },
+	Entered { _sample: FieldSample },
 	Left,
 }
 
@@ -76,7 +76,7 @@ impl ZoneQueryHandlerHandler for TestZoneHandler {
 		_pos: Vec3F,
 		sample: FieldSample,
 	) {
-		let _ = self.0.send(ZoneEvent::Entered { sample }).await;
+		let _ = self.0.send(ZoneEvent::Entered { _sample: sample }).await;
 	}
 	async fn interfaces_changed(
 		&self,
@@ -100,7 +100,7 @@ impl ZoneQueryHandlerHandler for TestZoneHandler {
 
 #[derive(Debug, Clone)]
 enum BeamEvent {
-	Intersected { march_result: RayMarchResult },
+	Intersected { _march_result: RayMarchResult },
 	Left,
 }
 
@@ -116,7 +116,12 @@ impl BeamQueryHandlerHandler for TestBeamHandler {
 		_interfaces: Vec<QueriedInterface>,
 		march_result: RayMarchResult,
 	) {
-		let _ = self.0.send(BeamEvent::Intersected { march_result }).await;
+		let _ = self
+			.0
+			.send(BeamEvent::Intersected {
+				_march_result: march_result,
+			})
+			.await;
 	}
 	async fn interfaces_changed(
 		&self,
@@ -133,7 +138,7 @@ impl BeamQueryHandlerHandler for TestBeamHandler {
 
 #[derive(Debug, Clone)]
 enum PointsEvent {
-	Entered { sample: FieldSample },
+	Entered { _sample: FieldSample },
 	Left,
 }
 
@@ -149,7 +154,7 @@ impl PointsQueryHandlerHandler for TestPointsHandler {
 		_interfaces: Vec<QueriedInterface>,
 		sample: FieldSample,
 	) {
-		let _ = self.0.send(PointsEvent::Entered { sample }).await;
+		let _ = self.0.send(PointsEvent::Entered { _sample: sample }).await;
 	}
 	async fn interfaces_changed(
 		&self,

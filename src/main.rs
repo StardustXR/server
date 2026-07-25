@@ -382,8 +382,8 @@ fn bevy_loop(
 			plugins.add(SpectatorCameraPlugin)
 		} else if args.force_flatscreen {
 			plugins
-				.add(bevy::sprite::SpritePlugin::default())
-				.add(bevy::text::TextPlugin::default())
+				.add(bevy::sprite::SpritePlugin)
+				.add(bevy::text::TextPlugin)
 				.add(bevy::ui::UiPlugin::default())
 				.add(FlatscreenCamPlugin)
 				.add(FlatscreenInputPlugin)

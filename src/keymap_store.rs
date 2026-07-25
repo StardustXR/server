@@ -40,15 +40,17 @@ impl KeymapStore {
 	pub const SERVICE_NAME: &str = "stardust-keymap-store";
 	pub async fn expose(instance: &str) -> gluon::Object<Self> {
 		let (pion_path, lock) =
-			stardust_xr_protocol::dir::create_pion_file(Self::SERVICE_NAME, &instance).expect(
-				&format!(
-					"failed to create {} pion file for instance: {}",
-					Self::SERVICE_NAME,
-					instance,
-				),
-			);
+			stardust_xr_protocol::dir::create_pion_file(Self::SERVICE_NAME, instance)
+				.unwrap_or_else(|| {
+					panic!(
+						"failed to create {} pion file for instance: {}",
+						Self::SERVICE_NAME,
+						instance
+					)
+				});
 		let pion_file = std::fs::OpenOptions::new()
 			.create(true)
+			.truncate(false)
 			.read(true)
 			.write(true)
 			.open(&pion_path)
@@ -61,10 +63,7 @@ impl KeymapStore {
 		});
 		PION.bind_binder_ref_to_file(pion_file, &interface)
 			.await
-			.expect(&format!(
-				"failed to register {} with pion",
-				stringify!($type)
-			));
+			.unwrap_or_else(|_| panic!("failed to register {} with pion", stringify!($type)));
 		_ = KEYMAP_STORE.set(interface.clone());
 		interface
 	}
@@ -174,11 +173,11 @@ impl MMapGuard {
 				fd,
 				0,
 			)?;
-			slice::from_raw_parts_mut(ptr.cast::<u8>(), size as usize)
+			slice::from_raw_parts_mut(ptr.cast::<u8>(), size)
 		};
 		Ok(Self(slice))
 	}
-	fn slice<'a>(&'a self) -> &'a [u8] {
+	fn slice(&self) -> &[u8] {
 		self.0
 	}
 }
