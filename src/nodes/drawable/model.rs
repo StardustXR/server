@@ -821,7 +821,9 @@ impl ModelInterfaceHandler for ModelInterface {
 					return;
 				};
 
-				_ = reply.send(Ok(ModelProxy::from_handler(&model)));
+				if let Err(err) = reply.send(Ok(ModelProxy::from_handler(&model))) {
+					tracing::warn!(?err, "failed to send load_model reply");
+				}
 			});
 			Ok(())
 		}

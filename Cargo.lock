@@ -1598,7 +1598,7 @@ dependencies = [
 [[package]]
 name = "binderbinder"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/binderbinder#62a750dd29c977b457a359ff47121003fda29e82"
+source = "git+https://github.com/technobaboo/binderbinder#028a7ebb81cf7f2c68aab2a685eee4690863203d"
 dependencies = [
  "bitflags 2.11.0",
  "dashmap",
