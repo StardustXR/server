@@ -20,6 +20,8 @@ path = "src/main.rs"
 # binderbinder.path = "../binderbinder"
 
 [features]
+default = ["mimalloc"]
+mimalloc = ["dep:mimalloc"]
 profile_tokio = ["dep:console-subscriber", "tokio/tracing"]
 profile_app = ["dep:tracing-tracy", "bevy/trace_tracy", "bevy/trace"]
 bevy_debugging = ["bevy/bevy_remote", "bevy/track_location"]
@@ -68,6 +70,7 @@ slotmap = "1.0.7"
 global_counter = "=0.2.2"
 parking_lot = "0.12.3"
 dashmap = "6.1.0"
+mimalloc = { version = "0.1", features = ["override"], optional = true }
 
 # rust errors/logging
 color-eyre = { version = "0.6.3", default-features = false }
@@ -152,7 +155,6 @@ stardust-xr-protocol.workspace = true
 binderbinder = { git = "https://github.com/technobaboo/binderbinder" }
 pion-binder = { git = "https://github.com/technobaboo/pion" }
 gluon = { git = "https://github.com/technobaboo/gluon" }
-mimalloc = { version = "0.1.52", features = ["override"] }
 
 [workspace.dependencies.stardust-xr-protocol]
 git = "https://github.com/StardustXR/core.git"
