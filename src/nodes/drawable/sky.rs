@@ -195,8 +195,10 @@ impl Drop for SkyGuard {
 	fn drop(&mut self) {
 		if self.is_sky_tex {
 			QUEUED_SKYTEX.lock().replace(None);
+			SKYTEX_SET.store(false, Ordering::Relaxed);
 		} else {
 			QUEUED_SKYLIGHT.lock().replace(None);
+			SKYLIGHT_SET.store(false, Ordering::Relaxed);
 		}
 	}
 }
