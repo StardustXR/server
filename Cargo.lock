@@ -794,15 +794,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bevy_dylib"
-version = "0.16.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dc3602098b2604941b2829a04ac316de1e36aad949cbffce8861896b9b32532"
-dependencies = [
- "bevy_internal",
-]
-
-[[package]]
 name = "bevy_ecs"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5659,7 +5650,6 @@ dependencies = [
  "bevy-dmabuf",
  "bevy-equirect",
  "bevy-mesh-text-3d",
- "bevy_dylib",
  "bevy_mod_openxr",
  "bevy_mod_xr",
  "bevy_sk",

@@ -11,10 +11,6 @@ mod openxr_helpers;
 mod query;
 mod session;
 
-#[allow(clippy::single_component_path_imports, unused_imports)]
-#[cfg(debug_assertions)]
-use bevy_dylib;
-
 use bevy::{
 	MinimalPlugins,
 	a11y::AccessibilityPlugin,

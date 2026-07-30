@@ -116,7 +116,6 @@ bevy = { version = "0.16", default-features = false, features = [
 	"jpeg",
 	"multi_threaded",
 ] }
-bevy_dylib = "0.16"
 bevy_mod_xr = "0.3"
 bevy_mod_openxr = "0.3"
 # bevy_sk.git = "https://github.com/MalekiRe/bevy_sk"
