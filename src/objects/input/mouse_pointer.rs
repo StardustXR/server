@@ -388,7 +388,7 @@ impl InputMethodHandler for MouseMethod {
 		handler: InputHandler,
 	) -> Option<InputMethodCapture> {
 		let capture = self.sender.grant_capture(handler.clone()).await?;
-		let pid = dbg!(ctx.sender_pid);
+		let pid = ctx.sender_pid;
 		let name = std::fs::read_to_string(format!("/proc/{pid}/comm"))
 			.map(|s| s.trim().to_string())
 			.unwrap_or_else(|_| "unknown".to_string());
