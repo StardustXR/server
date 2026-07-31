@@ -592,7 +592,7 @@ fn xr_step(world: &mut World) {
 		)
 	};
 	let frame_span = info_span!("frame-event").entered();
-	for client in CLIENTS.get_vec() {
+	for client in CLIENTS.get_valid_contents() {
 		client.frame(FrameInfo {
 			delta,
 			predicted_display_time,

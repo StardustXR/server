@@ -1,7 +1,6 @@
 use super::client_state::{CLIENT_STATES, ClientStateParsed};
 use crate::{
 	PION,
-	core::registry::OwnedRegistry,
 	nodes::{
 		audio::AudioInterface,
 		drawable::{
@@ -16,6 +15,7 @@ use crate::{
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
 use gluon::{Handler, ObjectRef};
+use parking_lot::RwLock;
 use stardust_xr_protocol::{
 	audio::AudioInterface as AudioInterfaceProxy,
 	client::{Client, FrameInfo},
@@ -31,6 +31,7 @@ use stardust_xr_protocol::{
 	text::TextInterface as TextInterfaceProxy,
 	types::CreateError,
 };
+use stardust_xr_server_foundation::registry::Registry;
 use std::{
 	fmt::Debug,
 	path::PathBuf,
@@ -38,7 +39,7 @@ use std::{
 };
 use tracing::info;
 
-pub static CLIENTS: OwnedRegistry<ConnectedClient> = OwnedRegistry::new();
+pub static CLIENTS: Registry<ConnectedClient> = Registry::new();
 
 // static INTERNAL_CLIENT_MESSAGE_TIMES: LazyLock<(watch::Sender<Instant>, watch::Receiver<Instant>)> =
 // LazyLock::new(|| watch::channel(Instant::now()));
@@ -75,7 +76,7 @@ pub fn state(token: &String) -> Option<Arc<ClientStateParsed>> {
 
 #[derive(Debug, Handler)]
 pub struct ConnectedClient {
-	client: Client,
+	client: RwLock<Option<Client>>,
 	exe: Option<PathBuf>,
 	disconnect_status: OnceLock<Result<()>>,
 
@@ -139,7 +140,7 @@ impl ConnectedClient {
 
 			_id_counter: CounterU32::new(256),
 			_base_resource_prefixes: p.clone(),
-			client,
+			client: RwLock::new(Some(client)),
 
 			spatial_interface,
 			field_interface,
@@ -152,30 +153,20 @@ impl ConnectedClient {
 			query_interface,
 			spatial_query_interface,
 		});
-		let death_future = client.strong_refs_hit_zero();
-		let client = client;
-		CLIENTS.add_raw(client.handler_arc().clone());
-		// TODO: make sure this is cleaned up if we ever have a reason for disconnect that isn't the
-		// client being destroyed
-		tokio::spawn({
-			let client = Arc::downgrade(client.handler_arc());
-			async move {
-				death_future.await;
-				if let Some(client) = client.upgrade() {
-					client.disconnect(Ok(()));
-				}
-			}
-		});
+		CLIENTS.add_raw(client.handler_arc());
 
 		(client.to_service(), state.apply())
 	}
 
 	pub fn frame(&self, info: FrameInfo) {
-		_ = self.client.frame(info);
+		if let Some(client) = self.client.read().as_ref() {
+			_ = client.frame(info);
+		}
 	}
 
-	fn disconnect(self: &Arc<Self>, reason: Result<()>) {
+	fn disconnect(&self, reason: Result<()>) {
 		let _ = self.disconnect_status.set(reason);
+		self.client.write().take();
 		CLIENTS.remove(self);
 	}
 }
@@ -231,6 +222,7 @@ impl ServerHandler for ConnectedClient {
 }
 impl Drop for ConnectedClient {
 	fn drop(&mut self) {
+        CLIENTS.remove(self);
 		info!(
 			exe = self
 				.exe
