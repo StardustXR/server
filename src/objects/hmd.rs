@@ -92,7 +92,7 @@ fn dyn_tracking(
 		(pose, tracked)
 	} else {
 		let mat = crate::nodes::spatial::Spatial::space_to_space_matrix(
-			Some(base_spatial),
+			Some(&reference_spatial),
 			Some(spatial),
 		);
 		let (_, rot, pos) = mat.to_scale_rotation_translation();

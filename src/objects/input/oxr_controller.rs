@@ -406,11 +406,21 @@ fn create_spaces(
 	)
 	.ok()
 	.map(|v| PION.register_object(v));
+	if let Some(method) = controllers.left.method.as_ref() {
+		controllers.left.tracked.get_mut_data_blocking().method =
+			Arc::downgrade(method.handler_arc());
+	}
+	if let Some(method) = controllers.right.method.as_ref() {
+		controllers.right.tracked.get_mut_data_blocking().method =
+			Arc::downgrade(method.handler_arc());
+	}
 }
 
 fn destroy_spaces(mut controllers: ResMut<Controllers>) {
 	controllers.left.method.take();
 	controllers.right.method.take();
+	controllers.left.tracked.get_mut_data_blocking().method = Weak::new();
+	controllers.right.tracked.get_mut_data_blocking().method = Weak::new();
 }
 
 fn setup(instance: Res<OxrInstance>, connection: Res<DbusConnection>, mut cmds: Commands) {
@@ -467,6 +477,37 @@ struct Controllers {
 	base_spatial: gluon::ObjectRef<SpatialObject>,
 }
 
+#[derive(Debug)]
+struct OxrControllerInputTrackedState {
+	method: Weak<ControllerInputMethod>,
+	aim_spatial: ObjectRef<SpatialObject>,
+}
+impl OxrControllerInputTrackedState {
+	fn get_pose(&self, relative_to: &Spatial, at: Timestamp) -> (Option<types::Posef>, bool) {
+		if let Some(method) = self.method.upgrade() {
+			let Some(time) = method.base_space.instance().timestamp_to_xr(at) else {
+				return (None, false);
+			};
+			let Some(pose) = method.locate_pose(relative_to, time) else {
+				return (None, false);
+			};
+			(Some(pose), true)
+		} else {
+			let mat = crate::nodes::spatial::Spatial::space_to_space_matrix(
+				Some(&self.aim_spatial),
+				Some(relative_to),
+			);
+			let (_, rot, pos) = mat.to_scale_rotation_translation();
+			(
+				Some(stardust_xr_protocol::types::Posef {
+					position: pos.into(),
+					orientation: rot.into(),
+				}),
+				true,
+			)
+		}
+	}
+}
 pub struct OxrControllerInput {
 	aim_spatial: gluon::ObjectRef<SpatialObject>,
 	side: HandSide,
@@ -474,6 +515,7 @@ pub struct OxrControllerInput {
 	model_part: OnceLock<ObjectRef<ModelPart>>,
 	model_task: Option<JoinHandle<(ObjectRef<Model>, ObjectRef<ModelPart>)>>,
 	method: Option<Object<ControllerInputMethod>>,
+	tracked: Tracked<OxrControllerInputTrackedState>,
 	was_enabled: bool,
 	captured: bool,
 }
@@ -508,6 +550,21 @@ impl OxrControllerInput {
 				.unwrap();
 			(model, model_part)
 		});
+		let pion_path = match side {
+			HandSide::Left => "stardust-controller/left",
+			HandSide::Right => "stardust-controller/right",
+		};
+		let tracked = Tracked::new(
+			SpatialRefProxy::from_handler(aim_spatial.get_ref()),
+			OxrControllerInputTrackedState::get_pose,
+			false,
+			pion_path,
+			OxrControllerInputTrackedState {
+				method: Weak::new(),
+				aim_spatial: aim_spatial.clone(),
+			},
+		)
+		.unwrap();
 		Ok(OxrControllerInput {
 			side,
 			model: OnceLock::new(),
@@ -517,9 +574,11 @@ impl OxrControllerInput {
 			model_task: Some(model_task),
 			method: None,
 			captured: false,
+			tracked,
 		})
 	}
 	pub fn set_enabled(&self, enabled: bool) {
+		self.tracked.tracked_blocking(enabled);
 		self.aim_spatial.set_local_transform_components(
 			None,
 			PartialTransform::from_scale(Vec3::splat(enabled as u8 as f32)),
@@ -684,11 +743,7 @@ impl ControllerInputMethod {
 			query_handle,
 		})
 	}
-	fn locate_pose(
-		&self,
-		relative_to: &ObjectRef<SpatialRef>,
-		time: openxr::Time,
-	) -> Option<Posef> {
+	fn locate_pose(&self, relative_to: &Spatial, time: openxr::Time) -> Option<Posef> {
 		let pose = self
 			.space
 			.locate(&self.base_space, time)

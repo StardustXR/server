@@ -3,7 +3,7 @@ use crate::nodes::ProxyExt;
 use crate::nodes::drawable::model::HoldoutExtension;
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
-use crate::objects::DebugWrapper;
+use crate::objects::{DebugWrapper, Tracked};
 use crate::openxr_helpers::ConvertTimespec;
 use crate::query::spatial_query::SpatialQueryInterface;
 use crate::{BevyMaterial, PION, PreFrameWait, get_time};
@@ -19,7 +19,7 @@ use bevy_mod_xr::spaces::{XrPrimaryReferenceSpace, XrSpace, XrSpaceLocationFlags
 use bevy_sk::hand::GRADIENT_TEXTURE_HANDLE;
 use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
-use gluon::{Handler, ObjectRef};
+use gluon::{Handler, Object, ObjectRef};
 use openxr::{HandJointLocation, Posef, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::field::FieldSample;
@@ -142,7 +142,9 @@ fn create_trackers(session: Res<OxrSession>, mut hands: ResMut<Hands>) {
 		)
 		.inspect_err(|err| error!("failed to create left hand input method: {err}"))
 	{
-		hands.left.method = Some(PION.register_object(method));
+		let method = PION.register_object(method);
+		hands.left.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler_arc());
+		hands.left.method = Some(method);
 	}
 	if let Ok(tracker) = session
 		.create_hand_tracker(openxr::HandEXT::RIGHT)
@@ -155,13 +157,17 @@ fn create_trackers(session: Res<OxrSession>, mut hands: ResMut<Hands>) {
 		)
 		.inspect_err(|err| error!("failed to create right hand input method: {err}"))
 	{
-		hands.right.method = Some(PION.register_object(method));
+		let method = PION.register_object(method);
+		hands.right.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler_arc());
+		hands.right.method = Some(method);
 	}
 }
 
 fn destroy_trackers(mut hands: ResMut<Hands>) {
 	hands.left.method.take();
 	hands.right.method.take();
+	hands.left.tracked.get_mut_data_blocking().method = Weak::new();
+	hands.right.tracked.get_mut_data_blocking().method = Weak::new();
 }
 
 #[derive(Component)]
@@ -237,7 +243,7 @@ struct Hands {
 	left: OxrHandInput,
 	right: OxrHandInput,
 	base_space: Option<Arc<openxr::Space>>,
-	base_spatial: gluon::ObjectRef<SpatialObject>,
+	base_spatial: ObjectRef<SpatialObject>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone, Copy)]
@@ -253,12 +259,45 @@ enum HandMaterial {
 
 // ── OxrHandInput ──────────────────────────────────────────────────────────────
 
+#[derive(Debug)]
+struct OxrHandInputTrackedState {
+	method: Weak<HandInputMethod>,
+	palm_spatial: ObjectRef<SpatialObject>,
+}
+impl OxrHandInputTrackedState {
+	fn get_pose(&self, relative_to: &Spatial, at: Timestamp) -> (Option<types::Posef>, bool) {
+		if let Some(method) = self.method.upgrade() {
+			let Some(time) = method.base_space.instance().timestamp_to_xr(at) else {
+				return (None, false);
+			};
+			let Some(hand) = method.locate_hand(relative_to, time) else {
+				return (None, false);
+			};
+			(Some(hand.palm.pose), true)
+		} else {
+			let mat = crate::nodes::spatial::Spatial::space_to_space_matrix(
+				Some(&self.palm_spatial),
+				Some(relative_to),
+			);
+			let (_, rot, pos) = mat.to_scale_rotation_translation();
+			(
+				Some(stardust_xr_protocol::types::Posef {
+					position: pos.into(),
+					orientation: rot.into(),
+				}),
+				true,
+			)
+		}
+	}
+}
+
 pub struct OxrHandInput {
-	palm_spatial: gluon::ObjectRef<SpatialObject>,
+	palm_spatial: ObjectRef<SpatialObject>,
 	side: HandSide,
-	method: Option<gluon::Object<HandInputMethod>>,
+	method: Option<Object<HandInputMethod>>,
 	captured: bool,
 	material: HandMaterial,
+	tracked: Tracked<OxrHandInputTrackedState>,
 	was_enabled: bool,
 }
 
@@ -286,7 +325,21 @@ impl OxrHandInput {
 				..default()
 			}))
 		};
-
+		let pion_path = match side {
+			HandSide::Left => "stardust-hand/left",
+			HandSide::Right => "stardust-hand/right",
+		};
+		let tracked = Tracked::new(
+			SpatialRefProxy::from_handler(palm_spatial.get_ref()),
+			OxrHandInputTrackedState::get_pose,
+			false,
+			pion_path,
+			OxrHandInputTrackedState {
+				method: Weak::new(),
+				palm_spatial: palm_spatial.clone(),
+			},
+		)
+		.unwrap();
 		Ok(OxrHandInput {
 			palm_spatial,
 			side,
@@ -294,10 +347,13 @@ impl OxrHandInput {
 			captured: false,
 			was_enabled: false,
 			method: None,
+			tracked,
 		})
 	}
 
-	pub fn set_enabled(&self, _enabled: bool) {}
+	pub fn set_enabled(&self, enabled: bool) {
+		self.tracked.tracked_blocking(enabled);
+	}
 
 	fn update(
 		&mut self,
@@ -383,9 +439,9 @@ impl OxrHandInput {
 struct HandInputMethod {
 	side: HandSide,
 	base_space: DebugWrapper<Arc<openxr::Space>>,
-	base_spatial: gluon::ObjectRef<SpatialRef>,
+	base_spatial: ObjectRef<SpatialRef>,
 	tracker: DebugWrapper<openxr::HandTracker>,
-	_query: gluon::Object<PointsQueryCache>,
+	_query: Object<PointsQueryCache>,
 	sender: Arc<InputSender<FieldSample>>,
 	hand: RwLock<Option<Hand>>,
 	datamap: RwLock<HandDatamap>,
@@ -394,7 +450,7 @@ struct HandInputMethod {
 
 impl HandInputMethod {
 	fn new(
-		base_spatial: gluon::ObjectRef<SpatialRef>,
+		base_spatial: ObjectRef<SpatialRef>,
 		base_space: Arc<openxr::Space>,
 		side: HandSide,
 		tracker: openxr::HandTracker,
@@ -443,7 +499,7 @@ impl HandInputMethod {
 		})
 	}
 
-	fn locate_hand(&self, relative_to: &ObjectRef<SpatialRef>, time: openxr::Time) -> Option<Hand> {
+	fn locate_hand(&self, relative_to: &Spatial, time: openxr::Time) -> Option<Hand> {
 		let joints = {
 			let mat = Spatial::space_to_space_matrix(Some(&self.base_spatial), Some(relative_to));
 			self.base_space
