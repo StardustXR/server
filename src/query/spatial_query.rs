@@ -395,7 +395,7 @@ impl QueryKind for BeamKind {
 		interfaces: Vec<QueriedInterface>,
 		hit: RayMarchResult,
 	) -> Result<(), SendError> {
-		self.handler.intersected(
+		self.handler.intersected_event(
 			queryable.obj_ref(),
 			queryable.field_ref(),
 			queryable.spatial_ref(),
@@ -404,17 +404,17 @@ impl QueryKind for BeamKind {
 		)
 	}
 	fn moved(&self, queryable: &Queryable, hit: RayMarchResult) -> Result<(), SendError> {
-		self.handler.moved(queryable.obj_ref(), hit)
+		self.handler.moved_event(queryable.obj_ref(), hit)
 	}
 	fn interfaces_changed(
 		&self,
 		obj: QueryableObjectRef,
 		interfaces: Vec<QueriedInterface>,
 	) -> Result<(), SendError> {
-		self.handler.interfaces_changed(obj, interfaces)
+		self.handler.interfaces_changed_event(obj, interfaces)
 	}
 	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError> {
-		self.handler.left(obj)
+		self.handler.left_event(obj)
 	}
 }
 
@@ -442,7 +442,7 @@ impl QueryKind for ZoneKind {
 		interfaces: Vec<QueriedInterface>,
 		hit: (Vec3, FieldSample),
 	) -> Result<(), SendError> {
-		self.handler.entered(
+		self.handler.entered_event(
 			queryable.obj_ref(),
 			queryable.field_ref(),
 			queryable.spatial_ref(),
@@ -452,17 +452,17 @@ impl QueryKind for ZoneKind {
 		)
 	}
 	fn moved(&self, queryable: &Queryable, hit: (Vec3, FieldSample)) -> Result<(), SendError> {
-		self.handler.moved(queryable.obj_ref(), hit.0.into(), hit.1)
+		self.handler.moved_event(queryable.obj_ref(), hit.0.into(), hit.1)
 	}
 	fn interfaces_changed(
 		&self,
 		obj: QueryableObjectRef,
 		interfaces: Vec<QueriedInterface>,
 	) -> Result<(), SendError> {
-		self.handler.interfaces_changed(obj, interfaces)
+		self.handler.interfaces_changed_event(obj, interfaces)
 	}
 	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError> {
-		self.handler.left(obj)
+		self.handler.left_event(obj)
 	}
 }
 
@@ -501,7 +501,7 @@ impl QueryKind for PointsKind {
 		interfaces: Vec<QueriedInterface>,
 		hit: FieldSample,
 	) -> Result<(), SendError> {
-		self.handler.entered(
+		self.handler.entered_event(
 			queryable.obj_ref(),
 			queryable.field_ref(),
 			queryable.spatial_ref(),
@@ -510,17 +510,17 @@ impl QueryKind for PointsKind {
 		)
 	}
 	fn moved(&self, queryable: &Queryable, hit: FieldSample) -> Result<(), SendError> {
-		self.handler.moved(queryable.obj_ref(), hit)
+		self.handler.moved_event(queryable.obj_ref(), hit)
 	}
 	fn interfaces_changed(
 		&self,
 		obj: QueryableObjectRef,
 		interfaces: Vec<QueriedInterface>,
 	) -> Result<(), SendError> {
-		self.handler.interfaces_changed(obj, interfaces)
+		self.handler.interfaces_changed_event(obj, interfaces)
 	}
 	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError> {
-		self.handler.left(obj)
+		self.handler.left_event(obj)
 	}
 }
 
