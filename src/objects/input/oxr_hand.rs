@@ -321,8 +321,7 @@ impl OxrHandInput {
 				base_color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
 				alpha_mode: AlphaMode::Blend,
 				base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
-				perceptual_roughness: 0.0,
-                reflectance: 0.0,
+				perceptual_roughness: 1.0,
 				..default()
 			}))
 		};

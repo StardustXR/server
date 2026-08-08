@@ -206,8 +206,7 @@ async fn main() -> Result<AppExit, JoinError> {
 			EnvFilter::builder()
 				.with_default_directive(LevelFilter::WARN.into())
 				.from_env_lossy()
-				.add_directive(Directive::from_str("bevy_mesh_text_3d::text_glyphs=off").unwrap())
-				.add_directive(Directive::from_str("xkbcommon_rs::parser=error").unwrap()),
+				.add_directive(Directive::from_str("bevy_mesh_text_3d::text_glyphs=off").unwrap()),
 		)
 		.with_filter(SpanFilter("frame-event"));
 	registry.with(log_layer).init();

@@ -710,7 +710,7 @@ impl MousePointer {
 					.serialize_layout(StateComponent::LAYOUT_EFFECTIVE) as u32,
 			};
 			_ = handler
-				.key_event(
+				.key(
 					KeyEvent {
 						keycode,
 						pressed,
