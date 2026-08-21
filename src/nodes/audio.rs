@@ -9,7 +9,7 @@ use bevy::audio::{PlaybackMode, Volume};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::XrSpace;
-use gluon::{Handler, ObjectRef};
+use gluon::Handler;
 use parking_lot::Mutex;
 
 use bevy::prelude::*;
@@ -109,7 +109,7 @@ impl Sound {
 		spatial: Arc<SpatialObject>,
 		resource_id: Resource,
 		resource_prefixes: &[PathBuf],
-	) -> Option<ObjectRef<Sound>> {
+	) -> Option<SoundProxy> {
 		let pending_audio_path = get_resource_file(
 			&resource_id,
 			resource_prefixes,

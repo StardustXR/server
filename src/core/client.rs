@@ -1,6 +1,5 @@
 use super::client_state::{CLIENT_STATES, ClientStateParsed};
 use crate::{
-	PION,
 	nodes::{
 		audio::AudioInterface,
 		drawable::{
@@ -14,7 +13,7 @@ use crate::{
 };
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
-use gluon::{Handler, ObjectRef};
+use gluon::{Handler, NodeError, RefExt};
 use parking_lot::RwLock;
 use stardust_xr_protocol::{
 	audio::AudioInterface as AudioInterfaceProxy,
@@ -24,7 +23,7 @@ use stardust_xr_protocol::{
 	lines::LinesInterface as LinesInterfaceProxy,
 	model::ModelInterface as ModelInterfaceProxy,
 	query::QueryInterface as QueryInterfaceProxy,
-	server::ServerHandler,
+	server::{Server, ServerHandler},
 	sky::SkyInterface as SkyInterfaceProxy,
 	spatial::{SpatialInterface as SpatialInterfaceProxy, SpatialRef},
 	spatial_query::SpatialQueryInterface as SpatialQueryInterfaceProxy,
@@ -100,7 +99,7 @@ impl ConnectedClient {
 		// pid: RawPid,
 		startup_token: Option<String>,
 		base_resource_prefixes: Vec<PathBuf>,
-	) -> (ObjectRef<Self>, SpatialRef) {
+	) -> Result<(Server, SpatialRef), NodeError> {
 		// let env = get_env(pid).ok();
 		// let exe = fs::read_link(format!("/proc/{pid}/exe")).ok();
 		let exe = None;
@@ -113,26 +112,19 @@ impl ConnectedClient {
 
 		let p = Arc::new(base_resource_prefixes);
 
-		let spatial_interface =
-			SpatialInterfaceProxy::from_handler(&SpatialInterface::new(&p).to_service());
-		let field_interface =
-			FieldInterfaceProxy::from_handler(&FieldInterface::new(&p).to_service());
-		let dmatex_interface =
-			DmatexInterfaceProxy::from_handler(&DmatexInterface::new(&p).to_service());
-		let text_interface = TextInterfaceProxy::from_handler(&TextInterface::new(&p).to_service());
-		let model_interface =
-			ModelInterfaceProxy::from_handler(&ModelInterface::new(&p).to_service());
-		let lines_interface =
-			LinesInterfaceProxy::from_handler(&LinesInterface::new(&p).to_service());
-		let sky_interface = SkyInterfaceProxy::from_handler(&SkyInterface::new(&p).to_service());
-		let audio_interface =
-			AudioInterfaceProxy::from_handler(&AudioInterface::new(&p).to_service());
-		let query_interface =
-			QueryInterfaceProxy::from_handler(&QueryInterface::new(&p).to_service());
+		let spatial_interface = SpatialInterfaceProxy::new_service(SpatialInterface::new(&p))?;
+		let field_interface = FieldInterfaceProxy::new_service(FieldInterface::new(&p))?;
+		let dmatex_interface = DmatexInterfaceProxy::new_service(DmatexInterface::new(&p))?;
+		let text_interface = TextInterfaceProxy::new_service(TextInterface::new(&p))?;
+		let model_interface = ModelInterfaceProxy::new_service(ModelInterface::new(&p))?;
+		let lines_interface = LinesInterfaceProxy::new_service(LinesInterface::new(&p))?;
+		let sky_interface = SkyInterfaceProxy::new_service(SkyInterface::new(&p))?;
+		let audio_interface = AudioInterfaceProxy::new_service(AudioInterface::new(&p))?;
+		let query_interface = QueryInterfaceProxy::new_service(QueryInterface::new(&p))?;
 		let spatial_query_interface =
-			SpatialQueryInterfaceProxy::from_handler(&SpatialQueryInterface::new(&p).to_service());
+			SpatialQueryInterfaceProxy::new_service(SpatialQueryInterface::new(&p))?;
 
-		let client = PION.register_object(ConnectedClient {
+		let server_handler = Arc::new(ConnectedClient {
 			// env,
 			exe: exe.clone(),
 
@@ -153,9 +145,10 @@ impl ConnectedClient {
 			query_interface,
 			spatial_query_interface,
 		});
-		CLIENTS.add_raw(client.handler_arc());
+		CLIENTS.add_raw(&server_handler);
+		let server = Server::new_service(server_handler)?;
 
-		(client.to_service(), state.apply())
+		Ok((server, state.apply()))
 	}
 
 	pub fn frame(&self, info: FrameInfo) {
@@ -222,7 +215,7 @@ impl ServerHandler for ConnectedClient {
 }
 impl Drop for ConnectedClient {
 	fn drop(&mut self) {
-        CLIENTS.remove(self);
+		CLIENTS.remove(self);
 		info!(
 			exe = self
 				.exe

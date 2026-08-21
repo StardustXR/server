@@ -146,21 +146,21 @@ drm-fourcc = "2.2.0"
 vulkano = { git = "https://github.com/Schmarni-Dev/vulkano", branch = "0_35_dmabuf_fixes", default-features = false }
 wgpu-hal = { version = "24", features = ["vulkan"] }
 ash = { version = "0.38.0", default-features = false }
-rustix = { version = "1.0.8", features = ["time"] }
+rustix = { version = "1.0.8", features = ["time", "mm"] }
 pin-project-lite = "0.2.16"
 futures-sink = "0.3.31"
 stardust-xr-protocol.workspace = true
 
-binderbinder = { git = "https://github.com/technobaboo/binderbinder" }
-pion-binder = { git = "https://github.com/technobaboo/pion" }
-gluon = { git = "https://github.com/technobaboo/gluon" }
+# binderbinder = { git = "https://github.com/technobaboo/binderbinder" }
+# pion-binder = { git = "https://github.com/technobaboo/pion" }
+gluon = { git = "https://github.com/technobaboo/gluon", branch = "refactor/strongipc" }
 
 [workspace.dependencies.stardust-xr-protocol]
 git = "https://github.com/StardustXR/core.git"
-branch = "binder"
+branch = "refactor/strongipc"
 [dependencies.stardust-xr-molecules-protocols]
 git = "https://github.com/StardustXR/molecules.git"
-branch = "binder"
+branch = "refactor/strongipc"
 
 [dependencies.stardust-xr-server-foundation]
 path = "foundation"

@@ -10,9 +10,8 @@ use std::{
 	sync::{Arc, OnceLock},
 };
 
-use binderbinder::binder_object::WeakBinderObject;
 use dashmap::DashMap;
-use gluon::Handler;
+use gluon::{Handler, RefExt};
 use rustix::{
 	fs::{MemfdFlags, memfd_create},
 	mm::{self, MapFlags, ProtFlags, mmap},
@@ -40,7 +39,7 @@ impl KeymapStore {
 	pub const SERVICE_NAME: &str = "stardust-keymap-store";
 	pub async fn expose(instance: &str) -> gluon::Object<Self> {
 		let (pion_path, lock) =
-			stardust_xr_protocol::dir::create_pion_file(Self::SERVICE_NAME, instance)
+			stardust_xr_protocol::dir::create_server_file(Self::SERVICE_NAME, instance)
 				.unwrap_or_else(|| {
 					panic!(
 						"failed to create {} pion file for instance: {}",
@@ -76,32 +75,35 @@ impl KeymapStore {
 		bytes_with_nul: &[u8],
 	) -> Result<KeymapProxy, KeymapExchangeError> {
 		let hash = self.hasher.hash_one(bytes_with_nul);
-		if let Some(binder_obj) = self.map.get(&hash).map(|v| v.value().2.clone())
-			&& let Some(binder_obj) = binder_obj.upgrade()
-			&& let Some(keymap) = binder_obj.downcast::<KeymapToken>()
-		{
-			return Ok(KeymapProxy::from_handler(&keymap));
-		}
+		// if let Some(binder_obj) = self.map.get(&hash).map(|v| v.value().2.clone())
+		// 	&& let Some(binder_obj) = binder_obj.upgrade()
+		// 	&& let Some(keymap) = binder_obj.downcast::<KeymapToken>()
+		// {
+		// 	return Ok(KeymapProxy::from_handler(&keymap));
+		// }
 		let memfd = memfd_create("keymap", MemfdFlags::CLOEXEC).map_err(|err| {
 			tracing::error!("failed to create memfd: {err}");
 			KeymapExchangeError::InvalidKeymap
 		})?;
+		// TODO: important, dedup using /proc/net/unix refcount
 		let mut file = File::from(memfd);
 		file.write_all(bytes_with_nul).map_err(|err| {
 			tracing::error!("failed to write to custom memfd: {err}");
 			KeymapExchangeError::InvalidKeymap
 		})?;
-		let keymap_obj = PION
-			.register_object(KeymapToken {
-				id: hash,
-				map: self.map.clone(),
-			})
-			.to_service();
-		self.map.insert(
-			hash,
-			(file, bytes_with_nul.len() as u32, keymap_obj.downgrade()),
-		);
-		Ok(KeymapProxy::from_handler(&keymap_obj))
+		let keymap_obj = KeymapProxy::new_service(KeymapToken {
+			id: hash,
+			map: self.map.clone(),
+		})
+		.map_err(|err| {
+			tracing::error!("failed to create keymap node: {err}");
+			KeymapExchangeError::InvalidKeymap
+		})?;
+		// self.map.insert(
+		// 	hash,
+		// 	(file, bytes_with_nul.len() as u32, keymap_obj.downgrade()),
+		// );
+		Ok(keymap_obj)
 	}
 }
 impl KeymapStoreHandler for KeymapStore {
