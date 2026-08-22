@@ -41,11 +41,6 @@ use bevy::{
 	winit::{WakeUp, WinitPlugin},
 };
 use bevy_dmabuf::import::DmabufImportPlugin;
-// FIX ORDER: 1
-// use bevy_int::{
-// entity_handle::EntityHandlePlugin, flatscreen_cam::FlatscreenCamPlugin,
-// spectator_cam::SpectatorCameraPlugin,
-// };
 use bevy_int::{flatscreen_cam::FlatscreenCamPlugin, spectator_cam::SpectatorCameraPlugin};
 use bevy_mod_openxr::{
 	action_set_attaching::OxrActionAttachingPlugin,
@@ -67,18 +62,8 @@ use bevy_mod_xr::{
 use clap::Parser;
 use directories::ProjectDirs;
 use nodes::spatial::SpatialNodePlugin;
-// FIX ORDER: 5
-// use objects::{
-// hmd::HmdPlugin,
-// input::{
-// mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
-// oxr_hand::HandPlugin,
-// },
-// stage::StagePlugin,
-// // 	play_space::PlaySpacePlugin,
-// };
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
-use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
+use stardust_xr_protocol::types::Timestamp;
 use std::{
 	ops::DerefMut as _,
 	path::PathBuf,
@@ -91,23 +76,6 @@ use tracing::{Subscriber, error, info, metadata::LevelFilter};
 use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry::LookupSpan};
 use zbus::Connection;
 
-// FIX ORDER: 7
-// use crate::{
-// bevy_int::tracking_offset::TrackingOffsetPlugin,
-// core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
-// keymap_store::KeymapStore,
-// nodes::{
-// audio::AudioNodePlugin,
-// camera::{CameraInterface, CameraNodePlugin},
-// drawable::{
-// dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin,
-// text::TextNodePlugin,
-// },
-// fields::FieldDebugGizmoPlugin,
-// },
-// openxr_helpers::ConvertTimespec,
-// session::{launch_start, save_session},
-// };
 use crate::{
 	bevy_int::tracking_offset::TrackingOffsetPlugin, core::vulkano_data::VulkanoPlugin,
 	nodes::drawable::sky::SkyPlugin, openxr_helpers::ConvertTimespec,
