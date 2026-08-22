@@ -23,10 +23,10 @@ use bevy_dmabuf::{
 };
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
-use gluon::{Handler, ObjectRef};
+use gluon::{Handler, RefExt};
 use stardust_xr_protocol::dmatex::{
 	DmatexFormat, DmatexFormatInfo, DmatexImportError, DmatexInterfaceHandler, DmatexPlanes,
-	DmatexRef, DmatexRefHandler, DmatexSize,
+	DmatexRef, DmatexRefHandler, DmatexRefLocal, DmatexSize,
 };
 use stardust_xr_server_foundation::error::Result;
 use timeline_syncobj::{render_node::DrmRenderNode, timeline_syncobj::TimelineSyncObj};
@@ -39,7 +39,6 @@ use vulkano::{
 };
 
 use crate::{
-	PION,
 	bevy_int::bevy_channel::{BevyChannel, BevyChannelReader},
 	core::vulkano_data::VULKANO_CONTEXT,
 	impl_proxy, interface,
@@ -67,7 +66,7 @@ impl Dmatex {
 		array_layers: Option<u32>,
 		planes: DmatexPlanes,
 		timeline_syncobj_fd: OwnedFd,
-	) -> Result<ObjectRef<Self>, DmatexImportError> {
+	) -> Result<DmatexRefLocal<Self>, DmatexImportError> {
 		let DmatexSize::Size2D { size } = size else {
 			return Err(DmatexImportError::InvalidSize);
 		};
@@ -152,15 +151,14 @@ impl Dmatex {
 		else {
 			return Err(DmatexImportError::InvalidTimelineFd);
 		};
-		let tex = PION
-			.register_object(Self {
-				tex,
-				sync_obj,
-				bevy_image_handle: OnceLock::new(),
-				bevy_custom_view: OnceLock::new(),
-			})
-			.to_service();
-		NEW_DMATEXES.send(tex.handler_arc().clone());
+		let tex = DmatexRef::new_service(Self {
+			tex,
+			sync_obj,
+			bevy_image_handle: OnceLock::new(),
+			bevy_custom_view: OnceLock::new(),
+		})
+		.map_err(|_| DmatexImportError::InternalImportError)?;
+		NEW_DMATEXES.send(tex.handler().clone());
 		Ok(tex)
 	}
 	pub fn timeline_sync(&self) -> &TimelineSyncObj {
@@ -268,7 +266,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 			timeline_syncobj_fd,
 		)?;
 
-		Ok(DmatexRef::from_handler(&tex))
+		Ok(tex.into_proxy())
 	}
 
 	async fn enumerate_formats(

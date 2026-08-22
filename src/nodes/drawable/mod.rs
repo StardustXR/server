@@ -1,5 +1,4 @@
-// FIX ORDER: 1
-// pub mod dmatex;
+pub mod dmatex;
 // FIX ORDER: 2
 // pub mod lines;
 // FIX ORDER: 2
