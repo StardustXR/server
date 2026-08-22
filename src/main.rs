@@ -8,10 +8,8 @@ mod core;
 mod nodes;
 mod objects;
 mod openxr_helpers;
-// FIX ORDER: 3
 mod query;
-// FIX ORDER: 2
-// mod session;
+mod session;
 
 use bevy::{
 	MinimalPlugins,
@@ -76,7 +74,9 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry
 use zbus::Connection;
 
 use crate::{
-	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin}, core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin}, nodes::{
+	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin},
+	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
+	nodes::{
 		audio::AudioNodePlugin,
 		camera::{CameraInterface, CameraNodePlugin},
 		drawable::{
@@ -84,7 +84,14 @@ use crate::{
 			text::TextNodePlugin,
 		},
 		fields::FieldDebugGizmoPlugin,
-	}, objects::{hmd::HmdPlugin, input::{oxr_controller::ControllerPlugin, oxr_hand::HandPlugin}, stage::StagePlugin}, openxr_helpers::ConvertTimespec
+	},
+	objects::{
+		hmd::HmdPlugin,
+		input::{oxr_controller::ControllerPlugin, oxr_hand::HandPlugin},
+		stage::StagePlugin,
+	},
+	openxr_helpers::ConvertTimespec,
+	session::{launch_start, save_session},
 };
 
 #[cfg(feature = "mimalloc")]
@@ -243,28 +250,26 @@ async fn main() -> Result<AppExit, JoinError> {
 		move || bevy_loop(ready_notifier, project_dirs, cli_args, dbus_connection)
 	});
 	ready_notifier.notified().await;
-	// FIX ORDER: 2
-	// let mut startup_children = project_dirs
-	// .as_ref()
-	// .map(|project_dirs| launch_start(&cli_args, project_dirs))
-	// .unwrap_or_default();
+	let mut startup_children = project_dirs
+		.as_ref()
+		.map(|project_dirs| launch_start(&cli_args, project_dirs))
+		.unwrap_or_default();
 	let return_value = io_loop.await;
 	info!("Stopping...");
-	// FIX ORDER: 2
-	// if let Some(project_dirs) = project_dirs {
-	// save_session(&project_dirs).await;
-	// }
-	// for mut startup_child in startup_children.drain(..) {
-	// // TODO: somehow send SIGTERM instead, we really don't want to send SIGKILL, as that doesn't
-	// // allow for any cleanup
-	// // only SIGKILL after a while
-	// let _ = startup_child.kill();
-	// }
+	if let Some(project_dirs) = project_dirs {
+		save_session(&project_dirs).await;
+	}
+	for mut startup_child in startup_children.drain(..) {
+		// TODO: somehow send SIGTERM instead, we really don't want to send SIGKILL, as that doesn't
+		// allow for any cleanup
+		// only SIGKILL after a while
+		let _ = startup_child.kill();
+	}
 
 	// FIX ORDER: 7
 	// drop(keymap_store);
 	drop(cam_interface);
-	// drop(server_interface);
+	drop(server_interface);
 	info!("Cleanly shut down Stardust");
 	return_value
 }
@@ -364,19 +369,19 @@ fn bevy_loop(
 		let mut plugin = WinitPlugin::<WakeUp>::default();
 		plugin.run_on_any_thread = true;
 		plugins = plugins.add(plugin).disable::<ScheduleRunnerPlugin>();
-		// FIX ORDER: 5
-		// plugins = if args.spectator {
-		// plugins.add(SpectatorCameraPlugin)
-		// } else if args.force_flatscreen {
-		// plugins
-		// .add(bevy::sprite::SpritePlugin)
-		// .add(bevy::text::TextPlugin)
-		// .add(bevy::ui::UiPlugin::default())
-		// .add(FlatscreenCamPlugin)
-		// .add(FlatscreenInputPlugin)
-		// } else {
-		// plugins
-		// };
+		plugins = if args.spectator {
+			plugins.add(SpectatorCameraPlugin)
+		} else if args.force_flatscreen {
+			plugins
+				.add(bevy::sprite::SpritePlugin)
+				.add(bevy::text::TextPlugin)
+				.add(bevy::ui::UiPlugin::default())
+				.add(FlatscreenCamPlugin)
+			// FIX ORDER: 5
+			// 	.add(FlatscreenInputPlugin)
+		} else {
+			plugins
+		};
 		plugins = if args.spectator {
 			plugins.add(SpectatorCameraPlugin)
 		} else if args.force_flatscreen {
@@ -504,8 +509,7 @@ fn bevy_loop(
 		app.add_plugins(TrackingOffsetPlugin);
 	}
 
-	// FIX ORDER: 2
-	// // feature plugins
+	// feature plugins
 	app.add_plugins(FieldDebugGizmoPlugin);
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
