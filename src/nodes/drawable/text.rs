@@ -1,5 +1,5 @@
 use crate::{
-	BevyMaterial, PION,
+	BevyMaterial,
 	bevy_int::{
 		bevy_channel::{BevyChannel, BevyChannelReader},
 		color::ColorConvert,
@@ -19,7 +19,7 @@ use bevy_mesh_text_3d::{
 	VerticalAnchorPoint, generate_meshes,
 };
 use core::f32;
-use gluon::Handler;
+use gluon::{Handler, RefExt};
 use parking_lot::Mutex;
 use stardust_xr_protocol::{spatial::Spatial, text::Text as TextProxy};
 use stardust_xr_protocol::{
@@ -204,7 +204,7 @@ impl TextObject {
 		text: String,
 		style: TextStyle,
 		prefixes: &[PathBuf],
-	) -> gluon::Object<TextObject> {
+	) -> TextProxy {
 		let text = Arc::new(Text {
 			spatial,
 			font_path: style.font.as_ref().and_then(|res| {
@@ -217,7 +217,10 @@ impl TextObject {
 		});
 		_ = SPAWN_TEXT.send(text.clone());
 
-		PION.register_object(TextObject(text))
+		// TODO: remove this unwrap
+		TextProxy::new_service(TextObject(text))
+			.unwrap()
+			.into_proxy()
 	}
 }
 impl TextHandler for TextObject {
@@ -242,12 +245,7 @@ impl TextInterfaceHandler for TextInterface {
 	) -> Result<TextProxy, ResourceLoadError> {
 		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
 		info!(?text, "creating text");
-		let text = TextObject::new(
-			spatial.handler_arc().clone(),
-			text,
-			style,
-			self.base_prefixes(),
-		);
-		Ok(TextProxy::from_handler(&text.to_service()))
+		let text = TextObject::new(spatial, text, style, self.base_prefixes());
+		Ok(text)
 	}
 }

@@ -1,6 +1,6 @@
 // FIX ORDER: 6
 // pub mod client;
-// FIX ORDER: 2
+// FIX ORDER: 6
 // pub mod client_state;
 #[cfg(test)]
 pub mod microbench;

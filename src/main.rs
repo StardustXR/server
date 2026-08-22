@@ -80,7 +80,7 @@ use crate::{
 	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin},
 	core::vulkano_data::VulkanoPlugin,
 	nodes::drawable::{
-		dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin,
+		dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin, text::TextNodePlugin,
 	},
 	openxr_helpers::ConvertTimespec,
 };
@@ -477,7 +477,7 @@ fn bevy_loop(
 		SpatialNodePlugin,
 		// FIX ORDER: 3
 		ModelNodePlugin,
-		// 	TextNodePlugin,
+		TextNodePlugin,
 		LinesNodePlugin,
 		// 	AudioNodePlugin,
 		// 	CameraNodePlugin,
