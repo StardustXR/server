@@ -2,7 +2,7 @@ use crate::bevy_int::entity_handle::EntityHandle;
 use crate::core::error::Result;
 use crate::core::registry::Registry;
 use crate::nodes::ProxyExt;
-use crate::{PION, impl_proxy, interface};
+use crate::{impl_proxy, interface};
 use bevy::ecs::entity::EntityHashMap;
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;

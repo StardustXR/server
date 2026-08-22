@@ -4,7 +4,7 @@ use crate::{
 	query::{QueryInterface, spatial_query::SpatialQueryInterface},
 };
 use glam::{Mat4, Vec3};
-use gluon::{Context, Handler, Object};
+use gluon::{Context, Handler};
 use stardust_xr_protocol::{
 	field::{
 		Field as FieldProxy, FieldHandler, FieldRef as FieldRefProxy, FieldSample, RayMarchResult,

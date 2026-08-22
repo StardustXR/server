@@ -23,7 +23,7 @@ use stardust_xr_protocol::{
 use stardust_xr_server_foundation::deduped_string::DedupedStr;
 
 use crate::{
-	PION, interface,
+	interface,
 	nodes::{
 		ProxyExt as _,
 		fields::{Field, Ray, ShapeChangedCallback},

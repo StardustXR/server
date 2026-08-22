@@ -1,10 +1,10 @@
 use crate::{
-	PION, interface,
+	interface,
 	nodes::{ProxyExt, fields::FieldObject, spatial::SpatialObject},
 	query::spatial_query::AnyQuery,
 };
 use bevy::prelude::Deref;
-use gluon::{Handler, Object, ObjectOrRef, ObjectRef};
+use gluon::{Handler, Node};
 use stardust_xr_protocol::query::{
 	QueryInterfaceHandler, QueryableError, QueryableInterfaceGuard, QueryableInterfaceGuardHandler,
 	QueryableObject, QueryableObjectHandler, QueryableObjectRef, QueryableObjectRefHandler,

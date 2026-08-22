@@ -6,7 +6,7 @@ use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
 use crate::objects::{DebugWrapper, Tracked};
 use crate::openxr_helpers::ConvertTimespec;
 use crate::query::spatial_query::SpatialQueryInterface;
-use crate::{BevyMaterial, PION, PreFrameWait, get_time};
+use crate::{BevyMaterial, PreFrameWait, get_time};
 use bevy::pbr::ExtendedMaterial;
 use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;

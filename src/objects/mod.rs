@@ -24,7 +24,7 @@ use tokio::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 use tracing::{error, info};
 
 use crate::{
-	PION, STARDUST_INSTANCE,
+	STARDUST_INSTANCE,
 	nodes::{ProxyExt, spatial::Spatial},
 };
 
@@ -88,7 +88,7 @@ impl<T: Debug + Send + Sync + 'static> Tracked<T> {
 	}
 	pub fn tracked_blocking(&self, tracked: bool) {
 		self.inner.tracked.store(tracked, Ordering::Relaxed);
-        // TODO: move this to a task or something to not block a core thread?
+		// TODO: move this to a task or something to not block a core thread?
 		let receivers = self.inner.receivers.blocking_read();
 		for recv in receivers.iter() {
 			_ = recv.tracked(tracked);

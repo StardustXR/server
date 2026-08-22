@@ -32,7 +32,7 @@ use stardust_xr_protocol::{
 };
 use stardust_xr_server_foundation::resource::get_resource_file;
 
-use crate::{PION, interface};
+use crate::interface;
 
 pub struct SkyPlugin;
 

@@ -1,7 +1,7 @@
 use crate::core::registry::Registry;
 use crate::nodes::ProxyExt;
 use crate::nodes::spatial::{Spatial, SpatialObject};
-use crate::{DbusConnection, PION, impl_proxy, interface};
+use crate::{DbusConnection, impl_proxy, interface};
 use bevy::app::{Plugin, Update};
 use bevy::asset::Assets;
 use bevy::color::Color;

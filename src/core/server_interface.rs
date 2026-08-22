@@ -19,13 +19,14 @@ impl ServerInterfaceHandler for ServerInterface {
 		startup_token: Option<String>,
 		resource_prefixes: Vec<String>,
 	) -> (Server, SpatialRef) {
-		let (obj, state) = ConnectedClient::from_connection(
+		let (server, state) = ConnectedClient::from_connection(
 			client,
 			startup_token,
 			resource_prefixes.into_iter().map(PathBuf::from).collect(),
-		);
+		)
+		.unwrap();
 
-		(Server::from_handler(&obj), state)
+		(server, state)
 	}
 
 	async fn startup_spatial(

@@ -1,5 +1,5 @@
 use crate::{
-	DbusConnection, PION, PreFrameWait, get_time,
+	DbusConnection, PreFrameWait, get_time,
 	nodes::{
 		ProxyExt,
 		drawable::model::{Model, ModelPart},
