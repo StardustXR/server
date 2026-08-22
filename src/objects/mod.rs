@@ -28,12 +28,10 @@ use crate::{
 	nodes::{ProxyExt, spatial::Spatial},
 };
 
-// FIX ORDER: 3
-// pub mod hmd;
+pub mod hmd;
 // FIX ORDER: 4
 // pub mod input;
-// FIX ORDER: 3
-// pub mod stage;
+pub mod stage;
 // pub mod play_space;
 
 #[derive(Debug)]

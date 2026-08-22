@@ -15,7 +15,7 @@ use bevy_mod_xr::{
 	session::{XrPreDestroySession, XrSessionCreated, session_running},
 	spaces::{XrPrimaryReferenceSpace, XrSpace},
 };
-use gluon::ObjectRef;
+use gluon::LocalRef;
 use openxr::{Posef, ReferenceSpaceType, SpaceLocationFlags};
 use stardust_xr_protocol::spatial::{Spatial, SpatialRef};
 use stardust_xr_protocol::types::Timestamp;
@@ -37,7 +37,7 @@ fn setup(connection: Res<DbusConnection>, mut cmds: Commands) {
 	let spatial = SpatialObject::new(Some(&base_spatial), Mat4::IDENTITY);
 	let hmd = Hmd {
 		tracked: Tracked::new(
-			SpatialRef::from_handler(spatial.get_ref()),
+			spatial.get_ref().proxy().clone(),
 			|data, spatial, time| (None, false),
 			false,
 			"stardust-hmd",
@@ -53,9 +53,9 @@ fn setup(connection: Res<DbusConnection>, mut cmds: Commands) {
 fn dyn_tracking(
 	DebugWrapper((base_space, base_spatial, view_space, spatial)): &DebugWrapper<(
 		Option<openxr::Space>,
-		ObjectRef<SpatialObject>,
+		LocalRef<Spatial, SpatialObject>,
 		Option<openxr::Space>,
-		ObjectRef<SpatialObject>,
+		LocalRef<Spatial, SpatialObject>,
 	)>,
 	reference_spatial: &Spatial,
 	time: Timestamp,
@@ -128,14 +128,14 @@ fn destroy_view_space(session: Res<OxrSession>, mut cmds: Commands, mut hmd: Res
 
 #[derive(Resource)]
 struct Hmd {
-	spatial: gluon::ObjectRef<SpatialObject>,
-	base_spatial: gluon::ObjectRef<SpatialObject>,
+	spatial: gluon::LocalRef<Spatial, SpatialObject>,
+	base_spatial: gluon::LocalRef<Spatial, SpatialObject>,
 	tracked: Tracked<
 		DebugWrapper<(
 			Option<openxr::Space>,
-			ObjectRef<SpatialObject>,
+			LocalRef<Spatial, SpatialObject>,
 			Option<openxr::Space>,
-			ObjectRef<SpatialObject>,
+			LocalRef<Spatial, SpatialObject>,
 		)>,
 	>,
 }
