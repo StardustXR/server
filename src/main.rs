@@ -63,7 +63,7 @@ use clap::Parser;
 use directories::ProjectDirs;
 use nodes::spatial::SpatialNodePlugin;
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
-use stardust_xr_protocol::types::Timestamp;
+use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
 use std::{
 	ops::DerefMut as _,
 	path::PathBuf,
@@ -78,7 +78,7 @@ use zbus::Connection;
 
 use crate::{
 	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin},
-	core::vulkano_data::VulkanoPlugin,
+	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
 	nodes::{
 		audio::AudioNodePlugin,
 		camera::{CameraInterface, CameraNodePlugin},
@@ -205,16 +205,15 @@ async fn main() -> Result<AppExit, JoinError> {
 	let instance = stardust_xr_protocol::dir::find_free_instace()
 		.expect("Unable to find a free stardust instance");
 	STARDUST_INSTANCE.set(instance.clone()).unwrap();
-	// FIX ORDER: 7
-	// let server_interface = ServerInterface::expose(&instance).await;
-	// info!(
-	// pion_file_path = ?server_interface.pion_path.display(),
-	// "Stardust server pion file created"
-	// );
+	let server_interface = ServerInterface::expose(&instance).await;
+	info!(
+		file_path = ?server_interface.path().display(),
+		"Stardust server fs bind created"
+	);
 	let cam_interface = CameraInterface::expose(&instance).await;
 	info!(
-	    file_path = ?cam_interface.path().display(),
-	    "Stardust server camera fs bind created"
+		file_path = ?cam_interface.path().display(),
+		"Stardust server camera fs bind created"
 	);
 	// let keymap_store = KeymapStore::expose(&instance).expect("Could not expose the keymap store");
 	// info!(
@@ -596,15 +595,14 @@ fn xr_step(world: &mut World) {
 			Timestamp::now(),
 		)
 	};
-	// FIX ORDER: 6
-	// let frame_span = info_span!("frame-event").entered();
-	// for client in CLIENTS.get_valid_contents() {
-	// client.frame(FrameInfo {
-	// delta,
-	// predicted_display_time,
-	// });
-	// }
-	// drop(frame_span);
+	let frame_span = info_span!("frame-event").entered();
+	for client in CLIENTS.get_valid_contents() {
+		client.frame(FrameInfo {
+			delta,
+			predicted_display_time,
+		});
+	}
+	drop(frame_span);
 
 	let should_wait = world
 		.run_system_cached(should_run_frame_loop)

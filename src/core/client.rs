@@ -40,27 +40,6 @@ use tracing::info;
 
 pub static CLIENTS: Registry<ConnectedClient> = Registry::new();
 
-// static INTERNAL_CLIENT_MESSAGE_TIMES: LazyLock<(watch::Sender<Instant>, watch::Receiver<Instant>)> =
-// LazyLock::new(|| watch::channel(Instant::now()));
-// pub static INTERNAL_CLIENT: LazyLock<Arc<ConnectedClient>> = LazyLock::new(|| {
-// 	CLIENTS.add(ConnectedClient {
-// 		pid: None,
-// 		// env: None,
-// 		exe: None,
-//
-// 		disconnect_status: OnceLock::new(),
-//
-// 		id_counter: CounterU32::new(0),
-// 		base_resource_prefixes: Default::default(),
-// 		state: OnceLock::default(),
-// 		drop_notifs: Default::default(),
-// 		client: todo!(),
-// 	})
-// });
-// pub fn tick_internal_client() {
-// 	let _ = INTERNAL_CLIENT_MESSAGE_TIMES.0.send(Instant::now());
-// }
-
 // pub fn get_env(pid: RawPid) -> Result<FxHashMap<String, String>, std::io::Error> {
 // 	let env = fs::read_to_string(format!("/proc/{pid}/environ"))?;
 // 	Ok(FxHashMap::from_iter(
@@ -93,6 +72,11 @@ pub struct ConnectedClient {
 	query_interface: QueryInterfaceProxy,
 	spatial_query_interface: SpatialQueryInterfaceProxy,
 }
+macro_rules! new_service {
+	($type:ident, $args:expr) => {
+		$type::new_service($args)?.into_proxy()
+	};
+}
 impl ConnectedClient {
 	pub fn from_connection(
 		client: Client,
@@ -112,17 +96,17 @@ impl ConnectedClient {
 
 		let p = Arc::new(base_resource_prefixes);
 
-		let spatial_interface = SpatialInterfaceProxy::new_service(SpatialInterface::new(&p))?;
-		let field_interface = FieldInterfaceProxy::new_service(FieldInterface::new(&p))?;
-		let dmatex_interface = DmatexInterfaceProxy::new_service(DmatexInterface::new(&p))?;
-		let text_interface = TextInterfaceProxy::new_service(TextInterface::new(&p))?;
-		let model_interface = ModelInterfaceProxy::new_service(ModelInterface::new(&p))?;
-		let lines_interface = LinesInterfaceProxy::new_service(LinesInterface::new(&p))?;
-		let sky_interface = SkyInterfaceProxy::new_service(SkyInterface::new(&p))?;
-		let audio_interface = AudioInterfaceProxy::new_service(AudioInterface::new(&p))?;
-		let query_interface = QueryInterfaceProxy::new_service(QueryInterface::new(&p))?;
+		let spatial_interface = new_service!(SpatialInterfaceProxy, SpatialInterface::new(&p));
+		let field_interface = new_service!(FieldInterfaceProxy, FieldInterface::new(&p));
+		let dmatex_interface = new_service!(DmatexInterfaceProxy, DmatexInterface::new(&p));
+		let text_interface = new_service!(TextInterfaceProxy, TextInterface::new(&p));
+		let model_interface = new_service!(ModelInterfaceProxy, ModelInterface::new(&p));
+		let lines_interface = new_service!(LinesInterfaceProxy, LinesInterface::new(&p));
+		let sky_interface = new_service!(SkyInterfaceProxy, SkyInterface::new(&p));
+		let audio_interface = new_service!(AudioInterfaceProxy, AudioInterface::new(&p));
+		let query_interface = new_service!(QueryInterfaceProxy, QueryInterface::new(&p));
 		let spatial_query_interface =
-			SpatialQueryInterfaceProxy::new_service(SpatialQueryInterface::new(&p))?;
+			new_service!(SpatialQueryInterfaceProxy, SpatialQueryInterface::new(&p));
 
 		let server_handler = Arc::new(ConnectedClient {
 			// env,
@@ -148,7 +132,7 @@ impl ConnectedClient {
 		CLIENTS.add_raw(&server_handler);
 		let server = Server::new_service(server_handler)?;
 
-		Ok((server, state.apply()))
+		Ok((server.into_proxy(), state.apply()))
 	}
 
 	pub fn frame(&self, info: FrameInfo) {

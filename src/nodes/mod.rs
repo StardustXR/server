@@ -17,10 +17,10 @@ macro_rules! interface {
 		impl $type {
 			pub fn new(
 				base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>,
-			) -> Result<(gluon::Node<$type>, gluon::Ref), gluon::NodeError> {
-				gluon::Node::new($type {
+			) -> Self {
+				$type {
 					base_resource_prefixes: base_resource_prefixes.clone(),
-				})
+				}
 			}
 			#[allow(unused)]
 			fn base_prefixes(&self) -> &[std::path::PathBuf] {

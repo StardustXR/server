@@ -99,7 +99,7 @@ impl ClientStateParsed {
 		// 		})
 		// 		.collect(),
 		// }
-		SpatialRef::from_handler(root)
+		root.proxy().clone()
 	}
 	pub fn launch_command(self) -> Option<Command> {
 		None
