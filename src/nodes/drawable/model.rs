@@ -1,5 +1,5 @@
 use crate::{
-	BevyMaterial, PION,
+	BevyMaterial,
 	bevy_int::{
 		bevy_channel::{BevyChannel, BevyChannelReader},
 		color::ColorConvert as _,
@@ -28,7 +28,7 @@ use bevy::{
 	},
 };
 use color_eyre::eyre::eyre;
-use gluon::{Handler, ObjectRef};
+use gluon::{Handler, RefExt};
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr_protocol::{
@@ -44,6 +44,7 @@ use std::{
 	collections::{HashMap, VecDeque},
 	ffi::OsStr,
 	hash::{Hash, Hasher},
+	ops::Deref,
 	path::PathBuf,
 	str::FromStr,
 	sync::{
@@ -273,22 +274,31 @@ fn gen_model_parts(
 						.unwrap_or_else(|| name.to_string());
 					let parent_spatial = parent
 						.as_ref()
-						.map(|p| p.spatial.clone())
+						.map(|p| p.spatial_handler.clone())
 						.unwrap_or_else(|| model.spatial.clone());
 					let spatial =
 						SpatialObject::new(Some(&**parent_spatial), transform.compute_matrix());
-					let model_part = Arc::new(PION.register_object(ModelPart {
-						entity: OnceLock::new(),
-						mesh_entity: OnceLock::new(),
-						path,
-						spatial: spatial.clone(),
-						pending_material_parameters: Mutex::default(),
-						holdout: AtomicBool::new(false),
-						bounds: OnceLock::new(),
-						pending_dmatexes: Mutex::default(),
-						textures: Mutex::default(),
-						bounding_calc: OnceLock::new(),
-					}));
+					let model_part = Arc::new(
+						ModelPartProxy::new_node(ModelPart {
+							entity: OnceLock::new(),
+							mesh_entity: OnceLock::new(),
+							path,
+							spatial: spatial.proxy().clone(),
+							spatial_handler: spatial.handler().clone(),
+							pending_material_parameters: Mutex::default(),
+							holdout: AtomicBool::new(false),
+							bounds: OnceLock::new(),
+							pending_dmatexes: Mutex::default(),
+							textures: Mutex::default(),
+							bounding_calc: OnceLock::new(),
+						})
+						.map(|(node, node_ref)| ModelPartNode {
+							node,
+							proxy: node_ref.into_proxy(),
+						})
+						// TODO: remove this somehow
+						.expect("failed to create ModelPart node"),
+					);
 					let aabb = Aabb::enclosing(
 						children
 							.iter()
@@ -340,14 +350,14 @@ fn gen_model_parts(
 fn gen_path(
 	current_entity: Entity,
 	part_query: &Query<(&Name, Option<&Children>, &Transform), Without<Mesh3d>>,
-	parent: Option<Arc<gluon::Object<ModelPart>>>,
+	parent: Option<Arc<ModelPartNode>>,
 	func: &mut dyn FnMut(
 		Entity,
 		&Name,
 		&Transform,
-		Option<Arc<gluon::Object<ModelPart>>>,
+		Option<Arc<ModelPartNode>>,
 		Option<&Children>,
-	) -> Option<Arc<gluon::Object<ModelPart>>>,
+	) -> Option<Arc<ModelPartNode>>,
 ) {
 	let Ok((name, children, transform)) = part_query.get(current_entity) else {
 		return;
@@ -585,13 +595,26 @@ impl FromStr for TextureSlot {
 	}
 }
 
+#[derive(Debug)]
+struct ModelPartNode {
+	node: gluon::Node<ModelPart>,
+	proxy: ModelPartProxy,
+}
+impl Deref for ModelPartNode {
+	type Target = gluon::Node<ModelPart>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.node
+	}
+}
 #[derive(Debug, Handler)]
 pub struct ModelPart {
 	entity: OnceLock<EntityHandle>,
 	// no handle needed, despawned recusively
 	mesh_entity: OnceLock<Option<Entity>>,
 	path: String,
-	spatial: gluon::ObjectRef<SpatialObject>,
+	spatial: Spatial,
+	spatial_handler: Arc<SpatialObject>,
 	pending_material_parameters: Mutex<FxHashMap<String, MaterialParameter>>,
 	pending_dmatexes: Mutex<
 		HashMap<
@@ -653,7 +676,7 @@ impl ModelPart {
 				let release = tex.signal_on_drop(release_point);
 				let sema = tex.get_acquire_semaphore(acquire_point);
 				ACQUIRE_SEMAPHORES.lock().push(sema);
-				tx.send((release, tex.handler_arc().clone())).unwrap();
+				tx.send((release, tex.clone())).unwrap();
 			});
 			self.pending_dmatexes
 				.lock()
@@ -675,7 +698,7 @@ impl ModelPartHandler for ModelPart {
 	}
 
 	async fn get_spatial(&self, _ctx: gluon::Context) -> Spatial {
-		Spatial::from_handler(&self.spatial)
+		self.spatial.clone()
 	}
 
 	async fn set_material_parameter(
@@ -727,19 +750,18 @@ impl MaterialRegistry {
 
 #[derive(Debug, Handler)]
 pub struct Model {
-	spatial: gluon::ObjectRef<SpatialObject>,
-	_resource_id: Resource,
+	spatial: Arc<SpatialObject>,
 	bevy_scene_entity: OnceLock<EntityHandle>,
-	parts: OnceLock<Vec<Arc<gluon::Object<ModelPart>>>>,
+	parts: OnceLock<Vec<Arc<ModelPartNode>>>,
 	resource_prefixes: Arc<Vec<PathBuf>>,
 	setup_complete_tx: Mutex<Option<oneshot::Sender<()>>>,
 }
 impl Model {
 	pub async fn new(
-		spatial: gluon::ObjectRef<SpatialObject>,
+		spatial: Arc<SpatialObject>,
 		resource_id: Resource,
 		base_prefixes: Arc<Vec<PathBuf>>,
-	) -> Result<ObjectRef<Model>> {
+	) -> Result<ModelProxy> {
 		let pending_model_path = get_resource_file(
 			&resource_id,
 			base_prefixes.iter(),
@@ -748,15 +770,15 @@ impl Model {
 		.ok_or_else(|| eyre!("Resource not found"))?;
 
 		let (setup_complete_tx, setup_complete_rx) = oneshot::channel();
-		let model = PION.register_object(Model {
+		let model_arc = Arc::new(Model {
 			spatial,
-			_resource_id: resource_id,
 			bevy_scene_entity: OnceLock::new(),
 			parts: OnceLock::new(),
 			resource_prefixes: base_prefixes,
 			setup_complete_tx: Mutex::new(Some(setup_complete_tx)),
 		});
-		let model_arc = model.handler_arc().clone();
+		let model = ModelProxy::new_service(model_arc.clone())
+			.map_err(|_| eyre!("failed to create Model node"))?;
 		LOAD_MODEL
 			.send((model_arc.clone(), pending_model_path))
 			.unwrap();
@@ -765,7 +787,7 @@ impl Model {
 			.await
 			.map_err(|_| eyre!("model setup cancelled before parts were generated"))?;
 
-		Ok(model.to_service())
+		Ok(model.into_proxy())
 	}
 }
 impl ModelHandler for Model {
@@ -774,7 +796,7 @@ impl ModelHandler for Model {
 			parts
 				.iter()
 				.find(|p| p.path == path)
-				.map(|p| ModelPartProxy::from_handler(&**p))
+				.map(|p| p.proxy.clone())
 		} else {
 			error!(
 				"somehow called get_part before model parts were initialized, should be unreachable"
@@ -785,10 +807,7 @@ impl ModelHandler for Model {
 
 	async fn enumerate_parts(&self, _ctx: gluon::Context) -> Vec<ModelPartProxy> {
 		if let Some(parts) = self.parts.get() {
-			parts
-				.iter()
-				.map(|p| ModelPartProxy::from_handler(&**p))
-				.collect()
+			parts.iter().map(|p| p.proxy.clone()).collect()
 		} else {
 			error!(
 				"somehow called enumerate_parts before model parts were initialized, should be unreachable"
@@ -821,7 +840,7 @@ impl ModelInterfaceHandler for ModelInterface {
 					return;
 				};
 
-				if let Err(err) = reply.send(Ok(ModelProxy::from_handler(&model))) {
+				if let Err(err) = reply.send(Ok(model)) {
 					tracing::warn!(?err, "failed to send load_model reply");
 				}
 			});

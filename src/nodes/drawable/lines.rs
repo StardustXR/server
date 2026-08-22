@@ -1,5 +1,5 @@
 use crate::{
-	BevyMaterial, PION,
+	BevyMaterial,
 	bevy_int::{color::ColorConvert, entity_handle::EntityHandle},
 	core::{error::Result, registry::Registry},
 	interface,
@@ -20,7 +20,7 @@ use bevy::{
 	},
 };
 use glam::Vec3;
-use gluon::Handler;
+use gluon::{Handler, LocalRef, RefExt};
 use parking_lot::Mutex;
 use stardust_xr_protocol::lines::{Line, LinePoint, LinesHandler, LinesInterfaceHandler};
 use stardust_xr_protocol::{lines::Lines as LinesProxy, types::CreateError};
@@ -364,7 +364,7 @@ pub struct Lines {
 	setup_complete: Notify,
 }
 impl Lines {
-	pub fn new(spatial: Arc<SpatialObject>, lines: Vec<Line>) -> gluon::ObjectRef<Lines> {
+	pub fn new(spatial: Arc<SpatialObject>, lines: Vec<Line>) -> LocalRef<LinesProxy, Lines> {
 		let lines = Arc::new_cyclic(|weak: &Weak<Lines>| {
 			let weak = weak.clone();
 			let bounding_calc = spatial.custom_bounding_box(move || {
@@ -385,11 +385,12 @@ impl Lines {
 			}
 		});
 
-		let lines = PION.register_object::<Self>(lines);
-		let lines_arc = lines.handler_arc().clone();
+        // TODO: get rid of this unwrap
+		let lines = LinesProxy::new_service(lines).unwrap();
+		let lines_arc = lines.handler().clone();
 		LINES_REGISTRY.add_raw(&lines_arc);
 
-		lines.to_service()
+		lines
 	}
 }
 impl LinesHandler for Lines {
@@ -412,9 +413,9 @@ impl LinesInterfaceHandler for LinesInterface {
 		lines: Vec<Line>,
 	) -> Result<LinesProxy, CreateError> {
 		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
-		let lines = Lines::new(spatial.handler_arc().clone(), lines);
+		let lines = Lines::new(spatial.clone(), lines);
 		tracing::info!("creating lines node");
 		lines.setup_complete.notified().await;
-		Ok(LinesProxy::from_handler(&lines))
+		Ok(lines.into_proxy())
 	}
 }

@@ -79,7 +79,9 @@ use zbus::Connection;
 use crate::{
 	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin},
 	core::vulkano_data::VulkanoPlugin,
-	nodes::drawable::{dmatex::DmatexPlugin, sky::SkyPlugin},
+	nodes::drawable::{
+		dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin,
+	},
 	openxr_helpers::ConvertTimespec,
 };
 
@@ -474,9 +476,9 @@ fn bevy_loop(
 	app.add_plugins((
 		SpatialNodePlugin,
 		// FIX ORDER: 3
-		// 	ModelNodePlugin,
+		ModelNodePlugin,
 		// 	TextNodePlugin,
-		// 	LinesNodePlugin,
+		LinesNodePlugin,
 		// 	AudioNodePlugin,
 		// 	CameraNodePlugin,
 		// not really a node ig? at least for now
