@@ -12,8 +12,8 @@ use gluon::{Handler, RefExt};
 use parking_lot::Mutex;
 use stardust_xr_protocol::spatial::{
 	BoundingBox, CreatedSpatial, PartialTransform, Spatial as SpatialProxy, SpatialHandler,
-	SpatialInterfaceHandler, SpatialRef as SpatialRefProxy, SpatialRefHandler, SpatialRefOpError,
-	Transform,
+	SpatialInterfaceHandler, SpatialLocal, SpatialRef as SpatialRefProxy, SpatialRefHandler,
+	SpatialRefLocal, SpatialRefOpError, Transform,
 };
 use stardust_xr_protocol::types::CreateError;
 use stardust_xr_server_foundation::bail;
@@ -199,10 +199,10 @@ impl Debug for Spatial {
 pub struct SpatialObject {
 	#[deref]
 	handler: Arc<Spatial>,
-	spatial_ref: SpatialRefProxy,
+	spatial_ref: SpatialRefLocal<SpatialRef>,
 }
 impl SpatialObject {
-	pub fn new(parent: Option<&Arc<Spatial>>, transform: Mat4) -> SpatialProxy {
+	pub fn new(parent: Option<&Arc<Spatial>>, transform: Mat4) -> SpatialLocal<SpatialObject> {
 		let handler = Arc::new(Spatial {
 			entity: Mutex::new(None),
 			parent: Mutex::new(parent.cloned()),
@@ -219,16 +219,15 @@ impl SpatialObject {
 			data: handler.clone(),
 		})
 		.unwrap();
-		let (spatial_object, spatial_object_ref) = SpatialProxy::new_node(SpatialObject {
+		let spatial = SpatialProxy::new_service(SpatialObject {
 			handler,
 			spatial_ref,
 		})
 		.unwrap();
-		spatial_object.mark_dirty();
-		spatial_object.to_service();
-		spatial_object_ref
+		spatial.handler().mark_dirty();
+		spatial
 	}
-	pub fn get_ref(&self) -> &SpatialRefProxy {
+	pub fn get_ref(&self) -> &SpatialRefLocal<SpatialRef> {
 		&self.spatial_ref
 	}
 	pub fn spatial_arc(&self) -> &Arc<Spatial> {
@@ -477,7 +476,7 @@ static UPDATED_SPATIALS_NODES: Mutex<EntityHashMap<(Option<BevyTransform>, Optio
 	Mutex::new(EntityHashMap::new());
 impl SpatialHandler for SpatialObject {
 	async fn spatial_ref(&self, _ctx: gluon::Context) -> SpatialRefProxy {
-		self.spatial_ref.clone()
+		self.spatial_ref.proxy().clone()
 	}
 
 	async fn get_local_bounding_box(&self, _ctx: gluon::Context) -> BoundingBox {
@@ -597,12 +596,8 @@ impl SpatialInterfaceHandler for SpatialInterface {
 		let parent = parent.owned().ok_or(CreateError::InvalidRef)?;
 		let spatial = SpatialObject::new(Some(&parent.data), transform.to_mat4());
 		Ok(CreatedSpatial {
-			spatial_ref: spatial
-				.local_handler::<SpatialObject>()
-				.unwrap()
-				.spatial_ref
-				.clone(),
-			spatial,
+			spatial_ref: spatial.handler().spatial_ref.proxy().clone(),
+			spatial: spatial.into_proxy(),
 		})
 	}
 

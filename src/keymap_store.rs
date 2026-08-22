@@ -20,8 +20,8 @@ use rustix::{
 	mm::{self, MapFlags, ProtFlags, mmap},
 };
 use stardust_xr_protocol::keymap::{
-	Keymap as KeymapProxy, KeymapExchangeError, KeymapHandler, KeymapStore as KeymapStoreProxy,
-	KeymapStoreHandler, XkbcommonKeymapFd,
+	Keymap as KeymapProxy, KeymapExchangeError, KeymapHandler, KeymapLocal,
+	KeymapStore as KeymapStoreProxy, KeymapStoreHandler, XkbcommonKeymapFd,
 };
 use xkbcommon_rs::{
 	Context, Keymap, KeymapFormat, xkb_context::ContextFlags, xkb_keymap::CompileFlags,
@@ -36,7 +36,7 @@ use crate::{impl_proxy, nodes::ProxyExt};
 struct KeymapEntry {
 	file: File,
 	size: u32,
-	proxy: KeymapProxy,
+	proxy: KeymapLocal<KeymapToken>,
 	/// The proxy's socket inode, for asking `/proc` whether anyone else still holds it.
 	/// `None` if the `fstat` failed, which makes this entry permanently un-prunable
 	/// rather than wrongly collectable.
@@ -91,13 +91,16 @@ impl KeymapStore {
 					instance
 				)
 			});
-		let (node, proxy) = KeymapStoreProxy::new_node(KeymapStore {
+		let (node, keymap_store) = KeymapStoreProxy::new_node(KeymapStore {
 			map: DashMap::new(),
 			hasher: RandomState::new(),
 			pion_path: pion_path.clone(),
 		})
 		.map_err(std::io::Error::other)?;
-		let binding = proxy.bind(&pion_path).map_err(std::io::Error::other)?;
+		let binding = keymap_store
+			.proxy()
+			.bind(&pion_path)
+			.map_err(std::io::Error::other)?;
 		_ = KEYMAP_STORE.set(node.handler().clone());
 		Ok(ExposedKeymapStore {
 			node,
@@ -130,7 +133,7 @@ impl KeymapStore {
 			// a client exchanging the same bytes as a server keymap gets the pinned one,
 			// and a server registration of bytes a client got here first pins those
 			entry.pinned |= pinned;
-			return Ok(entry.proxy.clone());
+			return Ok(entry.proxy.proxy().clone());
 		}
 
 		let memfd = memfd_create("keymap", MemfdFlags::CLOEXEC).map_err(|err| {

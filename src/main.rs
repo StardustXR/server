@@ -4,7 +4,7 @@
 #![allow(clippy::type_complexity)]
 mod bevy_int;
 mod core;
-mod keymap_store;
+// mod keymap_store;
 mod nodes;
 // FIX ORDER: 2
 // mod objects;
@@ -110,7 +110,7 @@ use zbus::Connection;
 // };
 use crate::{
 	bevy_int::tracking_offset::TrackingOffsetPlugin, core::vulkano_data::VulkanoPlugin,
-	keymap_store::KeymapStore, openxr_helpers::ConvertTimespec,
+	openxr_helpers::ConvertTimespec,
 };
 
 #[cfg(feature = "mimalloc")]
@@ -238,11 +238,11 @@ async fn main() -> Result<AppExit, JoinError> {
 	// pion_file_path = ?cam_interface.pion_path.display(),
 	// "Stardust server camera pion file created"
 	// );
-	let keymap_store = KeymapStore::expose(&instance).expect("Could not expose the keymap store");
-	info!(
-		pion_file_path = ?keymap_store.pion_path.display(),
-		"Stardust server keymap store pion file created"
-	);
+	// let keymap_store = KeymapStore::expose(&instance).expect("Could not expose the keymap store");
+	// info!(
+	// 	pion_file_path = ?keymap_store.pion_path.display(),
+	// 	"Stardust server keymap store pion file created"
+	// );
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");
 	if project_dirs.is_none() {

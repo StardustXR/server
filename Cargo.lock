@@ -2578,7 +2578,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2971,7 +2971,7 @@ dependencies = [
 [[package]]
 name = "gluon"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#1d10a6049c7865fd286b3cd9d8e830639a5ee5a4"
+source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#2a8eac99991828bb8fc4fc4988bf4374d8a162b9"
 dependencies = [
  "bitflags 2.11.0",
  "gluon-derive",
@@ -2984,7 +2984,7 @@ dependencies = [
 [[package]]
 name = "gluon-codegen"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#1d10a6049c7865fd286b3cd9d8e830639a5ee5a4"
+source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#2a8eac99991828bb8fc4fc4988bf4374d8a162b9"
 dependencies = [
  "convert_case 0.11.0",
  "gluon",
@@ -2998,7 +2998,7 @@ dependencies = [
 [[package]]
 name = "gluon-derive"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#1d10a6049c7865fd286b3cd9d8e830639a5ee5a4"
+source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#2a8eac99991828bb8fc4fc4988bf4374d8a162b9"
 dependencies = [
  "quote",
  "syn 2.0.117",
@@ -3007,7 +3007,7 @@ dependencies = [
 [[package]]
 name = "gluon-parser"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#1d10a6049c7865fd286b3cd9d8e830639a5ee5a4"
+source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#2a8eac99991828bb8fc4fc4988bf4374d8a162b9"
 dependencies = [
  "ansi_term",
  "chumsky",
@@ -5221,7 +5221,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5234,7 +5234,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5582,6 +5582,7 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
+ "windows-sys 0.52.0",
  "windows-sys 0.59.0",
 ]
 
@@ -5608,7 +5609,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-protocol"
 version = "0.51.1"
-source = "git+https://github.com/StardustXR/core.git?branch=refactor%2Fstrongipc#772073f2b3d0380b72975f01c7d55703de1c7899"
+source = "git+https://github.com/StardustXR/core.git?branch=refactor%2Fstrongipc#a719b890c740070f651e6b94aff72559238a1ae2"
 dependencies = [
  "fnv",
  "glam",
@@ -5880,7 +5881,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6929,7 +6930,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
