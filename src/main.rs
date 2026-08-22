@@ -43,8 +43,8 @@ use bevy::{
 use bevy_dmabuf::import::DmabufImportPlugin;
 // FIX ORDER: 1
 // use bevy_int::{
-	// entity_handle::EntityHandlePlugin, flatscreen_cam::FlatscreenCamPlugin,
-	// spectator_cam::SpectatorCameraPlugin,
+// entity_handle::EntityHandlePlugin, flatscreen_cam::FlatscreenCamPlugin,
+// spectator_cam::SpectatorCameraPlugin,
 // };
 use bevy_int::{flatscreen_cam::FlatscreenCamPlugin, spectator_cam::SpectatorCameraPlugin};
 use bevy_mod_openxr::{
@@ -66,17 +66,16 @@ use bevy_mod_xr::{
 };
 use clap::Parser;
 use directories::ProjectDirs;
-// FIX ORDER: 1
-// use nodes::spatial::SpatialNodePlugin;
+use nodes::spatial::SpatialNodePlugin;
 // FIX ORDER: 5
 // use objects::{
-	// hmd::HmdPlugin,
-	// input::{
-		// mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
-		// oxr_hand::HandPlugin,
-	// },
-	// stage::StagePlugin,
-	// // 	play_space::PlaySpacePlugin,
+// hmd::HmdPlugin,
+// input::{
+// mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
+// oxr_hand::HandPlugin,
+// },
+// stage::StagePlugin,
+// // 	play_space::PlaySpacePlugin,
 // };
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
@@ -94,20 +93,20 @@ use zbus::Connection;
 
 // FIX ORDER: 7
 // use crate::{
-	// bevy_int::tracking_offset::TrackingOffsetPlugin,
-	// core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
-	// keymap_store::KeymapStore,
-	// nodes::{
-		// audio::AudioNodePlugin,
-		// camera::{CameraInterface, CameraNodePlugin},
-		// drawable::{
-			// dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin,
-			// text::TextNodePlugin,
-		// },
-		// fields::FieldDebugGizmoPlugin,
-	// },
-	// openxr_helpers::ConvertTimespec,
-	// session::{launch_start, save_session},
+// bevy_int::tracking_offset::TrackingOffsetPlugin,
+// core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
+// keymap_store::KeymapStore,
+// nodes::{
+// audio::AudioNodePlugin,
+// camera::{CameraInterface, CameraNodePlugin},
+// drawable::{
+// dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin,
+// text::TextNodePlugin,
+// },
+// fields::FieldDebugGizmoPlugin,
+// },
+// openxr_helpers::ConvertTimespec,
+// session::{launch_start, save_session},
 // };
 use crate::{
 	bevy_int::tracking_offset::TrackingOffsetPlugin, core::vulkano_data::VulkanoPlugin,
@@ -231,13 +230,13 @@ async fn main() -> Result<AppExit, JoinError> {
 	// FIX ORDER: 7
 	// let server_interface = ServerInterface::expose(&instance).await;
 	// info!(
-		// pion_file_path = ?server_interface.pion_path.display(),
-		// "Stardust server pion file created"
+	// pion_file_path = ?server_interface.pion_path.display(),
+	// "Stardust server pion file created"
 	// );
 	// let cam_interface = CameraInterface::expose(&instance).await;
 	// info!(
-		// pion_file_path = ?cam_interface.pion_path.display(),
-		// "Stardust server camera pion file created"
+	// pion_file_path = ?cam_interface.pion_path.display(),
+	// "Stardust server camera pion file created"
 	// );
 	let keymap_store = KeymapStore::expose(&instance).expect("Could not expose the keymap store");
 	info!(
@@ -273,20 +272,20 @@ async fn main() -> Result<AppExit, JoinError> {
 	ready_notifier.notified().await;
 	// FIX ORDER: 2
 	// let mut startup_children = project_dirs
-		// .as_ref()
-		// .map(|project_dirs| launch_start(&cli_args, project_dirs))
-		// .unwrap_or_default();
+	// .as_ref()
+	// .map(|project_dirs| launch_start(&cli_args, project_dirs))
+	// .unwrap_or_default();
 	let return_value = io_loop.await;
 	info!("Stopping...");
 	// FIX ORDER: 2
 	// if let Some(project_dirs) = project_dirs {
-		// save_session(&project_dirs).await;
+	// save_session(&project_dirs).await;
 	// }
 	// for mut startup_child in startup_children.drain(..) {
-		// // TODO: somehow send SIGTERM instead, we really don't want to send SIGKILL, as that doesn't
-		// // allow for any cleanup
-		// // only SIGKILL after a while
-		// let _ = startup_child.kill();
+	// // TODO: somehow send SIGTERM instead, we really don't want to send SIGKILL, as that doesn't
+	// // allow for any cleanup
+	// // only SIGKILL after a while
+	// let _ = startup_child.kill();
 	// }
 
 	// FIX ORDER: 7
@@ -394,16 +393,16 @@ fn bevy_loop(
 		plugins = plugins.add(plugin).disable::<ScheduleRunnerPlugin>();
 		// FIX ORDER: 5
 		// plugins = if args.spectator {
-			// plugins.add(SpectatorCameraPlugin)
+		// plugins.add(SpectatorCameraPlugin)
 		// } else if args.force_flatscreen {
-			// plugins
-				// .add(bevy::sprite::SpritePlugin)
-				// .add(bevy::text::TextPlugin)
-				// .add(bevy::ui::UiPlugin::default())
-				// .add(FlatscreenCamPlugin)
-				// .add(FlatscreenInputPlugin)
+		// plugins
+		// .add(bevy::sprite::SpritePlugin)
+		// .add(bevy::text::TextPlugin)
+		// .add(bevy::ui::UiPlugin::default())
+		// .add(FlatscreenCamPlugin)
+		// .add(FlatscreenInputPlugin)
 		// } else {
-			// plugins
+		// plugins
 		// };
 		plugins = if args.spectator {
 			plugins.add(SpectatorCameraPlugin)
@@ -504,17 +503,17 @@ fn bevy_loop(
 	// app.add_plugins((EntityHandlePlugin, DmatexPlugin, VulkanoPlugin));
 	app.add_plugins(VulkanoPlugin);
 	// node plugins
-	// FIX ORDER: 3
-	// app.add_plugins((
-	// 	SpatialNodePlugin,
-	// 	ModelNodePlugin,
-	// 	TextNodePlugin,
-	// 	LinesNodePlugin,
-	// 	AudioNodePlugin,
-	// 	CameraNodePlugin,
-	// 	// not really a node ig? at least for now
-	// 	SkyPlugin,
-	// ));
+	app.add_plugins((
+		SpatialNodePlugin,
+		// FIX ORDER: 3
+		// 	ModelNodePlugin,
+		// 	TextNodePlugin,
+		// 	LinesNodePlugin,
+		// 	AudioNodePlugin,
+		// 	CameraNodePlugin,
+		// 	// not really a node ig? at least for now
+		// 	SkyPlugin,
+	));
 	// object plugins
 	// FIX ORDER: 3
 	// app.add_plugins(HmdPlugin);
@@ -624,10 +623,10 @@ fn xr_step(world: &mut World) {
 	// FIX ORDER: 6
 	// let frame_span = info_span!("frame-event").entered();
 	// for client in CLIENTS.get_valid_contents() {
-		// client.frame(FrameInfo {
-			// delta,
-			// predicted_display_time,
-		// });
+	// client.frame(FrameInfo {
+	// delta,
+	// predicted_display_time,
+	// });
 	// }
 	// drop(frame_span);
 
