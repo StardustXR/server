@@ -8,7 +8,7 @@ use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
 use glam::{Mat4, Quat};
-use gluon::{Handler, ObjectRef};
+use gluon::{Handler, RefExt};
 use parking_lot::Mutex;
 use stardust_xr_protocol::spatial::{
 	BoundingBox, CreatedSpatial, PartialTransform, Spatial as SpatialProxy, SpatialHandler,
@@ -198,12 +198,12 @@ impl Debug for Spatial {
 #[derive(Deref, Handler)]
 pub struct SpatialObject {
 	#[deref]
-	data: Arc<Spatial>,
-	spatial_ref: gluon::ObjectRef<SpatialRef>,
+	handler: Arc<Spatial>,
+	spatial_ref: SpatialRefProxy,
 }
 impl SpatialObject {
-	pub fn new(parent: Option<&Arc<Spatial>>, transform: Mat4) -> gluon::ObjectRef<Self> {
-		let data = Arc::new(Spatial {
+	pub fn new(parent: Option<&Arc<Spatial>>, transform: Mat4) -> SpatialProxy {
+		let handler = Arc::new(Spatial {
 			entity: Mutex::new(None),
 			parent: Mutex::new(parent.cloned()),
 			transform: Mutex::new(transform),
@@ -212,23 +212,27 @@ impl SpatialObject {
 			moved_callback: Registry::new(),
 		});
 		if let Some(parent) = parent {
-			parent.children.add_raw(&data);
+			parent.children.add_raw(&handler);
 		}
-		SPATIAL_REGISTRY.add_raw(&data);
-		let spatial_ref = PION
-			.register_object(SpatialRef { data: data.clone() })
-			.to_service();
-		let spatial = PION
-			.register_object(SpatialObject { data, spatial_ref })
-			.to_service();
-		spatial.mark_dirty();
-		spatial
+		SPATIAL_REGISTRY.add_raw(&handler);
+		let spatial_ref = SpatialRefProxy::new_service(SpatialRef {
+			data: handler.clone(),
+		})
+		.unwrap();
+		let (spatial_object, spatial_object_ref) = SpatialProxy::new_node(SpatialObject {
+			handler,
+			spatial_ref,
+		})
+		.unwrap();
+		spatial_object.mark_dirty();
+		spatial_object.to_service();
+		spatial_object_ref
 	}
-	pub fn get_ref(&self) -> &ObjectRef<SpatialRef> {
+	pub fn get_ref(&self) -> &SpatialRefProxy {
 		&self.spatial_ref
 	}
 	pub fn spatial_arc(&self) -> &Arc<Spatial> {
-		&self.data
+		&self.handler
 	}
 }
 
@@ -473,7 +477,7 @@ static UPDATED_SPATIALS_NODES: Mutex<EntityHashMap<(Option<BevyTransform>, Optio
 	Mutex::new(EntityHashMap::new());
 impl SpatialHandler for SpatialObject {
 	async fn spatial_ref(&self, _ctx: gluon::Context) -> SpatialRefProxy {
-		SpatialRefProxy::from_handler(&self.spatial_ref)
+		self.spatial_ref.clone()
 	}
 
 	async fn get_local_bounding_box(&self, _ctx: gluon::Context) -> BoundingBox {
@@ -591,10 +595,14 @@ impl SpatialInterfaceHandler for SpatialInterface {
 		transform: Transform,
 	) -> Result<CreatedSpatial, CreateError> {
 		let parent = parent.owned().ok_or(CreateError::InvalidRef)?;
-		let s = SpatialObject::new(Some(&parent.data), transform.to_mat4());
+		let spatial = SpatialObject::new(Some(&parent.data), transform.to_mat4());
 		Ok(CreatedSpatial {
-			spatial: SpatialProxy::from_handler(&s),
-			spatial_ref: SpatialRefProxy::from_handler(s.get_ref()),
+			spatial_ref: spatial
+				.local_handler::<SpatialObject>()
+				.unwrap()
+				.spatial_ref
+				.clone(),
+			spatial,
 		})
 	}
 

@@ -7,8 +7,7 @@ use gluon::Handler;
 pub mod drawable;
 // FIX ORDER: 2
 // pub mod fields;
-// FIX ORDER: 1
-// pub mod spatial;
+pub mod spatial;
 
 #[macro_export]
 macro_rules! interface {
@@ -21,8 +20,8 @@ macro_rules! interface {
 		impl $type {
 			pub fn new(
 				base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>,
-			) -> gluon::Object<$type> {
-				$crate::PION.register_object($type {
+			) -> Result<(gluon::Node<$type>, gluon::Ref), gluon::NodeError> {
+				gluon::Node::new($type {
 					base_resource_prefixes: base_resource_prefixes.clone(),
 				})
 			}
