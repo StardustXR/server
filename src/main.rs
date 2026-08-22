@@ -110,7 +110,7 @@ use zbus::Connection;
 // };
 use crate::{
 	bevy_int::tracking_offset::TrackingOffsetPlugin, core::vulkano_data::VulkanoPlugin,
-	openxr_helpers::ConvertTimespec,
+	nodes::drawable::sky::SkyPlugin, openxr_helpers::ConvertTimespec,
 };
 
 #[cfg(feature = "mimalloc")]
@@ -511,8 +511,8 @@ fn bevy_loop(
 		// 	LinesNodePlugin,
 		// 	AudioNodePlugin,
 		// 	CameraNodePlugin,
-		// 	// not really a node ig? at least for now
-		// 	SkyPlugin,
+		// not really a node ig? at least for now
+		SkyPlugin,
 	));
 	// object plugins
 	// FIX ORDER: 3

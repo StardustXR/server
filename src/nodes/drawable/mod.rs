@@ -3,8 +3,7 @@ pub mod dmatex;
 // pub mod lines;
 // FIX ORDER: 2
 // pub mod model;
-// FIX ORDER: 1
-// pub mod sky;
+pub mod sky;
 // FIX ORDER: 3
 // pub mod text;
 

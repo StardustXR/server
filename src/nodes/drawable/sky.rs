@@ -23,7 +23,7 @@ use bevy_mod_openxr::{
 	environment_blend_mode::OxrEnvironmentBlendModes, resources::OxrSessionConfig,
 };
 use glam::Quat;
-use gluon::Handler;
+use gluon::{Handler, RefExt};
 use openxr::EnvironmentBlendMode;
 use parking_lot::Mutex;
 use stardust_xr_protocol::{
@@ -162,8 +162,8 @@ impl SkyInterfaceHandler for SkyInterface {
 		)?;
 		QUEUED_SKYTEX.lock().replace(Some((resource_path, opaque)));
 		SKYTEX_SET.store(true, Ordering::Relaxed);
-		let guard = PION.register_object(SkyGuard { is_sky_tex: true });
-		Some(SkyGuardProxy::from_handler(&guard.to_service()))
+		let guard = SkyGuardProxy::new_service(SkyGuard { is_sky_tex: true }).ok()?;
+		Some(guard.into_proxy())
 	}
 
 	async fn set_sky_light(
@@ -181,8 +181,8 @@ impl SkyInterfaceHandler for SkyInterface {
 		)?;
 		QUEUED_SKYLIGHT.lock().replace(Some(resource_path));
 		SKYLIGHT_SET.store(true, Ordering::Relaxed);
-		let guard = PION.register_object(SkyGuard { is_sky_tex: false });
-		Some(SkyGuardProxy::from_handler(&guard.to_service()))
+		let guard = SkyGuardProxy::new_service(SkyGuard { is_sky_tex: false }).ok()?;
+		Some(guard.into_proxy())
 	}
 }
 
