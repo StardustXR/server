@@ -503,10 +503,9 @@ fn bevy_loop(
 	// 		bevy_sk::hand::HandPlugin,
 	// 	));
 	// }
-	// FIX ORDER: 5
-	// if !args.disable_controllers {
-	// 	app.add_plugins(ControllerPlugin);
-	// }
+	if !args.disable_controllers {
+		app.add_plugins(ControllerPlugin);
+	}
 	if !args.disable_startup_recenter {
 		app.add_plugins(TrackingOffsetPlugin);
 	}

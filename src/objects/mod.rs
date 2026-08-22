@@ -29,8 +29,7 @@ use crate::{
 };
 
 pub mod hmd;
-// FIX ORDER: 4
-// pub mod input;
+pub mod input;
 pub mod stage;
 // pub mod play_space;
 

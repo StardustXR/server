@@ -2,48 +2,71 @@
 
 // FIX ORDER: 5
 // pub mod mouse_pointer;
-// FIX ORDER: 5
-// pub mod oxr_controller;
+pub mod oxr_controller;
 // FIX ORDER: 5
 // pub mod oxr_hand;
 
-use crate::{
-	PION,
-	nodes::{
-		ProxyExt as _,
-		fields::{Field, FieldRef},
-		spatial::SpatialRef,
-	},
+use crate::nodes::{
+	ProxyExt as _,
+	fields::{Field, FieldRef},
+	spatial::SpatialRef,
 };
-use gluon::{Handler, ObjectRef, ToObjectOrRef as _};
+use gluon::{Handler, IntoHandler, Liveness, Node, NodeError, RefExt};
 use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
-	query::{QueriedInterface, QueryableObjectRef},
+	query::{QueriedInterface, QueryableId},
 	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
 		BeamQueryHandler, BeamQueryHandlerHandler, PointsQueryHandler, PointsQueryHandlerHandler,
 	},
 	suis::{
 		DatamapData, InputHandler, InputMethod, InputMethodCapture, InputMethodCaptureHandler,
-		SemanticData, SpatialData,
+		InputMethodHandler, SemanticData, SpatialData,
 	},
 	types::Timestamp,
 };
 use std::{
 	collections::{HashMap, HashSet},
 	fmt,
+	ops::{Deref, DerefMut},
 	sync::{Arc, Mutex, RwLock as StdRwLock},
 };
 use tokio::sync::{RwLock, mpsc};
 use tracing::{debug_span, instrument};
+
+pub struct InputMethodNode<H: InputMethodHandler> {
+	pub node: Node<H>,
+	pub proxy: InputMethod,
+}
+impl<H: InputMethodHandler> InputMethodNode<H> {
+	pub fn new(handler: impl IntoHandler<H>) -> Result<Self, NodeError> {
+		let (node, proxy) = InputMethod::new_node(handler)?;
+		Ok(Self {
+			node,
+			proxy: proxy.into_proxy(),
+		})
+	}
+}
+impl<H: InputMethodHandler> DerefMut for InputMethodNode<H> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		&mut self.node
+	}
+}
+impl<H: InputMethodHandler> Deref for InputMethodNode<H> {
+	type Target = Node<H>;
+
+	fn deref(&self) -> &Self::Target {
+		&self.node
+	}
+}
 
 // ── CachedObject ─────────────────────────────────────────────────────────────
 
 pub struct CachedObject<V: Send + Sync + 'static> {
 	pub handler: InputHandler,
 	/// None while the get_spatial RPC is in-flight; filtered from dispatch until populated.
-	pub spatial: Option<ObjectRef<SpatialRef>>,
-	pub field: ObjectRef<FieldRef>,
+	pub spatial: Option<Arc<SpatialRef>>,
+	pub field: Arc<FieldRef>,
 	pub value: V,
 	/// True when the handler has left the spatial query but is retained because it holds a capture.
 	pub left_query: bool,
@@ -58,7 +81,7 @@ impl<V: Send + Sync + 'static> fmt::Debug for CachedObject<V> {
 // ── QueryCache ───────────────────────────────────────────────────────────────
 
 pub struct QueryCache<V: Send + Sync + 'static> {
-	pub objects: Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>,
+	pub objects: Arc<RwLock<HashMap<QueryableId, CachedObject<V>>>>,
 	capture_requests: Arc<StdRwLock<HashSet<InputHandler>>>,
 }
 
@@ -71,7 +94,7 @@ impl<V: Send + Sync + 'static> fmt::Debug for QueryCache<V> {
 impl<V: Send + Sync + 'static> QueryCache<V> {
 	pub fn new() -> (
 		Self,
-		Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>,
+		Arc<RwLock<HashMap<QueryableId, CachedObject<V>>>>,
 		Arc<StdRwLock<HashSet<InputHandler>>>,
 	) {
 		let objects = Arc::new(RwLock::new(HashMap::new()));
@@ -88,7 +111,7 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 
 	pub async fn on_entered(
 		&self,
-		obj: QueryableObjectRef,
+		obj: QueryableId,
 		field: FieldRefProxy,
 		_spatial: SpatialRefProxy,
 		interfaces: Vec<QueriedInterface>,
@@ -101,7 +124,7 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 			return;
 		}
 		let Some(field) = field.owned() else { return };
-		let handler = InputHandler::from_object_or_ref(interface.interface.clone());
+		let handler = InputHandler::from_ref(interface.interface.clone());
 
 		{
 			let mut objects = self.objects.write().await;
@@ -150,13 +173,13 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 		}
 	}
 
-	pub async fn on_value_changed(&self, obj: &QueryableObjectRef, new_value: V) {
+	pub async fn on_value_changed(&self, obj: &QueryableId, new_value: V) {
 		if let Some(entry) = self.objects.write().await.get_mut(obj) {
 			entry.value = new_value;
 		}
 	}
 
-	pub async fn on_left(&self, obj: &QueryableObjectRef) {
+	pub async fn on_left(&self, obj: &QueryableId) {
 		// Decide retention while holding the cache write lock so the capture_requests check is
 		// serialized against grant_capture (which inserts under the same lock). Otherwise a
 		// field-exit landing mid-grant could observe an empty capture_requests and wrongly drop
@@ -186,7 +209,7 @@ impl BeamQueryHandlerHandler for BeamQueryCache {
 	async fn intersected(
 		&self,
 		_ctx: gluon::Context,
-		obj: QueryableObjectRef,
+		obj: QueryableId,
 		field: FieldRefProxy,
 		spatial: SpatialRefProxy,
 		interfaces: Vec<QueriedInterface>,
@@ -200,21 +223,16 @@ impl BeamQueryHandlerHandler for BeamQueryCache {
 	async fn interfaces_changed(
 		&self,
 		_ctx: gluon::Context,
-		_obj: QueryableObjectRef,
+		_obj: QueryableId,
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
 
-	async fn moved(
-		&self,
-		_ctx: gluon::Context,
-		obj: QueryableObjectRef,
-		march_result: RayMarchResult,
-	) {
+	async fn moved(&self, _ctx: gluon::Context, obj: QueryableId, march_result: RayMarchResult) {
 		self.0.on_value_changed(&obj, march_result).await;
 	}
 
-	async fn left(&self, _ctx: gluon::Context, obj: QueryableObjectRef) {
+	async fn left(&self, _ctx: gluon::Context, obj: QueryableId) {
 		self.0.on_left(&obj).await;
 	}
 }
@@ -228,7 +246,7 @@ impl PointsQueryHandlerHandler for PointsQueryCache {
 	async fn entered(
 		&self,
 		_ctx: gluon::Context,
-		obj: QueryableObjectRef,
+		obj: QueryableId,
 		field: FieldRefProxy,
 		spatial: SpatialRefProxy,
 		interfaces: Vec<QueriedInterface>,
@@ -242,16 +260,16 @@ impl PointsQueryHandlerHandler for PointsQueryCache {
 	async fn interfaces_changed(
 		&self,
 		_ctx: gluon::Context,
-		_obj: QueryableObjectRef,
+		_obj: QueryableId,
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
 
-	async fn moved(&self, _ctx: gluon::Context, obj: QueryableObjectRef, sample: FieldSample) {
+	async fn moved(&self, _ctx: gluon::Context, obj: QueryableId, sample: FieldSample) {
 		self.0.on_value_changed(&obj, sample).await;
 	}
 
-	async fn left(&self, _ctx: gluon::Context, obj: QueryableObjectRef) {
+	async fn left(&self, _ctx: gluon::Context, obj: QueryableId) {
 		self.0.on_left(&obj).await;
 	}
 }
@@ -282,7 +300,7 @@ pub trait InputSource {
 
 	fn order_handlers_and_captures(
 		&self,
-		objects: &HashMap<QueryableObjectRef, CachedObject<Self::QueryValue>>,
+		objects: &HashMap<QueryableId, CachedObject<Self::QueryValue>>,
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>);
 
@@ -308,7 +326,7 @@ impl Drop for CaptureGuard {
 // ── InputSender ───────────────────────────────────────────────────────────────
 
 pub struct InputSender<V: Send + Sync + 'static> {
-	pub cache: Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>,
+	pub cache: Arc<RwLock<HashMap<QueryableId, CachedObject<V>>>>,
 	pub capture_requests: Arc<StdRwLock<HashSet<InputHandler>>>,
 	pub active_capture: RwLock<Option<InputHandler>>,
 	release_tx: mpsc::UnboundedSender<InputHandler>,
@@ -324,7 +342,7 @@ impl<V: Send + Sync + 'static> fmt::Debug for InputSender<V> {
 
 impl<V: Send + Sync + 'static> InputSender<V> {
 	pub fn new(
-		cache: Arc<RwLock<HashMap<QueryableObjectRef, CachedObject<V>>>>,
+		cache: Arc<RwLock<HashMap<QueryableId, CachedObject<V>>>>,
 		capture_requests: Arc<StdRwLock<HashSet<InputHandler>>>,
 	) -> Self {
 		let (release_tx, release_rx) = mpsc::unbounded_channel();
@@ -353,13 +371,13 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 				.unwrap()
 				.insert(handler.clone());
 		}
-		let guard = PION
-			.register_object(CaptureGuard {
-				handler,
-				release_tx: self.release_tx.clone(),
-			})
-			.to_service();
-		let capture = InputMethodCapture::from_handler(&guard);
+		let capture = InputMethodCapture::new_service(CaptureGuard {
+			handler,
+			release_tx: self.release_tx.clone(),
+		})
+		// TODO: get rid of this unwrap
+		.unwrap()
+		.into_proxy();
 		Some(capture)
 	}
 
@@ -401,11 +419,11 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 				.cache
 				.blocking_read()
 				.values()
-				.any(|e| !e.handler.to_binder_object_or_ref().alive());
+				.any(|e| !e.handler.alive());
 			if has_dead {
 				let mut cap = self.capture_requests.write().unwrap();
 				self.cache.blocking_write().retain(|_, e| {
-					let alive = e.handler.to_binder_object_or_ref().alive();
+					let alive = e.handler.alive();
 					if !alive {
 						cap.remove(&e.handler);
 					}

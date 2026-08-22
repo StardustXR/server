@@ -2,13 +2,13 @@ use crate::{
 	DbusConnection, PreFrameWait, get_time,
 	nodes::{
 		ProxyExt,
-		drawable::model::{Model, ModelPart},
+		drawable::model::Model as LocalModel,
 		fields::Field,
 		spatial::{Spatial, SpatialObject, SpatialRef},
 	},
 	objects::{
 		DebugWrapper, Tracked,
-		input::{InputSender, InputSource, PointsQueryCache, QueryCache},
+		input::{InputMethodNode, InputSender, InputSource, PointsQueryCache, QueryCache},
 	},
 	openxr_helpers::ConvertTimespec,
 	query::spatial_query::SpatialQueryInterface,
@@ -29,14 +29,15 @@ use bevy_mod_xr::{
 };
 use color_eyre::eyre::Result;
 use glam::{Affine3A, Mat4, Vec2, Vec3};
-use gluon::{Handler, Object, ObjectRef};
+use gluon::{Handler, LocalRef};
+use gluon::{Node, RefExt};
 use openxr::{Action, ActiveActionSet, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample},
-	model::{MaterialParameter, ModelHandler},
-	query::{InterfaceDependency, QueryableObjectRef},
-	spatial::{PartialTransform, SpatialRef as SpatialRefProxy},
+	model::{MaterialParameter, Model, ModelHandler, ModelPart},
+	query::{InterfaceDependency, QueryableId},
+	spatial::{PartialTransform, Spatial as SpatialProxy, SpatialRef as SpatialRefProxy},
 	spatial_query::{
 		Point, PointsQuery, PointsQueryHandle, PointsQueryHandler,
 		SpatialQueryInterface as SpatialQueryInterfaceProxy,
@@ -397,7 +398,9 @@ fn create_spaces(
 		left,
 	)
 	.ok()
-	.map(|v| PION.register_object(v));
+	.map(InputMethodNode::new)
+	.map(Result::ok)
+	.flatten();
 	controllers.right.method = ControllerInputMethod::new(
 		controllers.base_spatial.get_ref().clone(),
 		base_space.clone(),
@@ -405,14 +408,14 @@ fn create_spaces(
 		right,
 	)
 	.ok()
-	.map(|v| PION.register_object(v));
+	.map(InputMethodNode::new)
+	.map(Result::ok)
+	.flatten();
 	if let Some(method) = controllers.left.method.as_ref() {
-		controllers.left.tracked.get_mut_data_blocking().method =
-			Arc::downgrade(method.handler_arc());
+		controllers.left.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
 	}
 	if let Some(method) = controllers.right.method.as_ref() {
-		controllers.right.tracked.get_mut_data_blocking().method =
-			Arc::downgrade(method.handler_arc());
+		controllers.right.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
 	}
 }
 
@@ -474,13 +477,13 @@ struct Controllers {
 	left: OxrControllerInput,
 	right: OxrControllerInput,
 	base_space: Option<Arc<openxr::Space>>,
-	base_spatial: gluon::ObjectRef<SpatialObject>,
+	base_spatial: gluon::LocalRef<SpatialProxy, SpatialObject>,
 }
 
 #[derive(Debug)]
 struct OxrControllerInputTrackedState {
 	method: Weak<ControllerInputMethod>,
-	aim_spatial: ObjectRef<SpatialObject>,
+	aim_spatial: LocalRef<SpatialProxy, SpatialObject>,
 }
 impl OxrControllerInputTrackedState {
 	fn get_pose(&self, relative_to: &Spatial, at: Timestamp) -> (Option<types::Posef>, bool) {
@@ -509,24 +512,24 @@ impl OxrControllerInputTrackedState {
 	}
 }
 pub struct OxrControllerInput {
-	aim_spatial: gluon::ObjectRef<SpatialObject>,
+	aim_spatial: gluon::LocalRef<SpatialProxy, SpatialObject>,
 	side: HandSide,
-	model: OnceLock<ObjectRef<Model>>,
-	model_part: OnceLock<ObjectRef<ModelPart>>,
-	model_task: Option<JoinHandle<(ObjectRef<Model>, ObjectRef<ModelPart>)>>,
-	method: Option<Object<ControllerInputMethod>>,
+	model: OnceLock<Model>,
+	model_part: OnceLock<ModelPart>,
+	model_task: Option<JoinHandle<(Model, ModelPart)>>,
+	method: Option<InputMethodNode<ControllerInputMethod>>,
 	tracked: Tracked<OxrControllerInputTrackedState>,
 	was_enabled: bool,
 	captured: bool,
 }
 impl OxrControllerInput {
-	fn new(side: HandSide, base_space: &ObjectRef<SpatialRef>) -> Result<Self> {
+	fn new(side: HandSide, base_space: &LocalRef<SpatialRefProxy, SpatialRef>) -> Result<Self> {
 		let aim_spatial = SpatialObject::new(Some(&***base_space), Mat4::from_scale(Vec3::ZERO));
 		let model_spatial =
 			SpatialObject::new(Some(&aim_spatial), Mat4::from_scale(Vec3::splat(0.02)));
 		let model_task = tokio::spawn(async move {
-			let model = Model::new(
-				model_spatial,
+			let model = LocalModel::new(
+				model_spatial.handler().clone(),
 				types::Resource::Direct {
 					path: CURSOR_MODEL_PATH.into(),
 				},
@@ -535,19 +538,7 @@ impl OxrControllerInput {
 			)
 			.await
 			.unwrap();
-			let model_part = model
-				.get_part(
-					// unused by impl, and 0 anyway
-					gluon::Context {
-						sender_pid: 0,
-						sender_euid: 0,
-					},
-					"Cursor".to_string(),
-				)
-				.await
-				.unwrap()
-				.owned()
-				.unwrap();
+			let model_part = model.get_part("Cursor".to_string()).await.unwrap().unwrap();
 			(model, model_part)
 		});
 		let pion_path = match side {
@@ -555,7 +546,7 @@ impl OxrControllerInput {
 			HandSide::Right => "stardust-controller/right",
 		};
 		let tracked = Tracked::new(
-			SpatialRefProxy::from_handler(aim_spatial.get_ref()),
+			aim_spatial.get_ref().proxy().clone(),
 			OxrControllerInputTrackedState::get_pose,
 			false,
 			pion_path,
@@ -589,7 +580,7 @@ impl OxrControllerInput {
 		session: &OxrSession,
 		actions: &Actions,
 		time: openxr::Time,
-		base_space: &ObjectRef<SpatialRef>,
+		base_space: &Arc<SpatialRef>,
 	) {
 		if self.model_task.as_ref().is_some_and(|v| v.is_finished()) {
 			let (model, part) = now_or_never(self.model_task.take().unwrap())
@@ -628,7 +619,7 @@ impl OxrControllerInput {
 				);
 			}
 			if let Some(handle) = method.query_handle.get() {
-				handle.update_points([Point {
+				handle.update([Point {
 					point: pose.position,
 					margin: 0.5,
 				}]);
@@ -672,21 +663,21 @@ impl OxrControllerInput {
 		};
 		drop(_span);
 
-		let input_method = InputMethod::from_handler(method);
+		let input_method = method.proxy.clone();
 		let ts = session
 			.instance()
 			.xr_to_timestamp(time)
 			.unwrap_or_else(Timestamp::now);
-		method.sender.clone().send(&***method, input_method, ts);
+		method.sender.clone().send(&****method, input_method, ts);
 	}
 }
 #[derive(Debug, Handler)]
 struct ControllerInputMethod {
 	side: HandSide,
 	base_space: DebugWrapper<Arc<openxr::Space>>,
-	base_spatial: gluon::ObjectRef<SpatialRef>,
+	base_spatial: gluon::LocalRef<SpatialRefProxy, SpatialRef>,
 	space: DebugWrapper<openxr::Space>,
-	_query: gluon::Object<PointsQueryCache>,
+	_query: gluon::Node<PointsQueryCache>,
 	sender: Arc<InputSender<FieldSample>>,
 	pose: RwLock<Option<Posef>>,
 	datamap: RwLock<ControllerDatamap>,
@@ -694,7 +685,7 @@ struct ControllerInputMethod {
 }
 impl ControllerInputMethod {
 	fn new(
-		base_spatial: gluon::ObjectRef<SpatialRef>,
+		base_spatial: gluon::LocalRef<SpatialRefProxy, SpatialRef>,
 		base_space: Arc<openxr::Space>,
 		side: HandSide,
 		space: openxr::Space,
@@ -702,19 +693,22 @@ impl ControllerInputMethod {
 		let (query_cache, objects_arc, capture_requests) = QueryCache::new();
 		let sender = Arc::new(InputSender::new(objects_arc, capture_requests));
 
-		let query = PION.register_object(PointsQueryCache(query_cache));
-		let proxy = PointsQueryHandler::from_handler(&query);
+		let (query, proxy) = PointsQueryHandler::new_node(PointsQueryCache(query_cache))?;
 		let query_handle = Arc::new(OnceLock::new());
-		let base_spatial_ref = SpatialRefProxy::from_handler(&base_spatial);
+		let base_spatial_ref = base_spatial.proxy().clone();
 		tokio::spawn({
 			let query_handle = query_handle.clone();
 			async move {
-				let spatial_query_interface = SpatialQueryInterface::new(&Arc::default());
-				let spatial_query_interface_proxy =
-					SpatialQueryInterfaceProxy::from_handler(&spatial_query_interface);
+				let (spatial_query_interface, spatial_query_interface_proxy) =
+					SpatialQueryInterfaceProxy::new_node(SpatialQueryInterface::new(
+						&Arc::default(),
+					))
+					// TODO: get rid of this unwrap
+					.unwrap();
 				let handle = spatial_query_interface_proxy
+					.into_proxy()
 					.points_query(PointsQuery {
-						handler: proxy,
+						handler: proxy.into_proxy(),
 						interfaces: vec![InterfaceDependency {
 							id: InputHandler::QUERY_INTERFACE.to_string(),
 							optional: false,
@@ -782,7 +776,7 @@ impl InputSource for ControllerInputMethod {
 
 	fn order_handlers_and_captures(
 		&self,
-		objects: &HashMap<QueryableObjectRef, CachedObject<Self::QueryValue>>,
+		objects: &HashMap<QueryableId, CachedObject<Self::QueryValue>>,
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let pose = *self.pose.blocking_read();
