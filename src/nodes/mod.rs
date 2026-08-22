@@ -69,31 +69,23 @@ macro_rules! exposed_interface {
 		}
 	};
 }
+/// Recovering the handler behind a proxy this process is itself serving.
+///
+/// Under strong-ipc a proxy is a `Ref` — a send capability, nothing more — so this is a
+/// lookup in gluon's local-handler registry rather than a downcast. `None` covers every
+/// way it can fail without distinguishing them: the ref leads to another process, its node
+/// is gone, or it is live and simply isn't the type we asked for.
 pub trait ProxyExt {
 	type Owned: Handler;
-	fn owned(&self) -> Option<gluon::ObjectRef<Self::Owned>>;
+	fn owned(&self) -> Option<std::sync::Arc<Self::Owned>>;
 }
 #[macro_export]
 macro_rules! impl_proxy {
 	($proxy:ty, $type:ty) => {
 		impl $crate::nodes::ProxyExt for $proxy {
 			type Owned = $type;
-			fn owned(&self) -> Option<gluon::ObjectRef<Self::Owned>> {
-				match gluon::ObjectOrRef::from(self.clone()) {
-					gluon::ObjectOrRef::Object(obj) => {
-						if let Some(obj) = obj.downcast::<Self::Owned>() {
-							Some(obj)
-						} else {
-							tracing::warn!("unable to downcast obj");
-							None
-						}
-					}
-					// should never happen with the rust version of gluon
-					gluon::ObjectOrRef::WeakObject(_obj) => None,
-					// spatial owned by different process, this is not allowed
-					gluon::ObjectOrRef::Ref(_binder_ref) => None,
-					gluon::ObjectOrRef::WeakRef(_weak_binder_ref) => None,
-				}
+			fn owned(&self) -> Option<std::sync::Arc<$type>> {
+				gluon::RefExt::local_handler::<$type>(self)
 			}
 		}
 	};

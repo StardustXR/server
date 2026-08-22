@@ -72,13 +72,12 @@ use objects::{
 	// 	play_space::PlaySpacePlugin,
 };
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
-use pion_binder::PionBinderDevice;
 use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
 use std::{
 	ops::DerefMut as _,
 	path::PathBuf,
 	str::FromStr,
-	sync::{Arc, LazyLock, OnceLock},
+	sync::{Arc, OnceLock},
 	time::Duration,
 };
 use tokio::{sync::Notify, task::JoinError};
@@ -168,7 +167,6 @@ struct CliArgs {
 pub type BevyMaterial = StandardMaterial;
 
 static STARDUST_INSTANCE: OnceLock<String> = OnceLock::new();
-pub static PION: LazyLock<PionBinderDevice> = LazyLock::new(PionBinderDevice::default);
 
 struct SpanFilter(&'static str);
 impl<S: Subscriber + for<'a> LookupSpan<'a>> tracing_subscriber::layer::Filter<S> for SpanFilter {
@@ -228,10 +226,10 @@ async fn main() -> Result<AppExit, JoinError> {
 		pion_file_path = ?cam_interface.pion_path.display(),
 		"Stardust server camera pion file created"
 	);
-	let keymap_store = KeymapStore::expose(&instance).await;
+	let keymap_store = KeymapStore::expose(&instance).expect("Could not expose the keymap store");
 	info!(
 		pion_file_path = ?keymap_store.pion_path.display(),
-		"Stardust server camera pion file created"
+		"Stardust server keymap store pion file created"
 	);
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");
