@@ -77,8 +77,10 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry
 use zbus::Connection;
 
 use crate::{
-	bevy_int::tracking_offset::TrackingOffsetPlugin, core::vulkano_data::VulkanoPlugin,
-	nodes::drawable::sky::SkyPlugin, openxr_helpers::ConvertTimespec,
+	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin},
+	core::vulkano_data::VulkanoPlugin,
+	nodes::drawable::{dmatex::DmatexPlugin, sky::SkyPlugin},
+	openxr_helpers::ConvertTimespec,
 };
 
 #[cfg(feature = "mimalloc")]
@@ -467,9 +469,7 @@ fn bevy_loop(
 	}
 	// the Stardust server plugins
 	// infra plugins
-	// FIX ORDER: 1
-	// app.add_plugins((EntityHandlePlugin, DmatexPlugin, VulkanoPlugin));
-	app.add_plugins(VulkanoPlugin);
+	app.add_plugins((EntityHandlePlugin, DmatexPlugin, VulkanoPlugin));
 	// node plugins
 	app.add_plugins((
 		SpatialNodePlugin,
