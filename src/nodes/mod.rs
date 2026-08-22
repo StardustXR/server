@@ -66,9 +66,10 @@ macro_rules! exposed_interface {
 /// lookup in gluon's local-handler registry rather than a downcast. `None` covers every
 /// way it can fail without distinguishing them: the ref leads to another process, its node
 /// is gone, or it is live and simply isn't the type we asked for.
-pub trait ProxyExt {
+pub trait ProxyExt: Sized {
 	type Owned: Handler;
 	fn owned(&self) -> Option<std::sync::Arc<Self::Owned>>;
+	fn owned_ref(&self) -> Option<gluon::LocalRef<Self, Self::Owned>>;
 }
 #[macro_export]
 macro_rules! impl_proxy {
@@ -77,6 +78,9 @@ macro_rules! impl_proxy {
 			type Owned = $type;
 			fn owned(&self) -> Option<std::sync::Arc<$type>> {
 				gluon::RefExt::local_handler::<$type>(self)
+			}
+			fn owned_ref(&self) -> Option<gluon::LocalRef<$proxy, $type>> {
+				Some(gluon::LocalRef::new(self.clone(), self.owned()?))
 			}
 		}
 	};

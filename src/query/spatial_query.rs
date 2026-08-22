@@ -1,24 +1,29 @@
 use std::{
 	collections::{HashMap, hash_map::Entry},
 	fmt::Debug,
-	future::Future,
+	future::{Future, ready},
 	pin::Pin,
-	sync::{Arc, OnceLock, Weak},
+	sync::{
+		Arc, OnceLock, Weak,
+		atomic::{AtomicU32, Ordering},
+	},
 };
 
 use glam::Vec3;
-use gluon::{Handler, SendError};
+use gluon::{Handler, RefExt, SendError};
 use parking_lot::Mutex;
 use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
-	query::{InterfaceDependency, QueriedInterface, QueryableObjectRef},
+	query::{InterfaceDependency, QueriedInterface, QueryableId},
 	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
-		BeamQuery, BeamQueryHandler, Point, PointsQuery,
-		PointsQueryHandle as PointsQueryHandleProxy, PointsQueryHandleHandler, PointsQueryHandler,
-		QueryError, SpatialQueryGuard, SpatialQueryGuardHandler, SpatialQueryInterfaceHandler,
-		ZoneQuery, ZoneQueryHandler,
+		BeamQuery, BeamQueryHandle as BeamQueryHandleProxy, BeamQueryHandleHandler,
+		BeamQueryHandler, Point, PointsQuery, PointsQueryHandle as PointsQueryHandleProxy,
+		PointsQueryHandleHandler, PointsQueryHandler, QueryError, SpatialQueryInterfaceHandler,
+		ZoneQuery, ZoneQueryHandle as ZoneQueryHandleProxy, ZoneQueryHandleHandler,
+		ZoneQueryHandler,
 	},
+	types::Vec3F,
 };
 use stardust_xr_server_foundation::deduped_string::DedupedStr;
 
@@ -67,10 +72,10 @@ trait QueryKind: Send + Sync + Debug + 'static {
 	fn moved(&self, queryable: &Queryable, hit: Self::Hit) -> Result<(), SendError>;
 	fn interfaces_changed(
 		&self,
-		obj: QueryableObjectRef,
+		id: QueryableId,
 		interfaces: Vec<QueriedInterface>,
 	) -> Result<(), SendError>;
-	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError>;
+	fn left(&self, id: QueryableId) -> Result<(), SendError>;
 }
 
 /// Per-(query, queryable) tracking state — the single source of truth. A queryable is
@@ -94,7 +99,7 @@ struct Tracked {
 #[derive(Debug)]
 struct Query<K: QueryKind> {
 	interfaces: Vec<InterfaceQuery>,
-	tracked: Mutex<HashMap<u64, Tracked>>,
+	tracked: Mutex<HashMap<QueryableId, Tracked>>,
 	/// Keeps the query's own anchor callbacks (move + optional shape) alive.
 	self_callbacks: OnceLock<(MovedCallback, Option<ShapeChangedCallback>)>,
 	kind: K,
@@ -404,17 +409,17 @@ impl QueryKind for BeamKind {
 		)
 	}
 	fn moved(&self, queryable: &Queryable, hit: RayMarchResult) -> Result<(), SendError> {
-		self.handler.moved(queryable.obj_ref(), hit)
+		self.handler.moved(queryable.id, hit)
 	}
 	fn interfaces_changed(
 		&self,
-		obj: QueryableObjectRef,
+		id: QueryableId,
 		interfaces: Vec<QueriedInterface>,
 	) -> Result<(), SendError> {
-		self.handler.interfaces_changed(obj, interfaces)
+		self.handler.interfaces_changed(id, interfaces)
 	}
-	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError> {
-		self.handler.left(obj)
+	fn left(&self, id: QueryableId) -> Result<(), SendError> {
+		self.handler.left(id)
 	}
 }
 
@@ -422,7 +427,8 @@ impl QueryKind for BeamKind {
 struct ZoneKind {
 	handler: ZoneQueryHandler,
 	field: Arc<Field>,
-	margin: f32,
+	/// holds an f32
+	margin: AtomicU32,
 }
 impl QueryKind for ZoneKind {
 	type Hit = (Vec3, FieldSample);
@@ -434,7 +440,8 @@ impl QueryKind for ZoneKind {
 			Spatial::space_to_space_matrix(Some(&queryable.spatial), Some(&self.field.spatial))
 				.to_scale_rotation_translation();
 		let sample = self.field.local_sample(pos.into());
-		(sample.distance < self.margin).then_some((pos, sample))
+		(sample.distance < f32::from_bits(self.margin.load(Ordering::Relaxed)))
+			.then_some((pos, sample))
 	}
 	fn entered(
 		&self,
@@ -452,17 +459,17 @@ impl QueryKind for ZoneKind {
 		)
 	}
 	fn moved(&self, queryable: &Queryable, hit: (Vec3, FieldSample)) -> Result<(), SendError> {
-		self.handler.moved(queryable.obj_ref(), hit.0.into(), hit.1)
+		self.handler.moved(queryable.id, hit.0.into(), hit.1)
 	}
 	fn interfaces_changed(
 		&self,
-		obj: QueryableObjectRef,
+		id: QueryableId,
 		interfaces: Vec<QueriedInterface>,
 	) -> Result<(), SendError> {
-		self.handler.interfaces_changed(obj, interfaces)
+		self.handler.interfaces_changed(id, interfaces)
 	}
-	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError> {
-		self.handler.left(obj)
+	fn left(&self, id: QueryableId) -> Result<(), SendError> {
+		self.handler.left(id)
 	}
 }
 
@@ -514,26 +521,26 @@ impl QueryKind for PointsKind {
 	}
 	fn interfaces_changed(
 		&self,
-		obj: QueryableObjectRef,
+		id: QueryableId,
 		interfaces: Vec<QueriedInterface>,
 	) -> Result<(), SendError> {
-		self.handler.interfaces_changed(obj, interfaces)
+		self.handler.interfaces_changed(id, interfaces)
 	}
-	fn left(&self, obj: QueryableObjectRef) -> Result<(), SendError> {
-		self.handler.left(obj)
+	fn left(&self, id: QueryableId) -> Result<(), SendError> {
+		self.handler.left(id)
 	}
 }
 
 /// Proxy-building helpers shared by every query kind.
 impl Queryable {
-	fn obj_ref(&self) -> QueryableObjectRef {
-		QueryableObjectRef::from_handler(&self.queryable_ref)
+	fn obj_ref(&self) -> QueryableId {
+		self.id
 	}
 	fn field_ref(&self) -> FieldRefProxy {
-		FieldRefProxy::from_handler(self.field.get_ref())
+		self.field.get_ref().clone()
 	}
 	fn spatial_ref(&self) -> SpatialRefProxy {
-		SpatialRefProxy::from_handler(self.spatial.get_ref())
+		self.spatial.get_ref().proxy().clone()
 	}
 }
 
@@ -545,7 +552,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		&self,
 		_ctx: gluon::Context,
 		query: BeamQuery,
-	) -> Result<SpatialQueryGuard, QueryError> {
+	) -> Result<BeamQueryHandleProxy, QueryError> {
 		let BeamQuery {
 			handler,
 			interfaces,
@@ -573,15 +580,18 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			interfaces,
 		)
 		.await?;
-		let guard = PION.register_object(Guard(query)).to_service();
-		Ok(SpatialQueryGuard::from_handler(&guard))
+		let handle = BeamQueryHandleProxy::new_service(BeamQueryHandle(query))
+			// TODO: destroy unwrap
+			.unwrap()
+			.into_proxy();
+		Ok(handle)
 	}
 
 	async fn zone_query(
 		&self,
 		_ctx: gluon::Context,
 		query: ZoneQuery,
-	) -> Result<SpatialQueryGuard, QueryError> {
+	) -> Result<ZoneQueryHandleProxy, QueryError> {
 		let ZoneQuery {
 			handler,
 			interfaces,
@@ -594,13 +604,16 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			ZoneKind {
 				handler,
 				field: field.data.clone(),
-				margin,
+				margin: AtomicU32::new(margin.to_bits()),
 			},
 			interfaces,
 		)
 		.await?;
-		let guard = PION.register_object(Guard(query)).to_service();
-		Ok(SpatialQueryGuard::from_handler(&guard))
+		let handle = ZoneQueryHandleProxy::new_service(ZoneQueryHandle(query))
+			// TODO: destroy unwrap
+			.unwrap()
+			.into_proxy();
+		Ok(handle)
 	}
 
 	async fn points_query(
@@ -625,24 +638,48 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			interfaces,
 		)
 		.await?;
-		let handle = PION.register_object(PointsQueryHandle(query)).to_service();
-		Ok(PointsQueryHandleProxy::from_handler(&handle))
+		let handle = PointsQueryHandleProxy::new_service(PointsQueryHandle(query))
+            // TODO: nuke this unwrap
+			.unwrap()
+			.into_proxy();
+        Ok(handle)
 	}
 }
 
 #[derive(Debug, Handler)]
 struct PointsQueryHandle(Arc<Query<PointsKind>>);
 impl PointsQueryHandleHandler for PointsQueryHandle {
-	async fn update_points(&self, _ctx: gluon::Context, points: Vec<Point>) {
+	async fn update(&self, _ctx: gluon::Context, points: Vec<Point>) {
 		*self.0.kind.points.lock() = points;
 		self.0.self_moved();
 	}
 }
-
-#[expect(unused)]
 #[derive(Debug, Handler)]
-struct Guard<K: QueryKind>(Arc<Query<K>>);
-impl<K: QueryKind> SpatialQueryGuardHandler for Guard<K> {}
+struct ZoneQueryHandle(Arc<Query<ZoneKind>>);
+impl ZoneQueryHandleHandler for ZoneQueryHandle {
+	async fn update(&self, _ctx: gluon::Context, margin: f32) {
+		self.0
+			.kind
+			.margin
+			.store(margin.to_bits(), Ordering::Relaxed);
+		self.0.self_moved();
+	}
+}
+
+#[derive(Debug, Handler)]
+struct BeamQueryHandle(Arc<Query<BeamKind>>);
+impl BeamQueryHandleHandler for BeamQueryHandle {
+	fn update(
+		&self,
+		_ctx: gluon::Context,
+		origin: Vec3F,
+		direction: Vec3F,
+		max_length: f32,
+	) -> impl Future<Output = ()> + Send + Sync {
+		// TODO: impl, ideally in a way that doesn't destroy perf with locks (especially Mutex)
+		ready(())
+	}
+}
 
 #[cfg(test)]
 mod tests {

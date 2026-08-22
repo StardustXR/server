@@ -10,7 +10,7 @@ mod nodes;
 // mod objects;
 mod openxr_helpers;
 // FIX ORDER: 3
-// mod query;
+mod query;
 // FIX ORDER: 2
 // mod session;
 

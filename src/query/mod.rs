@@ -4,15 +4,23 @@ use crate::{
 	query::spatial_query::AnyQuery,
 };
 use bevy::prelude::Deref;
-use gluon::{Handler, Node};
-use stardust_xr_protocol::query::{
-	QueryInterfaceHandler, QueryableError, QueryableInterfaceGuard, QueryableInterfaceGuardHandler,
-	QueryableObject, QueryableObjectHandler, QueryableObjectRef, QueryableObjectRefHandler,
+use gluon::{Handler, LocalRef, Ref, RefExt};
+use stardust_xr_protocol::{
+	field::Field,
+	query::{
+		QueryInterfaceHandler, QueryableError, QueryableId,
+		QueryableInterface as QueryableInterfaceProxy, QueryableInterfaceHandler, QueryableObject,
+		QueryableObjectHandler,
+	},
+	spatial::Spatial,
 };
 use stardust_xr_server_foundation::{deduped_string::DedupedStr, registry::Registry};
-use std::sync::{
-	Arc, LazyLock, Weak,
-	atomic::{AtomicU64, Ordering},
+use std::{
+	future::ready,
+	sync::{
+		Arc, LazyLock, Weak,
+		atomic::{AtomicU64, Ordering},
+	},
 };
 use tokio::sync::RwLock;
 use tracing::debug;
@@ -32,18 +40,14 @@ struct State {
 	all_queryables: Registry<Queryable>,
 	queries: Registry<dyn AnyQuery>,
 }
-#[derive(Debug, Handler)]
-struct QueryableRef;
-impl QueryableObjectRefHandler for QueryableRef {}
 
 #[derive(Debug, Deref, Handler)]
 struct QueryableMut(Arc<Queryable>);
 #[derive(Debug)]
 struct Queryable {
-	id: u64,
-	queryable_ref: Object<QueryableRef>,
-	spatial: ObjectRef<SpatialObject>,
-	field: ObjectRef<FieldObject>,
+	id: QueryableId,
+	spatial: LocalRef<Spatial, SpatialObject>,
+	field: LocalRef<Field, FieldObject>,
 	interfaces: RwLock<Registry<QueryableInterface>>,
 	/// Serializes interface re-syncs for this queryable (see
 	/// `Query::update_interfaces_impl`). Interface *removal* is an `Arc` drop, not a
@@ -55,11 +59,11 @@ struct Queryable {
 #[derive(Debug)]
 struct QueryableInterface {
 	interface_id: Arc<DedupedStr>,
-	interface_ref: ObjectOrRef,
+	interface_ref: gluon::Ref,
 }
 #[derive(Debug, Handler)]
 struct InterfaceGuard(Option<Arc<QueryableInterface>>, Weak<Queryable>);
-impl QueryableInterfaceGuardHandler for InterfaceGuard {}
+impl QueryableInterfaceHandler for InterfaceGuard {}
 impl Drop for InterfaceGuard {
 	fn drop(&mut self) {
 		let i = self.0.take().unwrap();
@@ -74,24 +78,31 @@ impl Drop for InterfaceGuard {
 	}
 }
 impl QueryableObjectHandler for QueryableMut {
-	async fn queryable_ref(&self, _ctx: gluon::Context) -> QueryableObjectRef {
-		QueryableObjectRef::from_handler(&self.queryable_ref)
+	fn id(&self, _ctx: gluon::Context) -> impl Future<Output = QueryableId> + Send + Sync {
+		ready(self.id)
 	}
 
 	async fn add_interface(
 		&self,
 		_ctx: gluon::Context,
-		interface: ObjectOrRef,
+		interface: Ref,
 		interface_id: String,
-	) -> QueryableInterfaceGuard {
+	) -> Result<QueryableInterfaceProxy, QueryableError> {
 		debug!(?self, interface = interface_id, "Registered interface");
+		// TODO: detect duplicate interfaces?
 		let interface = self.interfaces.write().await.add(QueryableInterface {
 			interface_id: DedupedStr::get(interface_id).await,
 			interface_ref: interface,
 		});
 		self.notify_interface_changes().await;
-		let guard = PION.register_object(InterfaceGuard(Some(interface), Arc::downgrade(&self.0)));
-		QueryableInterfaceGuard::from_handler(&guard.to_service())
+		let interface = QueryableInterfaceProxy::new_service(InterfaceGuard(
+			Some(interface),
+			Arc::downgrade(&self.0),
+		))
+		// TODO: somehow remove this unwrap?
+		.unwrap()
+		.into_proxy();
+		Ok(interface)
 	}
 }
 impl Queryable {
@@ -122,20 +133,23 @@ impl QueryInterfaceHandler for QueryInterface {
 		field: stardust_xr_protocol::field::Field,
 	) -> Result<QueryableObject, QueryableError> {
 		debug!(?spatial, ?field, "Registered queryable");
-		let spatial = spatial.owned().ok_or(QueryableError::NotOwnedSpatial)?;
-		let field = field.owned().ok_or(QueryableError::NotOwnedField)?;
-		let queryable_ref = PION.register_object(QueryableRef);
+		let spatial = spatial.owned_ref().ok_or(QueryableError::NotOwnedSpatial)?;
+		let field = field.owned_ref().ok_or(QueryableError::NotOwnedField)?;
 		let queryable = Arc::new(Queryable {
-			id: NEXT_QUERYABLE_ID.fetch_add(1, Ordering::Relaxed),
+			id: QueryableId {
+				id: NEXT_QUERYABLE_ID.fetch_add(1, Ordering::Relaxed),
+			},
 			field,
 			spatial,
 			interfaces: RwLock::default(),
-			queryable_ref,
 			update_lock: tokio::sync::Mutex::new(()),
 		});
 		QUERY_STATE.all_queryables.add_raw(&queryable);
-		let obj = PION.register_object(QueryableMut(queryable));
-		Ok(QueryableObject::from_handler(&obj.to_service()))
+		let obj = QueryableObject::new_service(QueryableMut(queryable))
+			// TODO: remove that unwrap
+			.unwrap()
+			.into_proxy();
+		Ok(obj)
 	}
 }
 
