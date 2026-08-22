@@ -6,10 +6,13 @@ mod bevy_int;
 mod core;
 mod keymap_store;
 mod nodes;
-mod objects;
+// FIX ORDER: 2
+// mod objects;
 mod openxr_helpers;
-mod query;
-mod session;
+// FIX ORDER: 3
+// mod query;
+// FIX ORDER: 2
+// mod session;
 
 use bevy::{
 	MinimalPlugins,
@@ -38,10 +41,12 @@ use bevy::{
 	winit::{WakeUp, WinitPlugin},
 };
 use bevy_dmabuf::import::DmabufImportPlugin;
-use bevy_int::{
-	entity_handle::EntityHandlePlugin, flatscreen_cam::FlatscreenCamPlugin,
-	spectator_cam::SpectatorCameraPlugin,
-};
+// FIX ORDER: 1
+// use bevy_int::{
+	// entity_handle::EntityHandlePlugin, flatscreen_cam::FlatscreenCamPlugin,
+	// spectator_cam::SpectatorCameraPlugin,
+// };
+use bevy_int::{flatscreen_cam::FlatscreenCamPlugin, spectator_cam::SpectatorCameraPlugin};
 use bevy_mod_openxr::{
 	action_set_attaching::OxrActionAttachingPlugin,
 	action_set_syncing::OxrActionSyncingPlugin,
@@ -61,16 +66,18 @@ use bevy_mod_xr::{
 };
 use clap::Parser;
 use directories::ProjectDirs;
-use nodes::spatial::SpatialNodePlugin;
-use objects::{
-	hmd::HmdPlugin,
-	input::{
-		mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
-		oxr_hand::HandPlugin,
-	},
-	stage::StagePlugin,
-	// 	play_space::PlaySpacePlugin,
-};
+// FIX ORDER: 1
+// use nodes::spatial::SpatialNodePlugin;
+// FIX ORDER: 5
+// use objects::{
+	// hmd::HmdPlugin,
+	// input::{
+		// mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
+		// oxr_hand::HandPlugin,
+	// },
+	// stage::StagePlugin,
+	// // 	play_space::PlaySpacePlugin,
+// };
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
 use std::{
@@ -85,21 +92,26 @@ use tracing::{Subscriber, error, info, metadata::LevelFilter};
 use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry::LookupSpan};
 use zbus::Connection;
 
+// FIX ORDER: 7
+// use crate::{
+	// bevy_int::tracking_offset::TrackingOffsetPlugin,
+	// core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
+	// keymap_store::KeymapStore,
+	// nodes::{
+		// audio::AudioNodePlugin,
+		// camera::{CameraInterface, CameraNodePlugin},
+		// drawable::{
+			// dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin,
+			// text::TextNodePlugin,
+		// },
+		// fields::FieldDebugGizmoPlugin,
+	// },
+	// openxr_helpers::ConvertTimespec,
+	// session::{launch_start, save_session},
+// };
 use crate::{
-	bevy_int::tracking_offset::TrackingOffsetPlugin,
-	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
-	keymap_store::KeymapStore,
-	nodes::{
-		audio::AudioNodePlugin,
-		camera::{CameraInterface, CameraNodePlugin},
-		drawable::{
-			dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin,
-			text::TextNodePlugin,
-		},
-		fields::FieldDebugGizmoPlugin,
-	},
-	openxr_helpers::ConvertTimespec,
-	session::{launch_start, save_session},
+	bevy_int::tracking_offset::TrackingOffsetPlugin, core::vulkano_data::VulkanoPlugin,
+	keymap_store::KeymapStore, openxr_helpers::ConvertTimespec,
 };
 
 #[cfg(feature = "mimalloc")]
@@ -216,16 +228,17 @@ async fn main() -> Result<AppExit, JoinError> {
 	let instance = stardust_xr_protocol::dir::find_free_instace()
 		.expect("Unable to find a free stardust instance");
 	STARDUST_INSTANCE.set(instance.clone()).unwrap();
-	let server_interface = ServerInterface::expose(&instance).await;
-	info!(
-		pion_file_path = ?server_interface.pion_path.display(),
-		"Stardust server pion file created"
-	);
-	let cam_interface = CameraInterface::expose(&instance).await;
-	info!(
-		pion_file_path = ?cam_interface.pion_path.display(),
-		"Stardust server camera pion file created"
-	);
+	// FIX ORDER: 7
+	// let server_interface = ServerInterface::expose(&instance).await;
+	// info!(
+		// pion_file_path = ?server_interface.pion_path.display(),
+		// "Stardust server pion file created"
+	// );
+	// let cam_interface = CameraInterface::expose(&instance).await;
+	// info!(
+		// pion_file_path = ?cam_interface.pion_path.display(),
+		// "Stardust server camera pion file created"
+	// );
 	let keymap_store = KeymapStore::expose(&instance).expect("Could not expose the keymap store");
 	info!(
 		pion_file_path = ?keymap_store.pion_path.display(),
@@ -258,25 +271,28 @@ async fn main() -> Result<AppExit, JoinError> {
 		move || bevy_loop(ready_notifier, project_dirs, cli_args, dbus_connection)
 	});
 	ready_notifier.notified().await;
-	let mut startup_children = project_dirs
-		.as_ref()
-		.map(|project_dirs| launch_start(&cli_args, project_dirs))
-		.unwrap_or_default();
+	// FIX ORDER: 2
+	// let mut startup_children = project_dirs
+		// .as_ref()
+		// .map(|project_dirs| launch_start(&cli_args, project_dirs))
+		// .unwrap_or_default();
 	let return_value = io_loop.await;
 	info!("Stopping...");
-	if let Some(project_dirs) = project_dirs {
-		save_session(&project_dirs).await;
-	}
-	for mut startup_child in startup_children.drain(..) {
-		// TODO: somehow send SIGTERM instead, we really don't want to send SIGKILL, as that doesn't
-		// allow for any cleanup
-		// only SIGKILL after a while
-		let _ = startup_child.kill();
-	}
+	// FIX ORDER: 2
+	// if let Some(project_dirs) = project_dirs {
+		// save_session(&project_dirs).await;
+	// }
+	// for mut startup_child in startup_children.drain(..) {
+		// // TODO: somehow send SIGTERM instead, we really don't want to send SIGKILL, as that doesn't
+		// // allow for any cleanup
+		// // only SIGKILL after a while
+		// let _ = startup_child.kill();
+	// }
 
-	drop(keymap_store);
-	drop(cam_interface);
-	drop(server_interface);
+	// FIX ORDER: 7
+	// drop(keymap_store);
+	// drop(cam_interface);
+	// drop(server_interface);
 	info!("Cleanly shut down Stardust");
 	return_value
 }
@@ -376,15 +392,23 @@ fn bevy_loop(
 		let mut plugin = WinitPlugin::<WakeUp>::default();
 		plugin.run_on_any_thread = true;
 		plugins = plugins.add(plugin).disable::<ScheduleRunnerPlugin>();
+		// FIX ORDER: 5
+		// plugins = if args.spectator {
+			// plugins.add(SpectatorCameraPlugin)
+		// } else if args.force_flatscreen {
+			// plugins
+				// .add(bevy::sprite::SpritePlugin)
+				// .add(bevy::text::TextPlugin)
+				// .add(bevy::ui::UiPlugin::default())
+				// .add(FlatscreenCamPlugin)
+				// .add(FlatscreenInputPlugin)
+		// } else {
+			// plugins
+		// };
 		plugins = if args.spectator {
 			plugins.add(SpectatorCameraPlugin)
 		} else if args.force_flatscreen {
-			plugins
-				.add(bevy::sprite::SpritePlugin)
-				.add(bevy::text::TextPlugin)
-				.add(bevy::ui::UiPlugin::default())
-				.add(FlatscreenCamPlugin)
-				.add(FlatscreenInputPlugin)
+			plugins.add(FlatscreenCamPlugin)
 		} else {
 			plugins
 		};
@@ -476,39 +500,47 @@ fn bevy_loop(
 	}
 	// the Stardust server plugins
 	// infra plugins
-	app.add_plugins((EntityHandlePlugin, DmatexPlugin, VulkanoPlugin));
+	// FIX ORDER: 1
+	// app.add_plugins((EntityHandlePlugin, DmatexPlugin, VulkanoPlugin));
+	app.add_plugins(VulkanoPlugin);
 	// node plugins
-	app.add_plugins((
-		SpatialNodePlugin,
-		ModelNodePlugin,
-		TextNodePlugin,
-		LinesNodePlugin,
-		AudioNodePlugin,
-		CameraNodePlugin,
-		// not really a node ig? at least for now
-		SkyPlugin,
-	));
+	// FIX ORDER: 3
+	// app.add_plugins((
+	// 	SpatialNodePlugin,
+	// 	ModelNodePlugin,
+	// 	TextNodePlugin,
+	// 	LinesNodePlugin,
+	// 	AudioNodePlugin,
+	// 	CameraNodePlugin,
+	// 	// not really a node ig? at least for now
+	// 	SkyPlugin,
+	// ));
 	// object plugins
-	app.add_plugins(HmdPlugin);
-	app.add_plugins(StagePlugin);
+	// FIX ORDER: 3
+	// app.add_plugins(HmdPlugin);
+	// FIX ORDER: 3
+	// app.add_plugins(StagePlugin);
 
-	if !args.disable_hands {
-		app.add_plugins((
-			HandPlugin {
-				transparent_hands: args.transparent_hands,
-			},
-			bevy_sk::hand::HandPlugin,
-		));
-	}
-	if !args.disable_controllers {
-		app.add_plugins(ControllerPlugin);
-	}
+	// FIX ORDER: 5
+	// if !args.disable_hands {
+	// 	app.add_plugins((
+	// 		HandPlugin {
+	// 			transparent_hands: args.transparent_hands,
+	// 		},
+	// 		bevy_sk::hand::HandPlugin,
+	// 	));
+	// }
+	// FIX ORDER: 5
+	// if !args.disable_controllers {
+	// 	app.add_plugins(ControllerPlugin);
+	// }
 	if !args.disable_startup_recenter {
 		app.add_plugins(TrackingOffsetPlugin);
 	}
 
-	// feature plugins
-	app.add_plugins(FieldDebugGizmoPlugin);
+	// FIX ORDER: 2
+	// // feature plugins
+	// app.add_plugins(FieldDebugGizmoPlugin);
 	app.add_systems(PostStartup, move || {
 		ready_notifier.notify_waiters();
 	});
@@ -589,14 +621,15 @@ fn xr_step(world: &mut World) {
 			Timestamp::now(),
 		)
 	};
-	let frame_span = info_span!("frame-event").entered();
-	for client in CLIENTS.get_valid_contents() {
-		client.frame(FrameInfo {
-			delta,
-			predicted_display_time,
-		});
-	}
-	drop(frame_span);
+	// FIX ORDER: 6
+	// let frame_span = info_span!("frame-event").entered();
+	// for client in CLIENTS.get_valid_contents() {
+		// client.frame(FrameInfo {
+			// delta,
+			// predicted_display_time,
+		// });
+	// }
+	// drop(frame_span);
 
 	let should_wait = world
 		.run_system_cached(should_run_frame_loop)
