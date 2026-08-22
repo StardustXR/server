@@ -13,7 +13,7 @@ use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::gizmos::GizmoAsset;
 use bevy::gizmos::retained::Gizmo;
 use glam::{Vec3, Vec3A, vec3a};
-use gluon::{Handler, ObjectRef};
+use gluon::{Handler, RefExt};
 use parking_lot::RwLock;
 use stardust_xr_protocol::field::{
 	CreatedField, Field as FieldProxy, FieldHandler, FieldInterfaceHandler,
@@ -505,8 +505,8 @@ impl Debug for ShapeChangedCallback {
 #[derive(Debug, Handler)]
 pub struct FieldObject {
 	pub data: Arc<Field>,
-	field_ref: gluon::ObjectRef<FieldRef>,
-	spatial: gluon::ObjectRef<SpatialObject>,
+	field_ref: FieldRefProxy,
+	spatial: SpatialProxy,
 }
 pub struct Field {
 	pub spatial: Arc<Spatial>,
@@ -587,11 +587,12 @@ impl Field {
 }
 impl FieldObject {
 	pub fn new(
-		spatial: gluon::ObjectRef<SpatialObject>,
+		spatial: Arc<SpatialObject>,
+		spatial_proxy: SpatialProxy,
 		shape: Shape,
-	) -> gluon::ObjectRef<FieldObject> {
+	) -> gluon::LocalRef<FieldProxy, FieldObject> {
 		let data = Arc::new(Field {
-			spatial: spatial.handler_arc().spatial_arc().clone(),
+			spatial: spatial.spatial_arc().clone(),
 			shape: RwLock::new(shape),
 			polyline_cache: RwLock::new((0, None)),
 			shape_changed_callback: Registry::new(),
@@ -599,15 +600,16 @@ impl FieldObject {
 		});
 		FIELD_REGISTRY_DEBUG_GIZMOS.add_raw(&data);
 		request_field_polylines_recalc(&data);
-		let field_ref = PION
-			.register_object(FieldRef { data: data.clone() })
-			.to_service();
-		PION.register_object(FieldObject {
+		// TODO: remove those unwraps
+		let field_ref = FieldRefProxy::new_service(FieldRef { data: data.clone() })
+			.unwrap()
+			.into_proxy();
+		FieldProxy::new_service(FieldObject {
 			field_ref,
 			data,
-			spatial,
+			spatial: spatial_proxy,
 		})
-		.to_service()
+		.unwrap()
 	}
 }
 impl Drop for Field {
@@ -616,17 +618,17 @@ impl Drop for Field {
 	}
 }
 impl FieldObject {
-	pub fn get_ref(&self) -> &ObjectRef<FieldRef> {
+	pub fn get_ref(&self) -> &FieldRefProxy {
 		&self.field_ref
 	}
 }
 impl FieldHandler for FieldObject {
 	async fn field_ref(&self, _ctx: gluon::Context) -> FieldRefProxy {
-		FieldRefProxy::from_handler(&self.field_ref)
+		self.field_ref.clone()
 	}
 
 	async fn spatial(&self, _ctx: gluon::Context) -> SpatialProxy {
-		SpatialProxy::from_handler(&self.spatial)
+		self.spatial.clone()
 	}
 
 	async fn sample(
@@ -710,14 +712,14 @@ impl FieldInterfaceHandler for FieldInterface {
 	async fn create_field(
 		&self,
 		_ctx: gluon::Context,
-		spatial: SpatialProxy,
+		spatial_proxy: SpatialProxy,
 		shape: Shape,
 	) -> Result<CreatedField, CreateError> {
-		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
-		let field = FieldObject::new(spatial, shape);
+		let spatial = spatial_proxy.owned().ok_or(CreateError::InvalidRef)?;
+		let field = FieldObject::new(spatial, spatial_proxy, shape);
 		Ok(CreatedField {
-			field: FieldProxy::from_handler(&field),
-			field_ref: FieldRefProxy::from_handler(field.get_ref()),
+			field_ref: field.get_ref().clone(),
+			field: field.into_proxy(),
 		})
 	}
 }

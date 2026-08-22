@@ -6,7 +6,7 @@ use gluon::Handler;
 // pub mod camera;
 pub mod drawable;
 // FIX ORDER: 2
-// pub mod fields;
+pub mod fields;
 pub mod spatial;
 
 #[macro_export]
