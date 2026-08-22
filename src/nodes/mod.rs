@@ -1,11 +1,9 @@
 use gluon::Handler;
 
-// FIX ORDER: 2
-// pub mod audio;
+pub mod audio;
 // FIX ORDER: 2
 // pub mod camera;
 pub mod drawable;
-// FIX ORDER: 2
 pub mod fields;
 pub mod spatial;
 

@@ -9,7 +9,7 @@ use bevy::audio::{PlaybackMode, Volume};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::XrSpace;
-use gluon::Handler;
+use gluon::{Handler, RefExt};
 use parking_lot::Mutex;
 
 use bevy::prelude::*;
@@ -115,18 +115,18 @@ impl Sound {
 			resource_prefixes,
 			&[OsStr::new("wav"), OsStr::new("mp3")],
 		)?;
-		let sound = PION
-			.register_object(Sound {
-				spatial,
-				volume: 1.0,
-				pending_audio_path,
-				entity: OnceLock::new(),
-				stop: Mutex::new(None),
-				play: Mutex::new(None),
-			})
-			.to_service();
-		SOUND_REGISTRY.add_raw(sound.handler_arc());
-		Some(sound)
+		let sound = SoundProxy::new_service(Sound {
+			spatial,
+			volume: 1.0,
+			pending_audio_path,
+			entity: OnceLock::new(),
+			stop: Mutex::new(None),
+			play: Mutex::new(None),
+		})
+		// TODO: remove unwrap
+		.unwrap();
+		SOUND_REGISTRY.add_raw(sound.handler());
+		Some(sound.into_proxy())
 	}
 }
 impl SoundHandler for Sound {
@@ -153,8 +153,8 @@ impl AudioInterfaceHandler for AudioInterface {
 		sound: Resource,
 	) -> Result<SoundProxy, ResourceLoadError> {
 		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
-		let sound = Sound::new(spatial.handler_arc().clone(), sound, self.base_prefixes())
+		let sound = Sound::new(spatial, sound, self.base_prefixes())
 			.ok_or(ResourceLoadError::NotFound)?;
-		Ok(SoundProxy::from_handler(&sound))
+		Ok(sound)
 	}
 }
