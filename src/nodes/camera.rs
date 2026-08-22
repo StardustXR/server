@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-use crate::PION;
 use crate::bevy_int::entity_handle::EntityHandle;
 use crate::core::vulkano_data::VULKANO_CONTEXT;
 use crate::exposed_interface;
@@ -30,6 +29,7 @@ use bevy::render::extract_component::ExtractComponentPlugin;
 use bevy_mod_xr::camera::XrProjection;
 use glam::Mat4;
 use gluon::Handler;
+use gluon::RefExt;
 use parking_lot::Mutex;
 use stardust_xr_protocol::camera::Camera as CameraProxy;
 use stardust_xr_protocol::camera::CameraHandler;
@@ -60,16 +60,18 @@ pub struct Camera {
 	entity: OnceLock<EntityHandle>,
 }
 impl Camera {
-	pub fn new(spatial: Arc<SpatialObject>) -> gluon::ObjectRef<Camera> {
+	pub fn new(spatial: Arc<SpatialObject>) -> CameraProxy {
 		let (tx, rx) = mpsc::unbounded_channel();
-		let cam = PION.register_object(Camera {
+		let cam = CameraProxy::new_service(Camera {
 			spatial,
 			queued_render_targets: Mutex::new(rx),
 			render_target_queue: tx,
 			entity: OnceLock::new(),
-		});
-		CAMERA_REGISTRY.add_raw(cam.handler_arc());
-		cam.to_service()
+		})
+		// TODO: unwrap, remove
+		.unwrap();
+		CAMERA_REGISTRY.add_raw(cam.handler());
+		cam.into_proxy()
 	}
 }
 impl CameraHandler for Camera {
@@ -103,7 +105,7 @@ impl CameraHandler for Camera {
 			tx.send((
 				acquire_point,
 				views,
-				tex.handler_arc().clone(),
+				tex,
 				release_on_drop,
 			))
 			.unwrap();
@@ -120,8 +122,8 @@ impl CameraInterfaceHandler for CameraInterface {
 		spatial: stardust_xr_protocol::spatial::Spatial,
 	) -> Result<CameraProxy, CreateError> {
 		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
-		let cam = Camera::new(spatial.handler_arc().clone());
-		Ok(CameraProxy::from_handler(&cam))
+		let cam = Camera::new(spatial);
+		Ok(cam)
 	}
 }
 pub struct CameraNodePlugin;

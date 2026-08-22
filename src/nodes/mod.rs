@@ -1,8 +1,7 @@
 use gluon::Handler;
 
 pub mod audio;
-// FIX ORDER: 2
-// pub mod camera;
+pub mod camera;
 pub mod drawable;
 pub mod fields;
 pub mod spatial;
@@ -35,37 +34,28 @@ macro_rules! exposed_interface {
 	($type:ident, $service:literal) => {
 		#[derive(Debug, gluon::Handler)]
 		pub struct $type {
-			_lock: std::fs::File,
-			pub pion_path: std::path::PathBuf,
+			ref_binding: std::sync::OnceLock<gluon::RefFsBinding>,
 		}
 
 		impl $type {
-			pub async fn expose(instance: &str) -> gluon::Object<$type> {
-				let (pion_path, lock) = stardust_xr_protocol::dir::create_pion_file(
-					$service, &instance,
-				)
-				.expect(&format!(
-					"failed to create {} pion file for instance: {}",
-					$service, instance,
+			pub async fn expose(instance: &str) -> gluon::Node<$type> {
+				let path = stardust_xr_protocol::dir::server_file_path($service, instance).expect(
+					&format!("failed to get {} path for instance: {}", $service, instance,),
+				);
+				let (node, node_ref) = gluon::Node::new($type {
+					ref_binding: std::sync::OnceLock::new(),
+				})
+				.expect(&format!("failed to create node for {}", stringify!($type)));
+				let fs_binding = gluon::RefFsBinding::new(node_ref, path).expect(&format!(
+					"failed to create node for {}: {}",
+					$service, instance
 				));
-				let pion_file = std::fs::OpenOptions::new()
-					.create(true)
-					.read(true)
-					.write(true)
-					.open(&pion_path)
-					.expect("failed to open file even tho we're holding a lock file for it");
-				let interface = $crate::PION.register_object($type {
-					_lock: lock,
-					pion_path,
-				});
-				$crate::PION
-					.bind_binder_ref_to_file(pion_file, &interface)
-					.await
-					.expect(&format!(
-						"failed to register {} with pion",
-						stringify!($type)
-					));
-				interface
+				_ = node.ref_binding.set(fs_binding);
+
+				node
+			}
+			pub fn path(&self) -> &std::path::Path {
+				self.ref_binding.get().unwrap().path()
 			}
 		}
 	};

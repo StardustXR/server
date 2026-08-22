@@ -80,10 +80,13 @@ use crate::{
 	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin},
 	core::vulkano_data::VulkanoPlugin,
 	nodes::{
-		audio::AudioNodePlugin, drawable::{
+		audio::AudioNodePlugin,
+		camera::{CameraInterface, CameraNodePlugin},
+		drawable::{
 			dmatex::DmatexPlugin, lines::LinesNodePlugin, model::ModelNodePlugin, sky::SkyPlugin,
 			text::TextNodePlugin,
-		}, fields::FieldDebugGizmoPlugin
+		},
+		fields::FieldDebugGizmoPlugin,
 	},
 	openxr_helpers::ConvertTimespec,
 };
@@ -208,11 +211,11 @@ async fn main() -> Result<AppExit, JoinError> {
 	// pion_file_path = ?server_interface.pion_path.display(),
 	// "Stardust server pion file created"
 	// );
-	// let cam_interface = CameraInterface::expose(&instance).await;
-	// info!(
-	// pion_file_path = ?cam_interface.pion_path.display(),
-	// "Stardust server camera pion file created"
-	// );
+	let cam_interface = CameraInterface::expose(&instance).await;
+	info!(
+	    file_path = ?cam_interface.path().display(),
+	    "Stardust server camera fs bind created"
+	);
 	// let keymap_store = KeymapStore::expose(&instance).expect("Could not expose the keymap store");
 	// info!(
 	// 	pion_file_path = ?keymap_store.pion_path.display(),
@@ -265,7 +268,7 @@ async fn main() -> Result<AppExit, JoinError> {
 
 	// FIX ORDER: 7
 	// drop(keymap_store);
-	// drop(cam_interface);
+	drop(cam_interface);
 	// drop(server_interface);
 	info!("Cleanly shut down Stardust");
 	return_value
@@ -483,7 +486,7 @@ fn bevy_loop(
 		TextNodePlugin,
 		LinesNodePlugin,
 		AudioNodePlugin,
-		// 	CameraNodePlugin,
+		CameraNodePlugin,
 		// not really a node ig? at least for now
 		SkyPlugin,
 	));
