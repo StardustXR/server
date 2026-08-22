@@ -6,8 +6,7 @@ mod bevy_int;
 mod core;
 // mod keymap_store;
 mod nodes;
-// FIX ORDER: 2
-// mod objects;
+mod objects;
 mod openxr_helpers;
 // FIX ORDER: 3
 mod query;

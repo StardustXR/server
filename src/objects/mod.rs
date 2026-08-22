@@ -14,7 +14,7 @@ use std::{
 };
 
 use bevy::prelude::{Deref, DerefMut};
-use gluon::{Handler, OwnedObjectRef};
+use gluon::{Handler, IntoHandler, RefExt, RefFsBinding};
 use stardust_xr_protocol::{
 	spatial::SpatialRef,
 	tracked::{TrackedGuardHandler, TrackedHandler, TrackedStateReceiver},
@@ -38,8 +38,8 @@ use crate::{
 
 #[derive(Debug)]
 pub struct Tracked<T: Debug + Send + Sync + 'static> {
-	inner: gluon::Object<TrackedInner<T>>,
-	lock: File,
+	inner: gluon::Node<TrackedInner<T>>,
+	binding: RefFsBinding,
 	_type: PhantomData<T>,
 }
 #[derive(Debug, Handler)]
@@ -59,34 +59,27 @@ impl<T: Debug + Send + Sync + 'static> Tracked<T> {
 		pion_dir: &str,
 		data: T,
 	) -> Option<Self> {
-		let (pion_path, lock) =
-			stardust_xr_protocol::dir::create_pion_file(pion_dir, STARDUST_INSTANCE.wait())?;
-		let inner = PION.register_object(TrackedInner {
+		let path = stardust_xr_protocol::dir::server_file_path(pion_dir, STARDUST_INSTANCE.wait())?;
+		let (inner, tracked) = stardust_xr_protocol::tracked::Tracked::new_node(TrackedInner {
 			tracked: AtomicBool::new(tracked),
 			receivers: Arc::default(),
 			spatial,
 			pose_callback: pose_getter,
 			data: RwLock::new(data),
-		});
-		info!("creating Tracked at {pion_path:?}");
-		let file = OpenOptions::new()
-			.write(true)
-			.read(true)
-			.create(true)
-			.truncate(true)
-			.open(pion_path)
+		})
+		.inspect_err(|err| error!("failed to create Tracked node: {err}"))
+		.ok()?;
+		info!("creating Tracked at {path:?}");
+		let binding = tracked
+			.proxy()
+			.bind(&path)
+			.inspect_err(|err| error!(?path, "failed to bind tracked to path: {err}"))
 			.ok()?;
-		let obj2 = inner.to_object_or_ref();
-		tokio::spawn(async move {
-			if let Err(err) = PION.bind_binder_ref_to_file(file, &obj2).await {
-				error!("somehow failed to setup pion of Trackable: {err}");
-			}
-		});
 
 		Some(Self {
 			inner,
-			lock,
 			_type: PhantomData,
+			binding,
 		})
 	}
 	pub fn tracked_blocking(&self, tracked: bool) {
@@ -117,11 +110,12 @@ impl<T: Debug + Send + Sync + 'static> TrackedHandler for TrackedInner<T> {
 		self.receivers.write().await.insert(handler.clone());
 		(
 			self.spatial.clone(),
-			stardust_xr_protocol::tracked::TrackedGuard::from_handler(
-				&PION
-					.register_object(TrackedGuard(handler, self.receivers.clone()))
-					.to_service(),
-			),
+			stardust_xr_protocol::tracked::TrackedGuard::new_service(
+				(TrackedGuard(handler, self.receivers.clone())),
+			)
+			// TODO: don't unwrap, maybe don't have this at all?
+			.unwrap()
+			.into_proxy(),
 			self.tracked.load(Ordering::Relaxed),
 		)
 	}
