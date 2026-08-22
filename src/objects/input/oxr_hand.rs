@@ -3,6 +3,7 @@ use crate::nodes::ProxyExt;
 use crate::nodes::drawable::model::HoldoutExtension;
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
+use crate::objects::input::InputMethodNode;
 use crate::objects::{DebugWrapper, Tracked};
 use crate::openxr_helpers::ConvertTimespec;
 use crate::query::spatial_query::SpatialQueryInterface;
@@ -19,14 +20,14 @@ use bevy_mod_xr::spaces::{XrPrimaryReferenceSpace, XrSpace, XrSpaceLocationFlags
 use bevy_sk::hand::GRADIENT_TEXTURE_HANDLE;
 use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
-use gluon::{Handler, Object, ObjectRef};
+use gluon::{Handler, LocalRef, Node, RefExt};
 use openxr::{HandJointLocation, Posef, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::field::FieldSample;
-use stardust_xr_protocol::query::{InterfaceDependency, QueriedInterface, QueryableObjectRef};
-use stardust_xr_protocol::spatial::SpatialRef as SpatialRefProxy;
+use stardust_xr_protocol::query::{InterfaceDependency, QueriedInterface, QueryableId};
+use stardust_xr_protocol::spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy};
 use stardust_xr_protocol::spatial_query::{
-	Point, PointsQuery, PointsQueryHandle, PointsQueryHandler, SpatialQueryGuard,
+	Point, PointsQuery, PointsQueryHandle, PointsQueryHandler,
 	SpatialQueryInterface as SpatialQueryInterfaceProxy,
 };
 use stardust_xr_protocol::suis::{
@@ -141,9 +142,10 @@ fn create_trackers(session: Res<OxrSession>, mut hands: ResMut<Hands>) {
 			tracker,
 		)
 		.inspect_err(|err| error!("failed to create left hand input method: {err}"))
+		&& let Ok(method) = InputMethodNode::new(method)
+			.inspect_err(|err| error!("failed to create node for left hand input method: {err}"))
 	{
-		let method = PION.register_object(method);
-		hands.left.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler_arc());
+		hands.left.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
 		hands.left.method = Some(method);
 	}
 	if let Ok(tracker) = session
@@ -156,9 +158,10 @@ fn create_trackers(session: Res<OxrSession>, mut hands: ResMut<Hands>) {
 			tracker,
 		)
 		.inspect_err(|err| error!("failed to create right hand input method: {err}"))
+		&& let Ok(method) = InputMethodNode::new(method)
+			.inspect_err(|err| error!("failed to create node for right hand input method: {err}"))
 	{
-		let method = PION.register_object(method);
-		hands.right.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler_arc());
+		hands.right.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
 		hands.right.method = Some(method);
 	}
 }
@@ -243,7 +246,7 @@ struct Hands {
 	left: OxrHandInput,
 	right: OxrHandInput,
 	base_space: Option<Arc<openxr::Space>>,
-	base_spatial: ObjectRef<SpatialObject>,
+	base_spatial: LocalRef<SpatialProxy, SpatialObject>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone, Copy)]
@@ -262,7 +265,7 @@ enum HandMaterial {
 #[derive(Debug)]
 struct OxrHandInputTrackedState {
 	method: Weak<HandInputMethod>,
-	palm_spatial: ObjectRef<SpatialObject>,
+	palm_spatial: LocalRef<SpatialProxy, SpatialObject>,
 }
 impl OxrHandInputTrackedState {
 	fn get_pose(&self, relative_to: &Spatial, at: Timestamp) -> (Option<types::Posef>, bool) {
@@ -292,9 +295,9 @@ impl OxrHandInputTrackedState {
 }
 
 pub struct OxrHandInput {
-	palm_spatial: ObjectRef<SpatialObject>,
+	palm_spatial: LocalRef<SpatialProxy, SpatialObject>,
 	side: HandSide,
-	method: Option<Object<HandInputMethod>>,
+	method: Option<InputMethodNode<HandInputMethod>>,
 	captured: bool,
 	material: HandMaterial,
 	tracked: Tracked<OxrHandInputTrackedState>,
@@ -304,7 +307,7 @@ pub struct OxrHandInput {
 impl OxrHandInput {
 	pub fn new(
 		side: HandSide,
-		base_space: &ObjectRef<SpatialRef>,
+		base_space: &LocalRef<SpatialRefProxy, SpatialRef>,
 		materials: &mut Assets<BevyMaterial>,
 		holdout_materials: &mut Assets<HandHoldoutMaterial>,
 		hand_config: &HandRenderConfig,
@@ -330,7 +333,7 @@ impl OxrHandInput {
 			HandSide::Right => "stardust-hand/right",
 		};
 		let tracked = Tracked::new(
-			SpatialRefProxy::from_handler(palm_spatial.get_ref()),
+			palm_spatial.get_ref().proxy().clone(),
 			OxrHandInputTrackedState::get_pose,
 			false,
 			pion_path,
@@ -359,7 +362,7 @@ impl OxrHandInput {
 		&mut self,
 		time: openxr::Time,
 		materials: &mut ResMut<Assets<BevyMaterial>>,
-		base_space: &ObjectRef<SpatialRef>,
+		base_space: &LocalRef<SpatialRefProxy, SpatialRef>,
 	) {
 		let new_hand = self
 			.method
@@ -379,7 +382,7 @@ impl OxrHandInput {
 			if let Some(method) = self.method.as_ref()
 				&& let Some(handle) = method.query_handle.get()
 			{
-				_ = handle.update_points(
+				_ = handle.update(
 					[
 						new_hand.thumb.tip,
 						new_hand.index.tip,
@@ -422,14 +425,14 @@ impl OxrHandInput {
 			self.captured = captured;
 		}
 
-		let input_method = InputMethod::from_handler(method);
+		let input_method = method.proxy.clone();
 		let ts = method
 			.base_space
 			.instance()
 			.xr_to_timestamp(time)
 			.unwrap_or_else(Timestamp::now);
 		let sender = method.sender.clone();
-		sender.send(&***method, input_method, ts);
+		sender.send(&****method, input_method, ts);
 	}
 }
 
@@ -439,9 +442,9 @@ impl OxrHandInput {
 struct HandInputMethod {
 	side: HandSide,
 	base_space: DebugWrapper<Arc<openxr::Space>>,
-	base_spatial: ObjectRef<SpatialRef>,
+	base_spatial: LocalRef<SpatialRefProxy, SpatialRef>,
 	tracker: DebugWrapper<openxr::HandTracker>,
-	_query: Object<PointsQueryCache>,
+	_query: Node<PointsQueryCache>,
 	sender: Arc<InputSender<FieldSample>>,
 	hand: RwLock<Option<Hand>>,
 	datamap: RwLock<HandDatamap>,
@@ -450,7 +453,7 @@ struct HandInputMethod {
 
 impl HandInputMethod {
 	fn new(
-		base_spatial: ObjectRef<SpatialRef>,
+		base_spatial: LocalRef<SpatialRefProxy, SpatialRef>,
 		base_space: Arc<openxr::Space>,
 		side: HandSide,
 		tracker: openxr::HandTracker,
@@ -458,19 +461,22 @@ impl HandInputMethod {
 		let (query_cache, objects_arc, capture_requests) = QueryCache::new();
 		let sender = Arc::new(InputSender::new(objects_arc, capture_requests));
 
-		let query = PION.register_object(PointsQueryCache(query_cache));
-		let proxy = PointsQueryHandler::from_handler(&query);
+		let (query, proxy) = PointsQueryHandler::new_node(PointsQueryCache(query_cache))?;
 		let query_handle = Arc::new(OnceLock::new());
-		let base_spatial_ref = SpatialRefProxy::from_handler(&base_spatial);
+		let base_spatial_ref = base_spatial.proxy().clone();
 		tokio::spawn({
 			let query_handle = query_handle.clone();
 			async move {
-				let spatial_query_interface = SpatialQueryInterface::new(&Arc::default());
-				let spatial_query_interface_proxy =
-					SpatialQueryInterfaceProxy::from_handler(&spatial_query_interface);
+				let (spatial_query_interface, spatial_query_interface_proxy) =
+					SpatialQueryInterfaceProxy::new_node(SpatialQueryInterface::new(
+						&Arc::default(),
+					))
+					// TODO: get rid of this unwrap
+					.unwrap();
 				let handle = spatial_query_interface_proxy
+					.into_proxy()
 					.points_query(PointsQuery {
-						handler: proxy,
+						handler: proxy.into_proxy(),
 						interfaces: vec![InterfaceDependency {
 							id: InputHandler::QUERY_INTERFACE.to_string(),
 							optional: false,
@@ -595,7 +601,7 @@ impl InputSource for HandInputMethod {
 
 	fn order_handlers_and_captures(
 		&self,
-		objects: &HashMap<QueryableObjectRef, CachedObject<FieldSample>>,
+		objects: &HashMap<QueryableId, CachedObject<FieldSample>>,
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let hand = *self.hand.blocking_read();

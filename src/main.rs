@@ -76,9 +76,7 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry
 use zbus::Connection;
 
 use crate::{
-	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin},
-	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
-	nodes::{
+	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin}, core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin}, nodes::{
 		audio::AudioNodePlugin,
 		camera::{CameraInterface, CameraNodePlugin},
 		drawable::{
@@ -86,8 +84,7 @@ use crate::{
 			text::TextNodePlugin,
 		},
 		fields::FieldDebugGizmoPlugin,
-	},
-	openxr_helpers::ConvertTimespec,
+	}, objects::{hmd::HmdPlugin, input::{oxr_controller::ControllerPlugin, oxr_hand::HandPlugin}, stage::StagePlugin}, openxr_helpers::ConvertTimespec
 };
 
 #[cfg(feature = "mimalloc")]
@@ -489,20 +486,17 @@ fn bevy_loop(
 		SkyPlugin,
 	));
 	// object plugins
-	// FIX ORDER: 3
-	// app.add_plugins(HmdPlugin);
-	// FIX ORDER: 3
-	// app.add_plugins(StagePlugin);
+	app.add_plugins(HmdPlugin);
+	app.add_plugins(StagePlugin);
 
-	// FIX ORDER: 5
-	// if !args.disable_hands {
-	// 	app.add_plugins((
-	// 		HandPlugin {
-	// 			transparent_hands: args.transparent_hands,
-	// 		},
-	// 		bevy_sk::hand::HandPlugin,
-	// 	));
-	// }
+	if !args.disable_hands {
+		app.add_plugins((
+			HandPlugin {
+				transparent_hands: args.transparent_hands,
+			},
+			bevy_sk::hand::HandPlugin,
+		));
+	}
 	if !args.disable_controllers {
 		app.add_plugins(ControllerPlugin);
 	}

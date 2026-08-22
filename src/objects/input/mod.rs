@@ -3,8 +3,7 @@
 // FIX ORDER: 5
 // pub mod mouse_pointer;
 pub mod oxr_controller;
-// FIX ORDER: 5
-// pub mod oxr_hand;
+pub mod oxr_hand;
 
 use crate::nodes::{
 	ProxyExt as _,
