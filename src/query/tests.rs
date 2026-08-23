@@ -1,27 +1,21 @@
 use crate::{
-	PION,
 	nodes::{fields::FieldObject, spatial::SpatialObject},
 	query::{QueryInterface, spatial_query::SpatialQueryInterface},
 };
 use glam::{Mat4, Vec3};
-use gluon::{Context, Handler};
+use gluon::{Context, Handler, RefExt as _};
 use stardust_xr_protocol::{
-	field::{
-		Field as FieldProxy, FieldHandler, FieldRef as FieldRefProxy, FieldSample, RayMarchResult,
-		Shape,
-	},
+	field::{Field as FieldProxy, FieldRef as FieldRefProxy, FieldSample, RayMarchResult, Shape},
 	query::{
-		InterfaceDependency, QueriedInterface, QueryInterfaceHandler, QueryableInterfaceGuard,
-		QueryableInterfaceGuardHandler, QueryableObjectRef,
+		InterfaceDependency, QueriedInterface, QueryInterfaceHandler as _, QueryableId,
+		QueryableInterface as QueryableInterfaceProxy, QueryableInterfaceHandler,
+		QueryableInterfaceLocal, QueryableObject,
 	},
-	spatial::{
-		PartialTransform, Spatial as SpatialProxy, SpatialHandler as _,
-		SpatialRef as SpatialRefProxy,
-	},
+	spatial::{PartialTransform, SpatialHandler as _, SpatialLocal, SpatialRef as SpatialRefProxy},
 	spatial_query::{
 		BeamQuery, BeamQueryHandler, BeamQueryHandlerHandler, Point, PointsQuery,
-		PointsQueryHandler, PointsQueryHandlerHandler, SpatialQueryInterfaceHandler, ZoneQuery,
-		ZoneQueryHandler, ZoneQueryHandlerHandler,
+		PointsQueryHandler, PointsQueryHandlerHandler, SpatialQueryInterfaceHandler as _,
+		ZoneQuery, ZoneQueryHandler, ZoneQueryHandlerHandler,
 	},
 	types::Vec3F,
 };
@@ -32,7 +26,7 @@ use std::{
 };
 use tokio::sync::mpsc;
 
-// Shared runtime so PION's binder looper threads always have a valid runtime handle.
+// Shared runtime so gluon's node loopers always have a valid runtime handle.
 static RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 	tokio::runtime::Builder::new_multi_thread()
 		.enable_all()
@@ -41,10 +35,7 @@ static RT: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 });
 
 fn ctx() -> Context {
-	Context {
-		sender_pid: 0,
-		sender_euid: 0,
-	}
+	Context::new(None)
 }
 
 fn prefixes() -> Arc<Vec<PathBuf>> {
@@ -55,7 +46,7 @@ fn prefixes() -> Arc<Vec<PathBuf>> {
 
 #[derive(Debug, Handler)]
 struct DummyInterface;
-impl QueryableInterfaceGuardHandler for DummyInterface {}
+impl QueryableInterfaceHandler for DummyInterface {}
 
 #[derive(Debug, Clone)]
 enum ZoneEvent {
@@ -69,7 +60,7 @@ impl ZoneQueryHandlerHandler for TestZoneHandler {
 	async fn entered(
 		&self,
 		_ctx: Context,
-		_obj: QueryableObjectRef,
+		_obj: QueryableId,
 		_field: FieldRefProxy,
 		_spatial: SpatialRefProxy,
 		_interfaces: Vec<QueriedInterface>,
@@ -81,19 +72,12 @@ impl ZoneQueryHandlerHandler for TestZoneHandler {
 	async fn interfaces_changed(
 		&self,
 		_ctx: Context,
-		_obj: QueryableObjectRef,
+		_obj: QueryableId,
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
-	async fn moved(
-		&self,
-		_ctx: Context,
-		_obj: QueryableObjectRef,
-		_pos: Vec3F,
-		_sample: FieldSample,
-	) {
-	}
-	async fn left(&self, _ctx: Context, _obj: QueryableObjectRef) {
+	async fn moved(&self, _ctx: Context, _obj: QueryableId, _pos: Vec3F, _sample: FieldSample) {}
+	async fn left(&self, _ctx: Context, _obj: QueryableId) {
 		let _ = self.0.send(ZoneEvent::Left).await;
 	}
 }
@@ -110,7 +94,7 @@ impl BeamQueryHandlerHandler for TestBeamHandler {
 	async fn intersected(
 		&self,
 		_ctx: Context,
-		_obj: QueryableObjectRef,
+		_obj: QueryableId,
 		_field: FieldRefProxy,
 		_spatial: SpatialRefProxy,
 		_interfaces: Vec<QueriedInterface>,
@@ -126,12 +110,12 @@ impl BeamQueryHandlerHandler for TestBeamHandler {
 	async fn interfaces_changed(
 		&self,
 		_ctx: Context,
-		_obj: QueryableObjectRef,
+		_obj: QueryableId,
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
-	async fn moved(&self, _ctx: Context, _obj: QueryableObjectRef, _march_result: RayMarchResult) {}
-	async fn left(&self, _ctx: Context, _obj: QueryableObjectRef) {
+	async fn moved(&self, _ctx: Context, _obj: QueryableId, _march_result: RayMarchResult) {}
+	async fn left(&self, _ctx: Context, _obj: QueryableId) {
 		let _ = self.0.send(BeamEvent::Left).await;
 	}
 }
@@ -148,7 +132,7 @@ impl PointsQueryHandlerHandler for TestPointsHandler {
 	async fn entered(
 		&self,
 		_ctx: Context,
-		_obj: QueryableObjectRef,
+		_obj: QueryableId,
 		_field: FieldRefProxy,
 		_spatial: SpatialRefProxy,
 		_interfaces: Vec<QueriedInterface>,
@@ -159,12 +143,12 @@ impl PointsQueryHandlerHandler for TestPointsHandler {
 	async fn interfaces_changed(
 		&self,
 		_ctx: Context,
-		_obj: QueryableObjectRef,
+		_obj: QueryableId,
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
-	async fn moved(&self, _ctx: Context, _obj: QueryableObjectRef, _sample: FieldSample) {}
-	async fn left(&self, _ctx: Context, _obj: QueryableObjectRef) {
+	async fn moved(&self, _ctx: Context, _obj: QueryableId, _sample: FieldSample) {}
+	async fn left(&self, _ctx: Context, _obj: QueryableId) {
 		let _ = self.0.send(PointsEvent::Left).await;
 	}
 }
@@ -172,35 +156,32 @@ impl PointsQueryHandlerHandler for TestPointsHandler {
 // --- helper ---
 
 struct QueryableHandle {
+	pub spatial: SpatialLocal<SpatialObject>,
 	#[allow(dead_code)]
-	spatial: gluon::ObjectRef<SpatialObject>,
+	field: gluon::LocalRef<FieldProxy, FieldObject>,
 	#[allow(dead_code)]
-	field: gluon::ObjectRef<FieldObject>,
+	queryable: QueryableObject,
 	#[allow(dead_code)]
-	queryable: stardust_xr_protocol::query::QueryableObject,
-	#[allow(dead_code)]
-	iface_obj: Object<DummyInterface>,
-	pub interface_guard: QueryableInterfaceGuard,
+	iface_obj: QueryableInterfaceLocal<DummyInterface>,
+	pub interface_guard: QueryableInterfaceProxy,
 }
 
 async fn make_queryable(translation: Vec3, shape: Shape, iface_id: &str) -> QueryableHandle {
 	let spatial = SpatialObject::new(None, Mat4::from_translation(translation));
-	let field = FieldObject::new(spatial.clone(), shape);
+	let field = FieldObject::new(spatial.handler().clone(), spatial.proxy().clone(), shape);
 
 	let q_iface = QueryInterface::new(&prefixes());
 	let queryable = q_iface
-		.register_queryable(
-			ctx(),
-			SpatialProxy::from_handler(&spatial),
-			FieldProxy::from_handler(&field),
-		)
+		.register_queryable(ctx(), spatial.proxy().clone(), field.proxy().clone())
 		.await
 		.expect("register_queryable failed");
 
-	let iface_obj = PION.register_object(DummyInterface);
+	let iface_obj = QueryableInterfaceProxy::new_service(DummyInterface)
+		.expect("failed to create dummy interface node");
 	let interface_guard = queryable
-		.add_interface(&iface_obj, iface_id)
+		.add_interface(iface_obj.proxy(), iface_id)
 		.await
+		.expect("add_interface transaction failed")
 		.expect("add_interface failed");
 
 	QueryableHandle {
@@ -221,18 +202,23 @@ const NO_HIT: Duration = Duration::from_millis(200);
 fn zone_entered_when_queryable_inside() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+		let handler = ZoneQueryHandler::new_service(TestZoneHandler(tx))
+			.expect("failed to create handler node");
 
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
-		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
-		let zone_field_ref = zone_field.field_ref(ctx()).await;
+		let zone_field = FieldObject::new(
+			zone_spatial.handler().clone(),
+			zone_spatial.proxy().clone(),
+			Shape::Sphere { radius: 2.0 },
+		);
+		let zone_field_ref = zone_field.get_ref().clone();
 
 		let sq = SpatialQueryInterface::new(&prefixes());
 		let _guard = sq
 			.zone_query(
 				ctx(),
 				ZoneQuery {
-					handler: ZoneQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.zone.inside".into(),
 						optional: false,
@@ -241,7 +227,8 @@ fn zone_entered_when_queryable_inside() {
 					margin: 0.0,
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		let _h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.inside").await;
 
@@ -257,18 +244,23 @@ fn zone_entered_when_queryable_inside() {
 fn zone_no_entered_when_queryable_outside() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+		let handler = ZoneQueryHandler::new_service(TestZoneHandler(tx))
+			.expect("failed to create handler node");
 
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
-		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 1.0 });
-		let zone_field_ref = zone_field.field_ref(ctx()).await;
+		let zone_field = FieldObject::new(
+			zone_spatial.handler().clone(),
+			zone_spatial.proxy().clone(),
+			Shape::Sphere { radius: 1.0 },
+		);
+		let zone_field_ref = zone_field.get_ref().clone();
 
 		let sq = SpatialQueryInterface::new(&prefixes());
 		let _guard = sq
 			.zone_query(
 				ctx(),
 				ZoneQuery {
-					handler: ZoneQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.zone.outside".into(),
 						optional: false,
@@ -277,7 +269,8 @@ fn zone_no_entered_when_queryable_outside() {
 					margin: 0.0,
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		let _h = make_queryable(
 			Vec3::new(5.0, 0.0, 0.0),
@@ -297,18 +290,23 @@ fn zone_no_entered_when_queryable_outside() {
 fn zone_left_fires_when_interface_removed() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+		let handler = ZoneQueryHandler::new_service(TestZoneHandler(tx))
+			.expect("failed to create handler node");
 
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
-		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
-		let zone_field_ref = zone_field.field_ref(ctx()).await;
+		let zone_field = FieldObject::new(
+			zone_spatial.handler().clone(),
+			zone_spatial.proxy().clone(),
+			Shape::Sphere { radius: 2.0 },
+		);
+		let zone_field_ref = zone_field.get_ref().clone();
 
 		let sq = SpatialQueryInterface::new(&prefixes());
 		let _guard = sq
 			.zone_query(
 				ctx(),
 				ZoneQuery {
-					handler: ZoneQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.zone.left".into(),
 						optional: false,
@@ -317,7 +315,8 @@ fn zone_left_fires_when_interface_removed() {
 					margin: 0.0,
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.left").await;
 
@@ -341,18 +340,23 @@ fn zone_left_fires_when_interface_removed() {
 fn zone_no_entered_wrong_interface() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+		let handler = ZoneQueryHandler::new_service(TestZoneHandler(tx))
+			.expect("failed to create handler node");
 
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
-		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
-		let zone_field_ref = zone_field.field_ref(ctx()).await;
+		let zone_field = FieldObject::new(
+			zone_spatial.handler().clone(),
+			zone_spatial.proxy().clone(),
+			Shape::Sphere { radius: 2.0 },
+		);
+		let zone_field_ref = zone_field.get_ref().clone();
 
 		let sq = SpatialQueryInterface::new(&prefixes());
 		let _guard = sq
 			.zone_query(
 				ctx(),
 				ZoneQuery {
-					handler: ZoneQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.zone.required".into(),
 						optional: false,
@@ -361,7 +365,8 @@ fn zone_no_entered_wrong_interface() {
 					margin: 0.0,
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		// Queryable has wrong interface ID
 		let _h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.wrong").await;
@@ -377,18 +382,23 @@ fn zone_no_entered_wrong_interface() {
 fn zone_left_when_queryable_moves_out() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+		let handler = ZoneQueryHandler::new_service(TestZoneHandler(tx))
+			.expect("failed to create handler node");
 
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
-		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
-		let zone_field_ref = zone_field.field_ref(ctx()).await;
+		let zone_field = FieldObject::new(
+			zone_spatial.handler().clone(),
+			zone_spatial.proxy().clone(),
+			Shape::Sphere { radius: 2.0 },
+		);
+		let zone_field_ref = zone_field.get_ref().clone();
 
 		let sq = SpatialQueryInterface::new(&prefixes());
 		let _guard = sq
 			.zone_query(
 				ctx(),
 				ZoneQuery {
-					handler: ZoneQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.zone.move_out".into(),
 						optional: false,
@@ -397,7 +407,8 @@ fn zone_left_when_queryable_moves_out() {
 					margin: 0.0,
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		let h = make_queryable(
 			Vec3::ZERO,
@@ -439,18 +450,23 @@ fn zone_left_when_queryable_moves_out() {
 fn zone_left_when_queryable_hidden() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+		let handler = ZoneQueryHandler::new_service(TestZoneHandler(tx))
+			.expect("failed to create handler node");
 
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
-		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
-		let zone_field_ref = zone_field.field_ref(ctx()).await;
+		let zone_field = FieldObject::new(
+			zone_spatial.handler().clone(),
+			zone_spatial.proxy().clone(),
+			Shape::Sphere { radius: 2.0 },
+		);
+		let zone_field_ref = zone_field.get_ref().clone();
 
 		let sq = SpatialQueryInterface::new(&prefixes());
 		let _guard = sq
 			.zone_query(
 				ctx(),
 				ZoneQuery {
-					handler: ZoneQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.zone.hidden".into(),
 						optional: false,
@@ -459,7 +475,8 @@ fn zone_left_when_queryable_hidden() {
 					margin: 0.0,
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		let h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 0.5 }, "e2e.zone.hidden").await;
 
@@ -496,18 +513,23 @@ fn zone_left_when_queryable_hidden() {
 fn zone_left_when_queryable_reparented_away() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+		let handler = ZoneQueryHandler::new_service(TestZoneHandler(tx))
+			.expect("failed to create handler node");
 
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
-		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
-		let zone_field_ref = zone_field.field_ref(ctx()).await;
+		let zone_field = FieldObject::new(
+			zone_spatial.handler().clone(),
+			zone_spatial.proxy().clone(),
+			Shape::Sphere { radius: 2.0 },
+		);
+		let zone_field_ref = zone_field.get_ref().clone();
 
 		let sq = SpatialQueryInterface::new(&prefixes());
 		let _guard = sq
 			.zone_query(
 				ctx(),
 				ZoneQuery {
-					handler: ZoneQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.zone.reparent".into(),
 						optional: false,
@@ -516,7 +538,8 @@ fn zone_left_when_queryable_reparented_away() {
 					margin: 0.0,
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		let h = make_queryable(
 			Vec3::ZERO,
@@ -535,7 +558,7 @@ fn zone_left_when_queryable_reparented_away() {
 		let far_parent =
 			SpatialObject::new(None, Mat4::from_translation(Vec3::new(100.0, 0.0, 0.0)));
 		h.spatial
-			.set_parent(ctx(), SpatialRefProxy::from_handler(far_parent.get_ref()))
+			.set_parent(ctx(), far_parent.get_ref().proxy().clone())
 			.await;
 
 		let ev = tokio::time::timeout(HIT, rx.recv())
@@ -554,15 +577,15 @@ fn zone_left_when_queryable_reparented_away() {
 fn bench_query_e2e_zone_transition_roundtrip() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestZoneHandler(tx)).to_service();
+		let handler = ZoneQueryHandler::new_service(TestZoneHandler(tx)).expect("failed to create handler node");
 
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
-		let zone_field = FieldObject::new(zone_spatial.clone(), Shape::Sphere { radius: 2.0 });
-		let zone_field_ref = zone_field.field_ref(ctx()).await;
+		let zone_field = FieldObject::new(zone_spatial.handler().clone(), zone_spatial.proxy().clone(), Shape::Sphere { radius: 2.0 });
+		let zone_field_ref = zone_field.get_ref().clone();
 
 		let sq = SpatialQueryInterface::new(&prefixes());
 		let _guard = sq.zone_query(ctx(), ZoneQuery {
-			handler: ZoneQueryHandler::from_handler(&handler),
+			handler: handler.proxy().clone(),
 			interfaces: vec![InterfaceDependency { id: "bench.zone.roundtrip".into(), optional: false }],
 			zone_field: zone_field_ref,
 			margin: 0.0,
@@ -607,7 +630,8 @@ fn bench_query_e2e_zone_transition_roundtrip() {
 fn beam_intersected_when_queryable_in_path() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestBeamHandler(tx)).to_service();
+		let handler = BeamQueryHandler::new_service(TestBeamHandler(tx))
+			.expect("failed to create handler node");
 
 		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 
@@ -616,12 +640,12 @@ fn beam_intersected_when_queryable_in_path() {
 			.beam_query(
 				ctx(),
 				BeamQuery {
-					handler: BeamQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.beam.hit".into(),
 						optional: false,
 					}],
-					reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+					reference_spatial: ref_spatial.get_ref().proxy().clone(),
 					origin: Vec3F {
 						x: -5.0,
 						y: 0.0,
@@ -635,7 +659,8 @@ fn beam_intersected_when_queryable_in_path() {
 					max_length: f32::MAX,
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		// Sphere at origin; beam along +X from −5 passes through it.
 		let _h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 1.0 }, "e2e.beam.hit").await;
@@ -652,7 +677,8 @@ fn beam_intersected_when_queryable_in_path() {
 fn beam_no_intersected_when_queryable_offset() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestBeamHandler(tx)).to_service();
+		let handler = BeamQueryHandler::new_service(TestBeamHandler(tx))
+			.expect("failed to create handler node");
 
 		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 
@@ -661,12 +687,12 @@ fn beam_no_intersected_when_queryable_offset() {
 			.beam_query(
 				ctx(),
 				BeamQuery {
-					handler: BeamQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.beam.miss".into(),
 						optional: false,
 					}],
-					reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+					reference_spatial: ref_spatial.get_ref().proxy().clone(),
 					origin: Vec3F {
 						x: -5.0,
 						y: 0.0,
@@ -680,7 +706,8 @@ fn beam_no_intersected_when_queryable_offset() {
 					max_length: f32::MAX,
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		// Sphere offset 5 m on Y — beam misses entirely.
 		let _h = make_queryable(
@@ -703,7 +730,8 @@ fn beam_no_intersected_when_queryable_offset() {
 fn points_entered_when_point_inside_field() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestPointsHandler(tx)).to_service();
+		let handler = PointsQueryHandler::new_service(TestPointsHandler(tx))
+			.expect("failed to create handler node");
 
 		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 
@@ -712,12 +740,12 @@ fn points_entered_when_point_inside_field() {
 			.points_query(
 				ctx(),
 				PointsQuery {
-					handler: PointsQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.points.hit".into(),
 						optional: false,
 					}],
-					reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+					reference_spatial: ref_spatial.get_ref().proxy().clone(),
 					points: vec![Point {
 						point: Vec3F {
 							x: 0.0,
@@ -728,7 +756,8 @@ fn points_entered_when_point_inside_field() {
 					}],
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		// Sphere at origin, point (0,0,0) is inside.
 		let _h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 1.0 }, "e2e.points.hit").await;
@@ -745,7 +774,8 @@ fn points_entered_when_point_inside_field() {
 fn points_no_entered_when_queryable_hidden() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestPointsHandler(tx)).to_service();
+		let handler = PointsQueryHandler::new_service(TestPointsHandler(tx))
+			.expect("failed to create handler node");
 
 		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 
@@ -776,12 +806,12 @@ fn points_no_entered_when_queryable_hidden() {
 			.points_query(
 				ctx(),
 				PointsQuery {
-					handler: PointsQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.points.hidden".into(),
 						optional: false,
 					}],
-					reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+					reference_spatial: ref_spatial.get_ref().proxy().clone(),
 					points: vec![Point {
 						point: Vec3F {
 							x: 0.0,
@@ -792,7 +822,8 @@ fn points_no_entered_when_queryable_hidden() {
 					}],
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		assert!(
 			tokio::time::timeout(NO_HIT, rx.recv()).await.is_err(),
@@ -805,7 +836,8 @@ fn points_no_entered_when_queryable_hidden() {
 fn points_no_entered_when_point_outside_field() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);
-		let handler = PION.register_object(TestPointsHandler(tx)).to_service();
+		let handler = PointsQueryHandler::new_service(TestPointsHandler(tx))
+			.expect("failed to create handler node");
 
 		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 
@@ -814,12 +846,12 @@ fn points_no_entered_when_point_outside_field() {
 			.points_query(
 				ctx(),
 				PointsQuery {
-					handler: PointsQueryHandler::from_handler(&handler),
+					handler: handler.proxy().clone(),
 					interfaces: vec![InterfaceDependency {
 						id: "e2e.points.miss".into(),
 						optional: false,
 					}],
-					reference_spatial: SpatialRefProxy::from_handler(ref_spatial.get_ref()),
+					reference_spatial: ref_spatial.get_ref().proxy().clone(),
 					points: vec![Point {
 						point: Vec3F {
 							x: 5.0,
@@ -830,7 +862,8 @@ fn points_no_entered_when_point_outside_field() {
 					}],
 				},
 			)
-			.await;
+			.await
+			.expect("query registration failed");
 
 		// Sphere at origin; point (5,0,0) is outside.
 		let _h = make_queryable(Vec3::ZERO, Shape::Sphere { radius: 1.0 }, "e2e.points.miss").await;
