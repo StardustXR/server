@@ -4,7 +4,7 @@
 #![allow(clippy::type_complexity)]
 mod bevy_int;
 mod core;
-// mod keymap_store;
+mod keymap_store;
 mod nodes;
 mod objects;
 mod openxr_helpers;
@@ -74,9 +74,7 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry
 use zbus::Connection;
 
 use crate::{
-	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin},
-	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
-	nodes::{
+	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin}, core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin}, keymap_store::KeymapStore, nodes::{
 		audio::AudioNodePlugin,
 		camera::{CameraInterface, CameraNodePlugin},
 		drawable::{
@@ -84,14 +82,11 @@ use crate::{
 			text::TextNodePlugin,
 		},
 		fields::FieldDebugGizmoPlugin,
-	},
-	objects::{
+	}, objects::{
 		hmd::HmdPlugin,
 		input::{oxr_controller::ControllerPlugin, oxr_hand::HandPlugin},
 		stage::StagePlugin,
-	},
-	openxr_helpers::ConvertTimespec,
-	session::{launch_start, save_session},
+	}, openxr_helpers::ConvertTimespec, session::{launch_start, save_session}
 };
 
 #[cfg(feature = "mimalloc")]
@@ -203,8 +198,6 @@ async fn main() -> Result<AppExit, JoinError> {
 
 	let cli_args = CliArgs::parse();
 
-	// let pion =PION;
-
 	let instance = stardust_xr_protocol::dir::find_free_instace()
 		.expect("Unable to find a free stardust instance");
 	STARDUST_INSTANCE.set(instance.clone()).unwrap();
@@ -218,11 +211,11 @@ async fn main() -> Result<AppExit, JoinError> {
 		file_path = ?cam_interface.path().display(),
 		"Stardust server camera fs bind created"
 	);
-	// let keymap_store = KeymapStore::expose(&instance).expect("Could not expose the keymap store");
-	// info!(
-	// 	pion_file_path = ?keymap_store.pion_path.display(),
-	// 	"Stardust server keymap store pion file created"
-	// );
+	let keymap_store = KeymapStore::expose(&instance).expect("Could not expose the keymap store");
+	info!(
+		file_path = ?keymap_store.path().display(),
+		"Stardust server keymap store fs bind created"
+	);
 
 	let project_dirs = ProjectDirs::from("", "", "stardust");
 	if project_dirs.is_none() {
@@ -266,16 +259,12 @@ async fn main() -> Result<AppExit, JoinError> {
 		let _ = startup_child.kill();
 	}
 
-	// FIX ORDER: 7
-	// drop(keymap_store);
+	drop(keymap_store);
 	drop(cam_interface);
 	drop(server_interface);
 	info!("Cleanly shut down Stardust");
 	return_value
 }
-
-// static DEFAULT_SKYTEX: OnceLock<Tex> = OnceLock::new();
-// static DEFAULT_SKYLIGHT: OnceLock<SphericalHarmonics> = OnceLock::new();
 
 #[derive(ScheduleLabel, Hash, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct PreFrameWait;
@@ -481,13 +470,11 @@ fn bevy_loop(
 	// node plugins
 	app.add_plugins((
 		SpatialNodePlugin,
-		// FIX ORDER: 3
 		ModelNodePlugin,
 		TextNodePlugin,
 		LinesNodePlugin,
 		AudioNodePlugin,
 		CameraNodePlugin,
-		// not really a node ig? at least for now
 		SkyPlugin,
 	));
 	// object plugins

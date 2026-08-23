@@ -506,7 +506,6 @@ impl Debug for ShapeChangedCallback {
 pub struct FieldObject {
 	pub data: Arc<Field>,
 	field_ref: FieldRefProxy,
-	spatial: SpatialProxy,
 }
 pub struct Field {
 	pub spatial: Arc<Spatial>,
@@ -588,7 +587,6 @@ impl Field {
 impl FieldObject {
 	pub fn new(
 		spatial: Arc<SpatialObject>,
-		spatial_proxy: SpatialProxy,
 		shape: Shape,
 	) -> gluon::LocalRef<FieldProxy, FieldObject> {
 		let data = Arc::new(Field {
@@ -604,12 +602,7 @@ impl FieldObject {
 		let field_ref = FieldRefProxy::new_service(FieldRef { data: data.clone() })
 			.unwrap()
 			.into_proxy();
-		FieldProxy::new_service(FieldObject {
-			field_ref,
-			data,
-			spatial: spatial_proxy,
-		})
-		.unwrap()
+		FieldProxy::new_service(FieldObject { field_ref, data }).unwrap()
 	}
 }
 impl Drop for Field {
@@ -625,10 +618,6 @@ impl FieldObject {
 impl FieldHandler for FieldObject {
 	async fn field_ref(&self, _ctx: gluon::Context) -> FieldRefProxy {
 		self.field_ref.clone()
-	}
-
-	async fn spatial(&self, _ctx: gluon::Context) -> SpatialProxy {
-		self.spatial.clone()
 	}
 
 	async fn sample(
@@ -712,11 +701,11 @@ impl FieldInterfaceHandler for FieldInterface {
 	async fn create_field(
 		&self,
 		_ctx: gluon::Context,
-		spatial_proxy: SpatialProxy,
+		spatial: SpatialProxy,
 		shape: Shape,
 	) -> Result<CreatedField, CreateError> {
-		let spatial = spatial_proxy.owned().ok_or(CreateError::InvalidRef)?;
-		let field = FieldObject::new(spatial, spatial_proxy, shape);
+		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
+		let field = FieldObject::new(spatial, shape);
 		Ok(CreatedField {
 			field_ref: field.get_ref().clone(),
 			field: field.into_proxy(),

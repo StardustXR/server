@@ -168,7 +168,7 @@ struct QueryableHandle {
 
 async fn make_queryable(translation: Vec3, shape: Shape, iface_id: &str) -> QueryableHandle {
 	let spatial = SpatialObject::new(None, Mat4::from_translation(translation));
-	let field = FieldObject::new(spatial.handler().clone(), spatial.proxy().clone(), shape);
+	let field = FieldObject::new(spatial.handler().clone(), shape);
 
 	let q_iface = QueryInterface::new(&prefixes());
 	let queryable = q_iface
@@ -208,7 +208,6 @@ fn zone_entered_when_queryable_inside() {
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 		let zone_field = FieldObject::new(
 			zone_spatial.handler().clone(),
-			zone_spatial.proxy().clone(),
 			Shape::Sphere { radius: 2.0 },
 		);
 		let zone_field_ref = zone_field.get_ref().clone();
@@ -250,7 +249,6 @@ fn zone_no_entered_when_queryable_outside() {
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 		let zone_field = FieldObject::new(
 			zone_spatial.handler().clone(),
-			zone_spatial.proxy().clone(),
 			Shape::Sphere { radius: 1.0 },
 		);
 		let zone_field_ref = zone_field.get_ref().clone();
@@ -296,7 +294,6 @@ fn zone_left_fires_when_interface_removed() {
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 		let zone_field = FieldObject::new(
 			zone_spatial.handler().clone(),
-			zone_spatial.proxy().clone(),
 			Shape::Sphere { radius: 2.0 },
 		);
 		let zone_field_ref = zone_field.get_ref().clone();
@@ -346,7 +343,6 @@ fn zone_no_entered_wrong_interface() {
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 		let zone_field = FieldObject::new(
 			zone_spatial.handler().clone(),
-			zone_spatial.proxy().clone(),
 			Shape::Sphere { radius: 2.0 },
 		);
 		let zone_field_ref = zone_field.get_ref().clone();
@@ -388,7 +384,6 @@ fn zone_left_when_queryable_moves_out() {
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 		let zone_field = FieldObject::new(
 			zone_spatial.handler().clone(),
-			zone_spatial.proxy().clone(),
 			Shape::Sphere { radius: 2.0 },
 		);
 		let zone_field_ref = zone_field.get_ref().clone();
@@ -456,7 +451,6 @@ fn zone_left_when_queryable_hidden() {
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 		let zone_field = FieldObject::new(
 			zone_spatial.handler().clone(),
-			zone_spatial.proxy().clone(),
 			Shape::Sphere { radius: 2.0 },
 		);
 		let zone_field_ref = zone_field.get_ref().clone();
@@ -519,7 +513,6 @@ fn zone_left_when_queryable_reparented_away() {
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 		let zone_field = FieldObject::new(
 			zone_spatial.handler().clone(),
-			zone_spatial.proxy().clone(),
 			Shape::Sphere { radius: 2.0 },
 		);
 		let zone_field_ref = zone_field.get_ref().clone();
@@ -580,7 +573,7 @@ fn bench_query_e2e_zone_transition_roundtrip() {
 		let handler = ZoneQueryHandler::new_service(TestZoneHandler(tx)).expect("failed to create handler node");
 
 		let zone_spatial = SpatialObject::new(None, Mat4::IDENTITY);
-		let zone_field = FieldObject::new(zone_spatial.handler().clone(), zone_spatial.proxy().clone(), Shape::Sphere { radius: 2.0 });
+		let zone_field = FieldObject::new(zone_spatial.handler().clone(), Shape::Sphere { radius: 2.0 });
 		let zone_field_ref = zone_field.get_ref().clone();
 
 		let sq = SpatialQueryInterface::new(&prefixes());
