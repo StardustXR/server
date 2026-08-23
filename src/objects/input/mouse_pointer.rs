@@ -1,12 +1,12 @@
 use super::{BeamQueryCache, CachedObject, InputSender, InputSource, QueryCache};
 use crate::{
-	PION,
 	bevy_int::flatscreen_cam::FlatscreenCam,
 	keymap_store::KEYMAP_STORE,
 	nodes::{
 		fields::{Field, Ray},
 		spatial::{Spatial, SpatialObject, SpatialRef},
 	},
+	objects::input::InputMethodNode,
 	query::spatial_query::SpatialQueryInterface,
 };
 use bevy::{
@@ -19,7 +19,7 @@ use bevy::{
 };
 use color_eyre::eyre::{Result, eyre};
 use glam::{Mat4, Vec3};
-use gluon::{Handler, Object};
+use gluon::{Handler, Interface, RefExt};
 use mint::Vector2;
 use stardust_xr_molecules_protocols::keyboard_handler::{
 	EXTERNAL_PROTOCOL as KEYBOARD_PROTOCOL, KeyEvent, KeyboardHandler as KeyboardHandlerProxy,
@@ -29,11 +29,11 @@ use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
 	keymap::Keymap as KeymapProxy,
 	query::{InterfaceDependency, QueriedInterface, QueryableId},
-	spatial::SpatialRef as SpatialRefProxy,
+	spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy},
 	spatial_query::{
-		BeamQuery, BeamQueryHandler, Point, PointsQuery,
+		BeamQuery, BeamQueryHandle, BeamQueryHandler, Point, PointsQuery,
 		PointsQueryHandle as PointsQueryHandleProxy, PointsQueryHandler, PointsQueryHandlerHandler,
-		SpatialQueryGuard, SpatialQueryInterface as SpatialQueryInterfaceProxy,
+		SpatialQueryInterface as SpatialQueryInterfaceProxy,
 	},
 	suis::{
 		DatamapData, InputDataType, InputHandler, InputMethod, InputMethodCapture,
@@ -229,10 +229,10 @@ impl PointsQueryHandlerHandler for KeyboardQueryCache {
 		let Some(interface) = interfaces.first() else {
 			return;
 		};
-		if interface.interface_id != KEYBOARD_PROTOCOL.protocol_name {
+		if interface.interface_id != KeyboardHandlerProxy::ID {
 			return;
 		}
-		let handler = KeyboardHandlerProxy::from_object_or_ref(interface.interface.clone());
+		let handler = KeyboardHandlerProxy::from_ref(interface.interface.clone());
 		self.handlers.lock().unwrap().insert(obj, (handler, sample));
 	}
 
@@ -259,7 +259,7 @@ impl PointsQueryHandlerHandler for KeyboardQueryCache {
 /// the query cache above, the query's handle (to move the focus point to the
 /// pointer's hit each frame), and xkb state for modifiers + the keymap token.
 struct KeyboardFocus {
-	cache: Object<KeyboardQueryCache>,
+	cache: gluon::Node<KeyboardQueryCache>,
 	points_handle: Arc<OnceLock<PointsQueryHandleProxy>>,
 	xkb_state: XkbState,
 	/// workaround for buggy modifier state on kde plasma (potentially others) with winit
@@ -279,7 +279,7 @@ impl KeyboardFocus {
 		let mut bytes = self.keymap_string.clone().into_bytes();
 		bytes.push(0);
 		let proxy = store
-			.register_keymap_bytes(&bytes)
+			.register(&bytes)
 			.inspect_err(|err| error!("failed to register mouse pointer keymap: {err:?}"))
 			.ok()?;
 		_ = self.keymap_proxy.set(proxy.clone());
@@ -297,8 +297,8 @@ struct MouseMethod {
 	/// Program name + PID of each client that requested a capture, keyed by its
 	/// handler; looked up when that handler's capture becomes active.
 	capture_pids: Mutex<HashMap<InputHandler, (String, i32)>>,
-	_beam_query: Object<BeamQueryCache>,
-	_query_guard: Arc<OnceLock<SpatialQueryGuard>>,
+	_beam_query: gluon::Node<BeamQueryCache>,
+	_query_guard: Arc<OnceLock<BeamQueryHandle>>,
 }
 
 impl InputSource for MouseMethod {
@@ -420,7 +420,7 @@ impl InputMethodHandler for MouseMethod {
 #[derive(Resource)]
 pub struct MousePointer {
 	spatial: gluon::LocalRef<SpatialProxy, SpatialObject>,
-	method: gluon::Object<MouseMethod>,
+	method: InputMethodNode<MouseMethod>,
 	keyboard: KeyboardFocus,
 	/// An Escape press was swallowed as part of the Ctrl+Escape capture-stop
 	/// hotkey; swallow its release too (even if Ctrl is let go first).
@@ -435,25 +435,29 @@ impl MousePointer {
 		let (query_cache, objects_arc, capture_requests) = QueryCache::new();
 		let sender = Arc::new(InputSender::new(objects_arc, capture_requests));
 
-		let beam_query = PION.register_object(BeamQueryCache(query_cache));
-		let beam_handler_proxy = BeamQueryHandler::from_handler(&beam_query);
+		let (beam_query, beam_handler_proxy) =
+			BeamQueryHandler::new_node(BeamQueryCache(query_cache))?;
 
-		let keyboard_cache = PION.register_object(KeyboardQueryCache::default());
-		let keyboard_handler_proxy = PointsQueryHandler::from_handler(&keyboard_cache);
+		let (keyboard_cache, keyboard_handler_proxy) =
+			PointsQueryHandler::new_node(KeyboardQueryCache::default())?;
 
-		let query_guard: Arc<OnceLock<SpatialQueryGuard>> = Arc::new(OnceLock::new());
+		let query_guard: Arc<OnceLock<BeamQueryHandle>> = Arc::new(OnceLock::new());
 		let points_handle: Arc<OnceLock<PointsQueryHandleProxy>> = Arc::new(OnceLock::new());
-		let base_spatial_ref = SpatialRefProxy::from_handler(spatial.get_ref());
-		let keyboard_spatial_ref = SpatialRefProxy::from_handler(spatial.get_ref());
+		let base_spatial_ref = spatial.get_ref().proxy().clone();
+		let keyboard_spatial_ref = spatial.get_ref().proxy().clone();
 		tokio::spawn({
 			let query_guard = query_guard.clone();
 			let points_handle = points_handle.clone();
 			async move {
-				let sqi = SpatialQueryInterface::new(&Arc::default());
-				let sqi_proxy = SpatialQueryInterfaceProxy::from_handler(&sqi);
+				let sqi_proxy = SpatialQueryInterfaceProxy::new_service(
+					SpatialQueryInterface::new(&Arc::default()),
+				)
+				// TODO: remove the unwrap
+				.unwrap();
 				match sqi_proxy
+					.proxy()
 					.beam_query(BeamQuery {
-						handler: beam_handler_proxy,
+						handler: beam_handler_proxy.into_proxy(),
 						interfaces: vec![InterfaceDependency {
 							id: "org.stardustxr.SUIS.Handler".to_string(),
 							optional: false,
@@ -486,8 +490,9 @@ impl MousePointer {
 				// Starts with no points — no keyboard focus until the pointer hits
 				// something; update() moves the point to the beam hit each frame.
 				match sqi_proxy
+					.proxy()
 					.points_query(PointsQuery {
-						handler: keyboard_handler_proxy,
+						handler: keyboard_handler_proxy.into_proxy(),
 						interfaces: vec![InterfaceDependency {
 							id: KEYBOARD_PROTOCOL.protocol_name.to_string(),
 							optional: false,
@@ -510,14 +515,14 @@ impl MousePointer {
 			}
 		});
 
-		let method = PION.register_object(MouseMethod {
+		let method = InputMethodNode::new(MouseMethod {
 			spatial_arc,
 			event: RwLock::new(MouseEvent::default()),
 			sender,
 			capture_pids: Mutex::new(HashMap::new()),
 			_beam_query: beam_query,
 			_query_guard: query_guard,
-		});
+		})?;
 
 		let xkb_context = XkbContext::new(ContextFlags::empty())
 			.map_err(|e| eyre!("failed to create xkb context: {e:?}"))?;
@@ -585,9 +590,9 @@ impl MousePointer {
 			scroll_discrete: discrete.into(),
 		};
 
-		let input_method = InputMethod::from_handler(&self.method);
+		let input_method = self.method.proxy.clone();
 		let sender = self.method.sender.clone();
-		sender.send(&**self.method, input_method, Timestamp::now());
+		sender.send(&***self.method, input_method, Timestamp::now());
 
 		self.update_keyboard_focus();
 		let ctrl_pressed = keyboard_buttons.pressed(KeyCode::ControlLeft)
@@ -646,7 +651,7 @@ impl MousePointer {
 				}]
 			})
 			.unwrap_or_default();
-		_ = handle.update_points(points);
+		_ = handle.update(points);
 	}
 
 	fn send_key_events(&mut self, mut key_events: EventReader<KeyboardInput>, ctrl_pressed: bool) {

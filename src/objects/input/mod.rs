@@ -1,7 +1,6 @@
 #![allow(clippy::mutable_key_type)]
 
-// FIX ORDER: 5
-// pub mod mouse_pointer;
+pub mod mouse_pointer;
 pub mod oxr_controller;
 pub mod oxr_hand;
 

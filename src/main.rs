@@ -74,7 +74,10 @@ use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry
 use zbus::Connection;
 
 use crate::{
-	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin}, core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin}, keymap_store::KeymapStore, nodes::{
+	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin},
+	core::{client::CLIENTS, server_interface::ServerInterface, vulkano_data::VulkanoPlugin},
+	keymap_store::KeymapStore,
+	nodes::{
 		audio::AudioNodePlugin,
 		camera::{CameraInterface, CameraNodePlugin},
 		drawable::{
@@ -82,11 +85,17 @@ use crate::{
 			text::TextNodePlugin,
 		},
 		fields::FieldDebugGizmoPlugin,
-	}, objects::{
+	},
+	objects::{
 		hmd::HmdPlugin,
-		input::{oxr_controller::ControllerPlugin, oxr_hand::HandPlugin},
+		input::{
+			mouse_pointer::FlatscreenInputPlugin, oxr_controller::ControllerPlugin,
+			oxr_hand::HandPlugin,
+		},
 		stage::StagePlugin,
-	}, openxr_helpers::ConvertTimespec, session::{launch_start, save_session}
+	},
+	openxr_helpers::ConvertTimespec,
+	session::{launch_start, save_session},
 };
 
 #[cfg(feature = "mimalloc")]
@@ -366,8 +375,7 @@ fn bevy_loop(
 				.add(bevy::text::TextPlugin)
 				.add(bevy::ui::UiPlugin::default())
 				.add(FlatscreenCamPlugin)
-			// FIX ORDER: 5
-			// 	.add(FlatscreenInputPlugin)
+				.add(FlatscreenInputPlugin)
 		} else {
 			plugins
 		};
