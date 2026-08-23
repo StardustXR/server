@@ -28,7 +28,7 @@ use stardust_xr_molecules_protocols::keyboard_handler::{
 use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
 	keymap::Keymap as KeymapProxy,
-	query::{InterfaceDependency, QueriedInterface, QueryableObjectRef},
+	query::{InterfaceDependency, QueriedInterface, QueryableId},
 	spatial::SpatialRef as SpatialRefProxy,
 	spatial_query::{
 		BeamQuery, BeamQueryHandler, Point, PointsQuery,
@@ -202,7 +202,7 @@ impl Default for MouseEvent {
 /// current hit point. The closest one gets the key events.
 #[derive(Debug, Default, Handler)]
 struct KeyboardQueryCache {
-	handlers: Mutex<HashMap<QueryableObjectRef, (KeyboardHandlerProxy, FieldSample)>>,
+	handlers: Mutex<HashMap<QueryableId, (KeyboardHandlerProxy, FieldSample)>>,
 }
 
 impl KeyboardQueryCache {
@@ -220,7 +220,7 @@ impl PointsQueryHandlerHandler for KeyboardQueryCache {
 	async fn entered(
 		&self,
 		_ctx: gluon::Context,
-		obj: QueryableObjectRef,
+		obj: QueryableId,
 		_field: FieldRefProxy,
 		_spatial: SpatialRefProxy,
 		interfaces: Vec<QueriedInterface>,
@@ -239,18 +239,18 @@ impl PointsQueryHandlerHandler for KeyboardQueryCache {
 	async fn interfaces_changed(
 		&self,
 		_ctx: gluon::Context,
-		_obj: QueryableObjectRef,
+		_obj: QueryableId,
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
 
-	async fn moved(&self, _ctx: gluon::Context, obj: QueryableObjectRef, sample: FieldSample) {
+	async fn moved(&self, _ctx: gluon::Context, obj: QueryableId, sample: FieldSample) {
 		if let Some(entry) = self.handlers.lock().unwrap().get_mut(&obj) {
 			entry.1 = sample;
 		}
 	}
 
-	async fn left(&self, _ctx: gluon::Context, obj: QueryableObjectRef) {
+	async fn left(&self, _ctx: gluon::Context, obj: QueryableId) {
 		self.handlers.lock().unwrap().remove(&obj);
 	}
 }
@@ -306,7 +306,7 @@ impl InputSource for MouseMethod {
 
 	fn order_handlers_and_captures(
 		&self,
-		objects: &HashMap<QueryableObjectRef, CachedObject<Self::QueryValue>>,
+		objects: &HashMap<QueryableId, CachedObject<Self::QueryValue>>,
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let current_capture = self.sender.active_capture.blocking_read().clone();
@@ -388,7 +388,7 @@ impl InputMethodHandler for MouseMethod {
 		handler: InputHandler,
 	) -> Option<InputMethodCapture> {
 		let capture = self.sender.grant_capture(handler.clone()).await?;
-		let pid = ctx.sender_pid;
+		let pid = ctx.sender_pid().unwrap_or(-1);
 		let name = std::fs::read_to_string(format!("/proc/{pid}/comm"))
 			.map(|s| s.trim().to_string())
 			.unwrap_or_else(|_| "unknown".to_string());
@@ -419,7 +419,7 @@ impl InputMethodHandler for MouseMethod {
 
 #[derive(Resource)]
 pub struct MousePointer {
-	spatial: gluon::ObjectRef<SpatialObject>,
+	spatial: gluon::LocalRef<SpatialProxy, SpatialObject>,
 	method: gluon::Object<MouseMethod>,
 	keyboard: KeyboardFocus,
 	/// An Escape press was swallowed as part of the Ctrl+Escape capture-stop
