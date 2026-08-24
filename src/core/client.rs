@@ -141,11 +141,11 @@ impl ConnectedClient {
 		}
 	}
 
-	fn disconnect(&self, reason: Result<()>) {
-		let _ = self.disconnect_status.set(reason);
-		self.client.write().take();
-		CLIENTS.remove(self);
-	}
+	// fn disconnect(&self, reason: Result<()>) {
+	// 	let _ = self.disconnect_status.set(reason);
+	// 	self.client.write().take();
+	// 	CLIENTS.remove(self);
+	// }
 }
 
 impl ServerHandler for ConnectedClient {
