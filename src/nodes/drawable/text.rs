@@ -1,11 +1,7 @@
 use crate::{
 	BevyMaterial,
-	bevy_int::{
-		bevy_channel::{BevyChannel, BevyChannelReader},
-		color::ColorConvert,
-		entity_handle::EntityHandle,
-	},
-	core::resource::get_resource_file,
+	bevy_int::{color::ColorConvert, entity_handle::EntityHandle},
+	core::{registry::Registry, resource::get_resource_file},
 	interface,
 	nodes::{
 		ProxyExt as _,
@@ -21,14 +17,25 @@ use bevy_mesh_text_3d::{
 use core::f32;
 use gluon::{Handler, RefExt};
 use parking_lot::Mutex;
-use stardust_xr_protocol::{spatial::Spatial, text::Text as TextProxy};
+use stardust_xr_protocol::{
+	spatial::Spatial,
+	text::{Text as TextProxy, TextLocal},
+};
 use stardust_xr_protocol::{
 	text::{TextFit, TextHandler, TextInterfaceHandler, TextStyle, XAlign, YAlign},
 	types::ResourceLoadError,
 };
-use std::{ffi::OsStr, mem, path::PathBuf, sync::Arc};
+use std::{
+	ffi::OsStr,
+	mem,
+	path::PathBuf,
+	sync::{
+		Arc,
+		atomic::{AtomicBool, Ordering},
+	},
+};
 
-static SPAWN_TEXT: BevyChannel<Arc<Text>> = BevyChannel::new();
+static TEXT_REGISTRY: Registry<Text> = Registry::new();
 
 pub struct TextNodePlugin;
 
@@ -42,14 +49,12 @@ impl Plugin for TextNodePlugin {
 			.db_mut()
 			.load_system_fonts();
 
-		SPAWN_TEXT.init(app);
 		app.init_resource::<MaterialRegistry>();
 		app.add_systems(Update, spawn_text);
 	}
 }
 
 fn spawn_text(
-	mut mpsc: ResMut<BevyChannelReader<Arc<Text>>>,
 	mut cmds: Commands,
 	mut font_settings: ResMut<FontSettings>,
 	mut material_registry: ResMut<MaterialRegistry>,
@@ -57,10 +62,13 @@ fn spawn_text(
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut font_registry: Local<FontDatabaseRegistry>,
 ) {
-	let mut resend = Vec::new();
-	while let Some(text) = mpsc.read() {
+	for text in TEXT_REGISTRY.get_valid_contents() {
+		if !text.dirty.swap(false, Ordering::Relaxed) {
+			continue;
+		}
 		let Some(spatial_entity) = text.spatial.get_entity() else {
-			resend.push(text);
+			// the spatial hasn't been given an entity yet, try again next frame
+			text.dirty.store(true, Ordering::Relaxed);
 			continue;
 		};
 		if let Some(entity) = text.entity.lock().take() {
@@ -165,11 +173,7 @@ fn spawn_text(
 			))
 			.add_children(&letters)
 			.id();
-		let entity = EntityHandle::new(entity);
-		text.entity.lock().replace(entity.clone());
-	}
-	for text in resend {
-		_ = SPAWN_TEXT.send(text);
+		text.entity.lock().replace(EntityHandle::new(entity));
 	}
 }
 
@@ -187,24 +191,23 @@ impl FontDatabaseRegistry {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Handler)]
 pub struct Text {
 	spatial: Arc<SpatialObject>,
 	font_path: Option<PathBuf>,
 	entity: Mutex<Option<EntityHandle>>,
 	text: Mutex<String>,
 	data: Mutex<TextStyle>,
+	/// set by the handler methods, consumed by `spawn_text`, which rebuilds the meshes
+	dirty: AtomicBool,
 }
-/// only exists so we can send an Arc<Text> into SPAWN_TEXT
-#[derive(Debug, Handler)]
-struct TextObject(Arc<Text>);
-impl TextObject {
+impl Text {
 	pub fn new(
 		spatial: Arc<SpatialObject>,
 		text: String,
 		style: TextStyle,
 		prefixes: &[PathBuf],
-	) -> TextProxy {
+	) -> TextLocal<Text> {
 		let text = Arc::new(Text {
 			spatial,
 			font_path: style.font.as_ref().and_then(|res| {
@@ -214,24 +217,23 @@ impl TextObject {
 			entity: Mutex::new(None),
 			text: Mutex::new(text),
 			data: Mutex::new(style),
+			dirty: AtomicBool::new(true),
 		});
-		_ = SPAWN_TEXT.send(text.clone());
+		TEXT_REGISTRY.add_raw(&text);
 
 		// TODO: remove this unwrap
-		TextProxy::new_service(TextObject(text))
-			.unwrap()
-			.into_proxy()
+		TextProxy::new_service(text).unwrap()
 	}
 }
-impl TextHandler for TextObject {
+impl TextHandler for Text {
 	async fn set_character_height(&self, _ctx: gluon::Context, height: f32) {
-		self.0.data.lock().character_height = height;
-		_ = SPAWN_TEXT.send(self.0.clone());
+		self.data.lock().character_height = height;
+		self.dirty.store(true, Ordering::Relaxed);
 	}
 
 	async fn set_text(&self, _ctx: gluon::Context, text: String) {
-		*self.0.text.lock() = text;
-		_ = SPAWN_TEXT.send(self.0.clone());
+		*self.text.lock() = text;
+		self.dirty.store(true, Ordering::Relaxed);
 	}
 }
 interface!(TextInterface);
@@ -245,7 +247,7 @@ impl TextInterfaceHandler for TextInterface {
 	) -> Result<TextProxy, ResourceLoadError> {
 		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
 		info!(?text, "creating text");
-		let text = TextObject::new(spatial, text, style, self.base_prefixes());
-		Ok(text)
+		let text = Text::new(spatial, text, style, self.base_prefixes());
+		Ok(text.into_proxy())
 	}
 }
