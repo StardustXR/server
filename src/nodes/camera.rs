@@ -34,6 +34,7 @@ use parking_lot::Mutex;
 use stardust_xr_protocol::camera::Camera as CameraProxy;
 use stardust_xr_protocol::camera::CameraHandler;
 use stardust_xr_protocol::camera::CameraInterfaceHandler;
+use stardust_xr_protocol::camera::CameraLocal;
 use stardust_xr_protocol::camera::View;
 use stardust_xr_protocol::dmatex::DmatexRef;
 use stardust_xr_protocol::dmatex::DmatexSubmitRelease;
@@ -60,7 +61,7 @@ pub struct Camera {
 	entity: OnceLock<EntityHandle>,
 }
 impl Camera {
-	pub fn new(spatial: Arc<SpatialObject>) -> CameraProxy {
+	pub fn new(spatial: Arc<SpatialObject>) -> CameraLocal<Camera> {
 		let (tx, rx) = mpsc::unbounded_channel();
 		let cam = CameraProxy::new_service(Camera {
 			spatial,
@@ -71,7 +72,7 @@ impl Camera {
 		// TODO: unwrap, remove
 		.unwrap();
 		CAMERA_REGISTRY.add_raw(cam.handler());
-		cam.into_proxy()
+		cam
 	}
 }
 impl CameraHandler for Camera {
@@ -102,13 +103,8 @@ impl CameraHandler for Camera {
 				return;
 			};
 			future.await;
-			tx.send((
-				acquire_point,
-				views,
-				tex,
-				release_on_drop,
-			))
-			.unwrap();
+			tx.send((acquire_point, views, tex, release_on_drop))
+				.unwrap();
 		});
 	}
 }
@@ -123,7 +119,7 @@ impl CameraInterfaceHandler for CameraInterface {
 	) -> Result<CameraProxy, CreateError> {
 		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
 		let cam = Camera::new(spatial);
-		Ok(cam)
+		Ok(cam.into_proxy())
 	}
 }
 pub struct CameraNodePlugin;

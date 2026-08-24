@@ -14,7 +14,9 @@ use parking_lot::Mutex;
 
 use bevy::prelude::*;
 use bevy::transform::components::Transform as BevyTransform;
-use stardust_xr_protocol::audio::{AudioInterfaceHandler, Sound as SoundProxy, SoundHandler};
+use stardust_xr_protocol::audio::{
+	AudioInterfaceHandler, Sound as SoundProxy, SoundHandler, SoundLocal,
+};
 use stardust_xr_protocol::types::{Resource, ResourceLoadError};
 use std::sync::{Arc, OnceLock};
 use std::{ffi::OsStr, path::PathBuf};
@@ -109,7 +111,7 @@ impl Sound {
 		spatial: Arc<SpatialObject>,
 		resource_id: Resource,
 		resource_prefixes: &[PathBuf],
-	) -> Option<SoundProxy> {
+	) -> Option<SoundLocal<Sound>> {
 		let pending_audio_path = get_resource_file(
 			&resource_id,
 			resource_prefixes,
@@ -126,7 +128,7 @@ impl Sound {
 		// TODO: remove unwrap
 		.unwrap();
 		SOUND_REGISTRY.add_raw(sound.handler());
-		Some(sound.into_proxy())
+		Some(sound)
 	}
 }
 impl SoundHandler for Sound {
@@ -153,8 +155,8 @@ impl AudioInterfaceHandler for AudioInterface {
 		sound: Resource,
 	) -> Result<SoundProxy, ResourceLoadError> {
 		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
-		let sound = Sound::new(spatial, sound, self.base_prefixes())
-			.ok_or(ResourceLoadError::NotFound)?;
-		Ok(sound)
+		let sound =
+			Sound::new(spatial, sound, self.base_prefixes()).ok_or(ResourceLoadError::NotFound)?;
+		Ok(sound.into_proxy())
 	}
 }

@@ -142,7 +142,7 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 			// get_spatial RPC so on_left can find and remove this entry even if it fires while
 			// get_spatial is in-flight.
 			objects.insert(
-				obj.clone(),
+				obj,
 				CachedObject {
 					handler: handler.clone(),
 					spatial: None,

@@ -34,7 +34,7 @@ use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr_protocol::{
 	model::{
 		MaterialParamError, MaterialParameter, Model as ModelProxy, ModelHandler,
-		ModelInterfaceHandler, ModelPart as ModelPartProxy, ModelPartHandler,
+		ModelInterfaceHandler, ModelLocal, ModelPart as ModelPartProxy, ModelPartHandler,
 	},
 	spatial::Spatial,
 	types::{Resource, ResourceLoadError},
@@ -761,7 +761,7 @@ impl Model {
 		spatial: Arc<SpatialObject>,
 		resource_id: Resource,
 		base_prefixes: Arc<Vec<PathBuf>>,
-	) -> Result<ModelProxy> {
+	) -> Result<ModelLocal<Model>> {
 		let pending_model_path = get_resource_file(
 			&resource_id,
 			base_prefixes.iter(),
@@ -787,7 +787,7 @@ impl Model {
 			.await
 			.map_err(|_| eyre!("model setup cancelled before parts were generated"))?;
 
-		Ok(model.into_proxy())
+		Ok(model)
 	}
 }
 impl ModelHandler for Model {
@@ -840,7 +840,7 @@ impl ModelInterfaceHandler for ModelInterface {
 					return;
 				};
 
-				if let Err(err) = reply.send(Ok(model)) {
+				if let Err(err) = reply.send(Ok(model.into_proxy())) {
 					tracing::warn!(?err, "failed to send load_model reply");
 				}
 			});

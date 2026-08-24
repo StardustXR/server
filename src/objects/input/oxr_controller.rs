@@ -2,7 +2,7 @@ use crate::{
 	DbusConnection, PreFrameWait, get_time,
 	nodes::{
 		ProxyExt,
-		drawable::model::Model as LocalModel,
+		drawable::model::{Model, ModelPart},
 		fields::Field,
 		spatial::{Spatial, SpatialObject, SpatialRef},
 	},
@@ -35,7 +35,7 @@ use openxr::{Action, ActiveActionSet, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample},
-	model::{MaterialParameter, Model, ModelHandler, ModelPart},
+	model::{MaterialParameter, ModelHandler, ModelLocal, ModelPartLocal},
 	query::{InterfaceDependency, QueryableId},
 	spatial::{PartialTransform, Spatial as SpatialProxy, SpatialRef as SpatialRefProxy},
 	spatial_query::{
@@ -399,8 +399,7 @@ fn create_spaces(
 	)
 	.ok()
 	.map(InputMethodNode::new)
-	.map(Result::ok)
-	.flatten();
+	.and_then(Result::ok);
 	controllers.right.method = ControllerInputMethod::new(
 		controllers.base_spatial.get_ref().clone(),
 		base_space.clone(),
@@ -409,8 +408,7 @@ fn create_spaces(
 	)
 	.ok()
 	.map(InputMethodNode::new)
-	.map(Result::ok)
-	.flatten();
+	.and_then(Result::ok);
 	if let Some(method) = controllers.left.method.as_ref() {
 		controllers.left.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
 	}
@@ -514,9 +512,9 @@ impl OxrControllerInputTrackedState {
 pub struct OxrControllerInput {
 	aim_spatial: gluon::LocalRef<SpatialProxy, SpatialObject>,
 	side: HandSide,
-	model: OnceLock<Model>,
-	model_part: OnceLock<ModelPart>,
-	model_task: Option<JoinHandle<(Model, ModelPart)>>,
+	model: OnceLock<ModelLocal<Model>>,
+	model_part: OnceLock<Arc<ModelPart>>,
+	model_task: Option<JoinHandle<(ModelLocal<Model>, Arc<ModelPart>)>>,
 	method: Option<InputMethodNode<ControllerInputMethod>>,
 	tracked: Tracked<OxrControllerInputTrackedState>,
 	was_enabled: bool,
@@ -528,7 +526,7 @@ impl OxrControllerInput {
 		let model_spatial =
 			SpatialObject::new(Some(&aim_spatial), Mat4::from_scale(Vec3::splat(0.02)));
 		let model_task = tokio::spawn(async move {
-			let model = LocalModel::new(
+			let model = Model::new(
 				model_spatial.handler().clone(),
 				types::Resource::Direct {
 					path: CURSOR_MODEL_PATH.into(),
@@ -538,7 +536,14 @@ impl OxrControllerInput {
 			)
 			.await
 			.unwrap();
-			let model_part = model.get_part("Cursor".to_string()).await.unwrap().unwrap();
+			let model_part = model
+				.proxy()
+				.get_part("Cursor".to_string())
+				.await
+				.unwrap()
+				.unwrap()
+				.local_handler::<ModelPart>()
+				.unwrap();
 			(model, model_part)
 		});
 		let pion_path = match side {
