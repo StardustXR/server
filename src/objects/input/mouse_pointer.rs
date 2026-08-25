@@ -22,8 +22,7 @@ use glam::{Mat4, Vec3};
 use gluon::{Handler, Interface, RefExt};
 use mint::Vector2;
 use stardust_xr_molecules_protocols::keyboard_handler::{
-	EXTERNAL_PROTOCOL as KEYBOARD_PROTOCOL, KeyEvent, KeyboardHandler as KeyboardHandlerProxy,
-	ModifierState,
+	KeyEvent, KeyboardHandler as KeyboardHandlerProxy, ModifierState,
 };
 use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
@@ -494,7 +493,7 @@ impl MousePointer {
 					.points_query(PointsQuery {
 						handler: keyboard_handler_proxy.into_proxy(),
 						interfaces: vec![InterfaceDependency {
-							id: KEYBOARD_PROTOCOL.protocol_name.to_string(),
+							id: KeyboardHandlerProxy::ID.into(),
 							optional: false,
 						}],
 						reference_spatial: keyboard_spatial_ref,
