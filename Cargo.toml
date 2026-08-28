@@ -155,6 +155,8 @@ gluon = { git = "https://github.com/technobaboo/gluon", branch = "refactor/stron
 	"local-handlers",
 ] }
 
+strong-ipc = { git = "https://github.com/technobaboo/strong-ipc" }
+
 [workspace.dependencies.stardust-xr-protocol]
 git = "https://github.com/StardustXR/core.git"
 branch = "refactor/strongipc"

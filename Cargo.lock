@@ -5665,6 +5665,7 @@ dependencies = [
  "stardust-xr-molecules-protocols",
  "stardust-xr-protocol",
  "stardust-xr-server-foundation",
+ "strong-ipc",
  "thiserror 2.0.18",
  "timeline_syncobj",
  "tokio",

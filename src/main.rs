@@ -179,6 +179,7 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> tracing_subscriber::layer::Filter<S
 // #[tokio::main(flavor = "current_thread")]
 #[tokio::main]
 async fn main() -> Result<AppExit, JoinError> {
+	strong_ipc::maximize_fd_limit().unwrap();
 	color_eyre::install().unwrap();
 
 	let registry = tracing_subscriber::registry();
