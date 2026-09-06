@@ -784,12 +784,17 @@ impl InputSource for ControllerInputMethod {
 		objects: &HashMap<QueryableId, CachedObject<Self::QueryValue>>,
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
+		let current_capture = self.sender.active_capture.blocking_read().clone();
 		let pose = *self.pose.blocking_read();
 		let Some(pose) = pose else {
-			self.sender.active_capture.blocking_write().take();
-			return (vec![], None);
+			return (
+				match current_capture.clone() {
+					Some(v) => vec![v],
+					None => vec![],
+				},
+				current_capture,
+			);
 		};
-		let current_capture = self.sender.active_capture.blocking_read().clone();
 		let capture = if let Some(cap) = current_capture {
 			if objects.values().any(|e| e.handler == cap) {
 				Some(cap)
@@ -830,10 +835,14 @@ impl InputSource for ControllerInputMethod {
 		(order.into_iter().map(|(_, h)| h).collect(), None)
 	}
 
-	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> SpatialData {
-		let pose = self.pose.blocking_read().unwrap();
+	fn spatial_data(
+		&self,
+		handler_spatial: &SpatialRef,
+		handler_field: &Field,
+	) -> Option<SpatialData> {
+		let pose = self.pose.blocking_read().clone()?;
 		let pose = self.localize_pose(handler_spatial, pose);
-		SpatialData {
+		Some(SpatialData {
 			input: InputDataType::Tip {
 				data: Tip {
 					pose,
@@ -847,7 +856,7 @@ impl InputSource for ControllerInputMethod {
 				},
 			},
 			distance: Self::pose_distance(handler_field, handler_spatial, pose),
-		}
+		})
 	}
 
 	fn datamap(&self) -> HashMap<String, stardust_xr_protocol::suis::DatamapData> {

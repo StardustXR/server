@@ -302,7 +302,7 @@ pub trait InputSource {
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>);
 
-	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> SpatialData;
+	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> Option<SpatialData>;
 
 	fn datamap(&self) -> HashMap<String, DatamapData>;
 }
@@ -447,7 +447,7 @@ impl<V: Send + Sync + 'static> InputSender<V> {
 					.filter_map(|(i, handler)| {
 						let entry = objects.values().find(|e| &e.handler == handler)?;
 						let spatial_data =
-							source.spatial_data(entry.spatial.as_deref()?, &entry.field.data);
+							source.spatial_data(entry.spatial.as_deref()?, &entry.field.data)?;
 						let datamap = source.datamap();
 						let semantic_data = SemanticData {
 							datamap,

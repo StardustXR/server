@@ -351,7 +351,11 @@ impl InputSource for MouseMethod {
 		(order.into_iter().map(|(_, h)| h).collect(), capture)
 	}
 
-	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> SpatialData {
+	fn spatial_data(
+		&self,
+		handler_spatial: &SpatialRef,
+		handler_field: &Field,
+	) -> Option<SpatialData> {
 		let ray_result = handler_field.ray_march(Ray {
 			origin: Vec3::ZERO,
 			direction: Vec3::NEG_Z,
@@ -360,7 +364,7 @@ impl InputSource for MouseMethod {
 		let ptr_to_handler =
 			Spatial::space_to_space_matrix(Some(&*self.spatial_arc), Some(handler_spatial));
 		let (_, rotation, translation) = ptr_to_handler.to_scale_rotation_translation();
-		SpatialData {
+		Some(SpatialData {
 			input: InputDataType::Pointer {
 				data: Pointer {
 					pose: stardust_xr_protocol::types::Posef {
@@ -371,7 +375,7 @@ impl InputSource for MouseMethod {
 				},
 			},
 			distance: ray_result.min_distance,
-		}
+		})
 	}
 
 	fn datamap(&self) -> HashMap<String, DatamapData> {
@@ -410,7 +414,7 @@ impl InputMethodHandler for MouseMethod {
 		}
 		let objects = self.sender.cache.read().await;
 		let entry = objects.values().find(|e| e.handler == handler)?;
-		Some(self.spatial_data(entry.spatial.as_deref()?, &entry.field.data))
+		self.spatial_data(entry.spatial.as_deref()?, &entry.field.data)
 	}
 }
 

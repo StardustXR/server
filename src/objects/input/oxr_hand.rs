@@ -604,13 +604,18 @@ impl InputSource for HandInputMethod {
 		objects: &HashMap<QueryableId, CachedObject<FieldSample>>,
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
+		let current_capture = self.sender.active_capture.blocking_read().clone();
 		let hand = *self.hand.blocking_read();
 		let Some(hand) = hand else {
-			self.sender.active_capture.blocking_write().take();
-			return (vec![], None);
+			return (
+				match current_capture.clone() {
+					Some(v) => vec![v],
+					None => vec![],
+				},
+				current_capture,
+			);
 		};
 
-		let current_capture = self.sender.active_capture.blocking_read().clone();
 		let capture = if let Some(cap) = current_capture {
 			if objects.values().any(|e| e.handler == cap) {
 				Some(cap)
@@ -651,14 +656,18 @@ impl InputSource for HandInputMethod {
 		(order.into_iter().map(|(_, h)| h).collect(), None)
 	}
 
-	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> SpatialData {
-		let hand = (*self.hand.blocking_read()).unwrap();
+	fn spatial_data(
+		&self,
+		handler_spatial: &SpatialRef,
+		handler_field: &Field,
+	) -> Option<SpatialData> {
+		let hand = (*self.hand.blocking_read())?;
 		let localized = localize_hand(&self.base_spatial, &hand, handler_spatial, handler_field);
 		let distance = hand_real_distance(&localized);
-		SpatialData {
+		Some(SpatialData {
 			input: InputDataType::Hand { data: localized },
 			distance,
-		}
+		})
 	}
 
 	fn datamap(&self) -> HashMap<String, DatamapData> {
