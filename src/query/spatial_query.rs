@@ -376,9 +376,9 @@ async fn register_query<K: QueryKind>(
 struct BeamKind {
 	handler: BeamQueryHandler,
 	ref_space: Arc<Spatial>,
-	origin: Vec3,
-	dir: Vec3,
-	max_length: f32,
+	origin: AtomicVec3,
+	dir: AtomicVec3,
+	max_length: AtomicF32,
 }
 impl QueryKind for BeamKind {
 	type Hit = RayMarchResult;
@@ -387,12 +387,13 @@ impl QueryKind for BeamKind {
 	}
 	fn hit(&self, queryable: &Queryable) -> Option<RayMarchResult> {
 		let ray_march = queryable.field.data.ray_march(Ray {
-			origin: self.origin,
-			direction: self.dir,
+			origin: self.origin.load(),
+			direction: self.dir.load(),
 			space: self.ref_space.clone(),
 		});
-		(ray_march.min_distance <= 0.0 && ray_march.deepest_point_distance <= self.max_length)
-			.then_some(ray_march)
+		(ray_march.min_distance <= 0.0
+			&& ray_march.deepest_point_distance <= self.max_length.load())
+		.then_some(ray_march)
 	}
 	fn entered(
 		&self,
@@ -427,8 +428,7 @@ impl QueryKind for BeamKind {
 struct ZoneKind {
 	handler: ZoneQueryHandler,
 	field: Arc<Field>,
-	/// holds an f32
-	margin: AtomicU32,
+	margin: AtomicF32,
 }
 impl QueryKind for ZoneKind {
 	type Hit = (Vec3, FieldSample);
@@ -440,7 +440,7 @@ impl QueryKind for ZoneKind {
 			Spatial::space_to_space_matrix(Some(&queryable.spatial), Some(&self.field.spatial))
 				.to_scale_rotation_translation();
 		let sample = self.field.local_sample(pos.into());
-		(sample.distance < f32::from_bits(self.margin.load(Ordering::Relaxed)))
+		(sample.distance < self.margin.load())
 			.then_some((pos, sample))
 	}
 	fn entered(
@@ -573,9 +573,9 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			BeamKind {
 				handler,
 				ref_space: (**ref_space).clone(),
-				origin: origin.into(),
-				dir: direction.into(),
-				max_length,
+				origin: AtomicVec3::new(origin),
+				dir: AtomicVec3::new(direction),
+				max_length: AtomicF32::new(max_length),
 			},
 			interfaces,
 		)
@@ -604,7 +604,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			ZoneKind {
 				handler,
 				field: field.data.clone(),
-				margin: AtomicU32::new(margin.to_bits()),
+				margin: AtomicF32::new(margin),
 			},
 			interfaces,
 		)
@@ -639,10 +639,10 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 		)
 		.await?;
 		let handle = PointsQueryHandleProxy::new_service(PointsQueryHandle(query))
-            // TODO: nuke this unwrap
+			// TODO: nuke this unwrap
 			.unwrap()
 			.into_proxy();
-        Ok(handle)
+		Ok(handle)
 	}
 }
 
@@ -658,10 +658,7 @@ impl PointsQueryHandleHandler for PointsQueryHandle {
 struct ZoneQueryHandle(Arc<Query<ZoneKind>>);
 impl ZoneQueryHandleHandler for ZoneQueryHandle {
 	async fn update(&self, _ctx: gluon::Context, margin: f32) {
-		self.0
-			.kind
-			.margin
-			.store(margin.to_bits(), Ordering::Relaxed);
+		self.0.kind.margin.store(margin);
 		self.0.self_moved();
 	}
 }
@@ -676,8 +673,49 @@ impl BeamQueryHandleHandler for BeamQueryHandle {
 		direction: Vec3F,
 		max_length: f32,
 	) -> impl Future<Output = ()> + Send + Sync {
-		// TODO: impl, ideally in a way that doesn't destroy perf with locks (especially Mutex)
+		self.0.kind.origin.store(origin);
+		self.0.kind.dir.store(direction);
+		self.0.kind.max_length.store(max_length);
+		self.0.self_moved();
 		ready(())
+	}
+}
+#[derive(Debug)]
+struct AtomicF32(AtomicU32);
+impl AtomicF32 {
+	fn new(val: f32) -> Self {
+		Self(AtomicU32::new(val.to_bits()))
+	}
+	fn load(&self) -> f32 {
+		f32::from_bits(self.0.load(Ordering::Relaxed))
+	}
+	fn store(&self, val: f32) {
+		self.0.store(val.to_bits(), Ordering::Relaxed);
+	}
+}
+#[derive(Debug)]
+struct AtomicVec3 {
+	x: AtomicF32,
+	y: AtomicF32,
+	z: AtomicF32,
+}
+impl AtomicVec3 {
+	fn new(val: impl Into<Vec3>) -> Self {
+		let val = val.into();
+		Self {
+			x: AtomicF32::new(val.x),
+			y: AtomicF32::new(val.y),
+			z: AtomicF32::new(val.z),
+		}
+	}
+	fn load(&self) -> Vec3 {
+		Vec3::new(self.x.load(), self.y.load(), self.z.load())
+	}
+	fn store(&self, val: impl Into<Vec3>) {
+		let val = val.into();
+		self.x.store(val.x);
+		self.y.store(val.y);
+		self.z.store(val.z);
 	}
 }
 
