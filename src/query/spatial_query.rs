@@ -379,6 +379,7 @@ struct BeamKind {
 	origin: AtomicVec3,
 	dir: AtomicVec3,
 	max_length: AtomicF32,
+	margin: AtomicF32,
 }
 impl QueryKind for BeamKind {
 	type Hit = RayMarchResult;
@@ -391,7 +392,7 @@ impl QueryKind for BeamKind {
 			direction: self.dir.load(),
 			space: self.ref_space.clone(),
 		});
-		(ray_march.min_distance <= 0.0
+		(ray_march.min_distance <= self.margin.load()
 			&& ray_march.deepest_point_distance <= self.max_length.load())
 		.then_some(ray_march)
 	}
@@ -440,8 +441,7 @@ impl QueryKind for ZoneKind {
 			Spatial::space_to_space_matrix(Some(&queryable.spatial), Some(&self.field.spatial))
 				.to_scale_rotation_translation();
 		let sample = self.field.local_sample(pos.into());
-		(sample.distance < self.margin.load())
-			.then_some((pos, sample))
+		(sample.distance < self.margin.load()).then_some((pos, sample))
 	}
 	fn entered(
 		&self,
@@ -560,6 +560,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			direction,
 			origin,
 			max_length,
+			margin,
 		} = query;
 		let ref_space = reference_spatial.owned().ok_or(QueryError::InvalidRef)?;
 		tracing::debug!(
@@ -567,6 +568,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 			?direction,
 			?origin,
 			max_length,
+			margin,
 			"Creating BeamQuery"
 		);
 		let query = register_query(
@@ -576,6 +578,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 				origin: AtomicVec3::new(origin),
 				dir: AtomicVec3::new(direction),
 				max_length: AtomicF32::new(max_length),
+				margin: AtomicF32::new(margin),
 			},
 			interfaces,
 		)

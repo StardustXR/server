@@ -477,6 +477,7 @@ impl MousePointer {
 							z: -1.0,
 						},
 						max_length: f32::MAX,
+						margin: 0.0,
 					})
 					.await
 				{

@@ -650,6 +650,7 @@ fn beam_intersected_when_queryable_in_path() {
 						z: 0.0,
 					},
 					max_length: f32::MAX,
+					margin: 0.0,
 				},
 			)
 			.await
@@ -697,6 +698,7 @@ fn beam_no_intersected_when_queryable_offset() {
 						z: 0.0,
 					},
 					max_length: f32::MAX,
+					margin: 0.0,
 				},
 			)
 			.await
