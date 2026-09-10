@@ -213,14 +213,13 @@ fn build_line_mesh(
 					// No distinct neighbour in either direction => every point in this
 					// line shares one position, so there is no tube to orient.
 					(None, None) => {
-						error!("degenerate line: all points coincident");
 						break;
 					}
 					(None, Some(q)) | (Some(q), None) => q,
 					(Some(last), Some(next)) => last.lerp(next, 0.5),
 				};
 				if !quat.is_finite() {
-					error!("non finite quat at point {i}: curr: {curr:?}");
+					warn!("non finite quat at point {i}: curr: {curr:?}");
 					break;
 				}
 				let normals = [
