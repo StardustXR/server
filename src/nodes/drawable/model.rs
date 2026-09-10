@@ -676,7 +676,7 @@ impl ModelPart {
 				let release = tex.signal_on_drop(release_point);
 				let sema = tex.get_acquire_semaphore(acquire_point);
 				ACQUIRE_SEMAPHORES.lock().push(sema);
-				tx.send((release, tex.clone())).unwrap();
+				_ = tx.send((release, tex.clone()));
 			});
 			self.pending_dmatexes
 				.lock()
