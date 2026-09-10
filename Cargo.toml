@@ -28,10 +28,10 @@ bevy_debugging = ["bevy/bevy_remote", "bevy/track_location"]
 
 [profile.release]
 opt-level = "s"
-# lto = true
+lto = true
 # codegen-units = 1
 panic = "abort"
-# strip = "symbols"
+strip = "symbols"
 
 [profile.dev.package."*"]
 opt-level = 3
