@@ -675,10 +675,12 @@ impl BeamQueryHandleHandler for BeamQueryHandle {
 		origin: Vec3F,
 		direction: Vec3F,
 		max_length: f32,
+        margin: f32,
 	) -> impl Future<Output = ()> + Send + Sync {
 		self.0.kind.origin.store(origin);
 		self.0.kind.dir.store(direction);
 		self.0.kind.max_length.store(max_length);
+        self.0.kind.max_length.store(margin);
 		self.0.self_moved();
 		ready(())
 	}
