@@ -13,7 +13,7 @@ use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::gizmos::GizmoAsset;
 use bevy::gizmos::retained::Gizmo;
 use glam::{Vec3, Vec3A, vec3a};
-use gluon::{Handler, RefExt};
+use gluon_ipc::{Handler, RefExt};
 use parking_lot::RwLock;
 use stardust_xr_protocol::field::{
 	CreatedField, Field as FieldProxy, FieldHandler, FieldInterfaceHandler,
@@ -588,7 +588,7 @@ impl FieldObject {
 	pub fn new(
 		spatial: Arc<SpatialObject>,
 		shape: Shape,
-	) -> gluon::LocalRef<FieldProxy, FieldObject> {
+	) -> gluon_ipc::LocalRef<FieldProxy, FieldObject> {
 		let data = Arc::new(Field {
 			spatial: spatial.spatial_arc().clone(),
 			shape: RwLock::new(shape),
@@ -616,13 +616,13 @@ impl FieldObject {
 	}
 }
 impl FieldHandler for FieldObject {
-	async fn field_ref(&self, _ctx: gluon::Context) -> FieldRefProxy {
+	async fn field_ref(&self, _ctx: gluon_ipc::Context) -> FieldRefProxy {
 		self.field_ref.clone()
 	}
 
 	async fn sample(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		reference_space: SpatialRefProxy,
 		point: Vec3F,
 	) -> FieldSample {
@@ -634,7 +634,7 @@ impl FieldHandler for FieldObject {
 
 	async fn ray_march(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		reference_space: SpatialRefProxy,
 		ray_origin: Vec3F,
 		ray_direction: Vec3F,
@@ -647,7 +647,7 @@ impl FieldHandler for FieldObject {
 		}))
 	}
 
-	async fn set_shape(&self, _ctx: gluon::Context, shape: Shape) {
+	async fn set_shape(&self, _ctx: gluon_ipc::Context, shape: Shape) {
 		*self.data.shape.write() = shape;
 		request_field_polylines_recalc(&self.data);
 		for f in self.data.shape_changed_callback.get_valid_contents() {
@@ -666,7 +666,7 @@ interface!(FieldInterface);
 impl FieldInterfaceHandler for FieldInterface {
 	async fn sample(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		field: FieldRefProxy,
 		space: SpatialRefProxy,
 		point: Vec3F,
@@ -683,7 +683,7 @@ impl FieldInterfaceHandler for FieldInterface {
 
 	async fn ray_march(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		field: FieldRefProxy,
 		space: SpatialRefProxy,
 		ray_origin: Vec3F,
@@ -700,7 +700,7 @@ impl FieldInterfaceHandler for FieldInterface {
 
 	async fn create_field(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		spatial: SpatialProxy,
 		shape: Shape,
 	) -> Result<CreatedField, CreateError> {

@@ -13,7 +13,7 @@ use crate::{
 };
 use color_eyre::eyre::Result;
 use global_counter::primitive::exact::CounterU32;
-use gluon::{Handler, NodeError, RefExt};
+use gluon_ipc::{Handler, NodeError, RefExt};
 use parking_lot::RwLock;
 use stardust_xr_protocol::{
 	audio::AudioInterface as AudioInterfaceProxy,
@@ -149,49 +149,52 @@ impl ConnectedClient {
 }
 
 impl ServerHandler for ConnectedClient {
-	async fn spatial_interface(&self, _ctx: gluon::Context) -> SpatialInterfaceProxy {
+	async fn spatial_interface(&self, _ctx: gluon_ipc::Context) -> SpatialInterfaceProxy {
 		self.spatial_interface.clone()
 	}
 
-	async fn field_interface(&self, _ctx: gluon::Context) -> FieldInterfaceProxy {
+	async fn field_interface(&self, _ctx: gluon_ipc::Context) -> FieldInterfaceProxy {
 		self.field_interface.clone()
 	}
 
-	async fn dmatex_interface(&self, _ctx: gluon::Context) -> DmatexInterfaceProxy {
+	async fn dmatex_interface(&self, _ctx: gluon_ipc::Context) -> DmatexInterfaceProxy {
 		self.dmatex_interface.clone()
 	}
 
-	async fn text_interface(&self, _ctx: gluon::Context) -> TextInterfaceProxy {
+	async fn text_interface(&self, _ctx: gluon_ipc::Context) -> TextInterfaceProxy {
 		self.text_interface.clone()
 	}
 
-	async fn model_interface(&self, _ctx: gluon::Context) -> ModelInterfaceProxy {
+	async fn model_interface(&self, _ctx: gluon_ipc::Context) -> ModelInterfaceProxy {
 		self.model_interface.clone()
 	}
 
-	async fn lines_interface(&self, _ctx: gluon::Context) -> LinesInterfaceProxy {
+	async fn lines_interface(&self, _ctx: gluon_ipc::Context) -> LinesInterfaceProxy {
 		self.lines_interface.clone()
 	}
 
-	async fn sky_interface(&self, _ctx: gluon::Context) -> SkyInterfaceProxy {
+	async fn sky_interface(&self, _ctx: gluon_ipc::Context) -> SkyInterfaceProxy {
 		self.sky_interface.clone()
 	}
 
-	async fn audio_interface(&self, _ctx: gluon::Context) -> AudioInterfaceProxy {
+	async fn audio_interface(&self, _ctx: gluon_ipc::Context) -> AudioInterfaceProxy {
 		self.audio_interface.clone()
 	}
 
-	async fn query_interface(&self, _ctx: gluon::Context) -> QueryInterfaceProxy {
+	async fn query_interface(&self, _ctx: gluon_ipc::Context) -> QueryInterfaceProxy {
 		self.query_interface.clone()
 	}
 
-	async fn spatial_query_interface(&self, _ctx: gluon::Context) -> SpatialQueryInterfaceProxy {
+	async fn spatial_query_interface(
+		&self,
+		_ctx: gluon_ipc::Context,
+	) -> SpatialQueryInterfaceProxy {
 		self.spatial_query_interface.clone()
 	}
 
 	async fn generate_startup_token(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		root: SpatialRef,
 	) -> Result<String, CreateError> {
 		Ok(ClientStateParsed::from_deserialized(self, &root)?.token())

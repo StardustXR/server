@@ -20,7 +20,7 @@ use bevy_mod_xr::spaces::{XrPrimaryReferenceSpace, XrSpace, XrSpaceLocationFlags
 use bevy_sk::hand::GRADIENT_TEXTURE_HANDLE;
 use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
-use gluon::{Handler, LocalRef, Node, RefExt};
+use gluon_ipc::{Handler, LocalRef, Node, RefExt};
 use openxr::{HandJointLocation, Posef, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::field::FieldSample;
@@ -457,7 +457,7 @@ impl HandInputMethod {
 		base_space: Arc<openxr::Space>,
 		side: HandSide,
 		tracker: openxr::HandTracker,
-	) -> Result<Self, gluon::SendError> {
+	) -> Result<Self, gluon_ipc::SendError> {
 		let (query_cache, objects_arc, capture_requests) = QueryCache::new();
 		let sender = Arc::new(InputSender::new(objects_arc, capture_requests));
 
@@ -679,7 +679,7 @@ impl InputSource for HandInputMethod {
 impl InputMethodHandler for HandInputMethod {
 	async fn request_capture(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		handler: InputHandler,
 	) -> Option<InputMethodCapture> {
 		self.sender.grant_capture(handler).await
@@ -687,7 +687,7 @@ impl InputMethodHandler for HandInputMethod {
 
 	async fn get_spatial_data(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		handler: InputHandler,
 		time: Timestamp,
 	) -> Option<SpatialData> {

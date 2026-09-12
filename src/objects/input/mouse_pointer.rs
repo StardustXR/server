@@ -19,7 +19,7 @@ use bevy::{
 };
 use color_eyre::eyre::{Result, eyre};
 use glam::{Mat4, Vec3};
-use gluon::{Handler, Interface, RefExt};
+use gluon_ipc::{Handler, Interface, RefExt};
 use mint::Vector2;
 use stardust_xr_molecules_protocols::keyboard_handler::{
 	KeyEvent, KeyboardHandler as KeyboardHandlerProxy, ModifierState,
@@ -218,7 +218,7 @@ impl KeyboardQueryCache {
 impl PointsQueryHandlerHandler for KeyboardQueryCache {
 	async fn entered(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		obj: QueryableId,
 		_field: FieldRefProxy,
 		_spatial: SpatialRefProxy,
@@ -237,19 +237,19 @@ impl PointsQueryHandlerHandler for KeyboardQueryCache {
 
 	async fn interfaces_changed(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		_obj: QueryableId,
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
 
-	async fn moved(&self, _ctx: gluon::Context, obj: QueryableId, sample: FieldSample) {
+	async fn moved(&self, _ctx: gluon_ipc::Context, obj: QueryableId, sample: FieldSample) {
 		if let Some(entry) = self.handlers.lock().unwrap().get_mut(&obj) {
 			entry.1 = sample;
 		}
 	}
 
-	async fn left(&self, _ctx: gluon::Context, obj: QueryableId) {
+	async fn left(&self, _ctx: gluon_ipc::Context, obj: QueryableId) {
 		self.handlers.lock().unwrap().remove(&obj);
 	}
 }
@@ -258,7 +258,7 @@ impl PointsQueryHandlerHandler for KeyboardQueryCache {
 /// the query cache above, the query's handle (to move the focus point to the
 /// pointer's hit each frame), and xkb state for modifiers + the keymap token.
 struct KeyboardFocus {
-	cache: gluon::Node<KeyboardQueryCache>,
+	cache: gluon_ipc::Node<KeyboardQueryCache>,
 	points_handle: Arc<OnceLock<PointsQueryHandleProxy>>,
 	xkb_state: XkbState,
 	/// workaround for buggy modifier state on kde plasma (potentially others) with winit
@@ -296,7 +296,7 @@ struct MouseMethod {
 	/// Program name + PID of each client that requested a capture, keyed by its
 	/// handler; looked up when that handler's capture becomes active.
 	capture_pids: Mutex<HashMap<InputHandler, (String, i32)>>,
-	_beam_query: gluon::Node<BeamQueryCache>,
+	_beam_query: gluon_ipc::Node<BeamQueryCache>,
 	_query_guard: Arc<OnceLock<BeamQueryHandle>>,
 }
 
@@ -387,7 +387,7 @@ impl InputSource for MouseMethod {
 impl InputMethodHandler for MouseMethod {
 	async fn request_capture(
 		&self,
-		ctx: gluon::Context,
+		ctx: gluon_ipc::Context,
 		handler: InputHandler,
 	) -> Option<InputMethodCapture> {
 		let capture = self.sender.grant_capture(handler.clone()).await?;
@@ -404,7 +404,7 @@ impl InputMethodHandler for MouseMethod {
 
 	async fn get_spatial_data(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		handler: InputHandler,
 		_time: Timestamp,
 	) -> Option<SpatialData> {
@@ -422,7 +422,7 @@ impl InputMethodHandler for MouseMethod {
 
 #[derive(Resource)]
 pub struct MousePointer {
-	spatial: gluon::LocalRef<SpatialProxy, SpatialObject>,
+	spatial: gluon_ipc::LocalRef<SpatialProxy, SpatialObject>,
 	method: InputMethodNode<MouseMethod>,
 	keyboard: KeyboardFocus,
 	/// An Escape press was swallowed as part of the Ctrl+Escape capture-stop

@@ -29,8 +29,7 @@ use bevy_mod_xr::{
 };
 use color_eyre::eyre::Result;
 use glam::{Affine3A, Mat4, Vec2, Vec3};
-use gluon::{Handler, LocalRef};
-use gluon::{Node, RefExt};
+use gluon_ipc::{Handler, LocalRef, Node, RefExt};
 use openxr::{Action, ActiveActionSet, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::{
@@ -475,7 +474,7 @@ struct Controllers {
 	left: OxrControllerInput,
 	right: OxrControllerInput,
 	base_space: Option<Arc<openxr::Space>>,
-	base_spatial: gluon::LocalRef<SpatialProxy, SpatialObject>,
+	base_spatial: gluon_ipc::LocalRef<SpatialProxy, SpatialObject>,
 }
 
 #[derive(Debug)]
@@ -510,7 +509,7 @@ impl OxrControllerInputTrackedState {
 	}
 }
 pub struct OxrControllerInput {
-	aim_spatial: gluon::LocalRef<SpatialProxy, SpatialObject>,
+	aim_spatial: gluon_ipc::LocalRef<SpatialProxy, SpatialObject>,
 	side: HandSide,
 	model: OnceLock<ModelLocal<Model>>,
 	model_part: OnceLock<Arc<ModelPart>>,
@@ -680,9 +679,9 @@ impl OxrControllerInput {
 struct ControllerInputMethod {
 	side: HandSide,
 	base_space: DebugWrapper<Arc<openxr::Space>>,
-	base_spatial: gluon::LocalRef<SpatialRefProxy, SpatialRef>,
+	base_spatial: gluon_ipc::LocalRef<SpatialRefProxy, SpatialRef>,
 	space: DebugWrapper<openxr::Space>,
-	_query: gluon::Node<PointsQueryCache>,
+	_query: gluon_ipc::Node<PointsQueryCache>,
 	sender: Arc<InputSender<FieldSample>>,
 	pose: RwLock<Option<Posef>>,
 	datamap: RwLock<ControllerDatamap>,
@@ -690,11 +689,11 @@ struct ControllerInputMethod {
 }
 impl ControllerInputMethod {
 	fn new(
-		base_spatial: gluon::LocalRef<SpatialRefProxy, SpatialRef>,
+		base_spatial: gluon_ipc::LocalRef<SpatialRefProxy, SpatialRef>,
 		base_space: Arc<openxr::Space>,
 		side: HandSide,
 		space: openxr::Space,
-	) -> Result<Self, gluon::SendError> {
+	) -> Result<Self, gluon_ipc::SendError> {
 		let (query_cache, objects_arc, capture_requests) = QueryCache::new();
 		let sender = Arc::new(InputSender::new(objects_arc, capture_requests));
 
@@ -887,7 +886,7 @@ impl InputSource for ControllerInputMethod {
 impl InputMethodHandler for ControllerInputMethod {
 	fn request_capture(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		handler: stardust_xr_protocol::suis::InputHandler,
 	) -> impl Future<Output = Option<stardust_xr_protocol::suis::InputMethodCapture>> {
 		self.sender.grant_capture(handler)
@@ -895,7 +894,7 @@ impl InputMethodHandler for ControllerInputMethod {
 
 	async fn get_spatial_data(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		handler: stardust_xr_protocol::suis::InputHandler,
 		time: Timestamp,
 	) -> Option<SpatialData> {

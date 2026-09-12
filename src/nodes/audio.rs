@@ -9,7 +9,7 @@ use bevy::audio::{PlaybackMode, Volume};
 use bevy_mod_openxr::session::OxrSession;
 use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated};
 use bevy_mod_xr::spaces::XrSpace;
-use gluon::{Handler, RefExt};
+use gluon_ipc::{Handler, RefExt};
 use parking_lot::Mutex;
 
 use bevy::prelude::*;
@@ -132,11 +132,11 @@ impl Sound {
 	}
 }
 impl SoundHandler for Sound {
-	async fn play(&self, _ctx: gluon::Context) {
+	async fn play(&self, _ctx: gluon_ipc::Context) {
 		self.play.lock().replace(());
 	}
 
-	async fn stop(&self, _ctx: gluon::Context) {
+	async fn stop(&self, _ctx: gluon_ipc::Context) {
 		self.stop.lock().replace(());
 	}
 }
@@ -150,7 +150,7 @@ interface!(AudioInterface);
 impl AudioInterfaceHandler for AudioInterface {
 	async fn create_sound(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		sound: Resource,
 	) -> Result<SoundProxy, ResourceLoadError> {

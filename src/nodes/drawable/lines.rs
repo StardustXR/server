@@ -20,7 +20,7 @@ use bevy::{
 	},
 };
 use glam::Vec3;
-use gluon::{Handler, LocalRef, RefExt};
+use gluon_ipc::{Handler, LocalRef, RefExt};
 use parking_lot::Mutex;
 use stardust_xr_protocol::lines::{Line, LinePoint, LinesHandler, LinesInterfaceHandler};
 use stardust_xr_protocol::{lines::Lines as LinesProxy, types::CreateError};
@@ -384,7 +384,7 @@ impl Lines {
 			}
 		});
 
-        // TODO: get rid of this unwrap
+		// TODO: get rid of this unwrap
 		let lines = LinesProxy::new_service(lines).unwrap();
 		let lines_arc = lines.handler().clone();
 		LINES_REGISTRY.add_raw(&lines_arc);
@@ -393,7 +393,7 @@ impl Lines {
 	}
 }
 impl LinesHandler for Lines {
-	async fn set_lines(&self, _ctx: gluon::Context, lines: Vec<Line>) {
+	async fn set_lines(&self, _ctx: gluon_ipc::Context, lines: Vec<Line>) {
 		*self.data.lock() = lines;
 		self.gen_mesh.store(true, Ordering::Relaxed);
 	}
@@ -407,7 +407,7 @@ interface!(LinesInterface);
 impl LinesInterfaceHandler for LinesInterface {
 	async fn create_lines(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		lines: Vec<Line>,
 	) -> Result<LinesProxy, CreateError> {

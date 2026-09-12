@@ -12,7 +12,7 @@ use std::{
 };
 
 use dashmap::DashMap;
-use gluon::{Handler, Node, RefExt, RefFsBinding};
+use gluon_ipc::{Handler, Node, RefExt, RefFsBinding};
 use rustix::{
 	fs::{MemfdFlags, memfd_create},
 	mm::{self, MapFlags, ProtFlags, mmap},
@@ -132,7 +132,7 @@ impl KeymapStore {
 impl KeymapStoreHandler for KeymapStore {
 	async fn exchange(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		keymap: XkbcommonKeymapFd,
 	) -> Result<KeymapProxy, KeymapExchangeError> {
 		let mmap = MMapGuard::new(keymap.fd.as_fd(), keymap.size as usize).map_err(|err| {
@@ -163,7 +163,11 @@ impl KeymapStoreHandler for KeymapStore {
 		self.register(mmap.slice())
 	}
 
-	async fn get(&self, _ctx: gluon::Context, keymap: KeymapProxy) -> Option<XkbcommonKeymapFd> {
+	async fn get(
+		&self,
+		_ctx: gluon_ipc::Context,
+		keymap: KeymapProxy,
+	) -> Option<XkbcommonKeymapFd> {
 		let token = keymap.owned()?;
 		Some(XkbcommonKeymapFd {
 			fd: token.data.file.try_clone().ok()?.into(),
@@ -171,7 +175,7 @@ impl KeymapStoreHandler for KeymapStore {
 		})
 	}
 
-	async fn get_keymap_id(&self, _ctx: gluon::Context, keymap: KeymapProxy) -> Option<u64> {
+	async fn get_keymap_id(&self, _ctx: gluon_ipc::Context, keymap: KeymapProxy) -> Option<u64> {
 		keymap.owned().map(|v| v.id)
 	}
 }

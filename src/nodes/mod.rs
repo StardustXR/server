@@ -1,4 +1,4 @@
-use gluon::Handler;
+use gluon_ipc::Handler;
 
 pub mod audio;
 pub mod camera;
@@ -9,15 +9,13 @@ pub mod spatial;
 #[macro_export]
 macro_rules! interface {
 	($type:ident) => {
-		#[derive(Debug, gluon::Handler)]
+		#[derive(Debug, gluon_ipc::Handler)]
 		pub struct $type {
 			base_resource_prefixes: std::sync::Arc<Vec<std::path::PathBuf>>,
 		}
 
 		impl $type {
-			pub fn new(
-				base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>,
-			) -> Self {
+			pub fn new(base_resource_prefixes: &std::sync::Arc<Vec<std::path::PathBuf>>) -> Self {
 				$type {
 					base_resource_prefixes: base_resource_prefixes.clone(),
 				}
@@ -32,21 +30,21 @@ macro_rules! interface {
 #[macro_export]
 macro_rules! exposed_interface {
 	($type:ident, $service:literal) => {
-		#[derive(Debug, gluon::Handler)]
+		#[derive(Debug, gluon_ipc::Handler)]
 		pub struct $type {
-			ref_binding: std::sync::OnceLock<gluon::RefFsBinding>,
+			ref_binding: std::sync::OnceLock<gluon_ipc::RefFsBinding>,
 		}
 
 		impl $type {
-			pub async fn expose(instance: &str) -> gluon::Node<$type> {
+			pub async fn expose(instance: &str) -> gluon_ipc::Node<$type> {
 				let path = stardust_xr_protocol::dir::server_file_path($service, instance).expect(
 					&format!("failed to get {} path for instance: {}", $service, instance,),
 				);
-				let (node, node_ref) = gluon::Node::new($type {
+				let (node, node_ref) = gluon_ipc::Node::new($type {
 					ref_binding: std::sync::OnceLock::new(),
 				})
 				.expect(&format!("failed to create node for {}", stringify!($type)));
-				let fs_binding = gluon::RefFsBinding::new(node_ref, path).expect(&format!(
+				let fs_binding = gluon_ipc::RefFsBinding::new(node_ref, path).expect(&format!(
 					"failed to create node for {}: {}",
 					$service, instance
 				));
@@ -69,7 +67,7 @@ macro_rules! exposed_interface {
 pub trait ProxyExt: Sized {
 	type Owned: Handler;
 	fn owned(&self) -> Option<std::sync::Arc<Self::Owned>>;
-	fn owned_ref(&self) -> Option<gluon::LocalRef<Self, Self::Owned>>;
+	fn owned_ref(&self) -> Option<gluon_ipc::LocalRef<Self, Self::Owned>>;
 }
 #[macro_export]
 macro_rules! impl_proxy {
@@ -77,10 +75,10 @@ macro_rules! impl_proxy {
 		impl $crate::nodes::ProxyExt for $proxy {
 			type Owned = $type;
 			fn owned(&self) -> Option<std::sync::Arc<$type>> {
-				gluon::RefExt::local_handler::<$type>(self)
+				gluon_ipc::RefExt::local_handler::<$type>(self)
 			}
-			fn owned_ref(&self) -> Option<gluon::LocalRef<$proxy, $type>> {
-				Some(gluon::LocalRef::new(self.clone(), self.owned()?))
+			fn owned_ref(&self) -> Option<gluon_ipc::LocalRef<$proxy, $type>> {
+				Some(gluon_ipc::LocalRef::new(self.clone(), self.owned()?))
 			}
 		}
 	};

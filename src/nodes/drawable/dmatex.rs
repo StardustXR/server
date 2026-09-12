@@ -23,7 +23,7 @@ use bevy_dmabuf::{
 };
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
-use gluon::{Handler, RefExt};
+use gluon_ipc::{Handler, RefExt};
 use stardust_xr_protocol::dmatex::{
 	DmatexFormat, DmatexFormatInfo, DmatexImportError, DmatexInterfaceHandler, DmatexPlanes,
 	DmatexRef, DmatexRefHandler, DmatexRefLocal, DmatexSize,
@@ -249,7 +249,7 @@ impl_proxy!(DmatexRef, Dmatex);
 impl DmatexInterfaceHandler for DmatexInterface {
 	async fn import_dmatex(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		size: DmatexSize,
 		format: DmatexFormat,
 		array_layers: u32,
@@ -271,7 +271,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 
 	async fn enumerate_formats(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		render_node: u64,
 	) -> Option<Vec<DmatexFormatInfo>> {
 		let vk = VULKANO_CONTEXT.wait();
@@ -334,7 +334,7 @@ impl DmatexInterfaceHandler for DmatexInterface {
 		DMATEX_FORMAT_CACHE.get().cloned()
 	}
 
-	async fn primary_render_node_id(&self, _ctx: gluon::Context) -> u64 {
+	async fn primary_render_node_id(&self, _ctx: gluon_ipc::Context) -> u64 {
 		// maybe replace this unwrap? but when would we ever not have an id?
 		VULKANO_CONTEXT.wait().get_drm_render_node_id().unwrap()
 	}

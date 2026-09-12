@@ -15,7 +15,7 @@ use bevy_mesh_text_3d::{
 	VerticalAnchorPoint, generate_meshes,
 };
 use core::f32;
-use gluon::{Handler, RefExt};
+use gluon_ipc::{Handler, RefExt};
 use parking_lot::Mutex;
 use stardust_xr_protocol::{
 	spatial::Spatial,
@@ -226,12 +226,12 @@ impl Text {
 	}
 }
 impl TextHandler for Text {
-	async fn set_character_height(&self, _ctx: gluon::Context, height: f32) {
+	async fn set_character_height(&self, _ctx: gluon_ipc::Context, height: f32) {
 		self.data.lock().character_height = height;
 		self.dirty.store(true, Ordering::Relaxed);
 	}
 
-	async fn set_text(&self, _ctx: gluon::Context, text: String) {
+	async fn set_text(&self, _ctx: gluon_ipc::Context, text: String) {
 		*self.text.lock() = text;
 		self.dirty.store(true, Ordering::Relaxed);
 	}
@@ -240,7 +240,7 @@ interface!(TextInterface);
 impl TextInterfaceHandler for TextInterface {
 	async fn create_text(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		spatial: Spatial,
 		text: String,
 		style: TextStyle,

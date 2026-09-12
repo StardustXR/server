@@ -10,7 +10,7 @@ use std::{
 };
 
 use glam::Vec3;
-use gluon::{Handler, RefExt, SendError};
+use gluon_ipc::{Handler, RefExt, SendError};
 use parking_lot::Mutex;
 use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
@@ -550,7 +550,7 @@ interface!(SpatialQueryInterface);
 impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 	async fn beam_query(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		query: BeamQuery,
 	) -> Result<BeamQueryHandleProxy, QueryError> {
 		let BeamQuery {
@@ -592,7 +592,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 
 	async fn zone_query(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		query: ZoneQuery,
 	) -> Result<ZoneQueryHandleProxy, QueryError> {
 		let ZoneQuery {
@@ -621,7 +621,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 
 	async fn points_query(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		query: PointsQuery,
 	) -> Result<PointsQueryHandleProxy, QueryError> {
 		let PointsQuery {
@@ -652,7 +652,7 @@ impl SpatialQueryInterfaceHandler for SpatialQueryInterface {
 #[derive(Debug, Handler)]
 struct PointsQueryHandle(Arc<Query<PointsKind>>);
 impl PointsQueryHandleHandler for PointsQueryHandle {
-	async fn update(&self, _ctx: gluon::Context, points: Vec<Point>) {
+	async fn update(&self, _ctx: gluon_ipc::Context, points: Vec<Point>) {
 		*self.0.kind.points.lock() = points;
 		self.0.self_moved();
 	}
@@ -660,7 +660,7 @@ impl PointsQueryHandleHandler for PointsQueryHandle {
 #[derive(Debug, Handler)]
 struct ZoneQueryHandle(Arc<Query<ZoneKind>>);
 impl ZoneQueryHandleHandler for ZoneQueryHandle {
-	async fn update(&self, _ctx: gluon::Context, margin: f32) {
+	async fn update(&self, _ctx: gluon_ipc::Context, margin: f32) {
 		self.0.kind.margin.store(margin);
 		self.0.self_moved();
 	}
@@ -671,7 +671,7 @@ struct BeamQueryHandle(Arc<Query<BeamKind>>);
 impl BeamQueryHandleHandler for BeamQueryHandle {
 	fn update(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		origin: Vec3F,
 		direction: Vec3F,
 		max_length: f32,

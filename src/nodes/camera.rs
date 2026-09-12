@@ -28,8 +28,8 @@ use bevy::render::extract_component::ExtractComponent;
 use bevy::render::extract_component::ExtractComponentPlugin;
 use bevy_mod_xr::camera::XrProjection;
 use glam::Mat4;
-use gluon::Handler;
-use gluon::RefExt;
+use gluon_ipc::Handler;
+use gluon_ipc::RefExt;
 use parking_lot::Mutex;
 use stardust_xr_protocol::camera::Camera as CameraProxy;
 use stardust_xr_protocol::camera::CameraHandler;
@@ -78,7 +78,7 @@ impl Camera {
 impl CameraHandler for Camera {
 	async fn request_draw(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		render_target: DmatexRef,
 		acquire_point: u64,
 		release_point: DmatexSubmitRelease,
@@ -114,7 +114,7 @@ exposed_interface!(CameraInterface, "stardust-camera");
 impl CameraInterfaceHandler for CameraInterface {
 	async fn create_camera(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 	) -> Result<CameraProxy, CreateError> {
 		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;

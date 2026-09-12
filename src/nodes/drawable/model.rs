@@ -28,7 +28,7 @@ use bevy::{
 	},
 };
 use color_eyre::eyre::eyre;
-use gluon::{Handler, RefExt};
+use gluon_ipc::{Handler, RefExt};
 use parking_lot::Mutex;
 use rustc_hash::{FxHashMap, FxHasher};
 use stardust_xr_protocol::{
@@ -597,11 +597,11 @@ impl FromStr for TextureSlot {
 
 #[derive(Debug)]
 struct ModelPartNode {
-	node: gluon::Node<ModelPart>,
+	node: gluon_ipc::Node<ModelPart>,
 	proxy: ModelPartProxy,
 }
 impl Deref for ModelPartNode {
-	type Target = gluon::Node<ModelPart>;
+	type Target = gluon_ipc::Node<ModelPart>;
 
 	fn deref(&self) -> &Self::Target {
 		&self.node
@@ -693,17 +693,17 @@ impl ModelPart {
 }
 
 impl ModelPartHandler for ModelPart {
-	async fn get_part_path(&self, _ctx: gluon::Context) -> String {
+	async fn get_part_path(&self, _ctx: gluon_ipc::Context) -> String {
 		self.path.clone()
 	}
 
-	async fn get_spatial(&self, _ctx: gluon::Context) -> Spatial {
+	async fn get_spatial(&self, _ctx: gluon_ipc::Context) -> Spatial {
 		self.spatial.clone()
 	}
 
 	async fn set_material_parameter(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		parameter_name: String,
 		value: MaterialParameter,
 	) -> Option<MaterialParamError> {
@@ -717,7 +717,7 @@ impl ModelPartHandler for ModelPart {
 		None
 	}
 
-	async fn apply_holdout_material(&self, _ctx: gluon::Context) {
+	async fn apply_holdout_material(&self, _ctx: gluon_ipc::Context) {
 		self.holdout.store(true, Ordering::Relaxed);
 	}
 }
@@ -791,7 +791,7 @@ impl Model {
 	}
 }
 impl ModelHandler for Model {
-	async fn get_part(&self, _ctx: gluon::Context, path: String) -> Option<ModelPartProxy> {
+	async fn get_part(&self, _ctx: gluon_ipc::Context, path: String) -> Option<ModelPartProxy> {
 		if let Some(parts) = self.parts.get() {
 			parts
 				.iter()
@@ -805,7 +805,7 @@ impl ModelHandler for Model {
 		}
 	}
 
-	async fn enumerate_parts(&self, _ctx: gluon::Context) -> Vec<ModelPartProxy> {
+	async fn enumerate_parts(&self, _ctx: gluon_ipc::Context) -> Vec<ModelPartProxy> {
 		if let Some(parts) = self.parts.get() {
 			parts.iter().map(|p| p.proxy.clone()).collect()
 		} else {
@@ -820,13 +820,13 @@ interface!(ModelInterface);
 impl ModelInterfaceHandler for ModelInterface {
 	fn load_model_oneway(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		model: stardust_xr_protocol::types::Resource,
-		reply: gluon::ReplySender<
+		reply: gluon_ipc::ReplySender<
 			std::result::Result<ModelProxy, stardust_xr_protocol::types::ResourceLoadError>,
 		>,
-	) -> impl Future<Output = std::result::Result<(), gluon::SendError>> + Send + Sync {
+	) -> impl Future<Output = std::result::Result<(), gluon_ipc::SendError>> + Send + Sync {
 		let base_resource_prefixes = self.base_resource_prefixes.clone();
 		async move {
 			tokio::spawn(async move {
@@ -849,7 +849,7 @@ impl ModelInterfaceHandler for ModelInterface {
 	}
 	async fn load_model(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		_spatial: stardust_xr_protocol::spatial::Spatial,
 		_model: stardust_xr_protocol::types::Resource,
 	) -> Result<ModelProxy, ResourceLoadError> {

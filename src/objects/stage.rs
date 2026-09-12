@@ -15,7 +15,7 @@ use bevy_mod_xr::{
 	session::{XrPreDestroySession, XrSessionCreated, session_running},
 	spaces::{XrPrimaryReferenceSpace, XrSpace},
 };
-use gluon::LocalRef;
+use gluon_ipc::LocalRef;
 use openxr::{Posef, ReferenceSpaceType, SpaceLocationFlags};
 use stardust_xr_protocol::spatial::{Spatial, SpatialRef};
 use stardust_xr_protocol::types::Timestamp;
@@ -127,8 +127,8 @@ fn destroy_stage_space(session: Res<OxrSession>, mut cmds: Commands, mut hmd: Re
 
 #[derive(Resource)]
 struct Stage {
-	spatial: gluon::LocalRef<Spatial, SpatialObject>,
-	base_spatial: gluon::LocalRef<Spatial, SpatialObject>,
+	spatial: gluon_ipc::LocalRef<Spatial, SpatialObject>,
+	base_spatial: gluon_ipc::LocalRef<Spatial, SpatialObject>,
 	tracked: Tracked<
 		DebugWrapper<(
 			Option<openxr::Space>,

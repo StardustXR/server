@@ -8,7 +8,7 @@ use bevy::prelude::Transform as BevyTransform;
 use bevy::prelude::*;
 use bevy::render::primitives::Aabb;
 use glam::{Mat4, Quat};
-use gluon::{Handler, RefExt};
+use gluon_ipc::{Handler, RefExt};
 use parking_lot::Mutex;
 use stardust_xr_protocol::spatial::{
 	BoundingBox, CreatedSpatial, PartialTransform, Spatial as SpatialProxy, SpatialHandler,
@@ -475,11 +475,11 @@ impl Spatial {
 static UPDATED_SPATIALS_NODES: Mutex<EntityHashMap<(Option<BevyTransform>, Option<Entity>)>> =
 	Mutex::new(EntityHashMap::new());
 impl SpatialHandler for SpatialObject {
-	async fn spatial_ref(&self, _ctx: gluon::Context) -> SpatialRefProxy {
+	async fn spatial_ref(&self, _ctx: gluon_ipc::Context) -> SpatialRefProxy {
 		self.spatial_ref.proxy().clone()
 	}
 
-	async fn get_local_bounding_box(&self, _ctx: gluon::Context) -> BoundingBox {
+	async fn get_local_bounding_box(&self, _ctx: gluon_ipc::Context) -> BoundingBox {
 		let bounds = self.get_bounding_box();
 		BoundingBox {
 			center: bounds.center.into(),
@@ -489,7 +489,7 @@ impl SpatialHandler for SpatialObject {
 
 	async fn get_relative_bounding_box(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		relative_to: SpatialRefProxy,
 	) -> Result<BoundingBox, CreateError> {
 		let Some(relative_to) = relative_to.owned() else {
@@ -511,7 +511,7 @@ impl SpatialHandler for SpatialObject {
 
 	async fn get_relative_transform(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		relative_to: SpatialRefProxy,
 	) -> Result<Transform, CreateError> {
 		let Some(relative_to) = relative_to.owned() else {
@@ -528,7 +528,7 @@ impl SpatialHandler for SpatialObject {
 		})
 	}
 
-	async fn set_parent(&self, _ctx: gluon::Context, parent: SpatialRefProxy) {
+	async fn set_parent(&self, _ctx: gluon_ipc::Context, parent: SpatialRefProxy) {
 		let Some(parent) = parent.owned() else {
 			error!("Invalid SpatialRef used as parent");
 			return;
@@ -538,7 +538,7 @@ impl SpatialHandler for SpatialObject {
 			.inspect_err(|err| error!("error while setting spatial parent: {err}"));
 	}
 
-	async fn set_parent_in_place(&self, _ctx: gluon::Context, parent: SpatialRefProxy) {
+	async fn set_parent_in_place(&self, _ctx: gluon_ipc::Context, parent: SpatialRefProxy) {
 		let Some(parent) = parent.owned() else {
 			error!("Invalid SpatialRef used as parent");
 			return;
@@ -548,13 +548,13 @@ impl SpatialHandler for SpatialObject {
 			.inspect_err(|err| error!("error while setting spatial parent in place: {err}"));
 	}
 
-	async fn set_local_transform(&self, _ctx: gluon::Context, transform: PartialTransform) {
+	async fn set_local_transform(&self, _ctx: gluon_ipc::Context, transform: PartialTransform) {
 		self.set_local_transform_components(None, transform);
 	}
 
 	async fn set_relative_transform(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		relative_to: SpatialRefProxy,
 		transform: PartialTransform,
 	) {
@@ -589,7 +589,7 @@ interface!(SpatialInterface);
 impl SpatialInterfaceHandler for SpatialInterface {
 	async fn create_spatial(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		parent: SpatialRefProxy,
 		transform: Transform,
 	) -> Result<CreatedSpatial, CreateError> {
@@ -603,7 +603,7 @@ impl SpatialInterfaceHandler for SpatialInterface {
 
 	async fn get_relative_bounding_box(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		relative_to: SpatialRefProxy,
 		spatial: SpatialRefProxy,
 	) -> Result<BoundingBox, SpatialRefOpError> {
@@ -629,7 +629,7 @@ impl SpatialInterfaceHandler for SpatialInterface {
 
 	async fn get_relative_transform(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		relative_to: SpatialRefProxy,
 		spatial: SpatialRefProxy,
 	) -> Result<Transform, SpatialRefOpError> {

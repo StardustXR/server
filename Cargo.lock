@@ -598,7 +598,7 @@ dependencies = [
  "bevy_asset",
  "bevy_ecs",
  "bevy_image",
- "glam",
+ "glam 0.29.3",
  "wgpu-types",
 ]
 
@@ -1057,7 +1057,7 @@ dependencies = [
  "approx",
  "bevy_reflect",
  "derive_more 1.0.0",
- "glam",
+ "glam 0.29.3",
  "itertools 0.14.0",
  "libm",
  "rand 0.8.5",
@@ -1099,7 +1099,7 @@ version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8bb60c753b968a2de0fd279b76a3d19517695e771edb4c23575c7f92156315de"
 dependencies = [
- "glam",
+ "glam 0.29.3",
 ]
 
 [[package]]
@@ -1216,7 +1216,7 @@ dependencies = [
  "downcast-rs 2.0.2",
  "erased-serde",
  "foldhash",
- "glam",
+ "glam 0.29.3",
  "serde",
  "smallvec",
  "smol_str",
@@ -2483,7 +2483,7 @@ checksum = "b0a05902cf601ed11d564128448097b98ebe3c6574bd7b6a653a3d56d54aa020"
 dependencies = [
  "const_panic",
  "encase_derive",
- "glam",
+ "glam 0.29.3",
  "thiserror 1.0.69",
 ]
 
@@ -2578,7 +2578,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2905,6 +2905,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "glam"
+version = "0.33.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e762b9b188634fc508d4ec54b62ea3d352c43fd431d18d05d46f559f217f4725"
+dependencies = [
+ "mint",
+]
+
+[[package]]
 name = "glob"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2969,12 +2978,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "gluon"
+name = "gluon-ipc"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#093df7769434a36ec1d8d1decc4d5671cf30b2cf"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f675d21faef003c3d18cbf743ef85c82aea2956e88b9eb1472c2d6497966a5ed"
 dependencies = [
  "bitflags 2.11.0",
- "gluon-derive",
+ "gluon-ipc-derive",
  "rustix 1.1.4",
  "strong-ipc",
  "thiserror 2.0.18",
@@ -2982,13 +2992,14 @@ dependencies = [
 ]
 
 [[package]]
-name = "gluon-codegen"
+name = "gluon-ipc-codegen"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#093df7769434a36ec1d8d1decc4d5671cf30b2cf"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2878da5a9d216cf7dcd2115dac82292dfe8f5831623b32b5e9f6e6ac338b0425"
 dependencies = [
  "convert_case 0.11.0",
- "gluon",
- "gluon-parser",
+ "gluon-ipc",
+ "gluon-ipc-parser",
  "prettyplease",
  "proc-macro2",
  "quote",
@@ -2996,18 +3007,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "gluon-derive"
+name = "gluon-ipc-derive"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#093df7769434a36ec1d8d1decc4d5671cf30b2cf"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "358b64f3d11ebc2143f3d403f1675f55f11f7cd56ebc341bd017f808c5d822f2"
 dependencies = [
  "quote",
  "syn 2.0.117",
 ]
 
 [[package]]
-name = "gluon-parser"
+name = "gluon-ipc-parser"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/gluon?branch=refactor%2Fstrongipc#093df7769434a36ec1d8d1decc4d5671cf30b2cf"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "751bfc0ec65269173abbc479af93f4c706cd091e1880fde269afdc31bb5eaa43"
 dependencies = [
  "ansi_term",
  "chumsky",
@@ -3221,7 +3234,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c9e718d32b6e6b2b32354e1b0367025efdd0b11d6a740b905ddf5db1074679"
 dependencies = [
  "constgebra",
- "glam",
+ "glam 0.29.3",
  "tinyvec",
 ]
 
@@ -3337,7 +3350,7 @@ dependencies = [
  "hyper",
  "libc",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.3",
  "tokio",
  "tower-service",
  "tracing",
@@ -5221,7 +5234,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5234,7 +5247,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5582,7 +5595,6 @@ dependencies = [
  "cfg-if",
  "libc",
  "psm",
- "windows-sys 0.52.0",
  "windows-sys 0.59.0",
 ]
 
@@ -5597,24 +5609,26 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr-molecules-protocols"
-version = "0.1.0"
-source = "git+https://github.com/StardustXR/molecules.git?branch=refactor%2Fstrongipc#2c5f33d2a9e90eadf06845404e43a32f7d1d3d0c"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "56ff868f2e22706c25d80b87e3219b088462128f3332fad117fcb09f7399d906"
 dependencies = [
- "gluon",
- "gluon-codegen",
+ "gluon-ipc",
+ "gluon-ipc-codegen",
  "stardust-xr-protocol",
  "tracing",
 ]
 
 [[package]]
 name = "stardust-xr-protocol"
-version = "0.51.1"
-source = "git+https://github.com/StardustXR/core.git?branch=refactor%2Fstrongipc#1e69f2ce3cc9dbeb7072f41e9d55ed62c1cdee31"
+version = "0.52.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "097926accefdaa7ab195978044b38b463758e948dabe4b394705aa7df102f61c"
 dependencies = [
  "fnv",
- "glam",
- "gluon",
- "gluon-codegen",
+ "glam 0.33.7",
+ "gluon-ipc",
+ "gluon-ipc-codegen",
  "mint",
  "prettyplease",
  "rustix 1.1.4",
@@ -5628,7 +5642,7 @@ dependencies = [
 
 [[package]]
 name = "stardust-xr-server"
-version = "0.51.0"
+version = "0.52.0"
 dependencies = [
  "ash",
  "bevy",
@@ -5646,9 +5660,9 @@ dependencies = [
  "directories",
  "drm-fourcc",
  "futures-sink",
- "glam",
+ "glam 0.29.3",
  "global_counter",
- "gluon",
+ "gluon-ipc",
  "input-event-codes",
  "mimalloc",
  "mint",
@@ -5720,7 +5734,8 @@ dependencies = [
 [[package]]
 name = "strong-ipc"
 version = "0.1.0"
-source = "git+https://github.com/technobaboo/strong-ipc#42af1b22dc3944c64721b98d8afbd1f0ba3abb69"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df327b218ac884d02e54e500faaa1ecfd0b4678560874f70de801903c2f2f595"
 dependencies = [
  "dashmap",
  "rustix 1.1.4",
@@ -5882,7 +5897,7 @@ dependencies = [
  "getrandom 0.4.2",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -6931,7 +6946,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

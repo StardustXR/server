@@ -14,7 +14,7 @@ exposed_interface!(ServerInterface, "stardust-server");
 impl ServerInterfaceHandler for ServerInterface {
 	async fn connect(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		client: stardust_xr_protocol::client::Client,
 		startup_token: Option<String>,
 		resource_prefixes: Vec<String>,
@@ -31,7 +31,7 @@ impl ServerInterfaceHandler for ServerInterface {
 
 	async fn startup_spatial(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		startup_token: String,
 	) -> Option<SpatialRef> {
 		Some(state(&startup_token)?.apply())

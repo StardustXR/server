@@ -23,7 +23,7 @@ use bevy_mod_openxr::{
 	environment_blend_mode::OxrEnvironmentBlendModes, resources::OxrSessionConfig,
 };
 use glam::Quat;
-use gluon::{Handler, RefExt};
+use gluon_ipc::{Handler, RefExt};
 use openxr::EnvironmentBlendMode;
 use parking_lot::Mutex;
 use stardust_xr_protocol::{
@@ -148,7 +148,7 @@ interface!(SkyInterface);
 impl SkyInterfaceHandler for SkyInterface {
 	async fn set_sky_tex(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		tex: types::Resource,
 		opaque: bool,
 	) -> Option<SkyGuardProxy> {
@@ -168,7 +168,7 @@ impl SkyInterfaceHandler for SkyInterface {
 
 	async fn set_sky_light(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		tex: types::Resource,
 	) -> Option<SkyGuardProxy> {
 		if SKYLIGHT_SET.load(Ordering::Relaxed) {

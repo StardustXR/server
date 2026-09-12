@@ -3,7 +3,7 @@ use crate::{
 	query::{QueryInterface, spatial_query::SpatialQueryInterface},
 };
 use glam::{Mat4, Vec3};
-use gluon::{Context, Handler, RefExt as _};
+use gluon_ipc::{Context, Handler, RefExt as _};
 use stardust_xr_protocol::{
 	field::{Field as FieldProxy, FieldRef as FieldRefProxy, FieldSample, RayMarchResult, Shape},
 	query::{
@@ -158,7 +158,7 @@ impl PointsQueryHandlerHandler for TestPointsHandler {
 struct QueryableHandle {
 	pub spatial: SpatialLocal<SpatialObject>,
 	#[allow(dead_code)]
-	field: gluon::LocalRef<FieldProxy, FieldObject>,
+	field: gluon_ipc::LocalRef<FieldProxy, FieldObject>,
 	#[allow(dead_code)]
 	queryable: QueryableObject,
 	#[allow(dead_code)]

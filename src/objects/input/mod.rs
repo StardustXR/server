@@ -9,7 +9,7 @@ use crate::nodes::{
 	fields::{Field, FieldRef},
 	spatial::SpatialRef,
 };
-use gluon::{Handler, IntoHandler, Liveness, Node, NodeError, RefExt};
+use gluon_ipc::{Handler, IntoHandler, Liveness, Node, NodeError, RefExt};
 use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
 	query::{QueriedInterface, QueryableId},
@@ -206,7 +206,7 @@ pub struct BeamQueryCache(pub QueryCache<RayMarchResult>);
 impl BeamQueryHandlerHandler for BeamQueryCache {
 	async fn intersected(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		obj: QueryableId,
 		field: FieldRefProxy,
 		spatial: SpatialRefProxy,
@@ -220,17 +220,22 @@ impl BeamQueryHandlerHandler for BeamQueryCache {
 
 	async fn interfaces_changed(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		_obj: QueryableId,
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
 
-	async fn moved(&self, _ctx: gluon::Context, obj: QueryableId, march_result: RayMarchResult) {
+	async fn moved(
+		&self,
+		_ctx: gluon_ipc::Context,
+		obj: QueryableId,
+		march_result: RayMarchResult,
+	) {
 		self.0.on_value_changed(&obj, march_result).await;
 	}
 
-	async fn left(&self, _ctx: gluon::Context, obj: QueryableId) {
+	async fn left(&self, _ctx: gluon_ipc::Context, obj: QueryableId) {
 		self.0.on_left(&obj).await;
 	}
 }
@@ -243,7 +248,7 @@ pub struct PointsQueryCache(pub QueryCache<FieldSample>);
 impl PointsQueryHandlerHandler for PointsQueryCache {
 	async fn entered(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		obj: QueryableId,
 		field: FieldRefProxy,
 		spatial: SpatialRefProxy,
@@ -257,17 +262,17 @@ impl PointsQueryHandlerHandler for PointsQueryCache {
 
 	async fn interfaces_changed(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		_obj: QueryableId,
 		_interfaces: Vec<QueriedInterface>,
 	) {
 	}
 
-	async fn moved(&self, _ctx: gluon::Context, obj: QueryableId, sample: FieldSample) {
+	async fn moved(&self, _ctx: gluon_ipc::Context, obj: QueryableId, sample: FieldSample) {
 		self.0.on_value_changed(&obj, sample).await;
 	}
 
-	async fn left(&self, _ctx: gluon::Context, obj: QueryableId) {
+	async fn left(&self, _ctx: gluon_ipc::Context, obj: QueryableId) {
 		self.0.on_left(&obj).await;
 	}
 }
@@ -302,7 +307,11 @@ pub trait InputSource {
 		capture_requests: &HashSet<InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>);
 
-	fn spatial_data(&self, handler_spatial: &SpatialRef, handler_field: &Field) -> Option<SpatialData>;
+	fn spatial_data(
+		&self,
+		handler_spatial: &SpatialRef,
+		handler_field: &Field,
+	) -> Option<SpatialData>;
 
 	fn datamap(&self) -> HashMap<String, DatamapData>;
 }

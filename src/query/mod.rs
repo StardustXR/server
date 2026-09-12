@@ -4,7 +4,7 @@ use crate::{
 	query::spatial_query::AnyQuery,
 };
 use bevy::prelude::Deref;
-use gluon::{Handler, LocalRef, Ref, RefExt};
+use gluon_ipc::{Handler, LocalRef, Ref, RefExt};
 use stardust_xr_protocol::{
 	field::Field,
 	query::{
@@ -59,7 +59,7 @@ struct Queryable {
 #[derive(Debug)]
 struct QueryableInterface {
 	interface_id: Arc<DedupedStr>,
-	interface_ref: gluon::Ref,
+	interface_ref: gluon_ipc::Ref,
 }
 #[derive(Debug, Handler)]
 struct InterfaceGuard(Option<Arc<QueryableInterface>>, Weak<Queryable>);
@@ -78,13 +78,13 @@ impl Drop for InterfaceGuard {
 	}
 }
 impl QueryableObjectHandler for QueryableMut {
-	fn id(&self, _ctx: gluon::Context) -> impl Future<Output = QueryableId> + Send + Sync {
+	fn id(&self, _ctx: gluon_ipc::Context) -> impl Future<Output = QueryableId> + Send + Sync {
 		ready(self.id)
 	}
 
 	async fn add_interface(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		interface: Ref,
 		interface_id: String,
 	) -> Result<QueryableInterfaceProxy, QueryableError> {
@@ -128,7 +128,7 @@ interface!(QueryInterface);
 impl QueryInterfaceHandler for QueryInterface {
 	async fn register_queryable(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		spatial: stardust_xr_protocol::spatial::Spatial,
 		field: stardust_xr_protocol::field::Field,
 	) -> Result<QueryableObject, QueryableError> {

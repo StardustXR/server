@@ -14,7 +14,7 @@ use std::{
 };
 
 use bevy::prelude::{Deref, DerefMut};
-use gluon::{Handler, IntoHandler, RefExt, RefFsBinding};
+use gluon_ipc::{Handler, IntoHandler, RefExt, RefFsBinding};
 use stardust_xr_protocol::{
 	spatial::SpatialRef,
 	tracked::{TrackedGuardHandler, TrackedHandler, TrackedStateReceiver},
@@ -35,7 +35,7 @@ pub mod stage;
 
 #[derive(Debug)]
 pub struct Tracked<T: Debug + Send + Sync + 'static> {
-	inner: gluon::Node<TrackedInner<T>>,
+	inner: gluon_ipc::Node<TrackedInner<T>>,
 	binding: RefFsBinding,
 	_type: PhantomData<T>,
 }
@@ -99,7 +99,7 @@ impl<T: Debug + Send + Sync + 'static> Tracked<T> {
 impl<T: Debug + Send + Sync + 'static> TrackedHandler for TrackedInner<T> {
 	async fn get(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		handler: TrackedStateReceiver,
 	) -> (
 		SpatialRef,
@@ -121,7 +121,7 @@ impl<T: Debug + Send + Sync + 'static> TrackedHandler for TrackedInner<T> {
 
 	async fn get_pose(
 		&self,
-		_ctx: gluon::Context,
+		_ctx: gluon_ipc::Context,
 		at: Timestamp,
 		relative_to: SpatialRef,
 	) -> (Option<Posef>, bool) {
