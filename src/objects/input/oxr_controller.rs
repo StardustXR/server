@@ -806,7 +806,7 @@ impl InputSource for ControllerInputMethod {
 				.values()
 				.filter(|e| e.spatial.is_some() && capture_requests.contains(&e.handler))
 				.map(|e| {
-					let dist = Self::pose_distance(&e.field.data, &self.base_spatial, pose);
+					let dist = Self::pose_distance(&e.field.data, &self.base_spatial, pose).abs();
 					(dist, e.handler.clone())
 				})
 				.collect();
@@ -826,7 +826,7 @@ impl InputSource for ControllerInputMethod {
 			.values()
 			.filter(|e| e.spatial.is_some())
 			.map(|e| {
-				let dist = Self::pose_distance(&e.field.data, &self.base_spatial, pose);
+				let dist = Self::pose_distance(&e.field.data, &self.base_spatial, pose).abs();
 				(dist, e.handler.clone())
 			})
 			.collect();

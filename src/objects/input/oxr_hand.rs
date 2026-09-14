@@ -628,7 +628,7 @@ impl InputSource for HandInputMethod {
 				.values()
 				.filter(|e| e.spatial.is_some() && capture_requests.contains(&e.handler))
 				.map(|e| {
-					let dist = hand_sort_distance(&self.base_spatial, &e.field.data, &hand);
+					let dist = hand_sort_distance(&self.base_spatial, &e.field.data, &hand).abs();
 					(dist, e.handler.clone())
 				})
 				.collect();
@@ -648,7 +648,7 @@ impl InputSource for HandInputMethod {
 			.values()
 			.filter(|e| e.spatial.is_some())
 			.map(|e| {
-				let dist = hand_sort_distance(&self.base_spatial, &e.field.data, &hand);
+				let dist = hand_sort_distance(&self.base_spatial, &e.field.data, &hand).abs();
 				(dist, e.handler.clone())
 			})
 			.collect();
