@@ -305,7 +305,12 @@ impl InputMethodHelper for MouseMethod {
 			if e.value.min_distance > 0.0 {
 				None
 			} else {
-				Some(e.value.min_distance.abs())
+				const DEPTH_WEIGHT: f32 = 5.0;
+				Some(
+					e.value
+						.deepest_point_distance
+						.hypot(DEPTH_WEIGHT * e.value.min_distance.abs()),
+				)
 			}
 		})
 	}
