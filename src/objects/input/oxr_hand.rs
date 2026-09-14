@@ -1,12 +1,13 @@
-use super::{CachedObject, InputSender, InputSource, PointsQueryCache, QueryCache};
+use super::{
+	CachedHandler, DatamapBuilder, FrameDriver, InputMethod as InputMethodNode, InputMethodHelper,
+	order_by_distance, spawn_frame_driver,
+};
 use crate::nodes::ProxyExt;
 use crate::nodes::drawable::model::HoldoutExtension;
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
-use crate::objects::input::InputMethodNode;
 use crate::objects::{DebugWrapper, Tracked};
 use crate::openxr_helpers::ConvertTimespec;
-use crate::query::spatial_query::SpatialQueryInterface;
 use crate::{BevyMaterial, PreFrameWait, get_time};
 use bevy::pbr::ExtendedMaterial;
 use bevy::prelude::Transform as BevyTransform;
@@ -24,17 +25,13 @@ use gluon_ipc::{Handler, LocalRef, Node, RefExt};
 use openxr::{HandJointLocation, Posef, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::field::FieldSample;
-use stardust_xr_protocol::query::{InterfaceDependency, QueriedInterface, QueryableId};
+use stardust_xr_protocol::query::QueryableId;
 use stardust_xr_protocol::spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy};
-use stardust_xr_protocol::spatial_query::{
-	Point, PointsQuery, PointsQueryHandle, PointsQueryHandler,
-	SpatialQueryInterface as SpatialQueryInterfaceProxy,
-};
+use stardust_xr_protocol::spatial_query::{Point, PointsQueryHandle};
 use stardust_xr_protocol::suis::{
-	Chirality, DatamapData, Finger, Hand, InputDataType, InputHandler, InputMethod,
-	InputMethodCapture, InputMethodHandler, Joint, SemanticData, SpatialData, Thumb,
+	Chirality, DatamapData, Finger, Hand, InputDataType, InputHandler, Joint, Thumb,
 };
-use stardust_xr_protocol::types::{self, Timestamp, Vec3F};
+use stardust_xr_protocol::types::{self, Timestamp};
 use std::any::type_name;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -132,43 +129,45 @@ fn create_trackers(session: Res<OxrSession>, mut hands: ResMut<Hands>) {
 		return;
 	};
 	hands.base_space = Some(base_space.clone());
-	if let Ok(tracker) = session
-		.create_hand_tracker(openxr::HandEXT::LEFT)
-		.inspect_err(|err| error!("failed to create left hand tracker: {err}"))
-		&& let Ok(method) = HandInputMethod::new(
-			hands.base_spatial.get_ref().clone(),
-			base_space.clone(),
-			HandSide::Left,
-			tracker,
+	let base_spatial = hands.base_spatial.get_ref().clone();
+	for (side, hand_ext) in [
+		(HandSide::Left, openxr::HandEXT::LEFT),
+		(HandSide::Right, openxr::HandEXT::RIGHT),
+	] {
+		let Ok(tracker) = session
+			.create_hand_tracker(hand_ext)
+			.inspect_err(|err| error!("failed to create {side:?} hand tracker: {err}"))
+		else {
+			continue;
+		};
+		let helper = HandInputMethod::new(base_spatial.clone(), base_space.clone(), side, tracker);
+		let Ok((method, _, query_handle)) = InputMethodNode::new_points(
+			helper,
+			(**base_spatial).clone(),
+			base_spatial.proxy().clone(),
+			vec![],
 		)
-		.inspect_err(|err| error!("failed to create left hand input method: {err}"))
-		&& let Ok(method) = InputMethodNode::new(method)
-			.inspect_err(|err| error!("failed to create node for left hand input method: {err}"))
-	{
-		hands.left.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
-		hands.left.method = Some(method);
-	}
-	if let Ok(tracker) = session
-		.create_hand_tracker(openxr::HandEXT::RIGHT)
-		.inspect_err(|err| error!("failed to create right hand tracker: {err}"))
-		&& let Ok(method) = HandInputMethod::new(
-			hands.base_spatial.get_ref().clone(),
-			base_space,
-			HandSide::Right,
-			tracker,
-		)
-		.inspect_err(|err| error!("failed to create right hand input method: {err}"))
-		&& let Ok(method) = InputMethodNode::new(method)
-			.inspect_err(|err| error!("failed to create node for right hand input method: {err}"))
-	{
-		hands.right.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
-		hands.right.method = Some(method);
+		.inspect_err(|err| error!("failed to create {side:?} hand input method: {err}")) else {
+			continue;
+		};
+		let hand = match side {
+			HandSide::Left => &mut hands.left,
+			HandSide::Right => &mut hands.right,
+		};
+		hand.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
+		hand.driver = Some(spawn_frame_driver(&method));
+		hand.query_handle = Some(query_handle);
+		hand.method = Some(method);
 	}
 }
 
 fn destroy_trackers(mut hands: ResMut<Hands>) {
 	hands.left.method.take();
 	hands.right.method.take();
+	hands.left.driver.take();
+	hands.right.driver.take();
+	hands.left.query_handle.take();
+	hands.right.query_handle.take();
 	hands.left.tracked.get_mut_data_blocking().method = Weak::new();
 	hands.right.tracked.get_mut_data_blocking().method = Weak::new();
 }
@@ -264,7 +263,7 @@ enum HandMaterial {
 
 #[derive(Debug)]
 struct OxrHandInputTrackedState {
-	method: Weak<HandInputMethod>,
+	method: Weak<InputMethodNode<HandInputMethod>>,
 	palm_spatial: LocalRef<SpatialProxy, SpatialObject>,
 }
 impl OxrHandInputTrackedState {
@@ -297,7 +296,9 @@ impl OxrHandInputTrackedState {
 pub struct OxrHandInput {
 	palm_spatial: LocalRef<SpatialProxy, SpatialObject>,
 	side: HandSide,
-	method: Option<InputMethodNode<HandInputMethod>>,
+	method: Option<Node<InputMethodNode<HandInputMethod>>>,
+	driver: Option<FrameDriver>,
+	query_handle: Option<Arc<OnceLock<PointsQueryHandle>>>,
 	captured: bool,
 	material: HandMaterial,
 	tracked: Tracked<OxrHandInputTrackedState>,
@@ -350,6 +351,8 @@ impl OxrHandInput {
 			captured: false,
 			was_enabled: false,
 			method: None,
+			driver: None,
+			query_handle: None,
 			tracked,
 		})
 	}
@@ -379,9 +382,7 @@ impl OxrHandInput {
 					new_hand.palm.pose.position.into(),
 				));
 
-			if let Some(method) = self.method.as_ref()
-				&& let Some(handle) = method.query_handle.get()
-			{
+			if let Some(handle) = self.query_handle.as_ref().and_then(|h| h.get()) {
 				_ = handle.update(
 					[
 						new_hand.thumb.tip,
@@ -408,13 +409,18 @@ impl OxrHandInput {
 			grab_strength: pinch_between(&hand.ring.tip, &hand.ring.metacarpal),
 		});
 
-		*method.hand.blocking_write() = new_hand;
+		let ts = method
+			.base_space
+			.instance()
+			.xr_to_timestamp(time)
+			.unwrap_or_else(Timestamp::now);
+		*method.hand.blocking_write() = new_hand.map(|hand| (ts, hand));
 		if let Some(dm) = new_datamap {
 			*method.datamap.blocking_write() = dm;
 		}
 
 		if let HandMaterial::Normal(material_handle) = &self.material {
-			let captured = method.sender.active_capture.blocking_read().is_some();
+			let captured = method.active_capture_blocking().is_some();
 			if captured && !self.captured {
 				materials.get_mut(material_handle).unwrap().base_color =
 					Srgba::rgb(0., 1., 0.75).into();
@@ -425,30 +431,24 @@ impl OxrHandInput {
 			self.captured = captured;
 		}
 
-		let input_method = method.proxy.clone();
-		let ts = method
-			.base_space
-			.instance()
-			.xr_to_timestamp(time)
-			.unwrap_or_else(Timestamp::now);
-		let sender = method.sender.clone();
-		sender.send(&****method, input_method, ts);
+		if let Some(driver) = self.driver.as_ref() {
+			driver.frame(ts);
+		}
 	}
 }
 
 // ── HandInputMethod ───────────────────────────────────────────────────────────
 
-#[derive(Debug, Handler)]
+#[derive(Debug)]
 struct HandInputMethod {
 	side: HandSide,
 	base_space: DebugWrapper<Arc<openxr::Space>>,
 	base_spatial: LocalRef<SpatialRefProxy, SpatialRef>,
 	tracker: DebugWrapper<openxr::HandTracker>,
-	_query: Node<PointsQueryCache>,
-	sender: Arc<InputSender<FieldSample>>,
-	hand: RwLock<Option<Hand>>,
+	/// the frame's hand and the moment it was located for, so a pull for that same moment
+	/// doesn't relocate
+	hand: RwLock<Option<(Timestamp, Hand)>>,
 	datamap: RwLock<HandDatamap>,
-	query_handle: Arc<OnceLock<PointsQueryHandle>>,
 }
 
 impl HandInputMethod {
@@ -457,52 +457,25 @@ impl HandInputMethod {
 		base_space: Arc<openxr::Space>,
 		side: HandSide,
 		tracker: openxr::HandTracker,
-	) -> Result<Self, gluon_ipc::SendError> {
-		let (query_cache, objects_arc, capture_requests) = QueryCache::new();
-		let sender = Arc::new(InputSender::new(objects_arc, capture_requests));
-
-		let (query, proxy) = PointsQueryHandler::new_node(PointsQueryCache(query_cache))?;
-		let query_handle = Arc::new(OnceLock::new());
-		let base_spatial_ref = base_spatial.proxy().clone();
-		tokio::spawn({
-			let query_handle = query_handle.clone();
-			async move {
-				let (spatial_query_interface, spatial_query_interface_proxy) =
-					SpatialQueryInterfaceProxy::new_node(SpatialQueryInterface::new(
-						&Arc::default(),
-					))
-					// TODO: get rid of this unwrap
-					.unwrap();
-				let handle = spatial_query_interface_proxy
-					.into_proxy()
-					.points_query(PointsQuery {
-						handler: proxy.into_proxy(),
-						interfaces: vec![InterfaceDependency {
-							id: InputHandler::QUERY_INTERFACE.to_string(),
-							optional: false,
-						}],
-						points: vec![],
-						reference_spatial: base_spatial_ref,
-					})
-					.await
-					.inspect_err(|err| error!("failed to create query: {err}"));
-				if let Ok(Ok(handle)) = handle {
-					query_handle.set(handle);
-				}
-			}
-		});
-
-		Ok(Self {
+	) -> Self {
+		Self {
 			side,
 			base_space: base_space.into(),
 			base_spatial,
 			tracker: tracker.into(),
-			_query: query,
-			sender,
 			hand: RwLock::new(None),
 			datamap: RwLock::new(HandDatamap::default()),
-			query_handle,
-		})
+		}
+	}
+
+	async fn hand_at(&self, time: Timestamp) -> Option<Hand> {
+		match *self.hand.read().await {
+			Some((at, hand)) if at == time => Some(hand),
+			_ => self.locate_hand(
+				&self.base_spatial,
+				self.base_space.instance().timestamp_to_xr(time)?,
+			),
+		}
 	}
 
 	fn locate_hand(&self, relative_to: &Spatial, time: openxr::Time) -> Option<Hand> {
@@ -596,119 +569,31 @@ impl HandInputMethod {
 	}
 }
 
-impl InputSource for HandInputMethod {
+impl InputMethodHelper for HandInputMethod {
 	type QueryValue = FieldSample;
 
-	fn order_handlers_and_captures(
+	async fn order_handlers_and_captures(
 		&self,
-		objects: &HashMap<QueryableId, CachedObject<FieldSample>>,
+		handlers: &HashMap<QueryableId, CachedHandler<FieldSample>>,
 		capture_requests: &HashSet<InputHandler>,
+		active_capture: Option<&InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
-		let current_capture = self.sender.active_capture.blocking_read().clone();
-		let hand = *self.hand.blocking_read();
-		let Some(hand) = hand else {
-			return (
-				match current_capture.clone() {
-					Some(v) => vec![v],
-					None => vec![],
-				},
-				current_capture,
-			);
+		let Some((_, hand)) = *self.hand.read().await else {
+			return (vec![], active_capture.cloned());
 		};
-
-		let capture = if let Some(cap) = current_capture {
-			if objects.values().any(|e| e.handler == cap) {
-				Some(cap)
-			} else {
-				self.sender.active_capture.blocking_write().take();
-				None
-			}
-		} else {
-			let mut order: Vec<_> = objects
-				.values()
-				.filter(|e| e.spatial.is_some() && capture_requests.contains(&e.handler))
-				.map(|e| {
-					let dist = hand_sort_distance(&self.base_spatial, &e.field.data, &hand).abs();
-					(dist, e.handler.clone())
-				})
-				.collect();
-			order.sort_by(|(d1, _), (d2, _)| d1.total_cmp(d2));
-			let promoted = order.first().map(|(_, v)| v.clone());
-			if let Some(ref p) = promoted {
-				*self.sender.active_capture.blocking_write() = Some(p.clone());
-			}
-			promoted
-		};
-
-		if let Some(ref cap) = capture {
-			return (capture.iter().cloned().collect(), capture);
-		}
-
-		let mut order: Vec<_> = objects
-			.values()
-			.filter(|e| e.spatial.is_some())
-			.map(|e| {
-				let dist = hand_sort_distance(&self.base_spatial, &e.field.data, &hand).abs();
-				(dist, e.handler.clone())
-			})
-			.collect();
-		order.sort_by(|(d1, _), (d2, _)| d1.total_cmp(d2));
-		(order.into_iter().map(|(_, h)| h).collect(), None)
-	}
-
-	fn spatial_data(
-		&self,
-		handler_spatial: &SpatialRef,
-		handler_field: &Field,
-	) -> Option<SpatialData> {
-		let hand = (*self.hand.blocking_read())?;
-		let localized = localize_hand(&self.base_spatial, &hand, handler_spatial, handler_field);
-		let distance = hand_real_distance(&localized);
-		Some(SpatialData {
-			input: InputDataType::Hand { data: localized },
-			distance,
+		order_by_distance(handlers, capture_requests, active_capture, |e| {
+			Some(hand_sort_distance(&self.base_spatial, &e.field, &hand).abs())
 		})
 	}
 
-	fn datamap(&self) -> HashMap<String, DatamapData> {
-		let data = *self.datamap.blocking_read();
-		build_hand_datamap(&data)
-	}
-}
-
-impl InputMethodHandler for HandInputMethod {
-	async fn request_capture(
-		&self,
-		_ctx: gluon_ipc::Context,
-		handler: InputHandler,
-	) -> Option<InputMethodCapture> {
-		self.sender.grant_capture(handler).await
-	}
-
-	async fn get_spatial_data(
-		&self,
-		_ctx: gluon_ipc::Context,
-		handler: InputHandler,
-		time: Timestamp,
-	) -> Option<SpatialData> {
-		let cap = self.sender.active_capture.read().await.clone();
-		if cap.as_ref().is_some_and(|c| c != &handler) {
-			return None;
-		}
-		self.hand.read().await.as_ref()?;
-		let objects = self.sender.cache.read().await;
-		let entry = objects.values().find(|e| e.handler == handler)?;
-		let spatial_obj = entry.spatial.as_ref()?;
-		let spatial: &Spatial = spatial_obj;
-		let hand = self.locate_hand(
-			spatial_obj,
-			self.base_space.instance().timestamp_to_xr(time)?,
-		)?;
-		let hand = localize_hand(spatial, &hand, spatial, &entry.field.data);
-		Some(SpatialData {
-			distance: hand_real_distance(&hand),
-			input: InputDataType::Hand { data: hand },
+	async fn input_data(&self, time: Timestamp) -> Option<InputDataType> {
+		Some(InputDataType::Hand {
+			data: self.hand_at(time).await?,
 		})
+	}
+
+	async fn datamap(&self) -> HashMap<String, DatamapData> {
+		build_hand_datamap(&*self.datamap.read().await)
 	}
 }
 
@@ -734,74 +619,9 @@ fn hand_sort_distance(hand_space: &SpatialRef, field: &Field, hand: &Hand) -> f3
 		+ (ring_tip_distance * 0.15)
 }
 
-/// assumes joint distances are populated
-fn hand_real_distance(hand: &Hand) -> f32 {
-	let get_dist = |joint: &Joint| joint.distance - joint.radius;
-
-	get_dist(&hand.thumb.tip)
-		.min(get_dist(&hand.index.tip))
-		.min(get_dist(&hand.middle.tip))
-		.min(get_dist(&hand.ring.tip))
-}
-
-fn localize_hand(from: &Spatial, hand: &Hand, to: &Spatial, field: &Field) -> Hand {
-	Hand {
-		chirality: hand.chirality,
-		thumb: Thumb {
-			tip: transform_joint(from, to, field, &hand.thumb.tip),
-			distal: transform_joint(from, to, field, &hand.thumb.distal),
-			proximal: transform_joint(from, to, field, &hand.thumb.proximal),
-			metacarpal: transform_joint(from, to, field, &hand.thumb.metacarpal),
-		},
-		index: transform_finger(from, to, field, &hand.index),
-		middle: transform_finger(from, to, field, &hand.middle),
-		ring: transform_finger(from, to, field, &hand.ring),
-		little: transform_finger(from, to, field, &hand.little),
-		palm: transform_joint(from, to, field, &hand.palm),
-		wrist: transform_joint(from, to, field, &hand.wrist),
-		elbow: hand
-			.elbow
-			.as_ref()
-			.map(|j| transform_joint(from, to, field, j)),
-	}
-}
-
-fn transform_finger(from: &Spatial, to: &Spatial, field: &Field, finger: &Finger) -> Finger {
-	Finger {
-		tip: transform_joint(from, to, field, &finger.tip),
-		distal: transform_joint(from, to, field, &finger.distal),
-		intermediate: transform_joint(from, to, field, &finger.intermediate),
-		proximal: transform_joint(from, to, field, &finger.proximal),
-		metacarpal: transform_joint(from, to, field, &finger.metacarpal),
-	}
-}
-
-fn transform_joint(from: &Spatial, to: &Spatial, field: &Field, joint: &Joint) -> Joint {
-	let mat = Spatial::space_to_space_matrix(Some(from), Some(to));
-	let (_, rot, _) = mat.to_scale_rotation_translation();
-	Joint {
-		pose: types::Posef {
-			position: mat.transform_point3a(joint.pose.position.into()).into(),
-			orientation: (rot * Quat::from(joint.pose.orientation)).into(),
-		},
-		radius: joint.radius,
-		distance: field.sample(from, joint.pose.position.into()).distance,
-	}
-}
-
 fn build_hand_datamap(data: &HandDatamap) -> HashMap<String, DatamapData> {
-	HashMap::from([
-		(
-			"pinch_strength".to_string(),
-			DatamapData::Float {
-				value: data.pinch_strength,
-			},
-		),
-		(
-			"grab_strength".to_string(),
-			DatamapData::Float {
-				value: data.grab_strength,
-			},
-		),
-	])
+	DatamapBuilder::default()
+		.f32("pinch_strength", data.pinch_strength)
+		.f32("grab_strength", data.grab_strength)
+		.build()
 }

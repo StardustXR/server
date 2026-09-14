@@ -1,12 +1,11 @@
-use super::{BeamQueryCache, CachedObject, InputSender, InputSource, QueryCache};
+use super::{
+	CachedHandler, DatamapBuilder, FrameDriver, InputMethod as InputMethodNode, InputMethodHelper,
+	order_by_distance, spawn_frame_driver,
+};
 use crate::{
 	bevy_int::flatscreen_cam::FlatscreenCam,
 	keymap_store::KEYMAP_STORE,
-	nodes::{
-		fields::{Field, Ray},
-		spatial::{Spatial, SpatialObject, SpatialRef},
-	},
-	objects::input::InputMethodNode,
+	nodes::spatial::{SpatialObject, SpatialRef},
 	query::spatial_query::SpatialQueryInterface,
 };
 use bevy::{
@@ -19,7 +18,7 @@ use bevy::{
 };
 use color_eyre::eyre::{Result, eyre};
 use glam::{Mat4, Vec3};
-use gluon_ipc::{Handler, Interface, RefExt};
+use gluon_ipc::{Context, Handler, Interface, RefExt};
 use mint::Vector2;
 use stardust_xr_molecules_protocols::keyboard_handler::{
 	KeyEvent, KeyboardHandler as KeyboardHandlerProxy, ModifierState,
@@ -30,15 +29,12 @@ use stardust_xr_protocol::{
 	query::{InterfaceDependency, QueriedInterface, QueryableId},
 	spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy},
 	spatial_query::{
-		BeamQuery, BeamQueryHandle, BeamQueryHandler, Point, PointsQuery,
-		PointsQueryHandle as PointsQueryHandleProxy, PointsQueryHandler, PointsQueryHandlerHandler,
+		BeamQueryHandle, Point, PointsQuery, PointsQueryHandle as PointsQueryHandleProxy,
+		PointsQueryHandler, PointsQueryHandlerHandler,
 		SpatialQueryInterface as SpatialQueryInterfaceProxy,
 	},
-	suis::{
-		DatamapData, InputDataType, InputHandler, InputMethod, InputMethodCapture,
-		InputMethodHandler, Pointer, SpatialData,
-	},
-	types::{Timestamp, Vec3F},
+	suis::{DatamapData, InputDataType, InputHandler, Pointer},
+	types::{Posef, Timestamp, Vec3F},
 };
 use std::{
 	collections::{HashMap, HashSet},
@@ -120,7 +116,7 @@ fn stop_capture_hotkey(
 		return;
 	}
 	if let Some(pointer) = pointer {
-		pointer.method.sender.stop_active_capture();
+		pointer.method.stop_active_capture();
 	}
 }
 
@@ -288,109 +284,46 @@ impl KeyboardFocus {
 
 // ── MouseMethod ───────────────────────────────────────────────────────────────
 
-#[derive(Debug, Handler)]
+#[derive(Debug)]
 struct MouseMethod {
-	spatial_arc: Arc<Spatial>,
 	event: RwLock<MouseEvent>,
-	sender: Arc<InputSender<RayMarchResult>>,
 	/// Program name + PID of each client that requested a capture, keyed by its
 	/// handler; looked up when that handler's capture becomes active.
 	capture_pids: Mutex<HashMap<InputHandler, (String, i32)>>,
-	_beam_query: gluon_ipc::Node<BeamQueryCache>,
-	_query_guard: Arc<OnceLock<BeamQueryHandle>>,
 }
 
-impl InputSource for MouseMethod {
+impl InputMethodHelper for MouseMethod {
 	type QueryValue = RayMarchResult;
 
-	fn order_handlers_and_captures(
+	async fn order_handlers_and_captures(
 		&self,
-		objects: &HashMap<QueryableId, CachedObject<Self::QueryValue>>,
+		handlers: &HashMap<QueryableId, CachedHandler<RayMarchResult>>,
 		capture_requests: &HashSet<InputHandler>,
+		active_capture: Option<&InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
-		let current_capture = self.sender.active_capture.blocking_read().clone();
-
-		let capture = if let Some(cap) = current_capture {
-			if objects.values().any(|e| e.handler == cap) {
-				Some(cap)
-			} else {
-				self.sender.active_capture.blocking_write().take();
+		order_by_distance(handlers, capture_requests, active_capture, |e| {
+			if e.value.min_distance > 0.0 {
 				None
+			} else {
+				Some(e.value.min_distance.abs())
 			}
-		} else {
-			let mut order: Vec<_> = objects
-				.values()
-				.filter(|e| e.spatial.is_some() && capture_requests.contains(&e.handler))
-				.map(|e| {
-					let dist = e.value.deepest_point_distance;
-					(dist, e.handler.clone())
-				})
-				.collect();
-			order.sort_by(|(d1, _), (d2, _)| d1.total_cmp(d2));
-			let promoted = order.first().map(|(_, v)| v.clone());
-			if let Some(ref p) = promoted {
-				*self.sender.active_capture.blocking_write() = Some(p.clone());
-			}
-			promoted
-		};
-
-		if let Some(ref cap) = capture {
-			return (capture.iter().cloned().collect(), capture);
-		}
-
-		let mut order: Vec<_> = objects
-			.values()
-			.filter(|e| e.spatial.is_some())
-			.map(|e| (e.value, e.handler.clone()))
-			.collect();
-		order.sort_by(|(s1, _), (s2, _)| {
-			s1.deepest_point_distance
-				.total_cmp(&s2.deepest_point_distance)
-		});
-
-		(order.into_iter().map(|(_, h)| h).collect(), capture)
-	}
-
-	fn spatial_data(
-		&self,
-		handler_spatial: &SpatialRef,
-		handler_field: &Field,
-	) -> Option<SpatialData> {
-		let ray_result = handler_field.ray_march(Ray {
-			origin: Vec3::ZERO,
-			direction: Vec3::NEG_Z,
-			space: self.spatial_arc.clone(),
-		});
-		let ptr_to_handler =
-			Spatial::space_to_space_matrix(Some(&*self.spatial_arc), Some(handler_spatial));
-		let (_, rotation, translation) = ptr_to_handler.to_scale_rotation_translation();
-		Some(SpatialData {
-			input: InputDataType::Pointer {
-				data: Pointer {
-					pose: stardust_xr_protocol::types::Posef {
-						position: translation.into(),
-						orientation: rotation.into(),
-					},
-					deepest_point: ray_result.deepest_point_distance,
-				},
-			},
-			distance: ray_result.min_distance,
 		})
 	}
 
-	fn datamap(&self) -> HashMap<String, DatamapData> {
-		let event = *self.event.blocking_read();
-		build_datamap(&event)
+	async fn input_data(&self, _time: Timestamp) -> Option<InputDataType> {
+		Some(InputDataType::Pointer {
+			data: Pointer {
+				pose: Posef::default(),
+				deepest_point: 0.0,
+			},
+		})
 	}
-}
 
-impl InputMethodHandler for MouseMethod {
-	async fn request_capture(
-		&self,
-		ctx: gluon_ipc::Context,
-		handler: InputHandler,
-	) -> Option<InputMethodCapture> {
-		let capture = self.sender.grant_capture(handler.clone()).await?;
+	async fn datamap(&self) -> HashMap<String, DatamapData> {
+		build_datamap(&*self.event.read().await)
+	}
+
+	async fn capture_granted(&self, ctx: &Context, handler: &InputHandler) {
 		let pid = ctx.sender_pid().unwrap_or(-1);
 		let name = std::fs::read_to_string(format!("/proc/{pid}/comm"))
 			.map(|s| s.trim().to_string())
@@ -398,23 +331,7 @@ impl InputMethodHandler for MouseMethod {
 		self.capture_pids
 			.lock()
 			.unwrap()
-			.insert(handler, (name, pid));
-		Some(capture)
-	}
-
-	async fn get_spatial_data(
-		&self,
-		_ctx: gluon_ipc::Context,
-		handler: InputHandler,
-		_time: Timestamp,
-	) -> Option<SpatialData> {
-		let cap = self.sender.active_capture.read().await.clone();
-		if cap.as_ref().is_some_and(|c| c != &handler) {
-			return None;
-		}
-		let objects = self.sender.cache.read().await;
-		let entry = objects.values().find(|e| e.handler == handler)?;
-		self.spatial_data(entry.spatial.as_deref()?, &entry.field.data)
+			.insert(handler.clone(), (name, pid));
 	}
 }
 
@@ -423,7 +340,9 @@ impl InputMethodHandler for MouseMethod {
 #[derive(Resource)]
 pub struct MousePointer {
 	spatial: gluon_ipc::LocalRef<SpatialProxy, SpatialObject>,
-	method: InputMethodNode<MouseMethod>,
+	method: gluon_ipc::Node<InputMethodNode<MouseMethod>>,
+	driver: FrameDriver,
+	_beam_handle: Arc<OnceLock<BeamQueryHandle>>,
 	keyboard: KeyboardFocus,
 	/// An Escape press was swallowed as part of the Ctrl+Escape capture-stop
 	/// hotkey; swallow its release too (even if Ctrl is let go first).
@@ -433,75 +352,44 @@ pub struct MousePointer {
 impl MousePointer {
 	pub fn new() -> Result<Self> {
 		let spatial = SpatialObject::new(None, Mat4::IDENTITY);
-		let spatial_arc = (**spatial).clone();
+		let spatial_ref = spatial.get_ref().proxy().clone();
 
-		let (query_cache, objects_arc, capture_requests) = QueryCache::new();
-		let sender = Arc::new(InputSender::new(objects_arc, capture_requests));
-
-		let (beam_query, beam_handler_proxy) =
-			BeamQueryHandler::new_node(BeamQueryCache(query_cache))?;
+		let (method, _, beam_handle) = InputMethodNode::new_beam(
+			MouseMethod {
+				event: RwLock::new(MouseEvent::default()),
+				capture_pids: Mutex::new(HashMap::new()),
+			},
+			(**spatial).clone(),
+			spatial_ref.clone(),
+			Vec3F::from([0.0, 0.0, 0.0]),
+			Vec3F::from([0.0, 0.0, -1.0]),
+			f32::MAX,
+			0.0,
+		)?;
+		let driver = spawn_frame_driver(&method);
 
 		let (keyboard_cache, keyboard_handler_proxy) =
 			PointsQueryHandler::new_node(KeyboardQueryCache::default())?;
-
-		let query_guard: Arc<OnceLock<BeamQueryHandle>> = Arc::new(OnceLock::new());
 		let points_handle: Arc<OnceLock<PointsQueryHandleProxy>> = Arc::new(OnceLock::new());
-		let base_spatial_ref = spatial.get_ref().proxy().clone();
-		let keyboard_spatial_ref = spatial.get_ref().proxy().clone();
 		tokio::spawn({
-			let query_guard = query_guard.clone();
 			let points_handle = points_handle.clone();
 			async move {
-				let sqi_proxy = SpatialQueryInterfaceProxy::new_service(
-					SpatialQueryInterface::new(&Arc::default()),
-				)
+				let sqi = SpatialQueryInterfaceProxy::new_service(SpatialQueryInterface::new(
+					&Arc::default(),
+				))
 				// TODO: remove the unwrap
-				.unwrap();
-				match sqi_proxy
-					.proxy()
-					.beam_query(BeamQuery {
-						handler: beam_handler_proxy.into_proxy(),
-						interfaces: vec![InterfaceDependency {
-							id: "org.stardustxr.SUIS.Handler".to_string(),
-							optional: false,
-						}],
-						reference_spatial: base_spatial_ref,
-						origin: Vec3F {
-							x: 0.0,
-							y: 0.0,
-							z: 0.0,
-						},
-						direction: Vec3F {
-							x: 0.0,
-							y: 0.0,
-							z: -1.0,
-						},
-						max_length: f32::MAX,
-						margin: 0.0,
-					})
-					.await
-				{
-					Ok(Ok(guard)) => {
-						query_guard.set(guard).ok();
-					}
-					Ok(Err(e)) => {
-						error!("failed to create mouse pointer beam query: {e}");
-					}
-					Err(e) => {
-						error!("failed to create mouse pointer beam query: {e}");
-					}
-				}
+				.unwrap()
+				.into_proxy();
 				// Starts with no points — no keyboard focus until the pointer hits
 				// something; update() moves the point to the beam hit each frame.
-				match sqi_proxy
-					.proxy()
+				match sqi
 					.points_query(PointsQuery {
 						handler: keyboard_handler_proxy.into_proxy(),
 						interfaces: vec![InterfaceDependency {
 							id: KeyboardHandlerProxy::ID.into(),
 							optional: false,
 						}],
-						reference_spatial: keyboard_spatial_ref,
+						reference_spatial: spatial_ref,
 						points: vec![],
 					})
 					.await
@@ -509,24 +397,11 @@ impl MousePointer {
 					Ok(Ok(handle)) => {
 						points_handle.set(handle).ok();
 					}
-					Ok(Err(e)) => {
-						error!("failed to create mouse pointer keyboard query: {e}");
-					}
-					Err(e) => {
-						error!("failed to create mouse pointer keyboard query: {e}");
-					}
+					Ok(Err(e)) => error!("failed to create mouse pointer keyboard query: {e}"),
+					Err(e) => error!("failed to create mouse pointer keyboard query: {e}"),
 				}
 			}
 		});
-
-		let method = InputMethodNode::new(MouseMethod {
-			spatial_arc,
-			event: RwLock::new(MouseEvent::default()),
-			sender,
-			capture_pids: Mutex::new(HashMap::new()),
-			_beam_query: beam_query,
-			_query_guard: query_guard,
-		})?;
 
 		let xkb_context = XkbContext::new(ContextFlags::empty())
 			.map_err(|e| eyre!("failed to create xkb context: {e:?}"))?;
@@ -552,6 +427,8 @@ impl MousePointer {
 		Ok(MousePointer {
 			spatial,
 			method,
+			driver,
+			_beam_handle: beam_handle,
 			keyboard,
 			swallow_escape_release: false,
 		})
@@ -594,19 +471,17 @@ impl MousePointer {
 			scroll_discrete: discrete.into(),
 		};
 
-		let input_method = self.method.proxy.clone();
-		let sender = self.method.sender.clone();
-		sender.send(&***self.method, input_method, Timestamp::now());
+		self.driver.frame(Timestamp::now());
 
 		self.update_keyboard_focus();
 		let ctrl_pressed = keyboard_buttons.pressed(KeyCode::ControlLeft)
 			|| keyboard_buttons.pressed(KeyCode::ControlRight);
 		self.send_key_events(key_events, ctrl_pressed);
 
-		// Drop pid entries for handlers whose capture request is gone (released or
-		// client died); send() above already swept capture_requests.
+		// Drop pid entries for handlers whose capture request is gone (released or client
+		// died); the frame driver's send is what sweeps capture_requests.
 		{
-			let requests = self.method.sender.capture_requests.read().unwrap();
+			let requests = self.method.cache().capture_requests_blocking();
 			self.method
 				.capture_pids
 				.lock()
@@ -618,7 +493,7 @@ impl MousePointer {
 	/// Program name and PID of the client whose handler currently captures the
 	/// pointer, if any.
 	pub fn captured_by(&self) -> Option<(String, i32)> {
-		let capture = self.method.sender.active_capture.blocking_read().clone()?;
+		let capture = self.method.active_capture_blocking()?;
 		self.method
 			.capture_pids
 			.lock()
@@ -636,9 +511,8 @@ impl MousePointer {
 		};
 		let hit = self
 			.method
-			.sender
-			.cache
-			.blocking_read()
+			.cache()
+			.handlers_blocking()
 			.values()
 			.filter(|e| e.spatial.is_some() && !e.left_query)
 			.map(|e| e.value.deepest_point_distance)
@@ -734,39 +608,14 @@ impl MousePointer {
 }
 
 fn build_datamap(event: &MouseEvent) -> HashMap<String, DatamapData> {
-	let mut map = HashMap::new();
-	map.insert(
-		"select".to_string(),
-		DatamapData::Float {
-			value: event.select,
-		},
-	);
-	map.insert(
-		"middle".to_string(),
-		DatamapData::Float {
-			value: event.middle,
-		},
-	);
-	map.insert(
-		"context".to_string(),
-		DatamapData::Float {
-			value: event.context,
-		},
-	);
-	map.insert("grab".to_string(), DatamapData::Float { value: event.grab });
-	map.insert(
-		"scroll_continuous".to_string(),
-		DatamapData::Vec2 {
-			value: [event.scroll_continuous.x, event.scroll_continuous.y].into(),
-		},
-	);
-	map.insert(
-		"scroll_discrete".to_string(),
-		DatamapData::Vec2 {
-			value: [event.scroll_discrete.x, event.scroll_discrete.y].into(),
-		},
-	);
-	map
+	DatamapBuilder::default()
+		.f32("select", event.select)
+		.f32("middle", event.middle)
+		.f32("context", event.context)
+		.f32("grab", event.grab)
+		.vec2("scroll_continuous", event.scroll_continuous)
+		.vec2("scroll_discrete", event.scroll_discrete)
+		.build()
 }
 
 /// Map a bevy key code to a linux input event code (xkb keycode minus 8).

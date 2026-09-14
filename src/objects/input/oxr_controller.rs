@@ -8,10 +8,12 @@ use crate::{
 	},
 	objects::{
 		DebugWrapper, Tracked,
-		input::{InputMethodNode, InputSender, InputSource, PointsQueryCache, QueryCache},
+		input::{
+			CachedHandler, DatamapBuilder, FrameDriver, InputMethod as InputMethodNode,
+			InputMethodHelper, order_by_distance, spawn_frame_driver,
+		},
 	},
 	openxr_helpers::ConvertTimespec,
-	query::spatial_query::SpatialQueryInterface,
 };
 use bevy::{asset::Handle, ecs::resource::Resource, tasks::futures::now_or_never};
 use bevy::{math::Affine3, prelude::*};
@@ -33,18 +35,12 @@ use gluon_ipc::{Handler, LocalRef, Node, RefExt};
 use openxr::{Action, ActiveActionSet, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::{
-	field::{FieldRef as FieldRefProxy, FieldSample},
+	field::FieldSample,
 	model::{MaterialParameter, ModelHandler, ModelLocal, ModelPartLocal},
-	query::{InterfaceDependency, QueryableId},
+	query::QueryableId,
 	spatial::{PartialTransform, Spatial as SpatialProxy, SpatialRef as SpatialRefProxy},
-	spatial_query::{
-		Point, PointsQuery, PointsQueryHandle, PointsQueryHandler,
-		SpatialQueryInterface as SpatialQueryInterfaceProxy,
-	},
-	suis::{
-		Chirality, DatamapData, InputDataType, InputHandler, InputMethod, InputMethodHandler,
-		SpatialData, Tip,
-	},
+	spatial_query::{Point, PointsQueryHandle},
+	suis::{Chirality, DatamapData, InputDataType, InputHandler, Tip},
 	types::{self, Posef, Timestamp, rgba_linear},
 };
 use std::{
@@ -59,7 +55,6 @@ use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::instrument;
 use zbus::Connection;
 
-use super::CachedObject;
 pub struct ControllerPlugin;
 const CURSOR_MODEL_PATH: &str = "/tmp/stardust_server/models/cursor.glb";
 impl Plugin for ControllerPlugin {
@@ -390,35 +385,37 @@ fn create_spaces(
 		.space
 		.create_space((**session).clone(), right, openxr::Posef::IDENTITY)
 		.unwrap();
-	controllers.left.method = ControllerInputMethod::new(
-		controllers.base_spatial.get_ref().clone(),
-		base_space.clone(),
-		HandSide::Left,
-		left,
-	)
-	.ok()
-	.map(InputMethodNode::new)
-	.and_then(Result::ok);
-	controllers.right.method = ControllerInputMethod::new(
-		controllers.base_spatial.get_ref().clone(),
-		base_space.clone(),
-		HandSide::Right,
-		right,
-	)
-	.ok()
-	.map(InputMethodNode::new)
-	.and_then(Result::ok);
-	if let Some(method) = controllers.left.method.as_ref() {
-		controllers.left.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
-	}
-	if let Some(method) = controllers.right.method.as_ref() {
-		controllers.right.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
+	let base_spatial = controllers.base_spatial.get_ref().clone();
+	for (side, space) in [(HandSide::Left, left), (HandSide::Right, right)] {
+		let helper =
+			ControllerInputMethod::new(base_spatial.clone(), base_space.clone(), side, space);
+		let Ok((method, _, query_handle)) = InputMethodNode::new_points(
+			helper,
+			(**base_spatial).clone(),
+			base_spatial.proxy().clone(),
+			vec![],
+		)
+		.inspect_err(|err| error!("failed to create {side:?} controller input method: {err}")) else {
+			continue;
+		};
+		let controller = match side {
+			HandSide::Left => &mut controllers.left,
+			HandSide::Right => &mut controllers.right,
+		};
+		controller.tracked.get_mut_data_blocking().method = Arc::downgrade(method.handler());
+		controller.driver = Some(spawn_frame_driver(&method));
+		controller.query_handle = Some(query_handle);
+		controller.method = Some(method);
 	}
 }
 
 fn destroy_spaces(mut controllers: ResMut<Controllers>) {
 	controllers.left.method.take();
 	controllers.right.method.take();
+	controllers.left.driver.take();
+	controllers.right.driver.take();
+	controllers.left.query_handle.take();
+	controllers.right.query_handle.take();
 	controllers.left.tracked.get_mut_data_blocking().method = Weak::new();
 	controllers.right.tracked.get_mut_data_blocking().method = Weak::new();
 }
@@ -479,7 +476,7 @@ struct Controllers {
 
 #[derive(Debug)]
 struct OxrControllerInputTrackedState {
-	method: Weak<ControllerInputMethod>,
+	method: Weak<InputMethodNode<ControllerInputMethod>>,
 	aim_spatial: LocalRef<SpatialProxy, SpatialObject>,
 }
 impl OxrControllerInputTrackedState {
@@ -514,7 +511,9 @@ pub struct OxrControllerInput {
 	model: OnceLock<ModelLocal<Model>>,
 	model_part: OnceLock<Arc<ModelPart>>,
 	model_task: Option<JoinHandle<(ModelLocal<Model>, Arc<ModelPart>)>>,
-	method: Option<InputMethodNode<ControllerInputMethod>>,
+	method: Option<gluon_ipc::Node<InputMethodNode<ControllerInputMethod>>>,
+	driver: Option<FrameDriver>,
+	query_handle: Option<Arc<OnceLock<PointsQueryHandle>>>,
 	tracked: Tracked<OxrControllerInputTrackedState>,
 	was_enabled: bool,
 	captured: bool,
@@ -568,6 +567,8 @@ impl OxrControllerInput {
 			aim_spatial,
 			model_task: Some(model_task),
 			method: None,
+			driver: None,
+			query_handle: None,
 			captured: false,
 			tracked,
 		})
@@ -601,6 +602,11 @@ impl OxrControllerInput {
 		let enabled = pose.is_some();
 		drop(_span);
 		self.set_enabled(enabled);
+		let ts = session
+			.instance()
+			.xr_to_timestamp(time)
+			.unwrap_or_else(Timestamp::now);
+		*method.pose.blocking_write() = pose.map(|pose| (ts, pose));
 		if let Some(pose) = pose {
 			let world_transform = Mat4::from(Affine3A::from_rotation_translation(
 				pose.orientation.into(),
@@ -614,7 +620,7 @@ impl OxrControllerInput {
 				part.set_material_parameter(
 					"color".to_string(),
 					MaterialParameter::Color {
-						value: if method.sender.active_capture.blocking_read().is_some() {
+						value: if method.active_capture_blocking().is_some() {
 							rgba_linear!(0.0, 1.0, 0.75, 1.0)
 						} else {
 							rgba_linear!(1.0, 1.0, 1.0, 1.0)
@@ -622,13 +628,12 @@ impl OxrControllerInput {
 					},
 				);
 			}
-			if let Some(handle) = method.query_handle.get() {
-				handle.update([Point {
+			if let Some(handle) = self.query_handle.as_ref().and_then(|h| h.get()) {
+				_ = handle.update(vec![Point {
 					point: pose.position,
 					margin: 0.5,
 				}]);
 			}
-			method.pose.blocking_write().replace(pose);
 			self.aim_spatial.set_local_transform(world_transform);
 		}
 		let path = method
@@ -667,25 +672,21 @@ impl OxrControllerInput {
 		};
 		drop(_span);
 
-		let input_method = method.proxy.clone();
-		let ts = session
-			.instance()
-			.xr_to_timestamp(time)
-			.unwrap_or_else(Timestamp::now);
-		method.sender.clone().send(&****method, input_method, ts);
+		if let Some(driver) = self.driver.as_ref() {
+			driver.frame(ts);
+		}
 	}
 }
-#[derive(Debug, Handler)]
+#[derive(Debug)]
 struct ControllerInputMethod {
 	side: HandSide,
 	base_space: DebugWrapper<Arc<openxr::Space>>,
 	base_spatial: gluon_ipc::LocalRef<SpatialRefProxy, SpatialRef>,
 	space: DebugWrapper<openxr::Space>,
-	_query: gluon_ipc::Node<PointsQueryCache>,
-	sender: Arc<InputSender<FieldSample>>,
-	pose: RwLock<Option<Posef>>,
+	/// the frame's pose and the moment it was located for, so a pull for that same moment
+	/// doesn't relocate
+	pose: RwLock<Option<(Timestamp, Posef)>>,
 	datamap: RwLock<ControllerDatamap>,
-	query_handle: Arc<OnceLock<PointsQueryHandle>>,
 }
 impl ControllerInputMethod {
 	fn new(
@@ -693,54 +694,27 @@ impl ControllerInputMethod {
 		base_space: Arc<openxr::Space>,
 		side: HandSide,
 		space: openxr::Space,
-	) -> Result<Self, gluon_ipc::SendError> {
-		let (query_cache, objects_arc, capture_requests) = QueryCache::new();
-		let sender = Arc::new(InputSender::new(objects_arc, capture_requests));
-
-		let (query, proxy) = PointsQueryHandler::new_node(PointsQueryCache(query_cache))?;
-		let query_handle = Arc::new(OnceLock::new());
-		let base_spatial_ref = base_spatial.proxy().clone();
-		tokio::spawn({
-			let query_handle = query_handle.clone();
-			async move {
-				let (spatial_query_interface, spatial_query_interface_proxy) =
-					SpatialQueryInterfaceProxy::new_node(SpatialQueryInterface::new(
-						&Arc::default(),
-					))
-					// TODO: get rid of this unwrap
-					.unwrap();
-				let handle = spatial_query_interface_proxy
-					.into_proxy()
-					.points_query(PointsQuery {
-						handler: proxy.into_proxy(),
-						interfaces: vec![InterfaceDependency {
-							id: InputHandler::QUERY_INTERFACE.to_string(),
-							optional: false,
-						}],
-						points: vec![],
-						reference_spatial: base_spatial_ref,
-					})
-					.await
-					.inspect_err(|err| error!("failed to create query: {err}"));
-				if let Ok(Ok(handle)) = handle {
-					info!("setting point");
-					query_handle.set(handle);
-				}
-			}
-		});
-
-		Ok(Self {
+	) -> Self {
+		Self {
 			side,
 			base_space: base_space.into(),
 			base_spatial,
 			space: space.into(),
-			_query: query,
-			sender,
 			pose: RwLock::new(None),
 			datamap: RwLock::new(ControllerDatamap::default()),
-			query_handle,
-		})
+		}
 	}
+
+	async fn pose_at(&self, time: Timestamp) -> Option<Posef> {
+		match *self.pose.read().await {
+			Some((at, pose)) if at == time => Some(pose),
+			_ => self.locate_pose(
+				&self.base_spatial,
+				self.base_space.instance().timestamp_to_xr(time)?,
+			),
+		}
+	}
+
 	fn locate_pose(&self, relative_to: &Spatial, time: openxr::Time) -> Option<Posef> {
 		let pose = self
 			.space
@@ -763,159 +737,56 @@ impl ControllerInputMethod {
 			}
 		})
 	}
-	fn localize_pose(&self, relative_to: &Spatial, pose: Posef) -> Posef {
-		let mat = Spatial::space_to_space_matrix(Some(&self.base_spatial), Some(relative_to));
-		Posef {
-			position: mat.transform_point3(pose.position.into()).into(),
-			orientation: (mat.to_scale_rotation_translation().1 * Quat::from(pose.orientation))
-				.into(),
-		}
-	}
 	fn pose_distance(field: &Field, space: &Spatial, pose: Posef) -> f32 {
 		field.sample(space, pose.position.into()).distance
 	}
 }
-impl InputSource for ControllerInputMethod {
+impl InputMethodHelper for ControllerInputMethod {
 	type QueryValue = FieldSample;
 
-	fn order_handlers_and_captures(
+	async fn order_handlers_and_captures(
 		&self,
-		objects: &HashMap<QueryableId, CachedObject<Self::QueryValue>>,
+		handlers: &HashMap<QueryableId, CachedHandler<FieldSample>>,
 		capture_requests: &HashSet<InputHandler>,
+		active_capture: Option<&InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
-		let current_capture = self.sender.active_capture.blocking_read().clone();
-		let pose = *self.pose.blocking_read();
-		let Some(pose) = pose else {
-			return (
-				match current_capture.clone() {
-					Some(v) => vec![v],
-					None => vec![],
-				},
-				current_capture,
-			);
+		let Some((_, pose)) = *self.pose.read().await else {
+			return (vec![], active_capture.cloned());
 		};
-		let capture = if let Some(cap) = current_capture {
-			if objects.values().any(|e| e.handler == cap) {
-				Some(cap)
-			} else {
-				self.sender.active_capture.blocking_write().take();
-				None
-			}
-		} else {
-			let mut order: Vec<_> = objects
-				.values()
-				.filter(|e| e.spatial.is_some() && capture_requests.contains(&e.handler))
-				.map(|e| {
-					let dist = Self::pose_distance(&e.field.data, &self.base_spatial, pose).abs();
-					(dist, e.handler.clone())
-				})
-				.collect();
-			order.sort_by(|(d1, _), (d2, _)| d1.total_cmp(d2));
-			let promoted = order.first().map(|(_, v)| v.clone());
-			if let Some(ref p) = promoted {
-				*self.sender.active_capture.blocking_write() = Some(p.clone());
-			}
-			promoted
-		};
-
-		if let Some(ref cap) = capture {
-			return (capture.iter().cloned().collect(), capture);
-		}
-
-		let mut order: Vec<_> = objects
-			.values()
-			.filter(|e| e.spatial.is_some())
-			.map(|e| {
-				let dist = Self::pose_distance(&e.field.data, &self.base_spatial, pose).abs();
-				(dist, e.handler.clone())
-			})
-			.collect();
-		order.sort_by(|(d1, _), (d2, _)| d1.total_cmp(d2));
-		(order.into_iter().map(|(_, h)| h).collect(), None)
-	}
-
-	fn spatial_data(
-		&self,
-		handler_spatial: &SpatialRef,
-		handler_field: &Field,
-	) -> Option<SpatialData> {
-		let pose = self.pose.blocking_read().clone()?;
-		let pose = self.localize_pose(handler_spatial, pose);
-		Some(SpatialData {
-			input: InputDataType::Tip {
-				data: Tip {
-					pose,
-					chirality: Some(match self.side {
-						HandSide::Left => Chirality::Left,
-						HandSide::Right => Chirality::Right,
-					}),
-					grip_pose: None,
-					grip_surface_pose: None,
-					simulated_hand: None,
-				},
-			},
-			distance: Self::pose_distance(handler_field, handler_spatial, pose),
+		order_by_distance(handlers, capture_requests, active_capture, |e| {
+			Some(Self::pose_distance(&e.field, &self.base_spatial, pose).abs())
 		})
 	}
 
-	fn datamap(&self) -> HashMap<String, stardust_xr_protocol::suis::DatamapData> {
+	async fn input_data(&self, time: Timestamp) -> Option<InputDataType> {
+		Some(InputDataType::Tip {
+			data: Tip {
+				pose: self.pose_at(time).await?,
+				chirality: Some(match self.side {
+					HandSide::Left => Chirality::Left,
+					HandSide::Right => Chirality::Right,
+				}),
+				grip_pose: None,
+				grip_surface_pose: None,
+				simulated_hand: None,
+			},
+		})
+	}
+
+	async fn datamap(&self) -> HashMap<String, DatamapData> {
 		let ControllerDatamap {
 			select,
 			middle,
 			context,
 			grab,
 			scroll,
-		} = *self.datamap.blocking_read();
-		HashMap::from(
-			[
-				("select", DatamapData::Float { value: select }),
-				("middle", DatamapData::Float { value: middle }),
-				("context", DatamapData::Float { value: context }),
-				("grab", DatamapData::Float { value: grab }),
-				(
-					"scroll",
-					DatamapData::Vec2 {
-						value: scroll.into(),
-					},
-				),
-			]
-			.map(|(k, v)| (k.to_string(), v)),
-		)
-	}
-}
-impl InputMethodHandler for ControllerInputMethod {
-	fn request_capture(
-		&self,
-		_ctx: gluon_ipc::Context,
-		handler: stardust_xr_protocol::suis::InputHandler,
-	) -> impl Future<Output = Option<stardust_xr_protocol::suis::InputMethodCapture>> {
-		self.sender.grant_capture(handler)
-	}
-
-	async fn get_spatial_data(
-		&self,
-		_ctx: gluon_ipc::Context,
-		handler: stardust_xr_protocol::suis::InputHandler,
-		time: Timestamp,
-	) -> Option<SpatialData> {
-		let spatial = handler.get_spatial().await.ok()?.owned()?;
-		let field = handler.get_field().await.ok()?.owned()?;
-		let time = self.base_space.instance().timestamp_to_xr(time)?;
-		let pose = self.locate_pose(&spatial, time)?;
-		Some(SpatialData {
-			input: InputDataType::Tip {
-				data: Tip {
-					pose,
-					chirality: Some(match self.side {
-						HandSide::Left => Chirality::Left,
-						HandSide::Right => Chirality::Right,
-					}),
-					grip_pose: None,
-					grip_surface_pose: None,
-					simulated_hand: None,
-				},
-			},
-			distance: Self::pose_distance(&field.data, &spatial, pose),
-		})
+		} = *self.datamap.read().await;
+		DatamapBuilder::default()
+			.f32("select", select)
+			.f32("middle", middle)
+			.f32("context", context)
+			.f32("grab", grab)
+			.vec2("scroll", scroll)
+			.build()
 	}
 }
