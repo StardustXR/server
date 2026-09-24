@@ -557,7 +557,8 @@ fn cam_settings(
 	cmds.entity(entity).insert(Wboit {
 		bins: Bins::B32,
 		// cdf: CdfScope::Tiled,
-		cdf: CdfScope::Global,
+		// cdf: CdfScope::Global,
+		cdf: CdfScope::Pixel,
 		..Default::default()
 	});
 }

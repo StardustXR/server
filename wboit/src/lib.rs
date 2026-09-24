@@ -11,8 +11,8 @@ use bevy::{
 		extract_component::{ExtractComponent, ExtractComponentPlugin},
 		mesh::MeshVertexBufferLayoutRef,
 		render_resource::{
-			AsBindGroup, RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError,
-			TextureUsages,
+			AsBindGroup, RenderPipelineDescriptor, ShaderDefVal, ShaderRef,
+			SpecializedMeshPipelineError, TextureUsages,
 		},
 	},
 };
@@ -65,6 +65,9 @@ pub enum CdfScope {
 	/// every tile's histogram summed into one cdf for the whole view, steadier across
 	/// frames since no single tile's churn can swing it
 	Global,
+	/// a histogram per pixel, exact about what's in front of each fragment even for near
+	/// opaque layers, costs 8 bytes per pixel per 4 bins
+	Pixel,
 }
 
 /// the tiled cdf packs four bins into each rgba16f texture layer,
@@ -97,6 +100,10 @@ impl Bins {
 pub fn enable(descriptor: &mut RenderPipelineDescriptor) {
 	if let Some(fragment) = descriptor.fragment.as_mut() {
 		fragment.shader_defs.push("WBOIT".into());
+		// naga_oil evaluates `#if WBOIT_LAYERS` even in inactive branches, the passes override it
+		fragment
+			.shader_defs
+			.push(ShaderDefVal::UInt("WBOIT_LAYERS".into(), 1));
 	}
 }
 
