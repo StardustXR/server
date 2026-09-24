@@ -11,15 +11,16 @@ use bevy::{
 		extract_component::{ExtractComponent, ExtractComponentPlugin},
 		mesh::MeshVertexBufferLayoutRef,
 		render_resource::{
-			AsBindGroup, RenderPipelineDescriptor, ShaderDefVal, ShaderRef,
-			SpecializedMeshPipelineError,
+			AsBindGroup, RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError,
+			TextureUsages,
 		},
 	},
 };
 
 const WBOIT_SHADER_HANDLE: Handle<Shader> = weak_handle!("3e0f7a5c-6a2b-4f39-9d7e-1c5b8e2f4a61");
 const PBR_SHADER_HANDLE: Handle<Shader> = weak_handle!("a9c14d27-5b8e-4e0a-b3f6-7d2e9c1a0b58");
-const RESOLVE_SHADER_HANDLE: Handle<Shader> = weak_handle!("5d7b2e91-0c4f-4a86-9e13-b8f6a2d4c730");
+const HISTOGRAM_SHADER_HANDLE: Handle<Shader> =
+	weak_handle!("5d7b2e91-0c4f-4a86-9e13-b8f6a2d4c730");
 const COMPOSITE_SHADER_HANDLE: Handle<Shader> =
 	weak_handle!("c2e86f14-9a3d-4b75-8f01-6e4a3b9d2c87");
 
@@ -41,6 +42,7 @@ pub struct Wboit {
 	pub far: f32,
 	/// two layers closer together than a bin can't be told apart
 	pub bins: Bins,
+	pub cdf: CdfScope,
 }
 impl Default for Wboit {
 	fn default() -> Self {
@@ -49,12 +51,24 @@ impl Default for Wboit {
 			near: 0.05,
 			far: 50.0,
 			bins: Bins::B16,
+			cdf: CdfScope::Tiled,
 		}
 	}
 }
 
-/// four bins pack into each rgba16f render target of the histogram pass,
-/// so the discriminant is how many targets that takes
+/// where the depth quantiles come from
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Reflect)]
+pub enum CdfScope {
+	/// one cdf per tile, follows local depth complexity but lags a frame per tile
+	#[default]
+	Tiled,
+	/// every tile's histogram summed into one cdf for the whole view, steadier across
+	/// frames since no single tile's churn can swing it
+	Global,
+}
+
+/// the tiled cdf packs four bins into each rgba16f texture layer,
+/// so the discriminant is how many layers that takes
 #[repr(u32)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default, Reflect)]
 pub enum Bins {
@@ -72,6 +86,10 @@ impl Bins {
 	pub fn layers(self) -> u32 {
 		self as u32
 	}
+
+	pub fn count(self) -> u32 {
+		self.layers() * 4
+	}
 }
 
 /// a material's transparent pipelines are only drawn with wboit when marked,
@@ -79,10 +97,6 @@ impl Bins {
 pub fn enable(descriptor: &mut RenderPipelineDescriptor) {
 	if let Some(fragment) = descriptor.fragment.as_mut() {
 		fragment.shader_defs.push("WBOIT".into());
-		// naga_oil evaluates `#if WBOIT_LAYERS` even in inactive branches, the passes override it
-		fragment
-			.shader_defs
-			.push(ShaderDefVal::UInt("WBOIT_LAYERS".into(), 1));
 	}
 }
 
@@ -118,8 +132,8 @@ impl Plugin for WboitPlugin {
 		load_internal_asset!(app, PBR_SHADER_HANDLE, "pbr.wgsl", Shader::from_wgsl);
 		load_internal_asset!(
 			app,
-			RESOLVE_SHADER_HANDLE,
-			"resolve.wgsl",
+			HISTOGRAM_SHADER_HANDLE,
+			"histogram.wgsl",
 			Shader::from_wgsl
 		);
 		load_internal_asset!(
@@ -129,6 +143,7 @@ impl Plugin for WboitPlugin {
 			Shader::from_wgsl
 		);
 
+		app.add_observer(sample_depth);
 		app.register_type::<Wboit>().add_plugins((
 			ExtractComponentPlugin::<Wboit>::default(),
 			MaterialPlugin::<WboitMaterial>::default(),
@@ -143,6 +158,15 @@ impl Plugin for WboitPlugin {
 		if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
 			render::finish(render_app);
 		}
+	}
+}
+
+// the accum pass reads opaque depth to keep hidden fragments out of the histogram
+fn sample_depth(trigger: Trigger<OnAdd, Wboit>, mut cameras: Query<&mut Camera3d>) {
+	if let Ok(mut camera) = cameras.get_mut(trigger.target()) {
+		let usages =
+			TextureUsages::from(camera.depth_texture_usages) | TextureUsages::TEXTURE_BINDING;
+		camera.depth_texture_usages = usages.into();
 	}
 }
 

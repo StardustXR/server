@@ -59,7 +59,7 @@ use directories::ProjectDirs;
 use nodes::spatial::SpatialNodePlugin;
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
-use stardust_xr_server_wboit::{Bins, SwapStandardMaterialPlugin, Wboit, WboitPlugin};
+use stardust_xr_server_wboit::{Bins, CdfScope, SwapStandardMaterialPlugin, Wboit, WboitPlugin};
 use std::{
 	ops::DerefMut as _,
 	path::PathBuf,
@@ -556,6 +556,8 @@ fn cam_settings(
 	// .insert(OrderIndependentTransparencySettings::default());
 	cmds.entity(entity).insert(Wboit {
 		bins: Bins::B32,
+		// cdf: CdfScope::Tiled,
+		cdf: CdfScope::Global,
 		..Default::default()
 	});
 }

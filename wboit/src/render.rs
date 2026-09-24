@@ -1,4 +1,4 @@
-use crate::{COMPOSITE_SHADER_HANDLE, RESOLVE_SHADER_HANDLE, Wboit};
+use crate::{COMPOSITE_SHADER_HANDLE, CdfScope, HISTOGRAM_SHADER_HANDLE, Wboit};
 use bevy::{
 	core_pipeline::{
 		core_3d::{
@@ -18,7 +18,10 @@ use bevy::{
 		},
 		render_phase::{SortedRenderPhase, ViewSortedRenderPhases},
 		render_resource::{
-			binding_types::{sampler, texture_2d, texture_2d_array, uniform_buffer},
+			binding_types::{
+				sampler, storage_buffer_read_only_sized, storage_buffer_sized, texture_2d,
+				texture_2d_array, texture_depth_2d, texture_storage_2d_array, uniform_buffer,
+			},
 			*,
 		},
 		renderer::{RenderContext, RenderDevice, RenderQueue},
@@ -27,7 +30,7 @@ use bevy::{
 };
 use std::mem;
 
-const HISTOGRAM: TextureFormat = TextureFormat::Rgba16Float;
+const CDF: TextureFormat = TextureFormat::Rgba16Float;
 
 pub fn build(render_app: &mut SubApp) {
 	render_app
@@ -36,7 +39,7 @@ pub fn build(render_app: &mut SubApp) {
 			Render,
 			(
 				prepare_views.in_set(RenderSet::PrepareResources),
-				split_phases.in_set(RenderSet::PrepareBindGroups),
+				(split_phases, bind_prepass).in_set(RenderSet::PrepareBindGroups),
 			),
 		)
 		.add_render_graph_node::<ViewNodeRunner<WboitNode>>(Core3d, WboitLabel)
@@ -71,37 +74,57 @@ use params::WboitParams;
 
 #[derive(Resource)]
 struct WboitPipelines {
-	draw_layout: BindGroupLayout,
-	resolve_layout: BindGroupLayout,
+	prepass_layout: BindGroupLayout,
+	accum_layout: BindGroupLayout,
+	histogram_layout: BindGroupLayout,
 	composite_layout: BindGroupLayout,
 	sampler: Sampler,
-	// keyed by histogram layers
-	resolve: HashMap<u32, CachedRenderPipelineId>,
+	histogram: HashMap<(u32, CdfScope), CachedComputePipelineId>,
 	composite: HashMap<TextureFormat, CachedRenderPipelineId>,
-	// (material pipeline, layers) -> [accum, bin], None when it isn't marked for wboit
-	derived: HashMap<(CachedRenderPipelineId, u32), Option<[CachedRenderPipelineId; 2]>>,
+	// (material pipeline, bins, cdf scope) -> [prepass, accum], None when it isn't marked
+	// for wboit
+	derived: HashMap<(CachedRenderPipelineId, u32, CdfScope), Option<[CachedRenderPipelineId; 2]>>,
 }
 impl FromWorld for WboitPipelines {
 	fn from_world(world: &mut World) -> Self {
 		let device = world.resource::<RenderDevice>();
 		let tex = || texture_2d(TextureSampleType::Float { filterable: true });
-		let array = || texture_2d_array(TextureSampleType::Float { filterable: true });
-		let draw_layout = device.create_bind_group_layout(
-			"wboit_draw",
+		let prepass_layout = device.create_bind_group_layout(
+			"wboit_prepass",
 			&BindGroupLayoutEntries::sequential(
 				ShaderStages::FRAGMENT,
 				(
 					uniform_buffer::<WboitParams>(false),
-					array(),
-					sampler(SamplerBindingType::Filtering),
-					tex(),
-					tex(),
+					storage_buffer_sized(false, None),
+					texture_depth_2d(),
 				),
 			),
 		);
-		let resolve_layout = device.create_bind_group_layout(
-			"wboit_resolve",
-			&BindGroupLayoutEntries::single(ShaderStages::FRAGMENT, array()),
+		let accum_layout = device.create_bind_group_layout(
+			"wboit_accum",
+			&BindGroupLayoutEntries::sequential(
+				ShaderStages::FRAGMENT,
+				(
+					uniform_buffer::<WboitParams>(false),
+					texture_2d_array(TextureSampleType::Float { filterable: true }),
+					sampler(SamplerBindingType::Filtering),
+					tex(),
+					tex(),
+					storage_buffer_read_only_sized(false, None),
+				),
+			),
+		);
+		let histogram_layout = device.create_bind_group_layout(
+			"wboit_histogram",
+			&BindGroupLayoutEntries::sequential(
+				ShaderStages::COMPUTE,
+				(
+					uniform_buffer::<WboitParams>(false),
+					storage_buffer_sized(false, None),
+					texture_storage_2d_array(CDF, StorageTextureAccess::WriteOnly),
+					storage_buffer_sized(false, None),
+				),
+			),
 		);
 		let composite_layout = device.create_bind_group_layout(
 			"wboit_composite",
@@ -114,34 +137,32 @@ impl FromWorld for WboitPipelines {
 			..default()
 		});
 		Self {
-			draw_layout,
-			resolve_layout,
+			prepass_layout,
+			accum_layout,
+			histogram_layout,
 			composite_layout,
 			sampler,
-			resolve: default(),
+			histogram: default(),
 			composite: default(),
 			derived: default(),
 		}
 	}
 }
 impl WboitPipelines {
-	fn resolve(&mut self, cache: &PipelineCache, layers: u32) {
-		let layout = self.resolve_layout.clone();
-		self.resolve.entry(layers).or_insert_with(|| {
-			cache.queue_render_pipeline(RenderPipelineDescriptor {
-				label: Some("wboit_resolve".into()),
+	fn histogram(&mut self, cache: &PipelineCache, bins: u32, scope: CdfScope) {
+		let layout = self.histogram_layout.clone();
+		self.histogram.entry((bins, scope)).or_insert_with(|| {
+			cache.queue_compute_pipeline(ComputePipelineDescriptor {
+				label: Some("wboit_histogram".into()),
 				layout: vec![layout],
 				push_constant_ranges: vec![],
-				vertex: fullscreen_shader_vertex_state(),
-				fragment: Some(FragmentState {
-					shader: RESOLVE_SHADER_HANDLE,
-					shader_defs: vec![ShaderDefVal::UInt("WBOIT_LAYERS".into(), layers)],
-					entry_point: "fragment".into(),
-					targets: vec![Some(HISTOGRAM.into()); layers as usize],
-				}),
-				primitive: default(),
-				depth_stencil: None,
-				multisample: default(),
+				shader: HISTOGRAM_SHADER_HANDLE,
+				shader_defs: vec![ShaderDefVal::UInt("WBOIT_BINS".into(), bins)],
+				entry_point: match scope {
+					CdfScope::Tiled => "resolve",
+					CdfScope::Global => "reduce",
+				}
+				.into(),
 				zero_initialize_workgroup_memory: false,
 			})
 		});
@@ -178,7 +199,8 @@ impl WboitPipelines {
 		&self,
 		cache: &PipelineCache,
 		id: CachedRenderPipelineId,
-		layers: u32,
+		bins: u32,
+		scope: CdfScope,
 	) -> Option<Option<[CachedRenderPipelineId; 2]>> {
 		let PipelineDescriptor::RenderPipelineDescriptor(d) =
 			&cache.pipelines().nth(id.id())?.descriptor
@@ -192,65 +214,57 @@ impl WboitPipelines {
 		{
 			return Some(None);
 		}
-		let additive = |format: TextureFormat| {
+		let additive = BlendComponent {
+			src_factor: BlendFactor::One,
+			dst_factor: BlendFactor::One,
+			operation: BlendOperation::Add,
+		};
+		let min = BlendComponent {
+			operation: BlendOperation::Min,
+			..additive
+		};
+		let target = |format, blend| {
 			Some(ColorTargetState {
 				format,
 				blend: Some(BlendState {
-					color: BlendComponent {
-						src_factor: BlendFactor::One,
-						dst_factor: BlendFactor::One,
-						operation: BlendOperation::Add,
-					},
-					alpha: BlendComponent {
-						src_factor: BlendFactor::One,
-						dst_factor: BlendFactor::One,
-						operation: BlendOperation::Add,
-					},
+					color: blend,
+					alpha: blend,
 				}),
 				write_mask: ColorWrites::ALL,
 			})
 		};
-		let variant = |pass: &'static str, targets: Vec<Option<ColorTargetState>>| {
+		let variant = |pass: &'static str,
+		               layout: &BindGroupLayout,
+		               targets: Vec<Option<ColorTargetState>>| {
 			let mut d = (**d).clone();
 			d.label = Some(pass.to_lowercase().into());
-			d.layout.push(self.draw_layout.clone());
+			d.layout.push(layout.clone());
 			let f = d.fragment.as_mut().unwrap();
-			f.shader_defs
-				.retain(|d| !matches!(d, ShaderDefVal::UInt(n, _) if n == "WBOIT_LAYERS"));
 			f.shader_defs.extend([
 				"WBOIT_PASS".into(),
 				pass.into(),
-				ShaderDefVal::UInt("WBOIT_LAYERS".into(), layers),
+				ShaderDefVal::UInt("WBOIT_BINS".into(), bins),
 			]);
+			if scope == CdfScope::Global {
+				f.shader_defs.push("WBOIT_GLOBAL".into());
+			}
 			f.targets = targets;
-			d
+			cache.queue_render_pipeline(d)
 		};
-		let min = BlendComponent {
-			src_factor: BlendFactor::One,
-			dst_factor: BlendFactor::One,
-			operation: BlendOperation::Min,
-		};
-		let accum = variant(
-			"WBOIT_ACCUM",
-			vec![
-				additive(TextureFormat::Rgba16Float),
-				additive(TextureFormat::R16Float),
-				Some(ColorTargetState {
-					format: TextureFormat::R16Float,
-					blend: Some(BlendState {
-						color: min,
-						alpha: min,
-					}),
-					write_mask: ColorWrites::ALL,
-				}),
-			],
-		);
-		// rasterized at one pixel per tile, a depth buffer that small can't mean anything
-		let mut bin = variant("WBOIT_BIN", vec![additive(HISTOGRAM); layers as usize]);
-		bin.depth_stencil = None;
 		Some(Some([
-			cache.queue_render_pipeline(accum),
-			cache.queue_render_pipeline(bin),
+			variant(
+				"WBOIT_PREPASS",
+				&self.prepass_layout,
+				vec![
+					target(TextureFormat::R16Float, additive),
+					target(TextureFormat::R16Float, min),
+				],
+			),
+			variant(
+				"WBOIT_ACCUM",
+				&self.accum_layout,
+				vec![target(TextureFormat::Rgba16Float, additive)],
+			),
 		]))
 	}
 }
@@ -262,22 +276,21 @@ struct ViewState {
 	wboit: Wboit,
 	size: UVec2,
 	tiles: UVec2,
-	// written this frame, the other half of each pair is last frame's
-	frame: usize,
 
 	accum: TextureView,
-	tau: [TextureView; 2],
-	front: [TextureView; 2],
-	// one attachment view per layer, the arrays themselves live in the bind groups
-	hist: Vec<TextureView>,
-	cdf: [Vec<TextureView>; 2],
+	tau: TextureView,
+	front: TextureView,
+	hist: Buffer,
+	params: UniformBuffer<WboitParams>,
 
-	draw: [BindGroup; 2],
-	composite: [BindGroup; 2],
-	resolve: BindGroup,
+	// rebuilt every frame since it holds the view's depth texture
+	prepass: Option<BindGroup>,
+	draw: BindGroup,
+	histogram: BindGroup,
+	composite: BindGroup,
 
+	prepass_phase: SortedRenderPhase<Transparent3d>,
 	accum_phase: SortedRenderPhase<Transparent3d>,
-	bin_phase: SortedRenderPhase<Transparent3d>,
 }
 impl ViewState {
 	fn new(
@@ -288,8 +301,12 @@ impl ViewState {
 		size: UVec2,
 	) -> Self {
 		let tiles = (size + UVec2::splat(wboit.tile_size - 1)) / wboit.tile_size;
-		let layers = wboit.bins.layers();
-		let texture = |label: &'static str, size: UVec2, format: TextureFormat, layers: u32| {
+		let bins = wboit.bins.count();
+		let texture = |label: &'static str,
+		               size: UVec2,
+		               format: TextureFormat,
+		               layers: u32,
+		               usage: TextureUsages| {
 			device.create_texture(&TextureDescriptor {
 				label: Some(label),
 				size: Extent3d {
@@ -301,34 +318,38 @@ impl ViewState {
 				sample_count: 1,
 				dimension: TextureDimension::D2,
 				format,
-				usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TEXTURE_BINDING,
+				usage: usage | TextureUsages::TEXTURE_BINDING,
 				view_formats: &[],
 			})
 		};
-		let tex = |label, format| texture(label, size, format, 1).create_view(&default());
-		let histogram = |label| {
-			let t = texture(label, tiles, HISTOGRAM, layers);
-			let array = t.create_view(&TextureViewDescriptor {
-				dimension: Some(TextureViewDimension::D2Array),
-				..default()
-			});
-			let views = (0..layers)
-				.map(|l| {
-					t.create_view(&TextureViewDescriptor {
-						dimension: Some(TextureViewDimension::D2),
-						base_array_layer: l,
-						array_layer_count: Some(1),
-						..default()
-					})
-				})
-				.collect::<Vec<_>>();
-			(array, views)
+		let tex = |label, format| {
+			texture(label, size, format, 1, TextureUsages::RENDER_ATTACHMENT)
+				.create_view(&default())
 		};
 		let accum = tex("wboit_accum", TextureFormat::Rgba16Float);
-		let tau = [(); 2].map(|_| tex("wboit_tau", TextureFormat::R16Float));
-		let front = [(); 2].map(|_| tex("wboit_front", TextureFormat::R16Float));
-		let (hist_array, hist) = histogram("wboit_hist");
-		let cdf = [(); 2].map(|_| histogram("wboit_cdf"));
+		let tau = tex("wboit_tau", TextureFormat::R16Float);
+		let front = tex("wboit_front", TextureFormat::R16Float);
+		let cdf = texture(
+			"wboit_cdf",
+			tiles,
+			CDF,
+			wboit.bins.layers(),
+			TextureUsages::STORAGE_BINDING,
+		)
+		.create_view(&TextureViewDescriptor {
+			dimension: Some(TextureViewDimension::D2Array),
+			..default()
+		});
+		let buffer = |label, size: u32| {
+			device.create_buffer(&BufferDescriptor {
+				label: Some(label),
+				size: size as u64 * 4,
+				usage: BufferUsages::STORAGE,
+				mapped_at_creation: false,
+			})
+		};
+		let hist = buffer("wboit_hist", tiles.x * tiles.y * bins);
+		let edges = buffer("wboit_global_edges", bins);
 
 		let mut params = UniformBuffer::from(WboitParams {
 			tiles,
@@ -338,47 +359,49 @@ impl ViewState {
 		});
 		params.write_buffer(device, queue);
 
-		let draw = [0, 1].map(|prev: usize| {
-			device.create_bind_group(
-				"wboit_draw",
-				&pipelines.draw_layout,
-				&BindGroupEntries::sequential((
-					params.binding().unwrap(),
-					&cdf[prev].0,
-					&pipelines.sampler,
-					&tau[prev],
-					&front[prev],
-				)),
-			)
-		});
-		let composite = [0, 1].map(|frame: usize| {
-			device.create_bind_group(
-				"wboit_composite",
-				&pipelines.composite_layout,
-				&BindGroupEntries::sequential((&accum, &tau[frame])),
-			)
-		});
-		let resolve = device.create_bind_group(
-			"wboit_resolve",
-			&pipelines.resolve_layout,
-			&BindGroupEntries::single(&hist_array),
+		let draw = device.create_bind_group(
+			"wboit_accum",
+			&pipelines.accum_layout,
+			&BindGroupEntries::sequential((
+				params.binding().unwrap(),
+				&cdf,
+				&pipelines.sampler,
+				&tau,
+				&front,
+				edges.as_entire_binding(),
+			)),
+		);
+		let histogram = device.create_bind_group(
+			"wboit_histogram",
+			&pipelines.histogram_layout,
+			&BindGroupEntries::sequential((
+				params.binding().unwrap(),
+				hist.as_entire_binding(),
+				&cdf,
+				edges.as_entire_binding(),
+			)),
+		);
+		let composite = device.create_bind_group(
+			"wboit_composite",
+			&pipelines.composite_layout,
+			&BindGroupEntries::sequential((&accum, &tau)),
 		);
 
 		Self {
 			wboit,
 			size,
 			tiles,
-			frame: 0,
 			accum,
 			tau,
 			front,
 			hist,
-			cdf: cdf.map(|(_, layers)| layers),
+			params,
+			prepass: None,
 			draw,
+			histogram,
 			composite,
-			resolve,
+			prepass_phase: default(),
 			accum_phase: default(),
-			bin_phase: default(),
 		}
 	}
 }
@@ -393,34 +416,44 @@ fn prepare_views(
 	mut live: Local<HashSet<RetainedViewEntity>>,
 ) {
 	live.clear();
-	let limits = device.limits();
-	let max_layers = limits.max_color_attachments.min(
-		limits.max_color_attachment_bytes_per_sample / HISTOGRAM.block_copy_size(None).unwrap(),
-	);
 	for (view, camera, target, wboit) in &cameras {
 		let Some(size) = camera.physical_target_size else {
 			continue;
 		};
-		if wboit.bins.layers() > max_layers {
-			error_once!(
-				"{:?} needs {} render targets but this device only allows {max_layers}, falling back to alpha blending",
-				wboit.bins,
-				wboit.bins.layers(),
-			);
-			continue;
-		}
 		live.insert(view.retained_view_entity);
 		pipelines.composite(&cache, target.main_texture_format());
-		pipelines.resolve(&cache, wboit.bins.layers());
-		match views.get_mut(&view.retained_view_entity) {
-			Some(state) if state.size == size && state.wboit == *wboit => state.frame ^= 1,
-			_ => {
-				let state = ViewState::new(&device, &queue, &pipelines, *wboit, size);
-				views.insert(view.retained_view_entity, state);
-			}
+		pipelines.histogram(&cache, wboit.bins.count(), wboit.cdf);
+		if !views
+			.get(&view.retained_view_entity)
+			.is_some_and(|s| s.size == size && s.wboit == *wboit)
+		{
+			let state = ViewState::new(&device, &queue, &pipelines, *wboit, size);
+			views.insert(view.retained_view_entity, state);
 		}
 	}
 	views.retain(|v, _| live.contains(v));
+}
+
+fn bind_prepass(
+	mut views: ResMut<WboitViews>,
+	depths: Query<(&ExtractedView, &ViewDepthTexture)>,
+	pipelines: Res<WboitPipelines>,
+	device: Res<RenderDevice>,
+) {
+	for (view, depth) in &depths {
+		let Some(state) = views.get_mut(&view.retained_view_entity) else {
+			continue;
+		};
+		state.prepass = Some(device.create_bind_group(
+			"wboit_prepass",
+			&pipelines.prepass_layout,
+			&BindGroupEntries::sequential((
+				state.params.binding().unwrap(),
+				state.hist.as_entire_binding(),
+				depth.view(),
+			)),
+		));
+	}
 }
 
 // runs after batching so every batch lands whole on one side, it can only span items
@@ -432,27 +465,28 @@ fn split_phases(
 	cache: Res<PipelineCache>,
 ) {
 	for (view, state) in views.iter_mut() {
+		state.prepass_phase.items.clear();
 		state.accum_phase.items.clear();
-		state.bin_phase.items.clear();
 		let Some(phase) = phases.get_mut(view) else {
 			continue;
 		};
-		let layers = state.wboit.bins.layers();
+		let bins = state.wboit.bins.count();
+		let scope = state.wboit.cdf;
 		for item in mem::take(&mut phase.items) {
-			let key = (item.pipeline, layers);
+			let key = (item.pipeline, bins, scope);
 			let derived = match pipelines.derived.get(&key) {
 				Some(d) => *d,
-				None => match pipelines.derive(&cache, item.pipeline, layers) {
+				None => match pipelines.derive(&cache, item.pipeline, bins, scope) {
 					Some(d) => *pipelines.derived.entry(key).or_insert(d),
 					None => None,
 				},
 			};
-			let Some([accum, bin]) = derived else {
+			let Some([prepass, accum]) = derived else {
 				phase.items.push(item);
 				continue;
 			};
-			state.bin_phase.add(Transparent3d {
-				pipeline: bin,
+			state.prepass_phase.add(Transparent3d {
+				pipeline: prepass,
 				batch_range: item.batch_range.clone(),
 				extra_index: item.extra_index.clone(),
 				..item
@@ -491,37 +525,79 @@ impl ViewNode for WboitNode {
 		else {
 			return Ok(());
 		};
+		let Some(prepass) = state.prepass.as_ref() else {
+			return Ok(());
+		};
 		if state.accum_phase.items.is_empty() {
 			return Ok(());
 		}
 		let pipelines = world.resource::<WboitPipelines>();
 		let cache = world.resource::<PipelineCache>();
 		let view_entity = graph.view_entity();
-		let f = state.frame;
+		// read only so the prepass can sample it at the same time
+		let depth = || {
+			Some(RenderPassDepthStencilAttachment {
+				view: depth.view(),
+				depth_ops: None,
+				stencil_ops: None,
+			})
+		};
 
 		{
 			let mut pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-				label: Some("wboit_accum"),
+				label: Some("wboit_prepass"),
 				color_attachments: &[
-					clear(&state.accum),
-					clear(&state.tau[f]),
-					Some(RenderPassColorAttachment {
-						view: &state.front[f],
-						resolve_target: None,
-						ops: Operations {
-							load: LoadOp::Clear(LinearRgba::WHITE.into()),
-							store: StoreOp::Store,
-						},
-					}),
+					clear(&state.tau, LinearRgba::NONE),
+					clear(&state.front, LinearRgba::WHITE),
 				],
-				depth_stencil_attachment: Some(depth.get_attachment(StoreOp::Store)),
+				depth_stencil_attachment: depth(),
 				timestamp_writes: None,
 				occlusion_query_set: None,
 			});
 			if let Some(viewport) = camera.viewport.as_ref() {
 				pass.set_camera_viewport(viewport);
 			}
-			pass.set_bind_group(3, &state.draw[f ^ 1], &[]);
+			pass.set_bind_group(3, prepass, &[]);
+			if let Err(err) = state.prepass_phase.render(&mut pass, world, view_entity) {
+				error!("error rendering the wboit prepass: {err:?}");
+			}
+		}
+
+		if let Some(histogram) = pipelines
+			.histogram
+			.get(&(state.wboit.bins.count(), state.wboit.cdf))
+			.and_then(|id| cache.get_compute_pipeline(*id))
+		{
+			let mut pass =
+				render_context
+					.command_encoder()
+					.begin_compute_pass(&ComputePassDescriptor {
+						label: Some("wboit_histogram"),
+						timestamp_writes: None,
+					});
+			pass.set_pipeline(histogram);
+			pass.set_bind_group(0, &*state.histogram, &[]);
+			match state.wboit.cdf {
+				CdfScope::Tiled => {
+					let groups = (state.tiles + UVec2::splat(7)) / 8;
+					pass.dispatch_workgroups(groups.x, groups.y, 1);
+				}
+				CdfScope::Global => pass.dispatch_workgroups(1, 1, 1),
+			}
+		}
+
+		{
+			let mut pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
+				label: Some("wboit_accum"),
+				color_attachments: &[clear(&state.accum, LinearRgba::NONE)],
+				depth_stencil_attachment: depth(),
+				timestamp_writes: None,
+				occlusion_query_set: None,
+			});
+			if let Some(viewport) = camera.viewport.as_ref() {
+				pass.set_camera_viewport(viewport);
+			}
+			pass.set_bind_group(3, &state.draw, &[]);
 			if let Err(err) = state.accum_phase.render(&mut pass, world, view_entity) {
 				error!("error rendering the wboit accum phase: {err:?}");
 			}
@@ -543,49 +619,7 @@ impl ViewNode for WboitNode {
 				pass.set_camera_viewport(viewport);
 			}
 			pass.set_render_pipeline(composite);
-			pass.set_bind_group(0, &state.composite[f], &[]);
-			pass.draw(0..3, 0..1);
-		}
-
-		{
-			let mut pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-				label: Some("wboit_bin"),
-				color_attachments: &state.hist.iter().map(clear).collect::<Vec<_>>(),
-				depth_stencil_attachment: None,
-				timestamp_writes: None,
-				occlusion_query_set: None,
-			});
-			// squeezes full res pixel p onto tile p / tile_size, the target is rounded up to
-			// whole tiles so the edge stays aligned with the cdf lookup
-			let (pos, size) = camera
-				.viewport
-				.as_ref()
-				.map(|v| (v.physical_position, v.physical_size))
-				.unwrap_or((UVec2::ZERO, state.size));
-			let s = 1.0 / state.wboit.tile_size as f32;
-			let pos = pos.as_vec2() * s;
-			let size = (size.as_vec2() * s).min(state.tiles.as_vec2() - pos);
-			pass.set_viewport(pos.x, pos.y, size.x, size.y, 0.0, 1.0);
-			pass.set_bind_group(3, &state.draw[f ^ 1], &[]);
-			if let Err(err) = state.bin_phase.render(&mut pass, world, view_entity) {
-				error!("error rendering the wboit bin phase: {err:?}");
-			}
-		}
-
-		if let Some(resolve) = pipelines
-			.resolve
-			.get(&state.wboit.bins.layers())
-			.and_then(|id| cache.get_render_pipeline(*id))
-		{
-			let mut pass = render_context.begin_tracked_render_pass(RenderPassDescriptor {
-				label: Some("wboit_resolve"),
-				color_attachments: &state.cdf[f].iter().map(clear).collect::<Vec<_>>(),
-				depth_stencil_attachment: None,
-				timestamp_writes: None,
-				occlusion_query_set: None,
-			});
-			pass.set_render_pipeline(resolve);
-			pass.set_bind_group(0, &state.resolve, &[]);
+			pass.set_bind_group(0, &state.composite, &[]);
 			pass.draw(0..3, 0..1);
 		}
 
@@ -593,12 +627,12 @@ impl ViewNode for WboitNode {
 	}
 }
 
-fn clear(view: &TextureView) -> Option<RenderPassColorAttachment<'_>> {
+fn clear(view: &TextureView, color: LinearRgba) -> Option<RenderPassColorAttachment<'_>> {
 	Some(RenderPassColorAttachment {
 		view,
 		resolve_target: None,
 		ops: Operations {
-			load: LoadOp::Clear(default()),
+			load: LoadOp::Clear(color.into()),
 			store: StoreOp::Store,
 		},
 	})
