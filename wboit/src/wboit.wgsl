@@ -16,27 +16,27 @@ struct WboitOutput {
 }
 #else ifdef WBOIT_BIN
 struct WboitOutput {
-    @location(0) h0: vec4<f32>,
+    @location(0) layer_a: vec4<f32>,
 #if WBOIT_LAYERS >= 2
-    @location(1) h1: vec4<f32>,
+    @location(1) layer_b: vec4<f32>,
 #endif
 #if WBOIT_LAYERS >= 3
-    @location(2) h2: vec4<f32>,
+    @location(2) layer_c: vec4<f32>,
 #endif
 #if WBOIT_LAYERS >= 4
-    @location(3) h3: vec4<f32>,
+    @location(3) layer_d: vec4<f32>,
 #endif
 #if WBOIT_LAYERS >= 5
-    @location(4) h4: vec4<f32>,
+    @location(4) layer_e: vec4<f32>,
 #endif
 #if WBOIT_LAYERS >= 6
-    @location(5) h5: vec4<f32>,
+    @location(5) layer_f: vec4<f32>,
 #endif
 #if WBOIT_LAYERS >= 7
-    @location(6) h6: vec4<f32>,
+    @location(6) layer_g: vec4<f32>,
 #endif
 #if WBOIT_LAYERS >= 8
-    @location(7) h7: vec4<f32>,
+    @location(7) layer_h: vec4<f32>,
 #endif
 }
 #else
@@ -118,27 +118,27 @@ fn tent_deposit(z: f32, od: f32) -> WboitOutput {
     bins[b >> 2u][b & 3] += od * t;
 
     var out: WboitOutput;
-    out.h0 = bins[0];
+    out.layer_a = bins[0];
 #if WBOIT_LAYERS >= 2
-    out.h1 = bins[1];
+    out.layer_b = bins[1];
 #endif
 #if WBOIT_LAYERS >= 3
-    out.h2 = bins[2];
+    out.layer_c = bins[2];
 #endif
 #if WBOIT_LAYERS >= 4
-    out.h3 = bins[3];
+    out.layer_d = bins[3];
 #endif
 #if WBOIT_LAYERS >= 5
-    out.h4 = bins[4];
+    out.layer_e = bins[4];
 #endif
 #if WBOIT_LAYERS >= 6
-    out.h5 = bins[5];
+    out.layer_f = bins[5];
 #endif
 #if WBOIT_LAYERS >= 7
-    out.h6 = bins[6];
+    out.layer_g = bins[6];
 #endif
 #if WBOIT_LAYERS >= 8
-    out.h7 = bins[7];
+    out.layer_h = bins[7];
 #endif
     return out;
 }
