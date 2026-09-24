@@ -14,15 +14,18 @@
     pbr_functions::{apply_pbr_lighting, main_pass_post_lighting_processing},
 }
 #endif
-#ifdef OIT_ENABLED
-#import bevy_core_pipeline::oit::oit_draw
-#endif
+#import stardust_wboit::{WboitOutput, wboit_output}
 
 @fragment
 fn fragment(
     in: VertexOutput,
     @builtin(front_facing) is_front: bool,
-) -> FragmentOutput {
+)
+#ifdef PREPASS_PIPELINE
+-> FragmentOutput {
+#else
+-> WboitOutput {
+#endif
     // generate a PbrInput struct from the StandardMaterial bindings
     var pbr_input = pbr_input_from_standard_material(in, is_front);
 
@@ -47,10 +50,9 @@ fn fragment(
     out.color = main_pass_post_lighting_processing(pbr_input, out.color);
 #endif
 
-#ifdef OIT_ENABLED
-    oit_draw(in.position, out.color, false);
-    discard;
-#else 
+#ifdef PREPASS_PIPELINE
     return out;
+#else
+    return wboit_output(in.position, out.color);
 #endif
 }

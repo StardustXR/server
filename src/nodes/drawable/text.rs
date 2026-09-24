@@ -25,6 +25,7 @@ use stardust_xr_protocol::{
 	text::{TextFit, TextHandler, TextInterfaceHandler, TextStyle, XAlign, YAlign},
 	types::ResourceLoadError,
 };
+use stardust_xr_server_wboit::WboitMaterial;
 use std::{
 	ffi::OsStr,
 	mem,
@@ -58,7 +59,7 @@ fn spawn_text(
 	mut cmds: Commands,
 	mut font_settings: ResMut<FontSettings>,
 	mut material_registry: ResMut<MaterialRegistry>,
-	mut materials: ResMut<Assets<BevyMaterial>>,
+	mut materials: ResMut<Assets<WboitMaterial>>,
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut font_registry: Local<FontDatabaseRegistry>,
 ) {

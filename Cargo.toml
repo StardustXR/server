@@ -10,7 +10,7 @@ repository = "https://github.com/StardustXR/stardust-xr-server/"
 homepage = "https://stardustxr.org"
 
 [workspace]
-members = ["foundation"]
+members = ["foundation", "wboit"]
 
 [[bin]]
 name = "stardust-xr-server"
@@ -55,8 +55,6 @@ wgpu-types = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_wors
 wgpu-core = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
 naga = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
 wgpu-hal = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
-bevy_pbr = { git = "https://github.com/Schmarni-Dev/bevy", branch = "premul_oit_016" }
-bevy_core_pipeline = { git = "https://github.com/Schmarni-Dev/bevy", branch = "premul_oit_016" }
 bevy_render = { git = "https://github.com/Schmarni-Dev/bevy", branch = "render_thread_init_callback" }
 
 
@@ -168,3 +166,5 @@ version = "0.52.0"
 
 [dependencies.stardust-xr-server-foundation]
 path = "foundation"
+[dependencies.stardust-xr-server-wboit]
+path = "wboit"

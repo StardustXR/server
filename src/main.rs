@@ -17,9 +17,7 @@ use bevy::{
 	app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin},
 	asset::{AssetMetaCheck, UnapprovedPathMode},
 	audio::AudioPlugin,
-	core_pipeline::{
-		CorePipelinePlugin, oit::OrderIndependentTransparencySettings, tonemapping::Tonemapping,
-	},
+	core_pipeline::{CorePipelinePlugin, tonemapping::Tonemapping},
 	diagnostic::DiagnosticsPlugin,
 	ecs::schedule::{ExecutorKind, ScheduleLabel},
 	gizmos::GizmoPlugin,
@@ -61,6 +59,7 @@ use directories::ProjectDirs;
 use nodes::spatial::SpatialNodePlugin;
 use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
+use stardust_xr_server_wboit::{Bins, SwapStandardMaterialPlugin, Wboit, WboitPlugin};
 use std::{
 	ops::DerefMut as _,
 	path::PathBuf,
@@ -476,6 +475,7 @@ fn bevy_loop(
 	// the Stardust server plugins
 	// infra plugins
 	app.add_plugins((EntityHandlePlugin, DmatexPlugin, VulkanoPlugin));
+	app.add_plugins((WboitPlugin, SwapStandardMaterialPlugin));
 	// node plugins
 	app.add_plugins((
 		SpatialNodePlugin,
@@ -552,8 +552,12 @@ fn cam_settings(
 	}
 	*msaa = Msaa::Off;
 	*tonemapping = Tonemapping::None;
-	cmds.entity(entity)
-		.insert(OrderIndependentTransparencySettings::default());
+	// cmds.entity(entity)
+	// .insert(OrderIndependentTransparencySettings::default());
+	cmds.entity(entity).insert(Wboit {
+		bins: Bins::B32,
+		..Default::default()
+	});
 }
 
 fn xr_step(world: &mut World) {

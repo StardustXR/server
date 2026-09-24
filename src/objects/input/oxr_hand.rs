@@ -32,6 +32,7 @@ use stardust_xr_protocol::suis::{
 	Chirality, DatamapData, Finger, Hand, InputDataType, InputHandler, Joint, Thumb,
 };
 use stardust_xr_protocol::types::{self, Timestamp};
+use stardust_xr_server_wboit::{WboitExtension, WboitMaterial};
 use std::any::type_name;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -74,7 +75,7 @@ fn update_hands(
 	session: Option<Res<OxrSession>>,
 	state: Option<Res<OxrFrameState>>,
 	ref_space: Option<Res<XrPrimaryReferenceSpace>>,
-	mut materials: ResMut<Assets<BevyMaterial>>,
+	mut materials: ResMut<Assets<WboitMaterial>>,
 	mut joint_query: Query<(
 		&mut BevyTransform,
 		&mut XrSpaceLocationFlags,
@@ -202,7 +203,7 @@ fn update_hand_material(
 
 fn setup(
 	mut cmds: Commands,
-	mut materials: ResMut<Assets<BevyMaterial>>,
+	mut materials: ResMut<Assets<WboitMaterial>>,
 	mut holdout_materials: ResMut<Assets<HandHoldoutMaterial>>,
 	hand_config: Res<HandRenderConfig>,
 ) {
@@ -255,7 +256,7 @@ struct HandDatamap {
 }
 
 enum HandMaterial {
-	Normal(Handle<BevyMaterial>),
+	Normal(Handle<WboitMaterial>),
 	Holdout(Handle<HandHoldoutMaterial>),
 }
 
@@ -309,7 +310,7 @@ impl OxrHandInput {
 	pub fn new(
 		side: HandSide,
 		base_space: &LocalRef<SpatialRefProxy, SpatialRef>,
-		materials: &mut Assets<BevyMaterial>,
+		materials: &mut Assets<WboitMaterial>,
 		holdout_materials: &mut Assets<HandHoldoutMaterial>,
 		hand_config: &HandRenderConfig,
 	) -> Result<Self> {
@@ -321,12 +322,15 @@ impl OxrHandInput {
 				extension: HoldoutExtension {},
 			}))
 		} else {
-			HandMaterial::Normal(materials.add(BevyMaterial {
-				base_color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
-				alpha_mode: AlphaMode::Blend,
-				base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
-				perceptual_roughness: 1.0,
-				..default()
+			HandMaterial::Normal(materials.add(WboitMaterial {
+				base: BevyMaterial {
+					base_color: Srgba::new(1.0, 1.0, 1.0, 1.0).into(),
+					alpha_mode: AlphaMode::Blend,
+					base_color_texture: Some(GRADIENT_TEXTURE_HANDLE),
+					perceptual_roughness: 1.0,
+					..default()
+				},
+				extension: WboitExtension {},
 			}))
 		};
 		let pion_path = match side {
@@ -364,7 +368,7 @@ impl OxrHandInput {
 	fn update(
 		&mut self,
 		time: openxr::Time,
-		materials: &mut ResMut<Assets<BevyMaterial>>,
+		materials: &mut ResMut<Assets<WboitMaterial>>,
 		base_space: &LocalRef<SpatialRefProxy, SpatialRef>,
 	) {
 		let new_hand = self
@@ -422,10 +426,10 @@ impl OxrHandInput {
 		if let HandMaterial::Normal(material_handle) = &self.material {
 			let captured = method.active_capture_blocking().is_some();
 			if captured && !self.captured {
-				materials.get_mut(material_handle).unwrap().base_color =
+				materials.get_mut(material_handle).unwrap().base.base_color =
 					Srgba::rgb(0., 1., 0.75).into();
 			} else if self.captured && !captured {
-				materials.get_mut(material_handle).unwrap().base_color =
+				materials.get_mut(material_handle).unwrap().base.base_color =
 					Srgba::rgb(1., 1.0, 1.0).into();
 			}
 			self.captured = captured;

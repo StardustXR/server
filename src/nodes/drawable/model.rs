@@ -40,6 +40,7 @@ use stardust_xr_protocol::{
 	types::{Resource, ResourceLoadError},
 };
 use stardust_xr_server_foundation::on_drop::AbortOnDrop;
+use stardust_xr_server_wboit::{WboitExtension, WboitMaterial};
 use std::{
 	collections::{HashMap, VecDeque},
 	ffi::OsStr,
@@ -157,10 +158,10 @@ fn load_models(
 
 fn apply_materials(
 	mut commands: Commands,
-	mut query: Query<&mut MeshMaterial3d<BevyMaterial>>,
+	mut query: Query<&mut MeshMaterial3d<WboitMaterial>>,
 	mut material_registry: ResMut<MaterialRegistry>,
 	asset_server: Res<AssetServer>,
-	mut materials: ResMut<Assets<BevyMaterial>>,
+	mut materials: ResMut<Assets<WboitMaterial>>,
 ) -> bevy::prelude::Result {
 	for (model, model_part) in MODEL_REGISTRY
 		.get_valid_contents()
@@ -177,12 +178,12 @@ fn apply_materials(
 		if model_part.holdout.load(Ordering::Relaxed) {
 			commands
 				.entity(entity)
-				.remove::<MeshMaterial3d<BevyMaterial>>()
+				.remove::<MeshMaterial3d<WboitMaterial>>()
 				.insert(MeshMaterial3d(HOLDOUT_MATERIAL_HANDLE));
 			continue;
 		}
 		for (param_name, param) in model_part.pending_material_parameters.lock().drain() {
-			let mut new_mat = materials.get(&mesh_mat.0).unwrap().clone();
+			let mut new_mat = materials.get(&mesh_mat.0).unwrap().base.clone();
 			apply_to_material(
 				&param,
 				&model.resource_prefixes,
@@ -214,7 +215,7 @@ fn apply_materials(
 		}
 		{
 			let tex = model_part.textures.lock();
-			let mut new_mat = materials.get(&mesh_mat.0).unwrap().clone();
+			let mut new_mat = materials.get(&mesh_mat.0).unwrap().base.clone();
 			if let Some(tex) = &tex.diffuse {
 				new_mat.base_color_texture = Some(tex.0.clone());
 			}
@@ -724,14 +725,14 @@ impl ModelPartHandler for ModelPart {
 
 impl_proxy!(ModelPartProxy, ModelPart);
 #[derive(Default, Resource)]
-pub struct MaterialRegistry(FxHashMap<HashedPbrMaterial, Handle<BevyMaterial>>);
+pub struct MaterialRegistry(FxHashMap<HashedPbrMaterial, Handle<WboitMaterial>>);
 impl MaterialRegistry {
 	/// returns strong handle for PbrMaterial elminitating duplications
 	pub fn get_handle(
 		&mut self,
 		material: BevyMaterial,
-		materials: &mut ResMut<Assets<BevyMaterial>>,
-	) -> Handle<BevyMaterial> {
+		materials: &mut ResMut<Assets<WboitMaterial>>,
+	) -> Handle<WboitMaterial> {
 		let hash = HashedPbrMaterial::new(&material);
 		match self
 			.0
@@ -740,7 +741,10 @@ impl MaterialRegistry {
 		{
 			Some(v) => v,
 			None => {
-				let handle = materials.add(material);
+				let handle = materials.add(WboitMaterial {
+					base: material,
+					extension: WboitExtension {},
+				});
 				self.0.insert(hash, handle.clone_weak());
 				handle
 			}

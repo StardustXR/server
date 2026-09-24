@@ -10,12 +10,14 @@ use crate::{
 };
 use bevy::{
 	asset::{AssetEvents, RenderAssetUsages, weak_handle},
-	pbr::{ExtendedMaterial, MaterialExtension},
+	pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
 	prelude::*,
 	render::{
-		mesh::{Indices, PrimitiveTopology, VertexAttributeValues},
+		mesh::{Indices, MeshVertexBufferLayoutRef, PrimitiveTopology, VertexAttributeValues},
 		primitives::Aabb,
-		render_resource::{AsBindGroup, ShaderRef},
+		render_resource::{
+			AsBindGroup, RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError,
+		},
 		view::VisibilitySystems,
 	},
 };
@@ -57,6 +59,16 @@ impl MaterialExtension for LineExtension {
 
 	fn alpha_mode() -> Option<AlphaMode> {
 		Some(AlphaMode::Blend)
+	}
+
+	fn specialize(
+		_pipeline: &MaterialExtensionPipeline,
+		descriptor: &mut RenderPipelineDescriptor,
+		_layout: &MeshVertexBufferLayoutRef,
+		_key: MaterialExtensionKey<Self>,
+	) -> Result<(), SpecializedMeshPipelineError> {
+		stardust_xr_server_wboit::enable(descriptor);
+		Ok(())
 	}
 }
 
