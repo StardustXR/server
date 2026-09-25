@@ -614,6 +614,13 @@ impl FieldObject {
 	pub fn get_ref(&self) -> &FieldRefProxy {
 		&self.field_ref
 	}
+	pub fn set_shape(&self, shape: Shape) {
+		*self.data.shape.write() = shape;
+		request_field_polylines_recalc(&self.data);
+		for f in self.data.shape_changed_callback.get_valid_contents() {
+			f()
+		}
+	}
 }
 impl FieldHandler for FieldObject {
 	async fn field_ref(&self, _ctx: gluon_ipc::Context) -> FieldRefProxy {
@@ -648,11 +655,7 @@ impl FieldHandler for FieldObject {
 	}
 
 	async fn set_shape(&self, _ctx: gluon_ipc::Context, shape: Shape) {
-		*self.data.shape.write() = shape;
-		request_field_polylines_recalc(&self.data);
-		for f in self.data.shape_changed_callback.get_valid_contents() {
-			f()
-		}
+		FieldObject::set_shape(self, shape);
 	}
 }
 
