@@ -980,6 +980,64 @@ fn points_moved_only_when_something_moves() {
 	});
 }
 
+// the backfill only walks queryables indexed under the first required interface, so an
+// existing match must still show up and an existing non-match must not
+#[test]
+fn points_backfill_finds_existing_matches_only() {
+	RT.block_on(async {
+		let _hit = make_queryable(
+			Vec3::ZERO,
+			Shape::Sphere { radius: 1.0 },
+			"e2e.backfill.hit",
+		)
+		.await;
+		let _other = make_queryable(
+			Vec3::ZERO,
+			Shape::Sphere { radius: 1.0 },
+			"e2e.backfill.other",
+		)
+		.await;
+
+		let (tx, mut rx) = mpsc::channel(4);
+		let handler = PointsQueryHandler::new_service(TestPointsHandler(tx))
+			.expect("failed to create handler node");
+		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
+		let sq = SpatialQueryInterface::new(&prefixes());
+		let _handle = sq
+			.points_query(
+				ctx(),
+				PointsQuery {
+					handler: handler.proxy().clone(),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.backfill.hit".into(),
+						optional: false,
+					}],
+					reference_spatial: ref_spatial.get_ref().proxy().clone(),
+					points: vec![Point {
+						point: Vec3F {
+							x: 0.0,
+							y: 0.0,
+							z: 0.0,
+						},
+						margin: 0.0,
+					}],
+				},
+			)
+			.await
+			.expect("query registration failed");
+
+		let ev = tokio::time::timeout(HIT, rx.recv())
+			.await
+			.expect("timed out waiting for the existing match")
+			.expect("channel closed");
+		assert!(matches!(ev, PointsEvent::Entered { .. }));
+		assert!(
+			tokio::time::timeout(NO_HIT, rx.recv()).await.is_err(),
+			"the queryable without the interface must not enter"
+		);
+	});
+}
+
 #[test]
 fn points_no_entered_when_queryable_hidden() {
 	RT.block_on(async {

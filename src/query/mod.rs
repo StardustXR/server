@@ -5,6 +5,7 @@ use crate::{
 };
 use bevy::prelude::Deref;
 use gluon_ipc::{Handler, LocalRef, Ref, RefExt};
+use parking_lot::Mutex;
 use stardust_xr_protocol::{
 	field::Field,
 	query::{
@@ -16,6 +17,7 @@ use stardust_xr_protocol::{
 };
 use stardust_xr_server_foundation::{deduped_string::DedupedStr, registry::Registry};
 use std::{
+	collections::HashMap,
 	future::ready,
 	sync::{
 		Arc, LazyLock, Weak,
@@ -35,10 +37,24 @@ static QUERY_STATE: LazyLock<State> = LazyLock::new(State::default);
 static NEXT_QUERYABLE_ID: AtomicU64 = AtomicU64::new(0);
 #[derive(Default)]
 struct State {
-	/// Every live queryable, so a freshly-created query can discover the ones that
-	/// already exist (self-inserts on registration, drops out via `Drop`).
-	all_queryables: Registry<Queryable>,
+	/// every queryable that has ever had each interface, so a new query only visits the
+	/// ones that could match. dead ones fall out on their own, and ones that lost the
+	/// interface since just get checked and skipped
+	by_interface: Mutex<HashMap<Arc<DedupedStr>, Arc<Registry<Queryable>>>>,
 	queries: Registry<dyn AnyQuery>,
+}
+fn index_interface(queryable: &Arc<Queryable>, interface_id: &Arc<DedupedStr>) {
+	let registry = QUERY_STATE
+		.by_interface
+		.lock()
+		.entry(interface_id.clone())
+		.or_default()
+		.clone();
+	registry.add_raw(queryable);
+}
+fn queryables_with(interface_id: &Arc<DedupedStr>) -> Vec<Arc<Queryable>> {
+	let registry = QUERY_STATE.by_interface.lock().get(interface_id).cloned();
+	registry.map_or_else(Vec::new, |r| r.get_valid_contents())
 }
 
 #[derive(Debug, Deref, Handler)]
@@ -90,8 +106,11 @@ impl QueryableObjectHandler for QueryableMut {
 	) -> Result<QueryableInterfaceProxy, QueryableError> {
 		debug!(?self, interface = interface_id, "Registered interface");
 		// TODO: detect duplicate interfaces?
+		let interface_id = DedupedStr::get(interface_id).await;
+		// indexed before anyone is told, so a new query either finds it or hears about it
+		index_interface(&self.0, &interface_id);
 		let interface = self.interfaces.write().await.add(QueryableInterface {
-			interface_id: DedupedStr::get(interface_id).await,
+			interface_id,
 			interface_ref: interface,
 		});
 		self.notify_interface_changes().await;
@@ -119,7 +138,6 @@ impl Queryable {
 			interfaces: RwLock::default(),
 			update_lock: tokio::sync::Mutex::new(()),
 		});
-		QUERY_STATE.all_queryables.add_raw(&queryable);
 		queryable
 	}
 	async fn notify_interface_changes(self: &Arc<Queryable>) {
@@ -131,7 +149,6 @@ impl Queryable {
 }
 impl Drop for Queryable {
 	fn drop(&mut self) {
-		QUERY_STATE.all_queryables.remove(self);
 		QUERY_STATE
 			.queries
 			.get_valid_contents()
@@ -156,6 +173,7 @@ impl ServerQueryable {
 		let mut held = Vec::new();
 		for (id, interface_ref) in interfaces {
 			let interface_id = DedupedStr::get(id.to_string()).await;
+			index_interface(&queryable, &interface_id);
 			held.push(queryable.interfaces.write().await.add(QueryableInterface {
 				interface_id,
 				interface_ref,

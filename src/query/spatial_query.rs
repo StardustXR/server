@@ -34,7 +34,7 @@ use crate::{
 		fields::{Field, ShapeChangedCallback},
 		spatial::{MovedCallback, Spatial},
 	},
-	query::{InterfaceQuery, QUERY_STATE, Queryable, QueryableInterface},
+	query::{InterfaceQuery, QUERY_STATE, Queryable, QueryableInterface, queryables_with},
 };
 
 /// A single boxed future. Only `AnyQuery::update_interfaces` needs to be both async
@@ -253,17 +253,23 @@ impl<K: QueryKind> Query<K> {
 		}
 	}
 
-	/// Wire the query's own anchor callbacks and back-fill against the queryables that
-	/// already exist. Both first contact and later updates go through
-	/// `update_interfaces_impl`, so they cannot diverge.
-	async fn init(self: &Arc<Self>) {
+	/// Wire the query's own anchor callbacks.
+	fn wire(self: &Arc<Self>) {
 		let (anchor_spatial, anchor_field) = self.kind.anchors();
 		let moved = anchor_spatial.moved_callback(self.self_moved_closure());
 		let shape =
 			anchor_field.map(|field| field.shape_changed_callback(self.self_moved_closure()));
 		_ = self.self_callbacks.set((moved, shape));
+	}
 
-		for queryable in QUERY_STATE.all_queryables.get_valid_contents() {
+	/// Back-fill against the queryables that already exist. Both first contact and later
+	/// updates go through `update_interfaces_impl`, so they cannot diverge.
+	async fn backfill(self: &Arc<Self>) {
+		// one without the first required interface can never match, so don't visit it
+		let Some(required) = self.interfaces.iter().find(|i| !i.optional) else {
+			return;
+		};
+		for queryable in queryables_with(&required.id) {
 			self.update_interfaces_impl(&queryable).await;
 		}
 	}
@@ -398,7 +404,13 @@ async fn register_query<K: QueryKind>(
 	});
 	let dyn_query: Arc<dyn AnyQuery> = query.clone();
 	QUERY_STATE.queries.add_raw(&dyn_query);
-	query.init().await;
+	query.wire();
+	// the client gets its handle right away and existing matches stream in as `entered`,
+	// anything changing meanwhile reaches it as a normal update since it's registered already
+	tokio::spawn({
+		let query = query.clone();
+		async move { query.backfill().await }
+	});
 	Ok(query)
 }
 
