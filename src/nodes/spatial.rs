@@ -354,7 +354,15 @@ impl Spatial {
 		parent_transform * self.local_transform()
 	}
 	pub fn set_local_transform(&self, transform: Mat4) {
-		*self.transform.lock() = transform;
+		{
+			let mut current = self.transform.lock();
+			// clients and tracked inputs re-send unchanged transforms every frame, and every
+			// query watching this subtree would wake up for nothing
+			if *current == transform {
+				return;
+			}
+			*current = transform;
+		}
 		for f in self.moved_callback.get_valid_contents() {
 			f();
 		}
@@ -758,6 +766,21 @@ mod moved_callback_tests {
 		assert_eq!(count.load(Ordering::Relaxed), 0);
 
 		parent.set_local_transform(Mat4::from_translation(Vec3::X));
+		assert_eq!(count.load(Ordering::Relaxed), 1);
+	}
+
+	// clients re-send unchanged transforms every frame, that must not look like movement
+	#[test]
+	fn unchanged_transform_does_not_fire() {
+		let node = Spatial::test_new(None, Mat4::IDENTITY);
+		let (count, cb) = counter();
+		let _guard = node.moved_callback(cb);
+
+		node.set_local_transform(Mat4::IDENTITY);
+		assert_eq!(count.load(Ordering::Relaxed), 0);
+
+		node.set_local_transform(Mat4::from_translation(Vec3::X));
+		node.set_local_transform(Mat4::from_translation(Vec3::X));
 		assert_eq!(count.load(Ordering::Relaxed), 1);
 	}
 

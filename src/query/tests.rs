@@ -21,7 +21,10 @@ use stardust_xr_protocol::{
 };
 use std::{
 	path::PathBuf,
-	sync::{Arc, LazyLock},
+	sync::{
+		Arc, LazyLock,
+		atomic::{AtomicUsize, Ordering},
+	},
 	time::Duration,
 };
 use tokio::sync::mpsc;
@@ -825,6 +828,97 @@ fn points_entered_when_point_inside_field() {
 			.expect("timed out waiting for entered")
 			.expect("channel closed");
 		assert!(matches!(ev, PointsEvent::Entered { .. }));
+	});
+}
+
+#[derive(Debug, Handler)]
+struct MovedCounter(mpsc::Sender<()>, Arc<AtomicUsize>);
+impl PointsQueryHandlerHandler for MovedCounter {
+	async fn entered(
+		&self,
+		_ctx: Context,
+		_obj: QueryableId,
+		_field: FieldRefProxy,
+		_spatial: SpatialRefProxy,
+		_interfaces: Vec<QueriedInterface>,
+		_sample: FieldSample,
+	) {
+		_ = self.0.send(()).await;
+	}
+	async fn interfaces_changed(
+		&self,
+		_ctx: Context,
+		_obj: QueryableId,
+		_interfaces: Vec<QueriedInterface>,
+	) {
+	}
+	async fn moved(&self, _ctx: Context, _obj: QueryableId, _sample: FieldSample) {
+		self.1.fetch_add(1, Ordering::Relaxed);
+	}
+	async fn left(&self, _ctx: Context, _obj: QueryableId) {}
+}
+
+#[test]
+fn points_moved_only_when_something_moves() {
+	RT.block_on(async {
+		let (tx, mut rx) = mpsc::channel(4);
+		let moved = Arc::new(AtomicUsize::new(0));
+		let handler = PointsQueryHandler::new_service(MovedCounter(tx, moved.clone()))
+			.expect("failed to create handler node");
+		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
+		let sq = SpatialQueryInterface::new(&prefixes());
+		let _handle = sq
+			.points_query(
+				ctx(),
+				PointsQuery {
+					handler: handler.proxy().clone(),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.points.still".into(),
+						optional: false,
+					}],
+					reference_spatial: ref_spatial.get_ref().proxy().clone(),
+					points: vec![Point {
+						point: Vec3F {
+							x: 0.0,
+							y: 0.0,
+							z: 0.0,
+						},
+						margin: 0.0,
+					}],
+				},
+			)
+			.await
+			.expect("query registration failed");
+		let h = make_queryable(
+			Vec3::ZERO,
+			Shape::Sphere { radius: 1.0 },
+			"e2e.points.still",
+		)
+		.await;
+		tokio::time::timeout(HIT, rx.recv())
+			.await
+			.expect("timed out waiting for entered")
+			.expect("channel closed");
+
+		// what clients do every frame: set the same transforms again
+		for _ in 0..20 {
+			ref_spatial
+				.spatial_arc()
+				.set_local_transform(Mat4::IDENTITY);
+			h.spatial
+				.handler()
+				.spatial_arc()
+				.set_local_transform(Mat4::IDENTITY);
+		}
+		tokio::time::sleep(NO_HIT).await;
+		assert_eq!(moved.load(Ordering::Relaxed), 0);
+
+		h.spatial
+			.handler()
+			.spatial_arc()
+			.set_local_transform(Mat4::from_translation(Vec3::new(0.1, 0.0, 0.0)));
+		tokio::time::sleep(NO_HIT).await;
+		assert_eq!(moved.load(Ordering::Relaxed), 1);
 	});
 }
 

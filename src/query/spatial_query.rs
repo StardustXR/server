@@ -5,7 +5,7 @@ use std::{
 	pin::Pin,
 	sync::{
 		Arc, OnceLock, Weak,
-		atomic::{AtomicU32, Ordering},
+		atomic::{AtomicBool, AtomicU32, Ordering},
 	},
 };
 
@@ -51,7 +51,7 @@ trait QueryKind: Send + Sync + Debug + 'static {
 	/// Kind-specific evidence that a queryable currently matches. Only obtainable
 	/// from [`QueryKind::hit`], and consumed by [`entered`](QueryKind::entered) /
 	/// [`moved`](QueryKind::moved), so those events cannot be emitted without a hit.
-	type Hit;
+	type Hit: PartialEq + Clone + Debug + Send + Sync;
 
 	/// The spatial whose movement re-evaluates the whole query, plus an optional
 	/// field whose shape change does the same (Zone). Wired once by [`register_query`].
@@ -84,14 +84,16 @@ trait QueryKind: Send + Sync + Debug + 'static {
 /// inside [`Query::reconcile`], in lockstep with the emitted event, so state and
 /// notifications cannot disagree.
 #[derive(Debug)]
-struct Tracked {
+struct Tracked<H> {
 	queryable: Weak<Queryable>,
 	/// Last-reported set of matching interfaces, in query dependency order. Stored as
 	/// the wire form (not `Arc<QueryableInterface>`) so it does not keep the
 	/// queryable's interface alive — that's what lets a dropped interface guard be
 	/// observed as the interface going missing.
 	interfaces: Vec<QueriedInterface>,
-	matched: bool,
+	/// the last hit sent, so it's matched iff this is set and `moved` only goes out when
+	/// the hit actually changed
+	last: Option<H>,
 	_move: MovedCallback,
 	_shape: ShapeChangedCallback,
 }
@@ -99,7 +101,7 @@ struct Tracked {
 #[derive(Debug)]
 struct Query<K: QueryKind> {
 	interfaces: Vec<InterfaceQuery>,
-	tracked: Mutex<HashMap<QueryableId, Tracked>>,
+	tracked: Mutex<HashMap<QueryableId, Tracked<K::Hit>>>,
 	/// Keeps the query's own anchor callbacks (move + optional shape) alive.
 	self_callbacks: OnceLock<(MovedCallback, Option<ShapeChangedCallback>)>,
 	kind: K,
@@ -120,7 +122,7 @@ impl<K: QueryKind> AnyQuery for Query<K> {
 	fn queryable_destroyed(self: Arc<Self>, queryable: &Queryable) {
 		let removed = self.tracked.lock().remove(&queryable.id);
 		if let Some(tracked) = removed
-			&& tracked.matched
+			&& tracked.last.is_some()
 		{
 			_ = self.kind.left(queryable.obj_ref());
 		}
@@ -146,20 +148,21 @@ impl<K: QueryKind> Query<K> {
 		let Some(entry) = tracked.get_mut(&queryable.id) else {
 			return;
 		};
-		match (self.hit_visible(queryable), entry.matched) {
-			(Some(hit), false) => {
+		match (self.hit_visible(queryable), &entry.last) {
+			(Some(hit), None) => {
 				let interfaces = entry.interfaces.clone();
-				entry.matched = true;
+				entry.last = Some(hit.clone());
 				_ = self.kind.entered(queryable, interfaces, hit);
 			}
-			(Some(hit), true) => {
+			(Some(hit), Some(last)) if hit != *last => {
+				entry.last = Some(hit.clone());
 				_ = self.kind.moved(queryable, hit);
 			}
-			(None, true) => {
-				entry.matched = false;
+			(Some(_), Some(_)) | (None, None) => {}
+			(None, Some(_)) => {
+				entry.last = None;
 				_ = self.kind.left(queryable.obj_ref());
 			}
-			(None, false) => {}
 		}
 	}
 
@@ -186,7 +189,7 @@ impl<K: QueryKind> Query<K> {
 			// it, and tell the client it left if it had been matched.
 			let removed = self.tracked.lock().remove(&queryable.id);
 			if let Some(tracked) = removed
-				&& tracked.matched
+				&& tracked.last.is_some()
 			{
 				_ = self.kind.left(queryable.obj_ref());
 			}
@@ -204,7 +207,7 @@ impl<K: QueryKind> Query<K> {
 						// The client only knows about queryables it has been sent
 						// `entered` for; an unmatched one's changes are stored
 						// silently and ride along with the eventual `entered`.
-						if entry.matched {
+						if entry.last.is_some() {
 							_ = self
 								.kind
 								.interfaces_changed(queryable.obj_ref(), interfaces);
@@ -215,7 +218,7 @@ impl<K: QueryKind> Query<K> {
 					slot.insert(Tracked {
 						queryable: Arc::downgrade(queryable),
 						interfaces,
-						matched: false,
+						last: None,
 						_move: self.watch_queryable_moved(queryable),
 						_shape: self.watch_queryable_shape(queryable),
 					});
@@ -277,21 +280,40 @@ impl<K: QueryKind> Query<K> {
 	) -> impl Fn() + Send + Sync + 'static {
 		let query = Arc::downgrade(self);
 		let queryable = Arc::downgrade(queryable);
+		// many moves before the task runs only need one re-test
+		let pending = Arc::new(AtomicBool::new(false));
 		move || {
-			if let Some(query) = query.upgrade()
-				&& let Some(queryable) = queryable.upgrade()
-			{
-				tokio::spawn(async move { query.reconcile(&queryable) });
+			if pending.swap(true, Ordering::AcqRel) {
+				return;
 			}
+			let (Some(query), Some(queryable)) = (query.upgrade(), queryable.upgrade()) else {
+				pending.store(false, Ordering::Release);
+				return;
+			};
+			let pending = pending.clone();
+			tokio::spawn(async move {
+				pending.store(false, Ordering::Release);
+				query.reconcile(&queryable)
+			});
 		}
 	}
 	/// Closure that re-evaluates the whole query when its own anchor moves/reshapes.
 	fn self_moved_closure(self: &Arc<Self>) -> impl Fn() + Send + Sync + 'static {
 		let query = Arc::downgrade(self);
+		let pending = Arc::new(AtomicBool::new(false));
 		move || {
-			if let Some(query) = query.upgrade() {
-				tokio::spawn(async move { query.self_moved() });
+			if pending.swap(true, Ordering::AcqRel) {
+				return;
 			}
+			let Some(query) = query.upgrade() else {
+				pending.store(false, Ordering::Release);
+				return;
+			};
+			let pending = pending.clone();
+			tokio::spawn(async move {
+				pending.store(false, Ordering::Release);
+				query.self_moved()
+			});
 		}
 	}
 }
