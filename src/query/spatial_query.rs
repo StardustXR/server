@@ -9,7 +9,7 @@ use std::{
 	},
 };
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use gluon_ipc::{Handler, RefExt, SendError};
 use parking_lot::Mutex;
 use stardust_xr_protocol::{
@@ -31,7 +31,7 @@ use crate::{
 	interface,
 	nodes::{
 		ProxyExt as _,
-		fields::{Field, Ray, ShapeChangedCallback},
+		fields::{Field, ShapeChangedCallback},
 		spatial::{MovedCallback, Spatial},
 	},
 	query::{InterfaceQuery, QUERY_STATE, Queryable, QueryableInterface},
@@ -60,8 +60,9 @@ trait QueryKind: Send + Sync + Debug + 'static {
 	/// Geometric test for a single queryable. `None` means it does not match.
 	/// Purely geometric — visibility (of the anchor, the queryable's spatial, and the
 	/// queryable's field) is checked once in [`Query::hit_visible`], so kinds must not
-	/// (and cannot forget to) re-check it.
-	fn hit(&self, queryable: &Queryable) -> Option<Self::Hit>;
+	/// (and cannot forget to) re-check it. `world_to_anchor` is worked out once per batch
+	/// of queryables rather than per hit.
+	fn hit(&self, queryable: &Queryable, world_to_anchor: Mat4) -> Option<Self::Hit>;
 
 	fn entered(
 		&self,
@@ -133,22 +134,30 @@ impl<K: QueryKind> Query<K> {
 	/// A queryable can only match while both its spatial and its field are visible, and
 	/// the query's own anchor is too — checked here once so no [`QueryKind::hit`] can
 	/// forget it (they only do geometry).
-	fn hit_visible(&self, queryable: &Queryable) -> Option<K::Hit> {
-		let (anchor, _) = self.kind.anchors();
-		(anchor.visible() && queryable.spatial.visible() && queryable.field.data.spatial.visible())
-			.then(|| self.kind.hit(queryable))
+	fn hit_visible(&self, queryable: &Queryable, frame: Option<Mat4>) -> Option<K::Hit> {
+		let world_to_anchor = frame?;
+		(queryable.spatial.visible() && queryable.field.data.spatial.visible())
+			.then(|| self.kind.hit(queryable, world_to_anchor))
 			.flatten()
+	}
+
+	/// the anchor's side of every hit, none while the anchor is hidden
+	fn frame(&self) -> Option<Mat4> {
+		let (anchor, _) = self.kind.anchors();
+		anchor
+			.visible()
+			.then(|| anchor.global_transform().inverse())
 	}
 
 	/// Re-test one queryable's geometry and emit the resulting transition. This is the
 	/// only place `Tracked::matched` changes. `hit` is synchronous, so the whole
 	/// transition runs under one short lock with no `.await` held across it.
-	fn reconcile(&self, queryable: &Arc<Queryable>) {
+	fn reconcile(&self, queryable: &Arc<Queryable>, frame: Option<Mat4>) {
 		let mut tracked = self.tracked.lock();
 		let Some(entry) = tracked.get_mut(&queryable.id) else {
 			return;
 		};
-		match (self.hit_visible(queryable), &entry.last) {
+		match (self.hit_visible(queryable, frame), &entry.last) {
 			(Some(hit), None) => {
 				let interfaces = entry.interfaces.clone();
 				entry.last = Some(hit.clone());
@@ -226,7 +235,7 @@ impl<K: QueryKind> Query<K> {
 			}
 		}
 
-		self.reconcile(queryable);
+		self.reconcile(queryable, self.frame());
 	}
 
 	/// Re-evaluate every tracked queryable — used when the query's own anchor moves
@@ -238,8 +247,9 @@ impl<K: QueryKind> Query<K> {
 			.values()
 			.filter_map(|tracked| tracked.queryable.upgrade())
 			.collect();
+		let frame = self.frame();
 		for queryable in queryables {
-			self.reconcile(&queryable);
+			self.reconcile(&queryable, frame);
 		}
 	}
 
@@ -293,7 +303,7 @@ impl<K: QueryKind> Query<K> {
 			let pending = pending.clone();
 			tokio::spawn(async move {
 				pending.store(false, Ordering::Release);
-				query.reconcile(&queryable)
+				query.reconcile(&queryable, query.frame())
 			});
 		}
 	}
@@ -408,12 +418,12 @@ impl QueryKind for BeamKind {
 	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>) {
 		(&self.ref_space, None)
 	}
-	fn hit(&self, queryable: &Queryable) -> Option<RayMarchResult> {
-		let ray_march = queryable.field.data.ray_march(Ray {
-			origin: self.origin.load(),
-			direction: self.dir.load(),
-			space: self.ref_space.clone(),
-		});
+	fn hit(&self, queryable: &Queryable, world_to_anchor: Mat4) -> Option<RayMarchResult> {
+		let ray_march = queryable
+			.field
+			.data
+			.in_space(world_to_anchor)
+			.ray_march(self.origin.load(), self.dir.load());
 		(ray_march.min_distance <= self.margin.load()
 			&& ray_march.deepest_point_distance <= self.max_length.load())
 		.then_some(ray_march)
@@ -458,10 +468,9 @@ impl QueryKind for ZoneKind {
 	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>) {
 		(&self.field.spatial, Some(&self.field))
 	}
-	fn hit(&self, queryable: &Queryable) -> Option<(Vec3, FieldSample)> {
-		let (_scale, _rotation, pos) =
-			Spatial::space_to_space_matrix(Some(&queryable.spatial), Some(&self.field.spatial))
-				.to_scale_rotation_translation();
+	fn hit(&self, queryable: &Queryable, world_to_anchor: Mat4) -> Option<(Vec3, FieldSample)> {
+		let (_scale, _rotation, pos) = (world_to_anchor * queryable.spatial.global_transform())
+			.to_scale_rotation_translation();
 		let sample = self.field.local_sample(pos.into());
 		(sample.distance < self.margin.load()).then_some((pos, sample))
 	}
@@ -506,12 +515,13 @@ impl QueryKind for PointsKind {
 	fn anchors(&self) -> (&Arc<Spatial>, Option<&Arc<Field>>) {
 		(&self.ref_space, None)
 	}
-	fn hit(&self, queryable: &Queryable) -> Option<FieldSample> {
+	fn hit(&self, queryable: &Queryable, world_to_anchor: Mat4) -> Option<FieldSample> {
+		let field = queryable.field.data.in_space(world_to_anchor);
 		self.points
 			.lock()
 			.iter()
 			.map(|p| {
-				let sample = queryable.field.data.sample(&self.ref_space, p.point.into());
+				let sample = field.sample(p.point.into());
 				(sample.distance - p.margin, sample)
 			})
 			.reduce(|(sort1, sample1), (sort2, sample2)| {
@@ -749,8 +759,10 @@ impl AtomicVec3 {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::nodes::{fields::Field, spatial::Spatial};
-	use glam::{Mat4, Vec3};
+	use crate::nodes::{
+		fields::{Field, Ray},
+		spatial::Spatial,
+	};
 	use stardust_xr_protocol::{field::Shape, spatial_query::Point};
 	use std::sync::Arc;
 

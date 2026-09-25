@@ -12,7 +12,7 @@ use bevy::ecs::resource::Resource;
 use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::gizmos::GizmoAsset;
 use bevy::gizmos::retained::Gizmo;
-use glam::{Vec3, Vec3A, vec3a};
+use glam::{Mat4, Vec3, Vec3A, vec3a};
 use gluon_ipc::{Handler, RefExt};
 use parking_lot::RwLock;
 use stardust_xr_protocol::field::{
@@ -550,15 +550,62 @@ impl Field {
 		self.shape.read().clone().sample(p)
 	}
 	pub fn sample(&self, reference_space: &Spatial, p: Vec3A) -> FieldSample {
-		Shape::Transform {
-			shape: Box::new(self.shape.read().clone()),
-			transform: Spatial::space_to_space_matrix(Some(&self.spatial), Some(reference_space))
-				.into(),
-		}
-		.sample(p)
+		self.in_space(reference_space.global_transform().inverse())
+			.sample(p)
 	}
 
-	pub fn ray_march(&self, mut ray: Ray) -> RayMarchResult {
+	pub fn ray_march(&self, ray: Ray) -> RayMarchResult {
+		self.in_space(ray.space.global_transform().inverse())
+			.ray_march(ray.origin, ray.direction)
+	}
+
+	/// relate this field to a space once, for sampling it many times
+	pub fn in_space(&self, world_to_space: Mat4) -> FieldInSpace {
+		let field_to_space = world_to_space * self.spatial.global_transform();
+		FieldInSpace {
+			local: self.shape.read().clone(),
+			space_to_field: field_to_space.inverse(),
+			field_to_space,
+		}
+	}
+}
+
+/// a field as seen from one space, so repeated samples skip walking parent chains,
+/// cloning the shape and inverting matrices every time
+pub struct FieldInSpace {
+	local: Shape,
+	field_to_space: Mat4,
+	space_to_field: Mat4,
+}
+impl FieldInSpace {
+	// the same steps as sampling a `Shape::Transform`, with the inverse worked out once
+	pub fn sample(&self, p: Vec3A) -> FieldSample {
+		let local = self.local.sample(self.space_to_field.transform_point3a(p));
+		let closest = self
+			.field_to_space
+			.transform_point3a(local.closest_point.into());
+		FieldSample {
+			distance: local.distance.signum() * (p - closest).length(),
+			gradient: self
+				.space_to_field
+				.transpose()
+				.transform_vector3(local.gradient.into())
+				.normalize_or_zero()
+				.into(),
+			closest_point: closest.into(),
+		}
+	}
+
+	// `sample(p).distance` without the gradient, for ray marching
+	fn distance(&self, p: Vec3A) -> f32 {
+		let local = self.local.sample(self.space_to_field.transform_point3a(p));
+		let closest = self
+			.field_to_space
+			.transform_point3a(local.closest_point.into());
+		local.distance.signum() * (p - closest).length()
+	}
+
+	pub fn ray_march(&self, mut origin: Vec3, direction: Vec3) -> RayMarchResult {
 		let mut result = RayMarchResult {
 			min_distance: f32::MAX,
 			deepest_point_distance: 0_f32,
@@ -567,11 +614,11 @@ impl Field {
 		};
 
 		while result.ray_steps < MAX_RAY_STEPS && result.ray_length < MAX_RAY_LENGTH {
-			let distance = self.sample(&ray.space, ray.origin.into()).distance;
+			let distance = self.distance(origin.into());
 			let march_distance = distance.clamp(MIN_RAY_MARCH, MAX_RAY_MARCH);
 
 			result.ray_length += march_distance;
-			ray.origin += ray.direction * march_distance;
+			origin += direction * march_distance;
 
 			if result.min_distance > distance {
 				result.deepest_point_distance = result.ray_length;
@@ -907,5 +954,41 @@ mod tests {
 			"expected 4.0, got {}",
 			sample.distance
 		);
+	}
+
+	// sampling through a precomputed space must land on exactly what the protocol's own
+	// transformed shape gives, gradient and closest point included
+	#[test]
+	fn in_space_matches_protocol_sample() {
+		let parent = Spatial::test_new(
+			None,
+			Mat4::from_scale_rotation_translation(
+				Vec3::new(1.0, 2.0, 0.5),
+				glam::Quat::from_rotation_y(0.7),
+				Vec3::new(1.0, -2.0, 3.0),
+			),
+		);
+		let reference = Spatial::test_new(Some(parent), Mat4::from_rotation_x(0.3));
+		let field = make_field(
+			translated_spatial(-1.0, 0.5, 2.0),
+			Shape::Box {
+				size: [0.4, 1.0, 0.2].into(),
+			},
+		);
+		let in_space = field.in_space(reference.global_transform().inverse());
+		let protocol = Shape::Transform {
+			shape: Box::new(field.shape.read().clone()),
+			transform: Spatial::space_to_space_matrix(Some(&field.spatial), Some(&reference))
+				.into(),
+		};
+		for p in [
+			vec3a(0.0, 0.0, 0.0),
+			vec3a(-2.0, 1.0, 0.5),
+			vec3a(3.0, -1.0, -4.0),
+		] {
+			let expected = protocol.sample(p);
+			assert_eq!(in_space.sample(p), expected);
+			assert_eq!(in_space.distance(p), expected.distance);
+		}
 	}
 }
