@@ -419,11 +419,11 @@ impl QueryKind for BeamKind {
 		(&self.ref_space, None)
 	}
 	fn hit(&self, queryable: &Queryable, world_to_anchor: Mat4) -> Option<RayMarchResult> {
-		let ray_march = queryable
-			.field
-			.data
-			.in_space(world_to_anchor)
-			.ray_march(self.origin.load(), self.dir.load());
+		let ray_march = queryable.field.data.in_space(world_to_anchor).ray_march(
+			self.origin.load(),
+			self.dir.load(),
+			self.max_length.load(),
+		);
 		(ray_march.min_distance <= self.margin.load()
 			&& ray_march.deepest_point_distance <= self.max_length.load())
 		.then_some(ray_march)
@@ -759,10 +759,7 @@ impl AtomicVec3 {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::nodes::{
-		fields::{Field, Ray},
-		spatial::Spatial,
-	};
+	use crate::nodes::{fields::Field, spatial::Spatial};
 	use stardust_xr_protocol::{field::Shape, spatial_query::Point};
 	use std::sync::Arc;
 
@@ -791,11 +788,9 @@ mod tests {
 		dir: Vec3,
 		max_length: f32,
 	) -> bool {
-		let result = target_field.ray_march(Ray {
-			origin,
-			direction: dir,
-			space: ref_space.clone(),
-		});
+		let result = target_field
+			.in_space(ref_space.global_transform().inverse())
+			.ray_march(origin, dir, max_length);
 		result.min_distance <= 0.0 && result.deepest_point_distance <= max_length
 	}
 

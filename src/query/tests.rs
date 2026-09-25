@@ -723,6 +723,64 @@ fn beam_no_intersected_when_queryable_offset() {
 }
 
 #[test]
+fn beam_hit_in_range_isnt_hidden_by_deeper_one_beyond() {
+	RT.block_on(async {
+		let (tx, mut rx) = mpsc::channel(4);
+		let handler = BeamQueryHandler::new_service(TestBeamHandler(tx))
+			.expect("failed to create handler node");
+		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
+		let sq = SpatialQueryInterface::new(&prefixes());
+		let _handle = sq
+			.beam_query(
+				ctx(),
+				BeamQuery {
+					handler: handler.proxy().clone(),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.beam.in_range".into(),
+						optional: false,
+					}],
+					reference_spatial: ref_spatial.get_ref().proxy().clone(),
+					origin: Vec3F {
+						x: -5.0,
+						y: 0.0,
+						z: 0.0,
+					},
+					direction: Vec3F {
+						x: 1.0,
+						y: 0.0,
+						z: 0.0,
+					},
+					max_length: 10.0,
+					margin: 0.0,
+				},
+			)
+			.await
+			.expect("query registration failed");
+
+		// a small sphere 5 m along the beam and a huge one 20 m further, whose deeper
+		// interior used to win the whole ray's minimum and reject the in-range hit
+		let sphere_at = |x: f32, radius: f32| Shape::Transform {
+			shape: Box::new(Shape::Sphere { radius }),
+			transform: Mat4::from_translation(Vec3::new(x, 0.0, 0.0)).into(),
+		};
+		let _h = make_queryable(
+			Vec3::ZERO,
+			Shape::Union {
+				shapes: vec![sphere_at(0.0, 0.05), sphere_at(20.0, 5.0)],
+			},
+			"e2e.beam.in_range",
+		)
+		.await;
+
+		let ev = tokio::time::timeout(HIT, rx.recv())
+			.await
+			.expect("timed out waiting for intersected")
+			.expect("channel closed");
+		assert!(matches!(ev, BeamEvent::Intersected { .. }));
+	});
+}
+
+#[test]
 fn beam_update_margin_reaches_near_miss() {
 	RT.block_on(async {
 		let (tx, mut rx) = mpsc::channel(4);

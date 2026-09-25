@@ -556,7 +556,7 @@ impl Field {
 
 	pub fn ray_march(&self, ray: Ray) -> RayMarchResult {
 		self.in_space(ray.space.global_transform().inverse())
-			.ray_march(ray.origin, ray.direction)
+			.ray_march(ray.origin, ray.direction, MAX_RAY_LENGTH)
 	}
 
 	/// relate this field to a space once, for sampling it many times
@@ -605,7 +605,9 @@ impl FieldInSpace {
 		local.distance.signum() * (p - closest).length()
 	}
 
-	pub fn ray_march(&self, mut origin: Vec3, direction: Vec3) -> RayMarchResult {
+	/// stops at `max_length`, past that nothing the caller cares about can be found
+	pub fn ray_march(&self, mut origin: Vec3, direction: Vec3, max_length: f32) -> RayMarchResult {
+		let max_length = max_length.min(MAX_RAY_LENGTH);
 		let mut result = RayMarchResult {
 			min_distance: f32::MAX,
 			deepest_point_distance: 0_f32,
@@ -613,7 +615,7 @@ impl FieldInSpace {
 			ray_steps: 0,
 		};
 
-		while result.ray_steps < MAX_RAY_STEPS && result.ray_length < MAX_RAY_LENGTH {
+		while result.ray_steps < MAX_RAY_STEPS && result.ray_length < max_length {
 			let distance = self.distance(origin.into());
 			let march_distance = distance.clamp(MIN_RAY_MARCH, MAX_RAY_MARCH);
 
