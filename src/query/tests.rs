@@ -719,6 +719,69 @@ fn beam_no_intersected_when_queryable_offset() {
 	});
 }
 
+#[test]
+fn beam_update_margin_reaches_near_miss() {
+	RT.block_on(async {
+		let (tx, mut rx) = mpsc::channel(4);
+		let handler = BeamQueryHandler::new_service(TestBeamHandler(tx))
+			.expect("failed to create handler node");
+
+		let ref_spatial = SpatialObject::new(None, Mat4::IDENTITY);
+
+		let origin = Vec3F {
+			x: -5.0,
+			y: 0.0,
+			z: 0.0,
+		};
+		let direction = Vec3F {
+			x: 1.0,
+			y: 0.0,
+			z: 0.0,
+		};
+		let sq = SpatialQueryInterface::new(&prefixes());
+		let handle = sq
+			.beam_query(
+				ctx(),
+				BeamQuery {
+					handler: handler.proxy().clone(),
+					interfaces: vec![InterfaceDependency {
+						id: "e2e.beam.near_miss".into(),
+						optional: false,
+					}],
+					reference_spatial: ref_spatial.get_ref().proxy().clone(),
+					origin,
+					direction,
+					max_length: 10.0,
+					margin: 0.0,
+				},
+			)
+			.await
+			.expect("query registration failed");
+
+		// Sphere surface passes 0.5 m above the beam, a near miss at margin 0.
+		let _h = make_queryable(
+			Vec3::new(0.0, 1.5, 0.0),
+			Shape::Sphere { radius: 1.0 },
+			"e2e.beam.near_miss",
+		)
+		.await;
+		assert!(
+			tokio::time::timeout(NO_HIT, rx.recv()).await.is_err(),
+			"expected no intersected before the margin grows"
+		);
+
+		// update used to write the margin into max_length, which dropped this hit
+		handle
+			.update(origin, direction, 10.0, 1.0)
+			.expect("update failed");
+		let ev = tokio::time::timeout(HIT, rx.recv())
+			.await
+			.expect("timed out waiting for intersected after update")
+			.expect("channel closed");
+		assert!(matches!(ev, BeamEvent::Intersected { .. }));
+	});
+}
+
 // === points query ===
 
 #[test]

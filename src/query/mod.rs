@@ -106,6 +106,22 @@ impl QueryableObjectHandler for QueryableMut {
 	}
 }
 impl Queryable {
+	fn new(
+		spatial: LocalRef<Spatial, SpatialObject>,
+		field: LocalRef<Field, FieldObject>,
+	) -> Arc<Queryable> {
+		let queryable = Arc::new(Queryable {
+			id: QueryableId {
+				id: NEXT_QUERYABLE_ID.fetch_add(1, Ordering::Relaxed),
+			},
+			field,
+			spatial,
+			interfaces: RwLock::default(),
+			update_lock: tokio::sync::Mutex::new(()),
+		});
+		QUERY_STATE.all_queryables.add_raw(&queryable);
+		queryable
+	}
 	async fn notify_interface_changes(self: &Arc<Queryable>) {
 		let queries = QUERY_STATE.queries.get_valid_contents();
 		for query in queries {
@@ -124,6 +140,35 @@ impl Drop for Queryable {
 	}
 }
 
+/// a queryable the server owns itself, listed for as long as this is held
+#[derive(Debug)]
+pub struct ServerQueryable {
+	_queryable: Arc<Queryable>,
+	_interfaces: Vec<Arc<QueryableInterface>>,
+}
+impl ServerQueryable {
+	pub async fn new(
+		spatial: LocalRef<Spatial, SpatialObject>,
+		field: LocalRef<Field, FieldObject>,
+		interfaces: impl IntoIterator<Item = (&str, Ref)>,
+	) -> Self {
+		let queryable = Queryable::new(spatial, field);
+		let mut held = Vec::new();
+		for (id, interface_ref) in interfaces {
+			let interface_id = DedupedStr::get(id.to_string()).await;
+			held.push(queryable.interfaces.write().await.add(QueryableInterface {
+				interface_id,
+				interface_ref,
+			}));
+		}
+		queryable.notify_interface_changes().await;
+		ServerQueryable {
+			_queryable: queryable,
+			_interfaces: held,
+		}
+	}
+}
+
 interface!(QueryInterface);
 impl QueryInterfaceHandler for QueryInterface {
 	async fn register_queryable(
@@ -135,17 +180,7 @@ impl QueryInterfaceHandler for QueryInterface {
 		debug!(?spatial, ?field, "Registered queryable");
 		let spatial = spatial.owned_ref().ok_or(QueryableError::NotOwnedSpatial)?;
 		let field = field.owned_ref().ok_or(QueryableError::NotOwnedField)?;
-		let queryable = Arc::new(Queryable {
-			id: QueryableId {
-				id: NEXT_QUERYABLE_ID.fetch_add(1, Ordering::Relaxed),
-			},
-			field,
-			spatial,
-			interfaces: RwLock::default(),
-			update_lock: tokio::sync::Mutex::new(()),
-		});
-		QUERY_STATE.all_queryables.add_raw(&queryable);
-		let obj = QueryableObject::new_service(QueryableMut(queryable))
+		let obj = QueryableObject::new_service(QueryableMut(Queryable::new(spatial, field)))
 			// TODO: remove that unwrap
 			.unwrap()
 			.into_proxy();
