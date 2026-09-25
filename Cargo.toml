@@ -162,7 +162,7 @@ version = "0.52.1"
 # git = "https://github.com/StardustXR/core.git"
 [dependencies.stardust-xr-molecules-protocols]
 version = "0.52.0"
-# git = "https://github.com/StardustXR/molecules.git"
+git = "https://github.com/StardustXR/molecules.git"
 
 [dependencies.stardust-xr-server-foundation]
 path = "foundation"

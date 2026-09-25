@@ -6,18 +6,22 @@ use crate::{
 	nodes::{
 		ProxyExt as _,
 		drawable::model::MaterialRegistry,
+		fields::FieldObject,
 		spatial::{SpatialNode, SpatialObject},
 	},
+	query::ServerQueryable,
 };
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{platform::collections::HashMap, prelude::*, render::mesh::MeshAabb};
 use bevy_mesh_text_3d::{
 	Align, Attrs, HorizontalAnchorPoint, MeshTextPlugin, Settings as FontSettings, VerticalAlign,
 	VerticalAnchorPoint, generate_meshes,
 };
 use core::f32;
-use gluon_ipc::{Handler, RefExt};
+use gluon_ipc::{Handler, Interface, LocalRef, RefExt, ToRef};
 use parking_lot::Mutex;
+use stardust_xr_molecules_protocols::legible::{Legible, LegibleHandler};
 use stardust_xr_protocol::{
+	field::Shape,
 	spatial::Spatial,
 	text::{Text as TextProxy, TextLocal},
 };
@@ -31,7 +35,7 @@ use std::{
 	mem,
 	path::PathBuf,
 	sync::{
-		Arc,
+		Arc, Weak,
 		atomic::{AtomicBool, Ordering},
 	},
 };
@@ -151,8 +155,16 @@ fn spawn_text(
 		let Ok((char_meshes, _text_size)) =
 			char_meshes.inspect_err(|err| error!("unable to create text meshes: {err}"))
 		else {
+			if let Some(legibility) = text.legibility.lock().as_ref() {
+				legibility
+					.field
+					.set_shape(glyph_box::<WboitMaterial>(&[], &meshes));
+			}
 			continue;
 		};
+		if let Some(legibility) = text.legibility.lock().as_ref() {
+			legibility.field.set_shape(glyph_box(&char_meshes, &meshes));
+		}
 
 		let letters = char_meshes
 			.into_iter()
@@ -175,6 +187,38 @@ fn spawn_text(
 			.add_children(&letters)
 			.id();
 		text.entity.lock().replace(EntityHandle::new(entity));
+	}
+}
+
+// the glyphs already carry the anchoring and alignment, so a box around them is exactly where the text shows up
+fn glyph_box<M: Asset>(
+	char_meshes: &[bevy_mesh_text_3d::MeshTextEntry<M>],
+	meshes: &Assets<Mesh>,
+) -> Shape {
+	let (min, max) = char_meshes
+		.iter()
+		.filter_map(|c| {
+			let aabb = meshes.get(&c.mesh)?.compute_aabb()?;
+			let (lo, hi) = (Vec3::from(aabb.min()), Vec3::from(aabb.max()));
+			Some(
+				(0..8)
+					.map(|i| {
+						let corner = Vec3::new(
+							if i & 1 == 0 { lo.x } else { hi.x },
+							if i & 2 == 0 { lo.y } else { hi.y },
+							if i & 4 == 0 { lo.z } else { hi.z },
+						);
+						c.transform.transform_point(corner)
+					})
+					.fold((Vec3::MAX, Vec3::MIN), |(a, b), p| (a.min(p), b.max(p))),
+			)
+		})
+		.reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
+		.unwrap_or((Vec3::ZERO, Vec3::ZERO));
+	let size = (max - min).max(Vec3::new(0.0, 0.0, 0.005));
+	Shape::Transform {
+		shape: Box::new(Shape::Box { size: size.into() }),
+		transform: Mat4::from_translation((min + max) / 2.0).into(),
 	}
 }
 
@@ -201,6 +245,12 @@ pub struct Text {
 	data: Mutex<TextStyle>,
 	/// set by the handler methods, consumed by `spawn_text`, which rebuilds the meshes
 	dirty: AtomicBool,
+	legibility: Mutex<Option<Legibility>>,
+}
+#[derive(Debug)]
+struct Legibility {
+	field: Arc<FieldObject>,
+	_queryable: ServerQueryable,
 }
 impl Text {
 	pub fn new(
@@ -219,11 +269,51 @@ impl Text {
 			text: Mutex::new(text),
 			data: Mutex::new(style),
 			dirty: AtomicBool::new(true),
+			legibility: Mutex::new(None),
 		});
 		TEXT_REGISTRY.add_raw(&text);
 
 		// TODO: remove this unwrap
 		TextProxy::new_service(text).unwrap()
+	}
+
+	async fn make_legible(self: &Arc<Self>, spatial: LocalRef<Spatial, SpatialObject>) {
+		let field = FieldObject::new(
+			self.spatial.clone(),
+			Shape::Box {
+				size: [0.0; 3].into(),
+			},
+		);
+		// only a weak ref, the queryable holds this service alive and the text holds the queryable
+		let legible = match Legible::new_service(LegibleText(Arc::downgrade(self))) {
+			Ok(legible) => legible,
+			Err(err) => {
+				error!("unable to make text legible: {err}");
+				return;
+			}
+		};
+		let queryable = ServerQueryable::new(
+			spatial,
+			field.clone(),
+			[(<Legible as Interface>::ID, legible.proxy().to_ref())],
+		)
+		.await;
+		self.legibility.lock().replace(Legibility {
+			field: field.handler().clone(),
+			_queryable: queryable,
+		});
+		self.dirty.store(true, Ordering::Relaxed);
+	}
+}
+
+#[derive(Debug, Handler)]
+struct LegibleText(Weak<Text>);
+impl LegibleHandler for LegibleText {
+	async fn text(&self, _ctx: gluon_ipc::Context) -> String {
+		self.0
+			.upgrade()
+			.map(|t| t.text.lock().clone())
+			.unwrap_or_default()
 	}
 }
 impl TextHandler for Text {
@@ -246,9 +336,10 @@ impl TextInterfaceHandler for TextInterface {
 		text: String,
 		style: TextStyle,
 	) -> Result<TextProxy, ResourceLoadError> {
-		let spatial = spatial.owned().ok_or(ResourceLoadError::InvalidRef)?;
+		let spatial = spatial.owned_ref().ok_or(ResourceLoadError::InvalidRef)?;
 		info!(?text, "creating text");
-		let text = Text::new(spatial, text, style, self.base_prefixes());
+		let text = Text::new(spatial.handler().clone(), text, style, self.base_prefixes());
+		text.handler().make_legible(spatial).await;
 		Ok(text.into_proxy())
 	}
 }

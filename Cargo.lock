@@ -5597,8 +5597,7 @@ dependencies = [
 [[package]]
 name = "stardust-xr-molecules-protocols"
 version = "0.52.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56ff868f2e22706c25d80b87e3219b088462128f3332fad117fcb09f7399d906"
+source = "git+https://github.com/StardustXR/molecules.git#b7f5f81b8c21898a9ed76c9955addaea5a137bc4"
 dependencies = [
  "gluon-ipc",
  "gluon-ipc-codegen",
