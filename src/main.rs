@@ -17,7 +17,7 @@ use bevy::{
 	app::{App, ScheduleRunnerPlugin, TerminalCtrlCHandlerPlugin},
 	asset::{AssetMetaCheck, UnapprovedPathMode},
 	audio::AudioPlugin,
-	core_pipeline::{CorePipelinePlugin, tonemapping::Tonemapping},
+	core_pipeline::{CorePipelinePlugin, fxaa::Fxaa, tonemapping::Tonemapping},
 	diagnostic::DiagnosticsPlugin,
 	ecs::schedule::{ExecutorKind, ScheduleLabel},
 	gizmos::GizmoPlugin,
@@ -51,7 +51,7 @@ use bevy_mod_openxr::{
 	types::AppInfo,
 };
 use bevy_mod_xr::{
-	camera::XrProjection,
+	camera::{XrCamera, XrProjection},
 	session::{XrFirst, XrHandleEvents, XrSessionPlugin},
 };
 use clap::Parser;
@@ -531,10 +531,20 @@ fn show_aabb(trigger: Trigger<OnAdd, Aabb>, mut cmds: Commands) {
 
 fn cam_settings(
 	trigger: Trigger<OnAdd, Camera3d>,
-	mut query: Query<(Entity, &mut Projection, &mut Msaa, &mut Tonemapping), With<Camera3d>>,
+	mut query: Query<
+		(
+			Entity,
+			&mut Projection,
+			&mut Msaa,
+			&mut Tonemapping,
+			Has<XrCamera>,
+		),
+		With<Camera3d>,
+	>,
 	mut cmds: Commands,
 ) {
-	let Ok((entity, mut projection, mut msaa, mut tonemapping)) = query.get_mut(trigger.target())
+	let Ok((entity, mut projection, mut msaa, mut tonemapping, xr)) =
+		query.get_mut(trigger.target())
 	else {
 		return;
 	};
@@ -554,6 +564,11 @@ fn cam_settings(
 	*tonemapping = Tonemapping::None;
 	// cmds.entity(entity)
 	// .insert(OrderIndependentTransparencySettings::default());
+	// msaa is off because the oit passes are single sampled, so smooth edges after the fact,
+	// but only on the flatscreen view
+	if !xr {
+		cmds.entity(entity).insert(Fxaa::default());
+	}
 	cmds.entity(entity).insert(Wboit {
 		bins: Bins::B32,
 		// cdf: CdfScope::Tiled,
