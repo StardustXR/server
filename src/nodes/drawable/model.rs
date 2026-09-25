@@ -182,7 +182,11 @@ fn apply_materials(
 				.insert(MeshMaterial3d(HOLDOUT_MATERIAL_HANDLE));
 			continue;
 		}
+		// nothing to redo unless a parameter or texture arrived, and this runs every frame
+		// for every part of every model
+		let mut changed = false;
 		for (param_name, param) in model_part.pending_material_parameters.lock().drain() {
+			changed = true;
 			let mut new_mat = materials.get(&mesh_mat.0).unwrap().base.clone();
 			apply_to_material(
 				&param,
@@ -193,7 +197,9 @@ fn apply_materials(
 				&asset_server,
 			);
 			let handle = material_registry.get_handle(new_mat, &mut materials);
-			mesh_mat.0 = handle;
+			if mesh_mat.0 != handle {
+				mesh_mat.0 = handle;
+			}
 		}
 		for (slot, queue) in model_part.pending_dmatexes.lock().iter_mut() {
 			while let Some((mut recv, _)) = if queue.front().is_some_and(|v| !v.0.is_empty()) {
@@ -211,9 +217,10 @@ fn apply_materials(
 				};
 				slot.get_part_texture(&mut model_part.textures.lock())
 					.replace((handle, Some(release_signal)));
+				changed = true;
 			}
 		}
-		{
+		if changed {
 			let tex = model_part.textures.lock();
 			let mut new_mat = materials.get(&mesh_mat.0).unwrap().base.clone();
 			if let Some(tex) = &tex.diffuse {
@@ -229,7 +236,9 @@ fn apply_materials(
 				new_mat.occlusion_texture = Some(tex.0.clone());
 			}
 			let handle = material_registry.get_handle(new_mat, &mut materials);
-			mesh_mat.0 = handle;
+			if mesh_mat.0 != handle {
+				mesh_mat.0 = handle;
+			}
 		}
 	}
 
