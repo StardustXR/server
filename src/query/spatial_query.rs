@@ -419,11 +419,14 @@ impl QueryKind for BeamKind {
 		(&self.ref_space, None)
 	}
 	fn hit(&self, queryable: &Queryable, world_to_anchor: Mat4) -> Option<RayMarchResult> {
-		let ray_march = queryable.field.data.in_space(world_to_anchor).ray_march(
-			self.origin.load(),
-			self.dir.load(),
-			self.max_length.load(),
-		);
+		let field = queryable.field.data.in_space(world_to_anchor);
+		let (origin, direction) = (self.origin.load(), self.dir.load());
+		if field.ray_distance_at_least(origin.into(), direction.into(), self.max_length.load())
+			> self.margin.load()
+		{
+			return None;
+		}
+		let ray_march = field.ray_march(origin, direction, self.max_length.load());
 		(ray_march.min_distance <= self.margin.load()
 			&& ray_march.deepest_point_distance <= self.max_length.load())
 		.then_some(ray_march)
@@ -471,6 +474,9 @@ impl QueryKind for ZoneKind {
 	fn hit(&self, queryable: &Queryable, world_to_anchor: Mat4) -> Option<(Vec3, FieldSample)> {
 		let (_scale, _rotation, pos) = (world_to_anchor * queryable.spatial.global_transform())
 			.to_scale_rotation_translation();
+		if self.field.local_distance_at_least(pos.into()) >= self.margin.load() {
+			return None;
+		}
 		let sample = self.field.local_sample(pos.into());
 		(sample.distance < self.margin.load()).then_some((pos, sample))
 	}
@@ -520,6 +526,8 @@ impl QueryKind for PointsKind {
 		self.points
 			.lock()
 			.iter()
+			// a point that can't possibly be inside its margin can't win or hit
+			.filter(|p| field.distance_at_least(p.point.into()) - p.margin < 0.0)
 			.map(|p| {
 				let sample = field.sample(p.point.into());
 				(sample.distance - p.margin, sample)
@@ -776,6 +784,9 @@ mod tests {
 		let (_s, _r, pos) =
 			Spatial::space_to_space_matrix(Some(queryable_spatial), Some(&zone_field.spatial))
 				.to_scale_rotation_translation();
+		if zone_field.local_distance_at_least(pos.into()) >= margin {
+			return false;
+		}
 		let distance = zone_field.local_sample(pos.into()).distance;
 		distance < margin
 	}
@@ -788,18 +799,22 @@ mod tests {
 		dir: Vec3,
 		max_length: f32,
 	) -> bool {
-		let result = target_field
-			.in_space(ref_space.global_transform().inverse())
-			.ray_march(origin, dir, max_length);
+		let field = target_field.in_space(ref_space.global_transform().inverse());
+		if field.ray_distance_at_least(origin.into(), dir.into(), max_length) > 0.0 {
+			return false;
+		}
+		let result = field.ray_march(origin, dir, max_length);
 		result.min_distance <= 0.0 && result.deepest_point_distance <= max_length
 	}
 
 	// Mirrors PointsKind::hit() math.
 	fn points_check(target_field: &Arc<Field>, ref_space: &Arc<Spatial>, points: &[Point]) -> bool {
+		let field = target_field.in_space(ref_space.global_transform().inverse());
 		let best = points
 			.iter()
+			.filter(|p| field.distance_at_least(p.point.into()) - p.margin < 0.0)
 			.map(|p| {
-				let d = target_field.sample(ref_space, p.point.into()).distance;
+				let d = field.sample(p.point.into()).distance;
 				(d - p.margin, d)
 			})
 			.reduce(|(s1, d1), (s2, d2)| if s1 < s2 { (s1, d1) } else { (s2, d2) });

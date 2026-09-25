@@ -562,18 +562,87 @@ impl Field {
 	/// relate this field to a space once, for sampling it many times
 	pub fn in_space(&self, world_to_space: Mat4) -> FieldInSpace {
 		let field_to_space = world_to_space * self.spatial.global_transform();
+		let local = self.shape.read().clone();
 		FieldInSpace {
-			local: self.shape.read().clone(),
+			bound: shape_bound(&local).map(|(center, radius)| {
+				(
+					field_to_space.transform_point3a(center),
+					radius * max_scale(&field_to_space),
+				)
+			}),
+			local,
 			space_to_field: field_to_space.inverse(),
 			field_to_space,
 		}
 	}
+
+	/// never more than the real distance from `p` in the field's own space
+	pub fn local_distance_at_least(&self, p: Vec3A) -> f32 {
+		shape_bound(&self.shape.read()).map_or(f32::NEG_INFINITY, |(center, radius)| {
+			p.distance(center) - radius
+		})
+	}
+}
+
+/// a sphere around everything a shape can reach, as center and radius in the shape's space.
+/// samples are never closer to `p` than `|p - center| - radius`, so anything farther than
+/// that can be ruled out without sampling. none means no useful bound
+fn shape_bound(shape: &Shape) -> Option<(Vec3A, f32)> {
+	Some(match shape {
+		Shape::Box { size } => (Vec3A::ZERO, Vec3A::from(Vec3::from(*size)).length() / 2.0),
+		Shape::Sphere { radius } => (Vec3A::ZERO, *radius),
+		Shape::Capsule { length, radius } => (Vec3A::ZERO, length / 2.0 + radius),
+		Shape::Cylinder { length, radius } => (Vec3A::ZERO, (length / 2.0).hypot(*radius)),
+		Shape::Torus {
+			major_radius,
+			minor_radius,
+		} => (Vec3A::ZERO, major_radius + minor_radius),
+		// handles might be relative, so no bound until that's certain
+		Shape::CubicBezierSpline { .. } => return None,
+		Shape::Transform { shape, transform } => {
+			let m = Mat4::from(*transform);
+			let (center, radius) = shape_bound(shape)?;
+			(m.transform_point3a(center), radius * max_scale(&m))
+		}
+		Shape::Union { shapes } => enclosing(shapes)?,
+		// blending pulls the surface out by at most k/4
+		Shape::SmoothUnion { shapes, smoothing } => {
+			let (center, radius) = enclosing(shapes)?;
+			(center, radius + smoothing.abs() / 4.0)
+		}
+		Shape::Sweep { surface, sweeper } => {
+			let (center, radius) = shape_bound(surface)?;
+			let (sweep_center, sweep_radius) = shape_bound(sweeper)?;
+			(center, radius + sweep_center.length() + sweep_radius)
+		}
+	})
+}
+fn enclosing(shapes: &[Shape]) -> Option<(Vec3A, f32)> {
+	let bounds = shapes.iter().map(shape_bound).collect::<Option<Vec<_>>>()?;
+	let (min, max) = bounds.iter().fold(
+		(Vec3A::splat(f32::MAX), Vec3A::splat(f32::MIN)),
+		|(lo, hi), (c, r)| (lo.min(c - r), hi.max(c + r)),
+	);
+	let center = (min + max) / 2.0;
+	let radius = bounds
+		.iter()
+		.map(|(c, r)| center.distance(*c) + r)
+		.reduce(f32::max)?;
+	Some((center, radius))
+}
+fn max_scale(m: &Mat4) -> f32 {
+	m.x_axis
+		.truncate()
+		.length()
+		.max(m.y_axis.truncate().length())
+		.max(m.z_axis.truncate().length())
 }
 
 /// a field as seen from one space, so repeated samples skip walking parent chains,
 /// cloning the shape and inverting matrices every time
 pub struct FieldInSpace {
 	local: Shape,
+	bound: Option<(Vec3A, f32)>,
 	field_to_space: Mat4,
 	space_to_field: Mat4,
 }
@@ -594,6 +663,27 @@ impl FieldInSpace {
 				.into(),
 			closest_point: closest.into(),
 		}
+	}
+
+	/// never more than the real distance, so far away points can be ruled out cheaply
+	pub fn distance_at_least(&self, p: Vec3A) -> f32 {
+		self.bound.map_or(f32::NEG_INFINITY, |(center, radius)| {
+			p.distance(center) - radius
+		})
+	}
+
+	/// never more than the closest a ray gets to the field within `max_length`
+	pub fn ray_distance_at_least(&self, origin: Vec3A, direction: Vec3A, max_length: f32) -> f32 {
+		let Some((center, radius)) = self.bound else {
+			return f32::NEG_INFINITY;
+		};
+		let along = direction.length_squared();
+		let t = if along > 0.0 {
+			((center - origin).dot(direction) / along).clamp(0.0, max_length.min(MAX_RAY_LENGTH))
+		} else {
+			0.0
+		};
+		(origin + direction * t).distance(center) - radius
 	}
 
 	// `sample(p).distance` without the gradient, for ray marching
@@ -991,6 +1081,97 @@ mod tests {
 			let expected = protocol.sample(p);
 			assert_eq!(in_space.sample(p), expected);
 			assert_eq!(in_space.distance(p), expected.distance);
+		}
+	}
+
+	// skipping far queryables is only exact if the bound never overshoots a real sample
+	#[test]
+	fn bound_never_exceeds_sampled_distance() {
+		let squish = Mat4::from_scale_rotation_translation(
+			Vec3::new(2.0, 0.3, 1.0),
+			glam::Quat::from_rotation_z(0.8),
+			Vec3::new(0.5, -1.0, 0.2),
+		);
+		let shapes = [
+			Shape::Box {
+				size: [1.0, 0.4, 2.0].into(),
+			},
+			Shape::Sphere { radius: 0.7 },
+			Shape::Capsule {
+				length: 1.5,
+				radius: 0.3,
+			},
+			Shape::Cylinder {
+				length: 1.0,
+				radius: 0.6,
+			},
+			Shape::Torus {
+				major_radius: 1.0,
+				minor_radius: 0.2,
+			},
+			Shape::Transform {
+				shape: Box::new(Shape::Box {
+					size: [1.0, 1.0, 1.0].into(),
+				}),
+				transform: squish.into(),
+			},
+			Shape::Union {
+				shapes: vec![
+					Shape::Sphere { radius: 0.3 },
+					Shape::Transform {
+						shape: Box::new(Shape::Sphere { radius: 0.5 }),
+						transform: Mat4::from_translation(Vec3::new(2.0, 0.0, 0.0)).into(),
+					},
+				],
+			},
+			Shape::SmoothUnion {
+				shapes: vec![
+					Shape::Sphere { radius: 0.4 },
+					Shape::Transform {
+						shape: Box::new(Shape::Sphere { radius: 0.4 }),
+						transform: Mat4::from_translation(Vec3::new(0.6, 0.0, 0.0)).into(),
+					},
+				],
+				smoothing: 0.5,
+			},
+			Shape::Sweep {
+				surface: Box::new(Shape::Box {
+					size: [1.0, 1.0, 1.0].into(),
+				}),
+				sweeper: Box::new(Shape::Sphere { radius: 0.25 }),
+			},
+		];
+		let mut seed = 0x9E37_79B9_u32;
+		let mut next = || {
+			seed ^= seed << 13;
+			seed ^= seed >> 17;
+			seed ^= seed << 5;
+			seed as f32 / u32::MAX as f32 * 8.0 - 4.0
+		};
+		let field = make_field(
+			Spatial::test_new(Some(translated_spatial(1.0, 2.0, 3.0)), squish),
+			Shape::Torus {
+				major_radius: 1.0,
+				minor_radius: 0.3,
+			},
+		);
+		let in_space = field.in_space(
+			translated_spatial(-2.0, 0.0, 1.0)
+				.global_transform()
+				.inverse(),
+		);
+		for shape in &shapes {
+			let (center, radius) = shape_bound(shape).expect("these shapes all have bounds");
+			for _ in 0..3000 {
+				let p = vec3a(next(), next(), next());
+				let sampled = shape.sample(p).distance;
+				assert!(
+					p.distance(center) - radius <= sampled + 1e-4,
+					"{shape:?} at {p}: bound {} over sample {sampled}",
+					p.distance(center) - radius
+				);
+				assert!(in_space.distance_at_least(p) <= in_space.sample(p).distance + 1e-4);
+			}
 		}
 	}
 }
