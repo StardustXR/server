@@ -51,9 +51,17 @@ impl<T: Send + Sync + ?Sized> Registry<T> {
 		(added, removed)
 	}
 	pub fn get_valid_contents(&self) -> Vec<Arc<T>> {
-		// TODO: optimize so this happens with only one iter, when the upgrade fails
-		self.0.write().retain(|_, v| v.strong_count() > 0);
-		self.0.read().values().filter_map(|v| v.upgrade()).collect()
+		let (valid, any_dead) = {
+			let map = self.0.read();
+			let valid: Vec<Arc<T>> = map.values().filter_map(|v| v.upgrade()).collect();
+			let any_dead = valid.len() < map.len();
+			(valid, any_dead)
+		};
+		// this runs on every move, so only contend for the write lock when there's pruning to do
+		if any_dead {
+			self.0.write().retain(|_, v| v.strong_count() > 0);
+		}
+		valid
 	}
 	pub fn set(&self, other: &Registry<T>) {
 		*self.0.write() = other.0.read().clone();
@@ -171,4 +179,14 @@ impl<T: Send + Sync + ?Sized> Clone for OwnedRegistry<T> {
 	fn clone(&self) -> Self {
 		Self(Mutex::new(self.0.lock().clone()))
 	}
+}
+
+#[test]
+fn valid_contents_skip_and_prune_dead_entries() {
+	let registry = Registry::new();
+	let kept = registry.add(1);
+	drop(registry.add(2));
+	assert_eq!(*registry.get_valid_contents(), [kept.clone()]);
+	assert_eq!(registry.0.read().len(), 1);
+	assert_eq!(*registry.get_valid_contents(), [kept]);
 }
