@@ -11,7 +11,7 @@ use crate::{
 	},
 	query::ServerQueryable,
 };
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{asset::RenderAssetUsages, platform::collections::HashMap, prelude::*};
 use bevy_mesh_text_3d::{
 	Align, Attrs, HorizontalAnchorPoint, MeshTextPlugin, Settings as FontSettings, VerticalAlign,
 	VerticalAnchorPoint, generate_meshes,
@@ -161,14 +161,34 @@ fn spawn_text(
 			continue;
 		};
 
-		let letters = char_meshes
+		// one mesh per material rather than an entity per glyph, the renderer's per frame work
+		// grows with entity count and a label is often dozens of glyphs
+		let mut merged: Vec<(Handle<WboitMaterial>, Mesh)> = Vec::new();
+		let mut loose = Vec::new();
+		for glyph in char_meshes {
+			let Some(mesh) = meshes.get(&glyph.mesh) else {
+				continue;
+			};
+			let mesh = mesh.clone().transformed_by(glyph.transform);
+			match merged.iter_mut().find(|(m, _)| *m == glyph.material) {
+				Some((_, into)) => {
+					if into.merge(&mesh).is_err() {
+						loose.push((glyph.material, mesh));
+					}
+				}
+				None => merged.push((glyph.material, mesh)),
+			}
+		}
+		let letters = merged
 			.into_iter()
-			.map(|v| {
+			.chain(loose)
+			.map(|(material, mut mesh)| {
+				// nothing reads it back on the cpu, so don't keep a copy there
+				mesh.asset_usage = RenderAssetUsages::RENDER_WORLD;
 				cmds.spawn((
-					Name::new("TextChar"),
-					Mesh3d(v.mesh),
-					MeshMaterial3d(v.material),
-					v.transform,
+					Name::new("TextMesh"),
+					Mesh3d(meshes.add(mesh)),
+					MeshMaterial3d(material),
 				))
 				.id()
 			})
