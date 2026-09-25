@@ -11,7 +11,7 @@ use crate::{
 	},
 	query::ServerQueryable,
 };
-use bevy::{platform::collections::HashMap, prelude::*, render::mesh::MeshAabb};
+use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_mesh_text_3d::{
 	Align, Attrs, HorizontalAnchorPoint, MeshTextPlugin, Settings as FontSettings, VerticalAlign,
 	VerticalAnchorPoint, generate_meshes,
@@ -97,6 +97,9 @@ fn spawn_text(
 			YAlign::Bottom => VerticalAlign::Bottom,
 		});
 		let text_string = text.text.lock().clone();
+		if let Some(legibility) = text.legibility.lock().as_ref() {
+			legibility.field.set_shape(text_box(&text_string, &style));
+		}
 		let max_width = style.bounds.as_ref().map(|v| v.bounds.x);
 		let max_height = style.bounds.as_ref().map(|v| v.bounds.y);
 		let horizontal_anchor_point = style
@@ -155,16 +158,8 @@ fn spawn_text(
 		let Ok((char_meshes, _text_size)) =
 			char_meshes.inspect_err(|err| error!("unable to create text meshes: {err}"))
 		else {
-			if let Some(legibility) = text.legibility.lock().as_ref() {
-				legibility
-					.field
-					.set_shape(glyph_box::<WboitMaterial>(&[], &meshes));
-			}
 			continue;
 		};
-		if let Some(legibility) = text.legibility.lock().as_ref() {
-			legibility.field.set_shape(glyph_box(&char_meshes, &meshes));
-		}
 
 		let letters = char_meshes
 			.into_iter()
@@ -190,35 +185,44 @@ fn spawn_text(
 	}
 }
 
-// the glyphs already carry the anchoring and alignment, so a box around them is exactly where the text shows up
-fn glyph_box<M: Asset>(
-	char_meshes: &[bevy_mesh_text_3d::MeshTextEntry<M>],
-	meshes: &Assets<Mesh>,
-) -> Shape {
-	let (min, max) = char_meshes
-		.iter()
-		.filter_map(|c| {
-			let aabb = meshes.get(&c.mesh)?.compute_aabb()?;
-			let (lo, hi) = (Vec3::from(aabb.min()), Vec3::from(aabb.max()));
-			Some(
-				(0..8)
-					.map(|i| {
-						let corner = Vec3::new(
-							if i & 1 == 0 { lo.x } else { hi.x },
-							if i & 2 == 0 { lo.y } else { hi.y },
-							if i & 4 == 0 { lo.z } else { hi.z },
-						);
-						c.transform.transform_point(corner)
-					})
-					.fold((Vec3::MAX, Vec3::MIN), |(a, b), p| (a.min(p), b.max(p))),
+/// roughly how wide a character is for its height, a guess on purpose so nothing gets measured
+const CHARACTER_ASPECT: f32 = 0.6;
+
+// sized from what the client chose rather than the rendered glyphs, so the field can't be used
+// to measure fonts, and anchored the same way the text layout anchors its block
+fn text_box(text: &str, style: &TextStyle) -> Shape {
+	let h = style.character_height;
+	let (w, height, x, y) = match &style.bounds {
+		Some(b) => (b.bounds.x, b.bounds.y, b.anchor_align_x, b.anchor_align_y),
+		None => {
+			let longest = text.lines().map(|l| l.chars().count()).max().unwrap_or(0);
+			let lines = text.lines().count().max(1);
+			(
+				longest as f32 * h * CHARACTER_ASPECT,
+				lines as f32 * h * 1.1,
+				XAlign::Center,
+				YAlign::Center,
 			)
-		})
-		.reduce(|(a, b), (c, d)| (a.min(c), b.max(d)))
-		.unwrap_or((Vec3::ZERO, Vec3::ZERO));
-	let size = (max - min).max(Vec3::new(0.0, 0.0, 0.005));
+		}
+	};
+	let center = vec3(
+		match x {
+			XAlign::Left => w / 2.0,
+			XAlign::Center => 0.0,
+			XAlign::Right => -w / 2.0,
+		},
+		match y {
+			YAlign::Top => -height / 2.0,
+			YAlign::Center => 0.0,
+			YAlign::Bottom => height / 2.0,
+		},
+		0.0,
+	);
 	Shape::Transform {
-		shape: Box::new(Shape::Box { size: size.into() }),
-		transform: Mat4::from_translation((min + max) / 2.0).into(),
+		shape: Box::new(Shape::Box {
+			size: [w, height, 0.005].into(),
+		}),
+		transform: Mat4::from_translation(center).into(),
 	}
 }
 
@@ -341,5 +345,73 @@ impl TextInterfaceHandler for TextInterface {
 		let text = Text::new(spatial.handler().clone(), text, style, self.base_prefixes());
 		text.handler().make_legible(spatial).await;
 		Ok(text.into_proxy())
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use stardust_xr_protocol::{text::TextBounds, types::rgba_linear};
+
+	fn style(bounds: Option<TextBounds>) -> TextStyle {
+		TextStyle {
+			character_height: 0.1,
+			color: rgba_linear!(1.0, 1.0, 1.0, 1.0),
+			text_align_x: XAlign::Left,
+			text_align_y: YAlign::Top,
+			font: None,
+			bounds,
+		}
+	}
+	fn size_and_center(shape: Shape) -> (Vec3, Vec3) {
+		let Shape::Transform { shape, transform } = shape else {
+			panic!("expected a transformed box");
+		};
+		let Shape::Box { size } = *shape else {
+			panic!("expected a box");
+		};
+		(size.into(), Mat4::from(transform).w_axis.truncate())
+	}
+
+	#[test]
+	fn unbounded_text_is_centered_and_sized_from_characters() {
+		let (size, center) = size_and_center(text_box("hello\nhi", &style(None)));
+		assert!(size.abs_diff_eq(vec3(0.3, 0.22, 0.005), 1e-5), "{size}");
+		assert!(center.abs_diff_eq(Vec3::ZERO, 1e-5), "{center}");
+	}
+
+	#[test]
+	fn same_length_text_gets_the_same_box() {
+		// wide and narrow glyphs would measure differently, the field must not
+		let a = size_and_center(text_box("WWWWW", &style(None)));
+		let b = size_and_center(text_box("iiiii", &style(None)));
+		assert_eq!(a, b);
+	}
+
+	#[test]
+	fn bounded_text_uses_the_bounds_and_their_anchor() {
+		let bounds = |x, y| {
+			Some(TextBounds {
+				bounds: [0.4, 0.2].into(),
+				fit: TextFit::Wrap,
+				anchor_align_x: x,
+				anchor_align_y: y,
+			})
+		};
+		for (x, y, expected) in [
+			(XAlign::Left, YAlign::Top, vec3(0.2, -0.1, 0.0)),
+			(XAlign::Center, YAlign::Center, Vec3::ZERO),
+			(XAlign::Right, YAlign::Bottom, vec3(-0.2, 0.1, 0.0)),
+		] {
+			let (size, center) = size_and_center(text_box("anything at all", &style(bounds(x, y))));
+			assert!(size.abs_diff_eq(vec3(0.4, 0.2, 0.005), 1e-5), "{size}");
+			assert!(center.abs_diff_eq(expected, 1e-5), "{center} != {expected}");
+		}
+	}
+
+	#[test]
+	fn empty_text_has_no_width() {
+		let (size, _) = size_and_center(text_box("", &style(None)));
+		assert_eq!(size.x, 0.0);
 	}
 }
