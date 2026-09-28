@@ -98,12 +98,11 @@ fn update_text(
 			.unwrap_or_else(|| "sans-serif".into());
 
 		let h = style.character_height;
-		let (anchor, offset, width) = match &style.bounds {
+		let a = align(style.text_align_x, style.text_align_y);
+		let (offset, width) = match &style.bounds {
 			Some(b) => {
-				let a = align(style.text_align_x, style.text_align_y);
 				let size = Vec2::from(b.bounds);
 				(
-					TextAnchor(-a / 2.0),
 					(a - align(b.anchor_align_x, b.anchor_align_y)) * size / 2.0,
 					match b.fit {
 						TextFit::Wrap => size.x / h * GLYPH_PX,
@@ -111,7 +110,7 @@ fn update_text(
 					},
 				)
 			}
-			None => (TextAnchor::CENTER, Vec2::ZERO, f32::MAX),
+			None => (Vec2::ZERO, f32::MAX),
 		};
 		let components = (
 			Text3d::new(text_string),
@@ -124,7 +123,7 @@ fn update_text(
 					XAlign::Center => TextAlign::Center,
 					XAlign::Right => TextAlign::Right,
 				},
-				anchor,
+				anchor: TextAnchor(-a / 2.0),
 				line_height: 1.1,
 				color: style.color.to_bevy().to_srgba(),
 				world_scale: Some(Vec2::splat(h)),
@@ -224,8 +223,8 @@ fn text_box(text: &str, style: &TextStyle) -> Shape {
 					longest as f32 * h * CHARACTER_ASPECT,
 					lines as f32 * h * 1.1,
 				),
-				XAlign::Center,
-				YAlign::Center,
+				style.text_align_x,
+				style.text_align_y,
 			)
 		}
 	};
@@ -372,10 +371,10 @@ mod tests {
 	}
 
 	#[test]
-	fn unbounded_text_is_centered_and_sized_from_characters() {
+	fn unbounded_text_is_anchored_by_its_alignment_and_sized_from_characters() {
 		let (size, center) = size_and_center(text_box("hello\nhi", &style(None)));
 		assert!(size.abs_diff_eq(vec3(0.3, 0.22, 0.005), 1e-5), "{size}");
-		assert!(center.abs_diff_eq(Vec3::ZERO, 1e-5), "{center}");
+		assert!(center.abs_diff_eq(vec3(0.15, -0.11, 0.0), 1e-5), "{center}");
 	}
 
 	#[test]
