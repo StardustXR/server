@@ -11,15 +11,19 @@ use bevy::{
 		system::{Res, ResMut},
 	},
 	image::Image,
+	pbr::PreparedMaterial,
 	render::{
 		Render, RenderApp,
 		camera::{ManualTextureView, ManualTextureViewHandle, ManualTextureViews},
+		render_asset::prepare_assets,
 		renderer::RenderDevice,
 	},
 };
 use bevy_dmabuf::{
 	dmatex::DmatexPlane as BevyDmatexPlane,
-	import::{ImportError, ImportedDmatexs, ImportedTexture, import_texture},
+	import::{
+		DmatexRenderSystemSet, ImportError, ImportedDmatexs, ImportedTexture, import_texture,
+	},
 };
 use drm_fourcc::DrmFourcc;
 use glam::UVec2;
@@ -29,6 +33,7 @@ use stardust_xr_protocol::dmatex::{
 	DmatexRef, DmatexRefHandler, DmatexRefLocal, DmatexSize,
 };
 use stardust_xr_server_foundation::error::Result;
+use stardust_xr_server_wboit::WboitMaterial;
 use timeline_syncobj::{render_node::DrmRenderNode, timeline_syncobj::TimelineSyncObj};
 use tracing::{error, warn};
 use vulkano::{
@@ -347,10 +352,18 @@ impl Plugin for DmatexPlugin {
 		DESTROYED_MANUAL_VIEWS.init(app);
 		app.add_systems(Update, add_dmatex_into_bevy.before(ModelNodeSystemSet));
 		app.add_systems(Update, cleanup_manual_texture_views);
-		app.sub_app_mut(RenderApp).add_systems(
-			Render,
-			init_render_device.run_if(|| RENDER_DEV.get().is_none()),
-		);
+		app.sub_app_mut(RenderApp)
+			.add_systems(
+				Render,
+				init_render_device.run_if(|| RENDER_DEV.get().is_none()),
+			)
+			// bevy-dmabuf only orders its GpuImage swap before StandardMaterial, without this a
+			// new material can bind the zeroed placeholder texture instead of the dmatex
+			.configure_sets(
+				Render,
+				DmatexRenderSystemSet::InsertIntoGpuImages
+					.before(prepare_assets::<PreparedMaterial<WboitMaterial>>),
+			);
 	}
 }
 fn cleanup_manual_texture_views(
