@@ -63,13 +63,12 @@ use stardust_xr_server_wboit::{Bins, CdfScope, SwapStandardMaterialPlugin, Wboit
 use std::{
 	ops::DerefMut as _,
 	path::PathBuf,
-	str::FromStr,
 	sync::{Arc, OnceLock},
 	time::Duration,
 };
 use tokio::{sync::Notify, task::JoinError};
 use tracing::{Subscriber, error, info, metadata::LevelFilter};
-use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry::LookupSpan};
+use tracing_subscriber::{EnvFilter, fmt, prelude::*, registry::LookupSpan};
 use zbus::Connection;
 
 use crate::{
@@ -199,8 +198,7 @@ async fn main() -> Result<AppExit, JoinError> {
 		.with_filter(
 			EnvFilter::builder()
 				.with_default_directive(LevelFilter::WARN.into())
-				.from_env_lossy()
-				.add_directive(Directive::from_str("bevy_mesh_text_3d::text_glyphs=off").unwrap()),
+				.from_env_lossy(),
 		)
 		.with_filter(SpanFilter("frame-event"));
 	registry.with(log_layer).init();

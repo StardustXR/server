@@ -11,12 +11,12 @@ use crate::{
 	},
 	query::ServerQueryable,
 };
-use bevy::{asset::RenderAssetUsages, platform::collections::HashMap, prelude::*};
-use bevy_mesh_text_3d::{
-	Align, Attrs, HorizontalAnchorPoint, MeshTextPlugin, Settings as FontSettings, VerticalAlign,
-	VerticalAnchorPoint, generate_meshes,
+use bevy::{platform::collections::HashMap, prelude::*, render::primitives::Aabb};
+use bevy_rich_text3d::{
+	Text3d, Text3dBounds, Text3dDimensionOut, Text3dPlugin, Text3dSet, Text3dStyling, TextAlign,
+	TextAnchor, TextAtlas, TextRenderer, TouchTextMaterial3dPlugin, Weight,
 };
-use core::f32;
+use cosmic_text::fontdb::Source;
 use gluon_ipc::{Handler, Interface, LocalRef, RefExt, ToRef};
 use parking_lot::Mutex;
 use stardust_xr_molecules_protocols::legible::{Legible, LegibleHandler};
@@ -32,8 +32,7 @@ use stardust_xr_protocol::{
 use stardust_xr_server_wboit::WboitMaterial;
 use std::{
 	ffi::OsStr,
-	mem,
-	path::PathBuf,
+	path::{Path, PathBuf},
 	sync::{
 		Arc, Weak,
 		atomic::{AtomicBool, Ordering},
@@ -42,31 +41,37 @@ use std::{
 
 static TEXT_REGISTRY: Registry<Text> = Registry::new();
 
-pub struct TextNodePlugin;
+/// glyphs are rasterized at this many pixels per em, `world_scale` shrinks them back to meters
+const GLYPH_PX: f32 = 64.0;
 
+pub struct TextNodePlugin;
 impl Plugin for TextNodePlugin {
 	fn build(&self, app: &mut App) {
-		// Text init stuff
-		app.add_plugins(MeshTextPlugin);
-		app.world_mut()
-			.resource_mut::<FontSettings>()
-			.font_system
-			.db_mut()
-			.load_system_fonts();
-
+		app.add_plugins((
+			Text3dPlugin {
+				default_atlas_dimension: (1024, 1024),
+				sync_scale_factor_with_main_window: false,
+				load_system_fonts: true,
+				..default()
+			},
+			TouchTextMaterial3dPlugin::<WboitMaterial>::default(),
+		));
 		app.init_resource::<MaterialRegistry>();
-		app.add_systems(Update, spawn_text);
+		app.add_systems(Update, update_text);
+		app.add_systems(PostUpdate, rebound_text.after(Text3dSet));
 	}
 }
 
-fn spawn_text(
+fn update_text(
 	mut cmds: Commands,
-	mut font_settings: ResMut<FontSettings>,
+	renderer: Option<ResMut<TextRenderer>>,
 	mut material_registry: ResMut<MaterialRegistry>,
 	mut materials: ResMut<Assets<WboitMaterial>>,
-	mut meshes: ResMut<Assets<Mesh>>,
-	mut font_registry: Local<FontDatabaseRegistry>,
+	mut families: Local<HashMap<PathBuf, Option<Arc<str>>>>,
 ) {
+	let Some(mut renderer) = renderer else {
+		return;
+	};
 	for text in TEXT_REGISTRY.get_valid_contents() {
 		if !text.dirty.swap(false, Ordering::Relaxed) {
 			continue;
@@ -76,133 +81,130 @@ fn spawn_text(
 			text.dirty.store(true, Ordering::Relaxed);
 			continue;
 		};
-		if let Some(entity) = text.entity.lock().take() {
-			cmds.entity(*entity).despawn();
-		}
 		let style = text.data.lock();
-		let old_db = text.font_path.clone().map(|p| {
-			let db = font_registry.get(p);
-			mem::swap(font_settings.font_system.db_mut(), db);
-			db
-		});
-		let attrs = Attrs::new().weight(cosmic_text::Weight::BOLD);
-		let alignment = Some(match style.text_align_x {
-			XAlign::Left => Align::Right,
-			XAlign::Center => Align::Center,
-			XAlign::Right => Align::Left,
-		});
-		let vertical_alignment = Some(match style.text_align_y {
-			YAlign::Top => VerticalAlign::Top,
-			YAlign::Center => VerticalAlign::Middle,
-			YAlign::Bottom => VerticalAlign::Bottom,
-		});
 		let text_string = text.text.lock().clone();
 		if let Some(legibility) = text.legibility.lock().as_ref() {
 			legibility.field.set_shape(text_box(&text_string, &style));
 		}
-		let max_width = style.bounds.as_ref().map(|v| v.bounds.x);
-		let max_height = style.bounds.as_ref().map(|v| v.bounds.y);
-		let horizontal_anchor_point = style
-			.bounds
+		let font = text
+			.font_path
 			.as_ref()
-			.map(|v| match v.anchor_align_x {
-				XAlign::Left => HorizontalAnchorPoint::Left,
-				XAlign::Center => HorizontalAnchorPoint::Middle,
-				XAlign::Right => HorizontalAnchorPoint::Right,
+			.and_then(|p| {
+				families
+					.entry(p.clone())
+					.or_insert_with_key(|p| load_family(&mut renderer, p))
+					.clone()
 			})
-			.unwrap_or(HorizontalAnchorPoint::Middle);
-		let vertical_anchor_point = style
-			.bounds
-			.as_ref()
-			.map(|v| match v.anchor_align_y {
-				YAlign::Top => VerticalAnchorPoint::Top,
-				YAlign::Center => VerticalAnchorPoint::Middle,
-				YAlign::Bottom => VerticalAnchorPoint::Bottom,
-			})
-			.unwrap_or(VerticalAnchorPoint::Middle);
-		let wrap = matches!(style.bounds.as_ref().map(|v| v.fit), Some(TextFit::Wrap));
-		let char_meshes = generate_meshes(
-			bevy_mesh_text_3d::InputText::Simple {
-				text: text_string,
-				material: material_registry.get_handle(
+			.unwrap_or_else(|| "sans-serif".into());
+
+		let h = style.character_height;
+		let (anchor, offset, width) = match &style.bounds {
+			Some(b) => {
+				let a = align(style.text_align_x, style.text_align_y);
+				let size = Vec2::from(b.bounds);
+				(
+					TextAnchor(-a / 2.0),
+					(a - align(b.anchor_align_x, b.anchor_align_y)) * size / 2.0,
+					match b.fit {
+						TextFit::Wrap => size.x / h * GLYPH_PX,
+						_ => f32::MAX,
+					},
+				)
+			}
+			None => (TextAnchor::CENTER, Vec2::ZERO, f32::MAX),
+		};
+		let components = (
+			Text3d::new(text_string),
+			Text3dStyling {
+				size: GLYPH_PX,
+				font,
+				weight: Weight::BOLD,
+				align: match style.text_align_x {
+					XAlign::Left => TextAlign::Left,
+					XAlign::Center => TextAlign::Center,
+					XAlign::Right => TextAlign::Right,
+				},
+				anchor,
+				line_height: 1.1,
+				color: style.color.to_bevy().to_srgba(),
+				world_scale: Some(Vec2::splat(h)),
+				..default()
+			},
+			Text3dBounds { width },
+			Transform::from_translation(offset.extend(0.0)),
+		);
+
+		let mut entity = text.entity.lock();
+		match entity.as_ref() {
+			Some(e) => {
+				cmds.entity(**e).try_insert(components);
+			}
+			None => {
+				// color comes in through the vertex colors, so every text shares this one
+				let material = material_registry.get_handle(
 					BevyMaterial {
-						base_color: style.color.to_bevy(),
+						base_color_texture: Some(TextAtlas::DEFAULT_IMAGE),
 						emissive: Color::WHITE.to_linear(),
 						metallic: 0.0,
 						perceptual_roughness: 1.0,
-						alpha_mode: AlphaMode::Premultiplied,
+						alpha_mode: AlphaMode::Blend,
 						double_sided: false,
 						..default()
 					},
 					&mut materials,
-				),
-				attrs,
-			},
-			&mut font_settings,
-			bevy_mesh_text_3d::Parameters {
-				extrusion_depth: 0.0,
-				font_size: style.character_height,
-				line_height: style.character_height * 1.1,
-				alignment,
-				max_width: wrap.then_some(0).and(max_width),
-				max_height: wrap.then_some(0).and(max_height),
-				vertical_alignment,
-				horizontal_anchor_point,
-				vertical_anchor_point,
-			},
-			&mut meshes,
-		);
-		if let Some(db) = old_db {
-			mem::swap(font_settings.font_system.db_mut(), db);
-		}
-		let Ok((char_meshes, _text_size)) =
-			char_meshes.inspect_err(|err| error!("unable to create text meshes: {err}"))
-		else {
-			continue;
-		};
-
-		// one mesh per material rather than an entity per glyph, the renderer's per frame work
-		// grows with entity count and a label is often dozens of glyphs
-		let mut merged: Vec<(Handle<WboitMaterial>, Mesh)> = Vec::new();
-		let mut loose = Vec::new();
-		for glyph in char_meshes {
-			let Some(mesh) = meshes.get(&glyph.mesh) else {
-				continue;
-			};
-			let mesh = mesh.clone().transformed_by(glyph.transform);
-			match merged.iter_mut().find(|(m, _)| *m == glyph.material) {
-				Some((_, into)) => {
-					if into.merge(&mesh).is_err() {
-						loose.push((glyph.material, mesh));
-					}
-				}
-				None => merged.push((glyph.material, mesh)),
+				);
+				let e = cmds
+					.spawn((
+						ChildOf(spatial_entity),
+						Name::new("Text"),
+						SpatialNode(Arc::downgrade(&**text.spatial)),
+						Mesh3d::default(),
+						MeshMaterial3d(material),
+						components,
+					))
+					.id();
+				entity.replace(EntityHandle::new(e));
 			}
 		}
-		let letters = merged
-			.into_iter()
-			.chain(loose)
-			.map(|(material, mut mesh)| {
-				// nothing reads it back on the cpu, so don't keep a copy there
-				mesh.asset_usage = RenderAssetUsages::RENDER_WORLD;
-				cmds.spawn((
-					Name::new("TextMesh"),
-					Mesh3d(meshes.add(mesh)),
-					MeshMaterial3d(material),
-				))
-				.id()
-			})
-			.collect::<Vec<_>>();
-		let entity = cmds
-			.spawn((
-				ChildOf(spatial_entity),
-				Name::new("Text"),
-				SpatialNode(Arc::downgrade(&**text.spatial)),
-			))
-			.add_children(&letters)
-			.id();
-		text.entity.lock().replace(EntityHandle::new(entity));
 	}
+}
+
+fn load_family(renderer: &mut TextRenderer, path: &Path) -> Option<Arc<str>> {
+	let mut fonts = renderer.lock();
+	let db = fonts.db_mut();
+	let family = db
+		.load_font_source(Source::File(path.to_path_buf()))
+		.first()
+		.and_then(|id| db.face(*id))
+		.and_then(|f| f.families.first())
+		.map(|(name, _)| name.as_str().into());
+	if family.is_none() {
+		error!("unable to load font file {}", path.to_string_lossy());
+	}
+	family
+}
+
+// text meshes are rewritten in place, and bevy only computes an Aabb when there isn't one
+fn rebound_text(mut cmds: Commands, query: Query<Entity, Changed<Text3dDimensionOut>>) {
+	for e in &query {
+		cmds.entity(e).remove::<Aabb>();
+	}
+}
+
+/// +X right and +Y up, the direction a block sits from its anchor
+fn align(x: XAlign, y: YAlign) -> Vec2 {
+	vec2(
+		match x {
+			XAlign::Left => -1.0,
+			XAlign::Center => 0.0,
+			XAlign::Right => 1.0,
+		},
+		match y {
+			YAlign::Top => 1.0,
+			YAlign::Center => 0.0,
+			YAlign::Bottom => -1.0,
+		},
+	)
 }
 
 /// roughly how wide a character is for its height, a guess on purpose so nothing gets measured
@@ -212,51 +214,27 @@ const CHARACTER_ASPECT: f32 = 0.6;
 // to measure fonts, and anchored the same way the text layout anchors its block
 fn text_box(text: &str, style: &TextStyle) -> Shape {
 	let h = style.character_height;
-	let (w, height, x, y) = match &style.bounds {
-		Some(b) => (b.bounds.x, b.bounds.y, b.anchor_align_x, b.anchor_align_y),
+	let (size, x, y) = match &style.bounds {
+		Some(b) => (Vec2::from(b.bounds), b.anchor_align_x, b.anchor_align_y),
 		None => {
 			let longest = text.lines().map(|l| l.chars().count()).max().unwrap_or(0);
 			let lines = text.lines().count().max(1);
 			(
-				longest as f32 * h * CHARACTER_ASPECT,
-				lines as f32 * h * 1.1,
+				vec2(
+					longest as f32 * h * CHARACTER_ASPECT,
+					lines as f32 * h * 1.1,
+				),
 				XAlign::Center,
 				YAlign::Center,
 			)
 		}
 	};
-	let center = vec3(
-		match x {
-			XAlign::Left => w / 2.0,
-			XAlign::Center => 0.0,
-			XAlign::Right => -w / 2.0,
-		},
-		match y {
-			YAlign::Top => -height / 2.0,
-			YAlign::Center => 0.0,
-			YAlign::Bottom => height / 2.0,
-		},
-		0.0,
-	);
+	let center = -align(x, y) * size / 2.0;
 	Shape::Transform {
 		shape: Box::new(Shape::Box {
-			size: [w, height, 0.005].into(),
+			size: [size.x, size.y, 0.005].into(),
 		}),
-		transform: Mat4::from_translation(center).into(),
-	}
-}
-
-#[derive(Default)]
-struct FontDatabaseRegistry(HashMap<PathBuf, cosmic_text::fontdb::Database>);
-impl FontDatabaseRegistry {
-	fn get(&mut self, path: PathBuf) -> &mut cosmic_text::fontdb::Database {
-		self.0.entry(path).or_insert_with_key(|path| {
-			let mut db = cosmic_text::fontdb::Database::new();
-			if let Err(err) = db.load_font_file(path) {
-				error!("unable to load font file {} {err}", path.to_string_lossy());
-			};
-			db
-		})
+		transform: Mat4::from_translation(center.extend(0.0)).into(),
 	}
 }
 
