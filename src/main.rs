@@ -61,14 +61,11 @@ use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
 use stardust_xr_server_wboit::{Bins, CdfScope, SwapStandardMaterialPlugin, Wboit, WboitPlugin};
 use std::{
-	ops::DerefMut as _,
-	path::PathBuf,
-	sync::{Arc, OnceLock},
-	time::Duration,
+	ops::DerefMut as _, path::PathBuf, str::FromStr as _, sync::{Arc, OnceLock}, time::Duration
 };
 use tokio::{sync::Notify, task::JoinError};
 use tracing::{Subscriber, error, info, metadata::LevelFilter};
-use tracing_subscriber::{EnvFilter, fmt, prelude::*, registry::LookupSpan};
+use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry::LookupSpan};
 use zbus::Connection;
 
 use crate::{
@@ -198,7 +195,8 @@ async fn main() -> Result<AppExit, JoinError> {
 		.with_filter(
 			EnvFilter::builder()
 				.with_default_directive(LevelFilter::WARN.into())
-				.from_env_lossy(),
+				.from_env_lossy()
+				.add_directive(Directive::from_str("xkbcommon_rs::parser=error").unwrap()),
 		)
 		.with_filter(SpanFilter("frame-event"));
 	registry.with(log_layer).init();
