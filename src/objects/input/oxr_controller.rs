@@ -751,7 +751,10 @@ impl InputMethodHelper for ControllerInputMethod {
 		active_capture: Option<&InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let Some((_, pose)) = *self.pose.read().await else {
-			return (vec![], active_capture.cloned());
+			return (
+				active_capture.cloned().into_iter().collect(),
+				active_capture.cloned(),
+			);
 		};
 		order_by_distance(handlers, capture_requests, active_capture, |e| {
 			Some(Self::pose_distance(&e.field, &self.base_spatial, pose).abs())

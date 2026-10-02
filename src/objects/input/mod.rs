@@ -297,7 +297,8 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		let mut dispatch: Vec<(InputHandler, SpatialData, SemanticData)> = Vec::new();
 		if let Some(input) = input {
 			dispatch = targets
-				.into_iter()
+				.iter()
+				.cloned()
 				.filter_map(|(handler, spatial, field)| {
 					Some((handler, localize(&self.spatial, &spatial, &field, &input)?))
 				})
@@ -314,7 +315,7 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		}
 
 		let (added, removed) = self.tracker.lock().unwrap().update(
-			dispatch
+			targets
 				.iter()
 				.map(|(handler, ..)| handler.clone())
 				.collect(),

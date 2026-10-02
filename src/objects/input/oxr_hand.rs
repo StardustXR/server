@@ -583,7 +583,10 @@ impl InputMethodHelper for HandInputMethod {
 		active_capture: Option<&InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let Some((_, hand)) = *self.hand.read().await else {
-			return (vec![], active_capture.cloned());
+			return (
+				active_capture.cloned().into_iter().collect(),
+				active_capture.cloned(),
+			);
 		};
 		order_by_distance(handlers, capture_requests, active_capture, |e| {
 			Some(hand_sort_distance(&self.base_spatial, &e.field, &hand).abs())
