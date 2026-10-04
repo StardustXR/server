@@ -32,7 +32,7 @@ use bevy_mod_xr::{
 use color_eyre::eyre::Result;
 use glam::{Affine3A, Mat4, Vec2, Vec3};
 use gluon_ipc::{Handler, LocalRef, Node, RefExt};
-use openxr::{Action, ActiveActionSet, ReferenceSpaceType, SpaceLocationFlags};
+use openxr::{Action, ActiveActionSet, ReferenceSpaceType, SpaceLocationFlags, sys::Handle as _};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::{
 	field::FieldSample,
@@ -95,11 +95,7 @@ fn suggest_bindings(
 			});
 		}
 	};
-	let generic = enabled_exts
-		.other
-		.iter()
-		.any(|s| s == "XR_KHR_generic_controller");
-	if generic {
+	if enabled_exts.khr_generic_controller {
 		bind_all(
 			"/interaction_profiles/khr/generic_controller",
 			&[
@@ -150,13 +146,9 @@ fn suggest_bindings(
 			],
 		);
 	}
-	let touch_pro = enabled_exts
-		.fb_touch_controller_pro
-		.then_some("/interaction_profiles/facebook/touch_controller_pro");
-	for profile in touch_pro
-		.into_iter()
-		.chain(["/interaction_profiles/oculus/touch_controller"])
-	{
+	// core since 1.1, so no XR_FB_touch_controller_pro needed
+	let touch_pro = "/interaction_profiles/meta/touch_pro_controller";
+	for profile in [touch_pro, "/interaction_profiles/oculus/touch_controller"] {
 		bind_all(
 			profile,
 			&[
@@ -319,10 +311,11 @@ fn suggest_bindings(
 		"/interaction_profiles/valve/index_controller",
 		"/interaction_profiles/khr/simple_controller",
 	];
-	for profile in generic
+	for profile in enabled_exts
+		.khr_generic_controller
 		.then_some("/interaction_profiles/khr/generic_controller")
 		.into_iter()
-		.chain(touch_pro)
+		.chain([touch_pro])
 		.chain(profiles)
 	{
 		bind_all(
@@ -426,7 +419,7 @@ fn create_spaces(
 	let right = instance.string_to_path("/user/hand/right").unwrap();
 	let space = |action: &Action<openxr::Posef>, path| {
 		action
-			.create_space((**session).clone(), path, openxr::Posef::IDENTITY)
+			.create_space(&*session, path, openxr::Posef::IDENTITY)
 			.unwrap()
 	};
 	let base_spatial = controllers.base_spatial.get_ref().clone();

@@ -46,8 +46,8 @@ panic = "unwind"
 debug = false
 
 [patch.crates-io]
-bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", rev = "fa4ce03c" }
-bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", rev = "fa4ce03c" }
+bevy_mod_openxr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "stardust_server_branch" }
+bevy_mod_xr = { git = "https://github.com/Schmarni-Dev/bevy_openxr", branch = "stardust_server_branch" }
 bevy_gltf = { git = "https://github.com/Schmarni-Dev/bevy", branch = "gltf_backport" }
 # TODO: figure out how to not need this horrifing patch
 wgpu = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
@@ -123,7 +123,7 @@ bevy-equirect = { git = "https://github.com/technobaboo/bevy-equirect" }
 
 bevy_rich_text3d = { version = "0.4.2", default-features = false, features = ["3d"] }
 
-openxr = "0.19"
+openxr = "0.22"
 
 # linux stuffs
 input-event-codes = "6.2.0"

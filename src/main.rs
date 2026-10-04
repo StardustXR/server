@@ -61,7 +61,11 @@ use openxr::{EnvironmentBlendMode, ReferenceSpaceType};
 use stardust_xr_protocol::{client::FrameInfo, types::Timestamp};
 use stardust_xr_server_wboit::{Bins, CdfScope, SwapStandardMaterialPlugin, Wboit, WboitPlugin};
 use std::{
-	ops::DerefMut as _, path::PathBuf, str::FromStr as _, sync::{Arc, OnceLock}, time::Duration
+	ops::DerefMut as _,
+	path::PathBuf,
+	str::FromStr as _,
+	sync::{Arc, OnceLock},
+	time::Duration,
 };
 use tokio::{sync::Notify, task::JoinError};
 use tracing::{Subscriber, error, info, metadata::LevelFilter};
@@ -403,8 +407,7 @@ fn bevy_loop(
 						}
 						exts.khr_convert_timespec_time = true;
 						exts.ext_palm_pose = true;
-						exts.fb_touch_controller_pro = true;
-						exts.other.push("XR_KHR_generic_controller".to_string());
+						exts.khr_generic_controller = true;
 						exts
 					},
 					..default()

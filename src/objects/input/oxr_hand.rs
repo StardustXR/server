@@ -22,6 +22,7 @@ use bevy_sk::hand::GRADIENT_TEXTURE_HANDLE;
 use color_eyre::eyre::Result;
 use glam::{Mat4, Quat, Vec3};
 use gluon_ipc::{Handler, LocalRef, Node, RefExt};
+use openxr::sys::Handle as _;
 use openxr::{HandJointLocation, Posef, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::field::FieldSample;

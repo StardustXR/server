@@ -16,6 +16,7 @@ use bevy_mod_xr::{
 	spaces::{XrPrimaryReferenceSpace, XrSpace},
 };
 use gluon_ipc::LocalRef;
+use openxr::sys::Handle;
 use openxr::{Posef, ReferenceSpaceType, SpaceLocationFlags};
 use stardust_xr_protocol::spatial::{Spatial, SpatialRef};
 use stardust_xr_protocol::types::Timestamp;
