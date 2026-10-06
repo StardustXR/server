@@ -126,6 +126,9 @@ struct CliArgs {
 	/// If monado insists on emulating , set this flag...we want the raw input
 	#[clap(long)]
 	disable_hands: bool,
+	/// Hold the stick click to pin the controller tip in place and move the controller to set its aim offset, printed on release
+	#[clap(long)]
+	controller_offset: bool,
 
 	/// Make hands fully transparent for passthrough (useful for wivrn)
 	#[clap(long, action)]
@@ -500,7 +503,9 @@ fn bevy_loop(
 		));
 	}
 	if !args.disable_controllers {
-		app.add_plugins(ControllerPlugin);
+		app.add_plugins(ControllerPlugin {
+			offset_adjust: args.controller_offset,
+		});
 	}
 	if !args.disable_startup_recenter {
 		app.add_plugins(TrackingOffsetPlugin);

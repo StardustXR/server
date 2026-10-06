@@ -49,13 +49,17 @@ use std::{
 	fs,
 	path::{Path, PathBuf},
 	str::FromStr,
-	sync::{Arc, OnceLock, Weak},
+	sync::{Arc, OnceLock, RwLock as SyncRwLock, Weak},
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::instrument;
 use zbus::Connection;
 
-pub struct ControllerPlugin;
+pub struct ControllerPlugin {
+	pub offset_adjust: bool,
+}
+#[derive(Resource)]
+struct OffsetAdjust(bool);
 const CURSOR_MODEL_PATH: &str = "/tmp/stardust_server/models/cursor.glb";
 impl Plugin for ControllerPlugin {
 	fn build(&self, app: &mut App) {
@@ -67,6 +71,7 @@ impl Plugin for ControllerPlugin {
 				.unwrap(),
 		);
 		fs::write(CURSOR_MODEL_PATH, cursor).expect("can't write tmp cursor model file");
+		app.insert_resource(OffsetAdjust(self.offset_adjust));
 		app.add_systems(OxrSendActionBindings, suggest_bindings.run_if(run_once));
 		app.add_systems(
 			PostUpdate,
@@ -353,6 +358,7 @@ fn update(
 	ref_space: Option<Res<XrPrimaryReferenceSpace>>,
 	state: Option<Res<OxrFrameState>>,
 	pipelined: Option<Res<Pipelined>>,
+	offset_adjust: Res<OffsetAdjust>,
 ) {
 	let (Some(session), Some(state), Some(ref_space)) = (session, state, ref_space) else {
 		info!("early return from main update");
@@ -387,10 +393,10 @@ fn update(
 	let base_spatial = controllers.base_spatial.get_ref().clone();
 	controllers
 		.left
-		.update(&session, &actions, time, &base_spatial);
+		.update(&session, &actions, time, &base_spatial, offset_adjust.0);
 	controllers
 		.right
-		.update(&session, &actions, time, &base_spatial);
+		.update(&session, &actions, time, &base_spatial, offset_adjust.0);
 }
 
 fn create_spaces(
@@ -453,6 +459,8 @@ fn create_spaces(
 		controller.driver = Some(spawn_frame_driver(&method));
 		controller.query_handle = Some(query_handle);
 		controller.method = Some(method);
+		// the new method starts at identity, so the offset has to be reapplied
+		controller.profile = None;
 	}
 }
 
@@ -544,18 +552,17 @@ struct Controllers {
 #[derive(Debug)]
 struct OxrControllerInputTrackedState {
 	method: Weak<InputMethodNode<ControllerInputMethod>>,
-	space: fn(&ControllerInputMethod) -> Option<&openxr::Space>,
+	locate: Locate,
 	spatial: LocalRef<SpatialProxy, SpatialObject>,
 }
+type Locate = fn(&ControllerInputMethod, &Spatial, openxr::Time) -> Option<Posef>;
 impl OxrControllerInputTrackedState {
 	fn get_pose(&self, relative_to: &Spatial, at: Timestamp) -> (Option<types::Posef>, bool) {
 		if let Some(method) = self.method.upgrade() {
 			let Some(time) = method.base_space.instance().timestamp_to_xr(at) else {
 				return (None, false);
 			};
-			let Some(pose) = (self.space)(&method)
-				.and_then(|space| method.locate_pose(space, relative_to, time))
-			else {
+			let Some(pose) = (self.locate)(&method, relative_to, time) else {
 				return (None, false);
 			};
 			(Some(pose), true)
@@ -583,7 +590,7 @@ impl TrackedPose {
 	fn new(
 		base_space: &LocalRef<SpatialRefProxy, SpatialRef>,
 		pion_path: &str,
-		space: fn(&ControllerInputMethod) -> Option<&openxr::Space>,
+		locate: Locate,
 	) -> Self {
 		let spatial = SpatialObject::new(Some(&***base_space), Mat4::from_scale(Vec3::ZERO));
 		let tracked = Tracked::new(
@@ -593,7 +600,7 @@ impl TrackedPose {
 			pion_path,
 			OxrControllerInputTrackedState {
 				method: Weak::new(),
-				space,
+				locate,
 				spatial: spatial.clone(),
 			},
 		)
@@ -631,6 +638,10 @@ pub struct OxrControllerInput {
 	query_handle: Option<Arc<OnceLock<PointsQueryHandle>>>,
 	was_enabled: bool,
 	captured: bool,
+
+	profile: Option<String>,
+	/// where the tip got pinned when the offset adjust button went down
+	pinned_tip: Option<Affine3A>,
 }
 impl OxrControllerInput {
 	fn new(
@@ -642,11 +653,13 @@ impl OxrControllerInput {
 			HandSide::Left => "stardust-controller/left",
 			HandSide::Right => "stardust-controller/right",
 		};
-		let aim = TrackedPose::new(base_space, pion_path, |m| Some(&m.space));
-		let grip = TrackedPose::new(base_space, &format!("{pion_path}/grip"), |m| Some(&m.grip));
+		let aim = TrackedPose::new(base_space, pion_path, |m, r, t| m.locate_aim(r, t));
+		let grip = TrackedPose::new(base_space, &format!("{pion_path}/grip"), |m, r, t| {
+			m.locate_pose(&m.grip, r, t)
+		});
 		let palm = palm.then(|| {
-			TrackedPose::new(base_space, &format!("{pion_path}/palm"), |m| {
-				m.palm.as_deref()
+			TrackedPose::new(base_space, &format!("{pion_path}/palm"), |m, r, t| {
+				m.locate_pose(m.palm.as_deref()?, r, t)
 			})
 		});
 		let model_spatial =
@@ -685,6 +698,8 @@ impl OxrControllerInput {
 			driver: None,
 			query_handle: None,
 			captured: false,
+			profile: None,
+			pinned_tip: None,
 		})
 	}
 	fn poses(&self) -> impl Iterator<Item = &TrackedPose> {
@@ -703,6 +718,7 @@ impl OxrControllerInput {
 		actions: &Actions,
 		time: openxr::Time,
 		base_space: &Arc<SpatialRef>,
+		offset_adjust: bool,
 	) {
 		if self.model_task.as_ref().is_some_and(|v| v.is_finished()) {
 			let (model, part) = now_or_never(self.model_task.take().unwrap())
@@ -714,8 +730,36 @@ impl OxrControllerInput {
 		let Some(method) = self.method.as_ref() else {
 			return;
 		};
+		let path = method
+			.space
+			.instance()
+			.string_to_path(match self.side {
+				HandSide::Left => "/user/hand/left",
+				HandSide::Right => "/user/hand/right",
+			})
+			.unwrap();
+		let profile = session
+			.current_interaction_profile(path)
+			.ok()
+			.filter(|p| *p != openxr::Path::NULL)
+			.and_then(|p| session.instance().path_to_string(p).ok());
+		if self.profile != profile {
+			*method.aim_offset.write().unwrap() =
+				profile_aim_offset(profile.as_deref().unwrap_or_default(), self.side);
+			self.profile = profile.clone();
+		}
+
 		let _span = debug_span!("locate space").entered();
-		let aim_pose = method.locate_pose(&method.space, base_space, time);
+		let raw_aim = method.locate_pose(&method.space, base_space, time);
+		if offset_adjust {
+			method.adjust_offset(
+				&mut self.pinned_tip,
+				raw_aim,
+				get(session, path, &actions.stick_click) > 0.5,
+				profile.as_deref(),
+			);
+		}
+		let aim_pose = raw_aim.map(|p| method.offset_aim(p));
 		self.aim.set_pose(aim_pose);
 		self.grip
 			.set_pose(method.locate_pose(&method.grip, base_space, time));
@@ -752,31 +796,8 @@ impl OxrControllerInput {
 				}]);
 			}
 		}
-		let path = method
-			.space
-			.instance()
-			.string_to_path(match self.side {
-				HandSide::Left => "/user/hand/left",
-				HandSide::Right => "/user/hand/right",
-			})
-			.unwrap();
-		if let Ok(path) = session.current_interaction_profile(path)
-			&& path != openxr::Path::NULL
-			&& let Ok(path) = session.instance().path_to_string(path)
-			&& path == "/interaction_profiles/khr/simple_controller"
-		{
+		if profile.as_deref() == Some("/interaction_profiles/khr/simple_controller") {
 			self.set_enabled(false);
-		}
-
-		fn get<T: openxr::ActionInput + Default>(
-			session: &OxrSession,
-			path: openxr::Path,
-			action: &Action<T>,
-		) -> T {
-			action
-				.state(session, path)
-				.map(|v| v.current_state)
-				.unwrap_or_default()
 		}
 		let _span = debug_span!("apply datamap").entered();
 		*method.datamap.blocking_write() = ControllerDatamap {
@@ -793,6 +814,38 @@ impl OxrControllerInput {
 		}
 	}
 }
+/// in aim space, arms are what --controller-offset prints
+fn profile_aim_offset(profile: &str, side: HandSide) -> Affine3A {
+	let p = match (profile, side) {
+		("/interaction_profiles/meta/touch_pro_controller", side) => openxr::Posef {
+			orientation: openxr::Quaternionf::IDENTITY,
+			position: openxr::Vector3f {
+				x: if matches!(side, HandSide::Right) {
+					0.009336591
+				} else {
+					-0.009336591
+				},
+				y: 0.011204094,
+				z: -0.054983616,
+			},
+		},
+		_ => openxr::Posef::IDENTITY,
+	};
+	Affine3A::from_rotation_translation(p.orientation.to_quat(), p.position.to_vec3())
+}
+fn pose_affine(p: Posef) -> Affine3A {
+	Affine3A::from_rotation_translation(p.orientation.into(), p.position.into())
+}
+fn get<T: openxr::ActionInput + Default>(
+	session: &OxrSession,
+	path: openxr::Path,
+	action: &Action<T>,
+) -> T {
+	action
+		.state(session, path)
+		.map(|v| v.current_state)
+		.unwrap_or_default()
+}
 #[derive(Debug)]
 struct ControllerInputMethod {
 	side: HandSide,
@@ -805,6 +858,8 @@ struct ControllerInputMethod {
 	/// doesn't relocate
 	pose: RwLock<Option<(Timestamp, Posef)>>,
 	datamap: RwLock<ControllerDatamap>,
+	/// in aim space, applied on top of the runtime's aim pose
+	aim_offset: SyncRwLock<Affine3A>,
 }
 impl ControllerInputMethod {
 	fn new(
@@ -824,18 +879,31 @@ impl ControllerInputMethod {
 			palm: palm.map(Into::into),
 			pose: RwLock::new(None),
 			datamap: RwLock::new(ControllerDatamap::default()),
+			aim_offset: SyncRwLock::new(Affine3A::IDENTITY),
 		}
 	}
 
 	async fn pose_at(&self, time: Timestamp) -> Option<Posef> {
 		match *self.pose.read().await {
 			Some((at, pose)) if at == time => Some(pose),
-			_ => self.locate_pose(
-				&self.space,
+			_ => self.locate_aim(
 				&self.base_spatial,
 				self.base_space.instance().timestamp_to_xr(time)?,
 			),
 		}
+	}
+
+	fn offset_aim(&self, raw: Posef) -> Posef {
+		let (_, r, p) =
+			(pose_affine(raw) * *self.aim_offset.read().unwrap()).to_scale_rotation_translation();
+		Posef {
+			position: p.into(),
+			orientation: r.into(),
+		}
+	}
+	fn locate_aim(&self, relative_to: &Spatial, time: openxr::Time) -> Option<Posef> {
+		self.locate_pose(&self.space, relative_to, time)
+			.map(|p| self.offset_aim(p))
 	}
 
 	fn locate_pose(
@@ -863,6 +931,41 @@ impl ControllerInputMethod {
 				.into(),
 			}
 		})
+	}
+	fn adjust_offset(
+		&self,
+		pinned_tip: &mut Option<Affine3A>,
+		raw_aim: Option<Posef>,
+		held: bool,
+		profile: Option<&str>,
+	) {
+		match (held, *pinned_tip, raw_aim) {
+			(true, None, Some(raw)) => *pinned_tip = Some(pose_affine(self.offset_aim(raw))),
+			(true, Some(tip), Some(raw)) => {
+				*self.aim_offset.write().unwrap() = pose_affine(raw).inverse() * tip;
+			}
+			(false, Some(_), _) => {
+				*pinned_tip = None;
+				let (_, r, p) = self
+					.aim_offset
+					.read()
+					.unwrap()
+					.to_scale_rotation_translation();
+				println!(
+					"{} {:?} aim offset: openxr::Posef {{ orientation: openxr::Quaternionf {{ x: {:?}, y: {:?}, z: {:?}, w: {:?} }}, position: openxr::Vector3f {{ x: {:?}, y: {:?}, z: {:?} }} }}",
+					profile.unwrap_or("<no interaction profile>"),
+					self.side,
+					r.x,
+					r.y,
+					r.z,
+					r.w,
+					p.x,
+					p.y,
+					p.z,
+				);
+			}
+			_ => (),
+		}
 	}
 	fn pose_distance(field: &Field, space: &Spatial, pose: Posef) -> f32 {
 		field.sample(space, pose.position.into()).distance
