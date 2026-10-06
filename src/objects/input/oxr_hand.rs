@@ -335,8 +335,8 @@ impl OxrHandInput {
 			}))
 		};
 		let pion_path = match side {
-			HandSide::Left => "stardust-hand/left",
-			HandSide::Right => "stardust-hand/right",
+			HandSide::Left => "stardust-hand/palm/left",
+			HandSide::Right => "stardust-hand/palm/right",
 		};
 		let tracked = Tracked::new(
 			palm_spatial.get_ref().proxy().clone(),

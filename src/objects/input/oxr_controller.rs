@@ -649,18 +649,26 @@ impl OxrControllerInput {
 		base_space: &LocalRef<SpatialRefProxy, SpatialRef>,
 		palm: bool,
 	) -> Result<Self> {
-		let pion_path = match side {
-			HandSide::Left => "stardust-controller/left",
-			HandSide::Right => "stardust-controller/right",
+		let side_name = match side {
+			HandSide::Left => "left",
+			HandSide::Right => "right",
 		};
-		let aim = TrackedPose::new(base_space, pion_path, |m, r, t| m.locate_aim(r, t));
-		let grip = TrackedPose::new(base_space, &format!("{pion_path}/grip"), |m, r, t| {
-			m.locate_pose(&m.grip, r, t)
-		});
+		let aim = TrackedPose::new(
+			base_space,
+			&format!("stardust-controller/aim/{side_name}"),
+			|m, r, t| m.locate_aim(r, t),
+		);
+		let grip = TrackedPose::new(
+			base_space,
+			&format!("stardust-controller/grip/{side_name}"),
+			|m, r, t| m.locate_pose(&m.grip, r, t),
+		);
 		let palm = palm.then(|| {
-			TrackedPose::new(base_space, &format!("{pion_path}/palm"), |m, r, t| {
-				m.locate_pose(m.palm.as_deref()?, r, t)
-			})
+			TrackedPose::new(
+				base_space,
+				&format!("stardust-controller/grip_surface/{side_name}"),
+				|m, r, t| m.locate_pose(m.palm.as_deref()?, r, t),
+			)
 		});
 		let model_spatial =
 			SpatialObject::new(Some(&aim.spatial), Mat4::from_scale(Vec3::splat(0.02)));
