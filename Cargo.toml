@@ -2,7 +2,7 @@
 edition = "2024"
 rust-version = "1.89"
 name = "stardust-xr-server"
-version = "0.52.0"
+version = "0.53.0-rc.1"
 authors = ["Nova King <technobaboo@proton.me>"]
 description = "Stardust XR reference display server"
 license = "GPLv2"
@@ -147,7 +147,7 @@ futures-sink = "0.3.31"
 stardust-xr-protocol.workspace = true
 
 strong-ipc = { version = "0.1.0" }
-gluon-ipc = { version = "0.1.0", features = [
+gluon-ipc = { version = "0.1.1", features = [
 	"local-handlers",
 ] }
 # strong-ipc = { version = "0.1.0", git = "https://github.com/StardustXR/strong-ipc" }
@@ -156,11 +156,11 @@ gluon-ipc = { version = "0.1.0", features = [
 # ] }
 
 [workspace.dependencies.stardust-xr-protocol]
-version = "0.52.1"
+version = "0.53.0-rc.1"
 # git = "https://github.com/StardustXR/core.git"
 [dependencies.stardust-xr-molecules-protocols]
-version = "0.52.0"
-git = "https://github.com/StardustXR/molecules.git"
+version = "0.53.0-rc.1"
+# git = "https://github.com/StardustXR/molecules.git"
 
 [dependencies.stardust-xr-server-foundation]
 path = "foundation"
