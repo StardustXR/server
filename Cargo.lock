@@ -1095,7 +1095,7 @@ dependencies = [
 [[package]]
 name = "bevy_mod_openxr"
 version = "0.3.0"
-source = "git+https://github.com/Schmarni-Dev/bevy_openxr?rev=695d588#695d588b815b3100ebfb9630a172cf87abad061d"
+source = "git+https://github.com/Schmarni-Dev/bevy_openxr?rev=b05ed99#b05ed9947d0f72e598a08e2c861a8f72d2f0f4d5"
 dependencies = [
  "android_system_properties",
  "ash",
@@ -1113,7 +1113,7 @@ dependencies = [
 [[package]]
 name = "bevy_mod_xr"
 version = "0.3.0"
-source = "git+https://github.com/Schmarni-Dev/bevy_openxr?rev=695d588#695d588b815b3100ebfb9630a172cf87abad061d"
+source = "git+https://github.com/Schmarni-Dev/bevy_openxr?rev=b05ed99#b05ed9947d0f72e598a08e2c861a8f72d2f0f4d5"
 dependencies = [
  "bevy",
 ]

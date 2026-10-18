@@ -21,7 +21,7 @@ use bevy_mod_openxr::{
 	action_binding::{OxrSendActionBindings, OxrSuggestActionBinding},
 	exts::OxrEnabledExtensions,
 	helper_traits::{ToIsometry3d, ToQuat, ToVec2, ToVec3},
-	resources::{OxrFrameState, OxrInstance, Pipelined},
+	resources::{OxrFrameState, OxrInstance, Pipelined, USED_OPENXR_VERSION},
 	session::OxrSession,
 };
 use bevy_mod_xr::{
@@ -151,9 +151,14 @@ fn suggest_bindings(
 			],
 		);
 	}
-	// core since 1.1, so no XR_FB_touch_controller_pro needed
-	let touch_pro = "/interaction_profiles/meta/touch_pro_controller";
-	for profile in [touch_pro, "/interaction_profiles/oculus/touch_controller"] {
+	let touch_controllers: &[&str] = if USED_OPENXR_VERSION.get().unwrap().minor() > 0 {
+		// core since 1.1, so no XR_FB_touch_controller_pro needed
+		let touch_pro = "/interaction_profiles/meta/touch_pro_controller";
+		&[touch_pro, "/interaction_profiles/oculus/touch_controller"]
+	} else {
+		&["/interaction_profiles/oculus/touch_controller"]
+	};
+	for profile in touch_controllers {
 		bind_all(
 			profile,
 			&[
@@ -311,7 +316,6 @@ fn suggest_bindings(
 		)],
 	);
 	let profiles = [
-		"/interaction_profiles/oculus/touch_controller",
 		"/interaction_profiles/htc/vive_controller",
 		"/interaction_profiles/valve/index_controller",
 		"/interaction_profiles/khr/simple_controller",
@@ -320,7 +324,7 @@ fn suggest_bindings(
 		.khr_generic_controller
 		.then_some("/interaction_profiles/khr/generic_controller")
 		.into_iter()
-		.chain([touch_pro])
+		.chain(touch_controllers.iter().copied())
 		.chain(profiles)
 	{
 		bind_all(
@@ -336,7 +340,7 @@ fn suggest_bindings(
 	}
 	// palm_ext isn't defined for generic_controller, and one bad path rejects the whole profile
 	if enabled_exts.ext_palm_pose {
-		for profile in profiles {
+		for profile in profiles.iter().chain(touch_controllers) {
 			bind_all(
 				profile,
 				&[(
