@@ -30,7 +30,6 @@ use std::sync::{
 	Arc, OnceLock, Weak,
 	atomic::{AtomicBool, Ordering},
 };
-use tokio::sync::Notify;
 
 type LineMaterial = ExtendedMaterial<BevyMaterial, LineExtension>;
 const LINE_SHADER_HANDLE: Handle<Shader> = weak_handle!("7d28aa5a-3abd-43bb-b0e9-0de8b81b650d");
@@ -127,24 +126,45 @@ fn build_line_mesh(
 	mut cmds: Commands,
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut materials: ResMut<Assets<LineMaterial>>,
+	mut material: Local<Option<Handle<LineMaterial>>>,
 	query: Query<Ref<GlobalTransform>>,
 ) {
+	let material = material
+		.get_or_insert_with(|| {
+			materials.add(ExtendedMaterial {
+				base: BevyMaterial {
+					base_color: Color::WHITE,
+					perceptual_roughness: 1.0,
+					alpha_mode: AlphaMode::Premultiplied,
+					emissive: Color::linear_rgba(0.75, 0.75, 0.75, 1.0).into(),
+					..default()
+				},
+				extension: LineExtension {},
+			})
+		})
+		.clone();
 	for lines in LINES_REGISTRY.get_valid_contents().into_iter() {
 		let Some(transform) = lines.spatial.get_entity().and_then(|e| query.get(e).ok()) else {
 			continue;
 		};
-		if !(lines.gen_mesh.load(Ordering::Relaxed) || transform.is_changed()) {
+		// only scale is baked into the points, so thickness stays in world units
+		// without rebuilding the mesh every time the spatial moves
+		let (scale, rotation, translation) = transform.to_scale_rotation_translation();
+		let rigid = Transform::from_translation(translation).with_rotation(rotation);
+		let scale_changed = !lines.scale.lock().abs_diff_eq(scale, 1e-4);
+		if !lines.gen_mesh.load(Ordering::Relaxed) && !scale_changed {
+			if transform.is_changed()
+				&& let Some(e) = lines.entity.get()
+			{
+				cmds.entity(**e)
+					.insert((rigid, GlobalTransform::from(rigid)));
+			}
 			continue;
 		}
 		lines.gen_mesh.store(false, Ordering::Relaxed);
-		let mut vertex_positions = Vec::<Vec3>::new();
-		let mut vertex_normals = Vec::<Vec3>::new();
-		let mut vertex_colors = Vec::<[f32; 4]>::new();
-		let mut vertex_indices = Vec::<u32>::new();
+		*lines.scale.lock() = scale;
 		let lines_data = lines.data.lock();
 		if lines_data.is_empty() {
-			*lines.bounds.lock() = Some(Aabb::default());
-			lines.setup_complete.notify_waiters();
 			match lines.entity.get() {
 				Some(e) => cmds.entity(**e),
 				None => {
@@ -157,129 +177,7 @@ fn build_line_mesh(
 			continue;
 		}
 
-		let mut indices_set = 0;
-		for line in lines_data.iter() {
-			// yes this alloc is suboptimal, but good enough for now
-			let line_points = line
-				.points
-				.iter()
-				.map(|p: &LinePoint| LinePoint {
-					point: transform.transform_point(p.point.into()).into(),
-					thickness: p.thickness,
-					color: p.color,
-				})
-				// Drop genuinely non-finite points (NaN/inf coming from the client
-				// or a degenerate transform) so they can't poison the tube math.
-				// This is distinct from coincident points, which we keep below.
-				.filter(|p| Vec3::from(p.point).is_finite())
-				.collect::<Vec<_>>();
-
-			let start_set = indices_set;
-			let n = line_points.len();
-			// A line needs at least two points to form a tube.
-			if n < 2 {
-				continue;
-			}
-
-			// Direction of the segment *entering* point `i` (curr - prev), using the
-			// nearest preceding point that is at a *different* position. Coincident
-			// points (same position, authored to make the tube step in thickness or
-			// colour) are stepped over rather than skipped, so we never normalize a
-			// zero-length segment and every point in a coincident run ends up with
-			// the same orientation/normal.
-			let incoming_dir = |i: usize| -> Option<Vec3> {
-				let curr = Vec3::from(line_points[i].point);
-				(1..n).find_map(|steps| {
-					let j = if line.cyclic {
-						(i + n - steps) % n
-					} else if i >= steps {
-						i - steps
-					} else {
-						return None;
-					};
-					let prev = Vec3::from(line_points[j].point);
-					(prev != curr).then(|| (curr - prev).normalize())
-				})
-			};
-			// Direction of the segment *leaving* point `i` (next - curr), using the
-			// nearest following point at a different position.
-			let outgoing_dir = |i: usize| -> Option<Vec3> {
-				let curr = Vec3::from(line_points[i].point);
-				(1..n).find_map(|steps| {
-					let j = if line.cyclic {
-						(i + steps) % n
-					} else if i + steps < n {
-						i + steps
-					} else {
-						return None;
-					};
-					let next = Vec3::from(line_points[j].point);
-					(next != curr).then(|| (next - curr).normalize())
-				})
-			};
-
-			for (i, curr) in line_points.iter().enumerate() {
-				let last_quat = incoming_dir(i).map(|d| Quat::from_rotation_arc(Vec3::Y, d));
-				let next_quat = outgoing_dir(i).map(|d| Quat::from_rotation_arc(Vec3::Y, d));
-				let quat = match (last_quat, next_quat) {
-					// No distinct neighbour in either direction => every point in this
-					// line shares one position, so there is no tube to orient.
-					(None, None) => {
-						break;
-					}
-					(None, Some(q)) | (Some(q), None) => q,
-					(Some(last), Some(next)) => last.lerp(next, 0.5),
-				};
-				if !quat.is_finite() {
-					warn!("non finite quat at point {i}: curr: {curr:?}");
-					break;
-				}
-				let normals = [
-					Vec3::X,
-					Vec3::new(1., 0., 1.).normalize(),
-					Vec3::Z,
-					Vec3::new(-1., 0., 1.).normalize(),
-					Vec3::NEG_X,
-					Vec3::new(-1., 0., -1.).normalize(),
-					Vec3::NEG_Z,
-					Vec3::new(1., 0., -1.).normalize(),
-				]
-				.map(Vec3::normalize)
-				.map(|v| quat * v);
-				let points = normals.map(|v| (v * curr.thickness) + Vec3::from(curr.point));
-				vertex_normals.extend(normals);
-				vertex_positions.extend(points);
-				vertex_colors.extend([curr.color.to_bevy().to_linear().to_f32_array(); 8]);
-				// Connect this ring forward to the next one, except at the final
-				// point of the line: a non-cyclic line is closed off by the caps and
-				// a cyclic line is wrapped by cyclic_indices, both added below.
-				let last_point = i == n - 1;
-				if !last_point {
-					vertex_indices.extend(indices(indices_set));
-				}
-				indices_set += 1;
-			}
-			// Only finish the tube if this line actually emitted any rings.
-			if indices_set > start_set {
-				// Handle the connection between start and end points:
-				// - For cyclic lines: connect last segment back to first
-				// - For non-cyclic lines: add caps at both ends
-				if line.cyclic {
-					vertex_indices.extend(cyclic_indices(start_set, indices_set - 1));
-				} else {
-					vertex_indices.extend(cap_indices(start_set, false));
-					vertex_indices.extend(cap_indices(indices_set - 1, true));
-				}
-			}
-		}
-		let mut mesh = Mesh::new(
-			PrimitiveTopology::TriangleList,
-			RenderAssetUsages::RENDER_WORLD,
-		);
-		mesh.insert_indices(Indices::U32(vertex_indices));
-		mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertex_positions);
-		mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vertex_normals);
-		mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vertex_colors);
+		let mesh = tube_mesh(&lines_data, scale);
 
 		let mut entity = match lines.entity.get() {
 			Some(e) => cmds.entity(**e),
@@ -292,19 +190,7 @@ fn build_line_mesh(
 					))
 					.id();
 				_ = lines.spatial_child_entity.set(EntityHandle::new(ent));
-				let e = cmds.spawn((
-					Name::new("LinesNode"),
-					MeshMaterial3d(materials.add(ExtendedMaterial {
-						base: BevyMaterial {
-							base_color: Color::WHITE,
-							perceptual_roughness: 1.0,
-							alpha_mode: AlphaMode::Premultiplied,
-							emissive: Color::linear_rgba(0.75, 0.75, 0.75, 1.0).into(),
-							..default()
-						},
-						extension: LineExtension {},
-					})),
-				));
+				let e = cmds.spawn((Name::new("LinesNode"), MeshMaterial3d(material.clone())));
 				_ = lines.entity.set(EntityHandle::new(e.id()));
 
 				e
@@ -313,21 +199,152 @@ fn build_line_mesh(
 		if let Some(VertexAttributeValues::Float32x3(values)) =
 			mesh.attribute(Mesh::ATTRIBUTE_POSITION)
 		{
-			let global_to_local = transform.affine().inverse();
-			let local_aabb = Aabb::enclosing(
-				values
-					.iter()
-					.map(|p| global_to_local.transform_point3(Vec3::from_slice(p))),
-			)
-			.unwrap_or_default();
-			let global_aabb =
-				Aabb::enclosing(values.iter().map(|p| Vec3::from_slice(p))).unwrap_or_default();
-			*lines.bounds.lock() = Some(local_aabb);
-			lines.setup_complete.notify_waiters();
-			entity.insert(global_aabb);
+			entity.insert(
+				Aabb::enclosing(values.iter().map(|p| Vec3::from_slice(p))).unwrap_or_default(),
+			);
 		}
-		entity.insert(Mesh3d(meshes.add(mesh)));
+		let mut handle = lines.mesh.lock();
+		match handle.as_ref().and_then(|h| meshes.get_mut(h)) {
+			Some(m) => *m = mesh,
+			None => {
+				let h = meshes.add(mesh);
+				entity.insert(Mesh3d(h.clone()));
+				*handle = Some(h);
+			}
+		}
+		entity.insert((rigid, GlobalTransform::from(rigid)));
 	}
+}
+
+fn tube_mesh(lines: &[Line], scale: Vec3) -> Mesh {
+	let mut vertex_positions = Vec::<Vec3>::new();
+	let mut vertex_normals = Vec::<Vec3>::new();
+	let mut vertex_colors = Vec::<[f32; 4]>::new();
+	let mut vertex_indices = Vec::<u32>::new();
+	let mut indices_set = 0;
+	for line in lines.iter() {
+		// yes this alloc is suboptimal, but good enough for now
+		let line_points = line
+			.points
+			.iter()
+			.map(|p: &LinePoint| LinePoint {
+				point: (Vec3::from(p.point) * scale).into(),
+				thickness: p.thickness,
+				color: p.color,
+			})
+			// Drop genuinely non-finite points (NaN/inf coming from the client
+			// or a degenerate transform) so they can't poison the tube math.
+			// This is distinct from coincident points, which we keep below.
+			.filter(|p| Vec3::from(p.point).is_finite())
+			.collect::<Vec<_>>();
+
+		let start_set = indices_set;
+		let n = line_points.len();
+		// A line needs at least two points to form a tube.
+		if n < 2 {
+			continue;
+		}
+
+		// Direction of the segment *entering* point `i` (curr - prev), using the
+		// nearest preceding point that is at a *different* position. Coincident
+		// points (same position, authored to make the tube step in thickness or
+		// colour) are stepped over rather than skipped, so we never normalize a
+		// zero-length segment and every point in a coincident run ends up with
+		// the same orientation/normal.
+		let incoming_dir = |i: usize| -> Option<Vec3> {
+			let curr = Vec3::from(line_points[i].point);
+			(1..n).find_map(|steps| {
+				let j = if line.cyclic {
+					(i + n - steps) % n
+				} else if i >= steps {
+					i - steps
+				} else {
+					return None;
+				};
+				let prev = Vec3::from(line_points[j].point);
+				(prev != curr).then(|| (curr - prev).normalize())
+			})
+		};
+		// Direction of the segment *leaving* point `i` (next - curr), using the
+		// nearest following point at a different position.
+		let outgoing_dir = |i: usize| -> Option<Vec3> {
+			let curr = Vec3::from(line_points[i].point);
+			(1..n).find_map(|steps| {
+				let j = if line.cyclic {
+					(i + steps) % n
+				} else if i + steps < n {
+					i + steps
+				} else {
+					return None;
+				};
+				let next = Vec3::from(line_points[j].point);
+				(next != curr).then(|| (next - curr).normalize())
+			})
+		};
+
+		for (i, curr) in line_points.iter().enumerate() {
+			let last_quat = incoming_dir(i).map(|d| Quat::from_rotation_arc(Vec3::Y, d));
+			let next_quat = outgoing_dir(i).map(|d| Quat::from_rotation_arc(Vec3::Y, d));
+			let quat = match (last_quat, next_quat) {
+				// No distinct neighbour in either direction => every point in this
+				// line shares one position, so there is no tube to orient.
+				(None, None) => {
+					break;
+				}
+				(None, Some(q)) | (Some(q), None) => q,
+				(Some(last), Some(next)) => last.lerp(next, 0.5),
+			};
+			if !quat.is_finite() {
+				warn!("non finite quat at point {i}: curr: {curr:?}");
+				break;
+			}
+			let normals = [
+				Vec3::X,
+				Vec3::new(1., 0., 1.).normalize(),
+				Vec3::Z,
+				Vec3::new(-1., 0., 1.).normalize(),
+				Vec3::NEG_X,
+				Vec3::new(-1., 0., -1.).normalize(),
+				Vec3::NEG_Z,
+				Vec3::new(1., 0., -1.).normalize(),
+			]
+			.map(Vec3::normalize)
+			.map(|v| quat * v);
+			let points = normals.map(|v| (v * curr.thickness) + Vec3::from(curr.point));
+			vertex_normals.extend(normals);
+			vertex_positions.extend(points);
+			vertex_colors.extend([curr.color.to_bevy().to_linear().to_f32_array(); 8]);
+			// Connect this ring forward to the next one, except at the final
+			// point of the line: a non-cyclic line is closed off by the caps and
+			// a cyclic line is wrapped by cyclic_indices, both added below.
+			let last_point = i == n - 1;
+			if !last_point {
+				vertex_indices.extend(indices(indices_set));
+			}
+			indices_set += 1;
+		}
+		// Only finish the tube if this line actually emitted any rings.
+		if indices_set > start_set {
+			// Handle the connection between start and end points:
+			// - For cyclic lines: connect last segment back to first
+			// - For non-cyclic lines: add caps at both ends
+			if line.cyclic {
+				vertex_indices.extend(cyclic_indices(start_set, indices_set - 1));
+			} else {
+				vertex_indices.extend(cap_indices(start_set, false));
+				vertex_indices.extend(cap_indices(indices_set - 1, true));
+			}
+		}
+	}
+	let mut mesh = Mesh::new(
+		PrimitiveTopology::TriangleList,
+		RenderAssetUsages::RENDER_WORLD,
+	);
+	mesh.insert_indices(Indices::U32(vertex_indices));
+	mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, vertex_positions);
+	mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, vertex_normals);
+	mesh.insert_attribute(Mesh::ATTRIBUTE_COLOR, vertex_colors);
+	mesh
 }
 
 const END_CAP_INDICES: [u32; 18] = [0, 1, 7, 7, 1, 2, 7, 2, 6, 6, 2, 3, 6, 3, 5, 5, 3, 4];
@@ -370,9 +387,9 @@ pub struct Lines {
 	gen_mesh: AtomicBool,
 	entity: OnceLock<EntityHandle>,
 	spatial_child_entity: OnceLock<EntityHandle>,
-	bounds: Mutex<Option<Aabb>>,
+	mesh: Mutex<Option<Handle<Mesh>>>,
+	scale: Mutex<Vec3>,
 	_bounding_calc: BoundingBoxCalc,
-	setup_complete: Notify,
 }
 impl Lines {
 	pub fn new(spatial: Arc<SpatialObject>, lines: Vec<Line>) -> LocalRef<LinesProxy, Lines> {
@@ -382,7 +399,7 @@ impl Lines {
 				let Some(lines) = weak.upgrade() else {
 					return Default::default();
 				};
-				lines.bounds.lock().unwrap_or_default()
+				lines.bounds()
 			});
 			Lines {
 				spatial: spatial.clone(),
@@ -390,9 +407,9 @@ impl Lines {
 				gen_mesh: AtomicBool::new(true),
 				entity: OnceLock::new(),
 				spatial_child_entity: OnceLock::new(),
-				bounds: Mutex::new(Some(Aabb::default())),
+				mesh: Mutex::new(None),
+				scale: Mutex::new(Vec3::ONE),
 				_bounding_calc: bounding_calc,
-				setup_complete: Notify::new(),
 			}
 		});
 
@@ -402,6 +419,25 @@ impl Lines {
 		LINES_REGISTRY.add_raw(&lines_arc);
 
 		lines
+	}
+	fn bounds(&self) -> Aabb {
+		// thickness is in world units, so undo the spatial's scale to get it locally
+		let scale = self
+			.spatial
+			.global_transform()
+			.to_scale_rotation_translation()
+			.0;
+		Aabb::enclosing(
+			self.data
+				.lock()
+				.iter()
+				.flat_map(|l| &l.points)
+				.flat_map(|p| {
+					let r = Vec3::splat(p.thickness) / scale.abs();
+					[Vec3::from(p.point) - r, Vec3::from(p.point) + r]
+				}),
+		)
+		.unwrap_or_default()
 	}
 }
 impl LinesHandler for Lines {
@@ -424,9 +460,42 @@ impl LinesInterfaceHandler for LinesInterface {
 		lines: Vec<Line>,
 	) -> Result<LinesProxy, CreateError> {
 		let spatial = spatial.owned().ok_or(CreateError::InvalidRef)?;
-		let lines = Lines::new(spatial.clone(), lines);
 		tracing::info!("creating lines node");
-		lines.setup_complete.notified().await;
+		let lines = Lines::new(spatial.clone(), lines);
 		Ok(lines.into_proxy())
+	}
+}
+
+#[cfg(test)]
+mod benches {
+	use super::*;
+	use crate::core::microbench::bench;
+	use stardust_xr_protocol::types::rgba_linear;
+
+	fn stroke(n: usize) -> Line {
+		Line {
+			points: (0..n)
+				.map(|i| {
+					let t = i as f32 * 0.01;
+					LinePoint {
+						point: [t.sin(), t, t.cos()].into(),
+						thickness: 0.005,
+						color: rgba_linear!(1.0, 1.0, 1.0, 1.0),
+					}
+				})
+				.collect(),
+			cyclic: false,
+		}
+	}
+
+	#[test]
+	#[ignore]
+	fn bench_tube_mesh() {
+		for n in [100, 1_000, 10_000] {
+			let lines = [stroke(n)];
+			bench(&format!("tube_mesh {n} points"), || {
+				tube_mesh(&lines, Vec3::ONE)
+			});
+		}
 	}
 }
