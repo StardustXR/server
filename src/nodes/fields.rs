@@ -107,22 +107,21 @@ fn sync_field_gizmos(
 			}
 			entry.0 = current_gen;
 
+			let mut asset = GizmoAsset::new();
 			for chain in chains {
-				let mut asset = GizmoAsset::new();
 				asset.linestrip(chain.iter().map(|c| (*c).into()), color);
-				let handle = gizmo_assets.add(asset);
-				let entity = commands
-					.spawn((
-						Gizmo {
-							handle,
-							..Default::default()
-						},
-						field_transform,
-						FieldGizmoMarker,
-					))
-					.id();
-				entry.1.push(entity);
 			}
+			let entity = commands
+				.spawn((
+					Gizmo {
+						handle: gizmo_assets.add(asset),
+						..Default::default()
+					},
+					field_transform,
+					FieldGizmoMarker,
+				))
+				.id();
+			entry.1.push(entity);
 		}
 		// else: generation changed but chains not ready yet — keep old entities visible
 	}
@@ -136,12 +135,14 @@ fn compute_field_polylines(f: &Arc<Field>) -> Vec<Vec<Vec3A>> {
 	const FAR: f32 = 100.0;
 	const PAD: f32 = 1.1;
 	const MIN_EXT: f32 = 0.005;
-	let bx_pos = ((FAR - f.local_sample(vec3a(FAR, 0.0, 0.0)).distance) * PAD).max(MIN_EXT);
-	let bx_neg = ((FAR - f.local_sample(vec3a(-FAR, 0.0, 0.0)).distance) * PAD).max(MIN_EXT);
-	let by_pos = ((FAR - f.local_sample(vec3a(0.0, FAR, 0.0)).distance) * PAD).max(MIN_EXT);
-	let by_neg = ((FAR - f.local_sample(vec3a(0.0, -FAR, 0.0)).distance) * PAD).max(MIN_EXT);
-	let bz_pos = ((FAR - f.local_sample(vec3a(0.0, 0.0, FAR)).distance) * PAD).max(MIN_EXT);
-	let bz_neg = ((FAR - f.local_sample(vec3a(0.0, 0.0, -FAR)).distance) * PAD).max(MIN_EXT);
+	let shape = f.shape.read().clone();
+	let distance = |p: Vec3A| shape.sample(p).distance;
+	let bx_pos = ((FAR - distance(vec3a(FAR, 0.0, 0.0))) * PAD).max(MIN_EXT);
+	let bx_neg = ((FAR - distance(vec3a(-FAR, 0.0, 0.0))) * PAD).max(MIN_EXT);
+	let by_pos = ((FAR - distance(vec3a(0.0, FAR, 0.0))) * PAD).max(MIN_EXT);
+	let by_neg = ((FAR - distance(vec3a(0.0, -FAR, 0.0))) * PAD).max(MIN_EXT);
+	let bz_pos = ((FAR - distance(vec3a(0.0, 0.0, FAR))) * PAD).max(MIN_EXT);
+	let bz_neg = ((FAR - distance(vec3a(0.0, 0.0, -FAR))) * PAD).max(MIN_EXT);
 
 	const MAX_SLICES_PER_HALF_AXIS: i32 = 10;
 	let slice_step = 0.01_f32.max(
@@ -165,7 +166,7 @@ fn compute_field_polylines(f: &Arc<Field>) -> Vec<Vec<Vec3A>> {
 			return all_chains;
 		}
 		for chain in chain_segments(marching_squares_slice(
-			|p| f.local_sample(p).distance,
+			distance,
 			(-bx_neg, bx_pos, -by_neg, by_pos),
 			slice_step / square_rez,
 			move |u, v| vec3a(u, v, z),
@@ -179,7 +180,7 @@ fn compute_field_polylines(f: &Arc<Field>) -> Vec<Vec<Vec3A>> {
 			return all_chains;
 		}
 		for chain in chain_segments(marching_squares_slice(
-			|p| f.local_sample(p).distance,
+			distance,
 			(-bx_neg, bx_pos, -bz_neg, bz_pos),
 			slice_step / square_rez,
 			move |u, v| vec3a(u, y, v),
@@ -193,7 +194,7 @@ fn compute_field_polylines(f: &Arc<Field>) -> Vec<Vec<Vec3A>> {
 			return all_chains;
 		}
 		for chain in chain_segments(marching_squares_slice(
-			|p| f.local_sample(p).distance,
+			distance,
 			(-by_neg, by_pos, -bz_neg, bz_pos),
 			slice_step / square_rez,
 			move |u, v| vec3a(x, u, v),
@@ -277,9 +278,11 @@ fn spawn_field_polylines(field: &Arc<Field>) {
 	cache.1 = Some(chains);
 }
 
-/// Sample the SDF on a 2D grid over the given bounds and run standard marching squares
-/// to find line segments at the zero isoline. Returns a list of (start, end) segment pairs
-/// in local 3D space.
+/// Run marching squares over a 2D grid on a slice plane to find line segments at the
+/// zero isoline, returned as (start, end) pairs in local 3D space.
+///
+/// the grid is walked as a quadtree, a block whose center is farther from the surface
+/// than any of its corners can't hold any of it, so only cells near the isoline get sampled
 ///
 /// - `sample`: evaluates the SDF at a 3D local-space point
 /// - `bounds`: (u_min, u_max, v_min, v_max) extent of the 2D grid
@@ -301,19 +304,6 @@ where
 	if cols == 0 || rows == 0 {
 		return vec![];
 	}
-
-	// Sample the SDF at each grid vertex: grid[row][col]
-	let grid: Vec<Vec<f32>> = (0..=rows)
-		.map(|j| {
-			let v = v_min + j as f32 * cell_size;
-			(0..=cols)
-				.map(|i| {
-					let u = u_min + i as f32 * cell_size;
-					sample(lift(u, v))
-				})
-				.collect()
-		})
-		.collect();
 
 	// Marching squares lookup table.
 	// Corners per cell: 0=(i,j), 1=(i+1,j), 2=(i+1,j+1), 3=(i,j+1)
@@ -338,51 +328,73 @@ where
 		&[],               // 1111 – all inside
 	];
 
+	let at = |i: f32, j: f32| lift(u_min + i * cell_size, v_min + j * cell_size);
+	let mut grid = vec![f32::NAN; (cols + 1) * (rows + 1)];
+	let mut corner = |i: usize, j: usize| {
+		let d = &mut grid[j * (cols + 1) + i];
+		if d.is_nan() {
+			*d = sample(at(i as f32, j as f32));
+		}
+		*d
+	};
+
 	let mut segments = Vec::new();
-
-	for j in 0..rows {
-		for i in 0..cols {
-			let d0 = grid[j][i]; // c0: (i,   j  )
-			let d1 = grid[j][i + 1]; // c1: (i+1, j  )
-			let d2 = grid[j + 1][i + 1]; // c2: (i+1, j+1)
-			let d3 = grid[j + 1][i]; // c3: (i,   j+1)
-
-			let case_idx = ((d0 <= 0.0) as usize)
-				| (((d1 <= 0.0) as usize) << 1)
-				| (((d2 <= 0.0) as usize) << 2)
-				| (((d3 <= 0.0) as usize) << 3);
-
-			let entry = TABLE[case_idx];
-			if entry.is_empty() {
+	let mut blocks = vec![(0, 0, cols, rows)];
+	while let Some((i0, j0, i1, j1)) = blocks.pop() {
+		let (w, h) = (i1 - i0, j1 - j0);
+		if w > 1 || h > 1 {
+			let d = sample(at((i0 + i1) as f32 / 2.0, (j0 + j1) as f32 / 2.0));
+			// an extra cell of slack for shapes whose distance is only approximately exact
+			if d.abs() > cell_size * ((w as f32).hypot(h as f32) / 2.0 + 1.0) {
 				continue;
 			}
-
-			let u0 = u_min + i as f32 * cell_size;
-			let v0 = v_min + j as f32 * cell_size;
-			let u1 = u0 + cell_size;
-			let v1 = v0 + cell_size;
-
-			let c0: Vec3A = lift(u0, v0);
-			let c1: Vec3A = lift(u1, v0);
-			let c2: Vec3A = lift(u1, v1);
-			let c3: Vec3A = lift(u0, v1);
-
-			// Linearly interpolate to find the zero crossing on an edge.
-			let edge_pt = |e: usize| -> Vec3A {
-				let (ca, da, cb, db) = match e {
-					0 => (c0, d0, c1, d1),
-					1 => (c1, d1, c2, d2),
-					2 => (c2, d2, c3, d3),
-					_ => (c3, d3, c0, d0),
-				};
-				let denom = da - db;
-				let t = if denom.abs() < 1e-10 { 0.5 } else { da / denom };
-				ca.lerp(cb, t)
-			};
-
-			for &(ea, eb) in entry {
-				segments.push((edge_pt(ea), edge_pt(eb)));
+			let (im, jm) = (i0 + w.div_ceil(2), j0 + h.div_ceil(2));
+			for (a0, a1) in [(i0, im), (im, i1)] {
+				for (b0, b1) in [(j0, jm), (jm, j1)] {
+					if a0 < a1 && b0 < b1 {
+						blocks.push((a0, b0, a1, b1));
+					}
+				}
 			}
+			continue;
+		}
+
+		let (i, j) = (i0, j0);
+		let d0 = corner(i, j);
+		let d1 = corner(i + 1, j);
+		let d2 = corner(i + 1, j + 1);
+		let d3 = corner(i, j + 1);
+
+		let case_idx = ((d0 <= 0.0) as usize)
+			| (((d1 <= 0.0) as usize) << 1)
+			| (((d2 <= 0.0) as usize) << 2)
+			| (((d3 <= 0.0) as usize) << 3);
+
+		let entry = TABLE[case_idx];
+		if entry.is_empty() {
+			continue;
+		}
+
+		let c0 = at(i as f32, j as f32);
+		let c1 = at((i + 1) as f32, j as f32);
+		let c2 = at((i + 1) as f32, (j + 1) as f32);
+		let c3 = at(i as f32, (j + 1) as f32);
+
+		// Linearly interpolate to find the zero crossing on an edge.
+		let edge_pt = |e: usize| -> Vec3A {
+			let (ca, da, cb, db) = match e {
+				0 => (c0, d0, c1, d1),
+				1 => (c1, d1, c2, d2),
+				2 => (c2, d2, c3, d3),
+				_ => (c3, d3, c0, d0),
+			};
+			let denom = da - db;
+			let t = if denom.abs() < 1e-10 { 0.5 } else { da / denom };
+			ca.lerp(cb, t)
+		};
+
+		for &(ea, eb) in entry {
+			segments.push((edge_pt(ea), edge_pt(eb)));
 		}
 	}
 
