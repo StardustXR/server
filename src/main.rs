@@ -4,6 +4,8 @@
 #![allow(clippy::type_complexity)]
 mod bevy_int;
 mod core;
+#[rustfmt::skip]
+mod debug_protocol;
 mod keymap_store;
 mod nodes;
 mod objects;
@@ -70,7 +72,6 @@ use std::{
 use tokio::{sync::Notify, task::JoinError};
 use tracing::{Subscriber, error, info, metadata::LevelFilter};
 use tracing_subscriber::{EnvFilter, filter::Directive, fmt, prelude::*, registry::LookupSpan};
-use zbus::Connection;
 
 use crate::{
 	bevy_int::{entity_handle::EntityHandlePlugin, tracking_offset::TrackingOffsetPlugin},
@@ -236,23 +237,12 @@ async fn main() -> Result<AppExit, JoinError> {
 		);
 	}
 
-	let dbus_connection = zbus::conn::Builder::session()
-		.unwrap()
-		.replace_existing_names(false)
-		.allow_name_replacements(false)
-		.name(format!("org.stardustxr.Server.{}", instance))
-		.expect("Another instance of the server is running with the same STARDUST_INSTANCE")
-		.build()
-		.await
-		.expect("Could not open dbus session");
-
 	let ready_notifier = Arc::new(Notify::new());
 	let io_loop = tokio::task::spawn_blocking({
 		let ready_notifier = ready_notifier.clone();
 		let project_dirs = project_dirs.clone();
 		let cli_args = cli_args.clone();
-		let dbus_connection = dbus_connection.clone();
-		move || bevy_loop(ready_notifier, project_dirs, cli_args, dbus_connection)
+		move || bevy_loop(ready_notifier, project_dirs, cli_args)
 	});
 	ready_notifier.notified().await;
 	let mut startup_children = project_dirs
@@ -280,8 +270,6 @@ async fn main() -> Result<AppExit, JoinError> {
 
 #[derive(ScheduleLabel, Hash, Debug, PartialEq, Eq, Clone, Copy)]
 pub struct PreFrameWait;
-#[derive(Resource, Deref)]
-pub struct DbusConnection(Connection);
 
 pub fn vk_device_exts() -> Vec<&'static std::ffi::CStr> {
 	let mut exts = bevy_dmabuf::required_device_extensions();
@@ -297,10 +285,8 @@ fn bevy_loop(
 	ready_notifier: Arc<Notify>,
 	_project_dirs: Option<ProjectDirs>,
 	args: CliArgs,
-	dbus_connection: Connection,
 ) -> AppExit {
 	let mut app = App::new();
-	app.insert_resource(DbusConnection(dbus_connection));
 	app.insert_resource(OxrManualGraphicsConfig {
 		fallback_backend: GraphicsBackend::Vulkan(()),
 		vk_instance_exts: Vec::new(),

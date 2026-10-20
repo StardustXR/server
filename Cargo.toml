@@ -10,7 +10,7 @@ repository = "https://github.com/StardustXR/stardust-xr-server/"
 homepage = "https://stardustxr.org"
 
 [workspace]
-members = ["foundation", "wboit"]
+members = ["foundation", "wboit", "toggle-debug"]
 
 [[bin]]
 name = "stardust-xr-server"
@@ -141,10 +141,6 @@ openxr = "0.22"
 
 # linux stuffs
 input-event-codes = "6.2.0"
-zbus = { version = "5.11.0", features = [
-	"blocking-api",
-	"tokio",
-], default-features = false }
 directories = "6.0.0"
 xkbcommon-rs = { version = "0.1.0", features = ["server"] }
 cosmic-text = "0.14.2"
@@ -170,6 +166,9 @@ gluon-ipc = { version = "0.1.1", features = ["local-handlers"] }
 [workspace.dependencies.stardust-xr-protocol]
 version = "0.53.0-rc.1"
 # git = "https://github.com/StardustXR/core.git"
+[build-dependencies]
+gluon-ipc-codegen = "0.1.1"
+
 [dependencies.stardust-xr-molecules-protocols]
 version = "0.53.0-rc.1"
 # git = "https://github.com/StardustXR/molecules.git"

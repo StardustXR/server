@@ -1,7 +1,8 @@
 use crate::core::registry::Registry;
+use crate::debug_protocol::{ServerDebug as ServerDebugProxy, ServerDebugHandler};
 use crate::nodes::ProxyExt;
 use crate::nodes::spatial::{Spatial, SpatialObject};
-use crate::{DbusConnection, impl_proxy, interface};
+use crate::{STARDUST_INSTANCE, impl_proxy, interface};
 use bevy::app::{Plugin, Update};
 use bevy::asset::Assets;
 use bevy::color::Color;
@@ -13,7 +14,7 @@ use bevy::ecs::system::{Commands, Query, Res, ResMut};
 use bevy::gizmos::GizmoAsset;
 use bevy::gizmos::retained::Gizmo;
 use glam::{Mat4, Vec3, Vec3A, vec3a};
-use gluon_ipc::{Handler, RefExt};
+use gluon_ipc::{Handler, Node, RefExt, RefFsBinding};
 use parking_lot::RwLock;
 use stardust_xr_protocol::field::{
 	CreatedField, Field as FieldProxy, FieldHandler, FieldInterfaceHandler,
@@ -25,18 +26,19 @@ use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use tokio::sync::watch;
+use tracing::warn;
 
 pub struct FieldDebugGizmoPlugin;
 impl Plugin for FieldDebugGizmoPlugin {
 	fn build(&self, app: &mut bevy::app::App) {
-		let (tx, rx) = tokio::sync::watch::channel(false);
-		let conn = app.world().resource::<DbusConnection>().0.clone();
-		tokio::spawn(async move {
-			_ = conn
-				.object_server()
-				.at("/org/stardustxr/Server", FieldDebugGizmos { state: tx })
-				.await;
-		});
+		let (tx, rx) = watch::channel(false);
+		match expose_server_debug(tx) {
+			Ok(exposed) => {
+				app.insert_resource(exposed);
+			}
+			Err(e) => warn!("failed to expose server debug interface: {e}"),
+		}
 		app.insert_resource(FieldDebugGizmosEnabled(rx));
 		app.init_resource::<FieldGizmoState>();
 		app.add_systems(Update, sync_field_gizmos);
@@ -44,7 +46,7 @@ impl Plugin for FieldDebugGizmoPlugin {
 }
 
 #[derive(Resource)]
-struct FieldDebugGizmosEnabled(tokio::sync::watch::Receiver<bool>);
+struct FieldDebugGizmosEnabled(watch::Receiver<bool>);
 
 #[derive(Component)]
 struct FieldGizmoMarker;
@@ -471,24 +473,47 @@ fn chain_segments(segments: Vec<(Vec3A, Vec3A)>) -> Vec<Vec<Vec3A>> {
 	chains
 }
 
-struct FieldDebugGizmos {
-	state: tokio::sync::watch::Sender<bool>,
+#[derive(Debug, Handler)]
+struct ServerDebug(watch::Sender<bool>);
+impl ServerDebugHandler for ServerDebug {
+	async fn toggle_field_gizmos(&self, _ctx: gluon_ipc::Context) -> bool {
+		let enabled = !*self.0.borrow();
+		set_field_debug_gizmos(&self.0, enabled);
+		enabled
+	}
 }
 
-#[zbus::interface(name = "org.stardustxr.debug.FieldDebugGizmos")]
-impl FieldDebugGizmos {
-	fn enable(&mut self) {
-		GIZMO_VIZ_ENABLED.store(true, Ordering::Release);
+#[derive(Resource)]
+struct ExposedServerDebug {
+	_node: Node<ServerDebug>,
+	_binding: RefFsBinding,
+}
+
+fn expose_server_debug(state: watch::Sender<bool>) -> std::io::Result<ExposedServerDebug> {
+	// not `create_server_file`, `RefFsBinding` takes the lockfile beside the path itself
+	let path = stardust_xr_protocol::dir::server_file_path(
+		"stardust-debug",
+		STARDUST_INSTANCE.get().unwrap(),
+	)
+	.ok_or_else(|| std::io::Error::other("no xdg runtime dir"))?;
+	let (node, debug) =
+		ServerDebugProxy::new_node(ServerDebug(state)).map_err(std::io::Error::other)?;
+	let binding = debug.proxy().bind(&path).map_err(std::io::Error::other)?;
+	Ok(ExposedServerDebug {
+		_node: node,
+		_binding: binding,
+	})
+}
+
+fn set_field_debug_gizmos(state: &watch::Sender<bool>, enabled: bool) {
+	GIZMO_VIZ_ENABLED.store(enabled, Ordering::Release);
+	if enabled {
 		// polylines weren't kept up to date while disabled, so seed them now
 		for field in FIELD_REGISTRY_DEBUG_GIZMOS.get_valid_contents() {
 			request_field_polylines_recalc(&field);
 		}
-		_ = self.state.send(true);
 	}
-	fn disable(&mut self) {
-		GIZMO_VIZ_ENABLED.store(false, Ordering::Release);
-		_ = self.state.send(false);
-	}
+	_ = state.send(enabled);
 }
 
 static FIELD_REGISTRY_DEBUG_GIZMOS: Registry<Field> = Registry::new();

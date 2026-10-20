@@ -1,0 +1,5 @@
+/// server debug toggles, not part of the client protocol
+/// The Ref binding for this is located at $XDG_RUNTIME_DIR/stardust-debug/$STARDUST_INSTANCE
+interface ServerDebug {
+	toggle_field_gizmos() -> (enabled: bool)
+}

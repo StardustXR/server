@@ -1,7 +1,7 @@
 use crate::nodes::ProxyExt;
 use crate::objects::DebugWrapper;
 use crate::openxr_helpers::ConvertTimespec;
-use crate::{DbusConnection, PreFrameWait, get_time};
+use crate::{PreFrameWait, get_time};
 use crate::{
 	bevy_int::flatscreen_cam::FlatscreenCam, nodes::spatial::SpatialObject, objects::Tracked,
 };
@@ -33,7 +33,7 @@ impl Plugin for HmdPlugin {
 	}
 }
 
-fn setup(connection: Res<DbusConnection>, mut cmds: Commands) {
+fn setup(mut cmds: Commands) {
 	let base_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 	let spatial = SpatialObject::new(Some(&base_spatial), Mat4::IDENTITY);
 	let hmd = Hmd {

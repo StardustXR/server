@@ -1,0 +1,10 @@
+[package]
+edition = "2024"
+name = "stardust-toggle-debug"
+version = "0.1.0"
+description = "toggle debug visualizations in a running stardust server"
+
+[dependencies]
+gluon-ipc = "0.1.1"
+stardust-xr-protocol.workspace = true
+tokio = { version = "1.39.2", features = ["rt", "macros"] }

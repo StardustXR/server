@@ -42,7 +42,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use tokio::sync::RwLock;
 use tracing::Instrument;
-use zbus::Connection;
 
 type HandHoldoutMaterial = ExtendedMaterial<BevyMaterial, HoldoutExtension>;
 

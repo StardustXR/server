@@ -1,5 +1,5 @@
 use crate::{
-	DbusConnection, PreFrameWait, get_time,
+	PreFrameWait, get_time,
 	nodes::{
 		ProxyExt,
 		drawable::model::{Model, ModelPart},
@@ -53,7 +53,6 @@ use std::{
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::instrument;
-use zbus::Connection;
 
 pub struct ControllerPlugin {
 	pub offset_adjust: bool,
@@ -480,12 +479,7 @@ fn destroy_spaces(mut controllers: ResMut<Controllers>) {
 	}
 }
 
-fn setup(
-	instance: Res<OxrInstance>,
-	enabled_exts: Res<OxrEnabledExtensions>,
-	connection: Res<DbusConnection>,
-	mut cmds: Commands,
-) {
+fn setup(instance: Res<OxrInstance>, enabled_exts: Res<OxrEnabledExtensions>, mut cmds: Commands) {
 	let base_spatial = SpatialObject::new(None, Mat4::IDENTITY);
 	let set = instance
 		.create_action_set("input_method_actions", "Input Method Action Source", 0)
