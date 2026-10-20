@@ -163,8 +163,8 @@ fn build_line_mesh(
 		}
 		lines.gen_mesh.store(false, Ordering::Relaxed);
 		*lines.scale.lock() = scale;
-		let lines_data = lines.data.lock();
-		if lines_data.is_empty() {
+		let mesh = tube_mesh(&lines.data.lock(), scale);
+		if mesh.indices().is_none_or(|i| i.is_empty()) {
 			match lines.entity.get() {
 				Some(e) => cmds.entity(**e),
 				None => {
@@ -176,8 +176,6 @@ fn build_line_mesh(
 			.remove::<Mesh3d>();
 			continue;
 		}
-
-		let mesh = tube_mesh(&lines_data, scale);
 
 		let mut entity = match lines.entity.get() {
 			Some(e) => cmds.entity(**e),
@@ -206,11 +204,11 @@ fn build_line_mesh(
 		let mut handle = lines.mesh.lock();
 		match handle.as_ref().and_then(|h| meshes.get_mut(h)) {
 			Some(m) => *m = mesh,
-			None => {
-				let h = meshes.add(mesh);
-				entity.insert(Mesh3d(h.clone()));
-				*handle = Some(h);
-			}
+			None => *handle = Some(meshes.add(mesh)),
+		}
+		// the empty path strips Mesh3d, so it has to come back with the geometry
+		if let Some(h) = handle.as_ref() {
+			entity.insert(Mesh3d(h.clone()));
 		}
 		entity.insert((rigid, GlobalTransform::from(rigid)));
 	}
