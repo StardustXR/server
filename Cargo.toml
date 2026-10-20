@@ -37,6 +37,9 @@ strip = "symbols"
 [profile.dev.package."*"]
 opt-level = 3
 
+[profile.dev.package.stardust-xr-server-wboit]
+opt-level = 3
+
 # For the in-crate micro-benchmarks (see src/core/microbench.rs):
 # cargo test --profile benching -- --ignored bench_ --nocapture --test-threads=1
 [profile.benching]
@@ -57,6 +60,9 @@ wgpu-core = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse
 naga = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
 wgpu-hal = { git = "https://github.com/Schmarni-Dev/wgpu", branch = "even_worse_explicit_sync" }
 bevy_render = { git = "https://github.com/Schmarni-Dev/bevy", branch = "render_thread_init_callback" }
+
+# [patch."https://github.com/Schmarni-Dev/bevy-dmabuf"]
+# bevy-dmabuf = { path = "../bevy-dmabuf" }
 
 
 [dependencies]

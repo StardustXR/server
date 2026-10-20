@@ -94,7 +94,10 @@ impl Plugin for LinesNodePlugin {
 					.to_string_lossy(),
 			),
 		);
-		app.add_plugins(MaterialPlugin::<LineMaterial>::default());
+		app.add_plugins((
+			MaterialPlugin::<LineMaterial>::default(),
+			stardust_xr_server_wboit::WboitMaterialPlugin::<LineMaterial>::default(),
+		));
 	}
 }
 

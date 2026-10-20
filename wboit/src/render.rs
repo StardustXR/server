@@ -1,22 +1,28 @@
-use crate::{COMPOSITE_SHADER_HANDLE, CdfScope, HISTOGRAM_SHADER_HANDLE, Wboit};
+use crate::{
+	COMPOSITE_SHADER_HANDLE, CdfScope, HISTOGRAM_SHADER_HANDLE, Wboit,
+	phase::{Accum, Prepass, WboitDraws, WboitItem},
+};
 use bevy::{
 	core_pipeline::{
 		core_3d::{
-			Transparent3d,
+			Opaque3dBatchSetKey, Opaque3dBinKey, Transparent3d,
 			graph::{Core3d, Node3d},
 		},
 		fullscreen_vertex_shader::fullscreen_shader_vertex_state,
 	},
-	ecs::query::QueryItem,
+	ecs::{query::QueryItem, system::SystemChangeTick},
+	pbr::RenderMeshInstances,
 	platform::collections::{HashMap, HashSet},
 	prelude::*,
 	render::{
 		Render, RenderSet,
+		batching::gpu_preprocessing::GpuPreprocessingSupport,
 		camera::ExtractedCamera,
+		mesh::allocator::MeshAllocator,
 		render_graph::{
 			NodeRunError, RenderGraphApp, RenderGraphContext, RenderLabel, ViewNode, ViewNodeRunner,
 		},
-		render_phase::{SortedRenderPhase, ViewSortedRenderPhases},
+		render_phase::{BinnedRenderPhaseType, ViewBinnedRenderPhases, ViewSortedRenderPhases},
 		render_resource::{
 			binding_types::{
 				sampler, storage_buffer_read_only_sized, storage_buffer_sized, texture_2d,
@@ -25,10 +31,11 @@ use bevy::{
 			*,
 		},
 		renderer::{RenderContext, RenderDevice, RenderQueue},
-		view::{ExtractedView, RetainedViewEntity, ViewDepthTexture, ViewTarget},
+		view::{
+			ExtractedView, RetainedViewEntity, ViewDepthTexture, ViewTarget, prepare_view_targets,
+		},
 	},
 };
-use std::mem;
 
 const CDF: TextureFormat = TextureFormat::Rgba16Float;
 const PIXEL: TextureFormat = TextureFormat::Rgba16Float;
@@ -80,8 +87,14 @@ pub fn build(render_app: &mut SubApp) {
 		.add_systems(
 			Render,
 			(
-				prepare_views.in_set(RenderSet::PrepareResources),
-				(split_phases, bind_prepass).in_set(RenderSet::PrepareBindGroups),
+				prepare_views
+					.in_set(RenderSet::ManageViews)
+					.after(prepare_view_targets),
+				queue_wboit
+					.in_set(RenderSet::Queue)
+					.after(RenderSet::QueueMeshes)
+					.before(RenderSet::QueueSweep),
+				bind_prepass.in_set(RenderSet::PrepareBindGroups),
 			),
 		)
 		.add_render_graph_node::<ViewNodeRunner<WboitNode>>(Core3d, WboitLabel)
@@ -206,6 +219,22 @@ impl FromWorld for WboitPipelines {
 	}
 }
 impl WboitPipelines {
+	/// None when the pipeline isn't marked for wboit or hasn't reached the cache yet
+	fn derived(
+		&mut self,
+		cache: &PipelineCache,
+		id: CachedRenderPipelineId,
+		bins: u32,
+		scope: CdfScope,
+	) -> Option<[CachedRenderPipelineId; 2]> {
+		let key = (id, bins, scope);
+		if let Some(d) = self.derived.get(&key) {
+			return *d;
+		}
+		let d = self.derive(cache, id, bins, scope)?;
+		*self.derived.entry(key).or_insert(d)
+	}
+
 	fn histogram(&mut self, cache: &PipelineCache, bins: u32, scope: CdfScope) {
 		if scope == CdfScope::Pixel {
 			return;
@@ -375,9 +404,6 @@ struct ViewState {
 	draw: BindGroup,
 	histogram: BindGroup,
 	composite: BindGroup,
-
-	prepass_phase: SortedRenderPhase<Transparent3d>,
-	accum_phase: SortedRenderPhase<Transparent3d>,
 }
 impl ViewState {
 	fn new(
@@ -496,8 +522,6 @@ impl ViewState {
 			draw,
 			histogram,
 			composite,
-			prepass_phase: default(),
-			accum_phase: default(),
 		}
 	}
 }
@@ -576,46 +600,69 @@ fn bind_prepass(
 	}
 }
 
-// runs after batching so every batch lands whole on one side, it can only span items
-// that share a pipeline
-fn split_phases(
-	mut phases: ResMut<ViewSortedRenderPhases<Transparent3d>>,
-	mut views: ResMut<WboitViews>,
+// pulls everything marked for wboit out of the sorted transparent phase before it's batched,
+// so nothing gets preprocessed twice and the sorted pass only keeps what falls back
+fn queue_wboit(
+	mut transparent: ResMut<ViewSortedRenderPhases<Transparent3d>>,
+	mut prepass_phases: ResMut<ViewBinnedRenderPhases<WboitItem<Prepass>>>,
+	mut accum_phases: ResMut<ViewBinnedRenderPhases<WboitItem<Accum>>>,
+	views: Res<WboitViews>,
 	mut pipelines: ResMut<WboitPipelines>,
 	cache: Res<PipelineCache>,
+	draws: Res<WboitDraws>,
+	mesh_instances: Res<RenderMeshInstances>,
+	mesh_allocator: Res<MeshAllocator>,
+	support: Res<GpuPreprocessingSupport>,
+	ticks: SystemChangeTick,
 ) {
-	for (view, state) in views.iter_mut() {
-		state.prepass_phase.items.clear();
-		state.accum_phase.items.clear();
-		let Some(phase) = phases.get_mut(view) else {
+	for (view, state) in views.iter() {
+		let (Some(phase), Some(prepass), Some(accum)) = (
+			transparent.get_mut(view),
+			prepass_phases.get_mut(view),
+			accum_phases.get_mut(view),
+		) else {
 			continue;
 		};
 		let bins = state.wboit.bins.count();
 		let scope = state.wboit.cdf;
-		for item in mem::take(&mut phase.items) {
-			let key = (item.pipeline, bins, scope);
-			let derived = match pipelines.derived.get(&key) {
-				Some(d) => *d,
-				None => match pipelines.derive(&cache, item.pipeline, bins, scope) {
-					Some(d) => *pipelines.derived.entry(key).or_insert(d),
-					None => None,
-				},
+		phase.items.retain(|item| {
+			let Some([p, a]) = pipelines.derived(&cache, item.pipeline, bins, scope) else {
+				return true;
 			};
-			let Some([prepass, accum]) = derived else {
-				phase.items.push(item);
-				continue;
+			let Some(&[pd, ad]) = draws.get(&item.draw_function) else {
+				error_once!(
+					"a wboit material is missing its WboitMaterialPlugin, it falls back to alpha blending"
+				);
+				return true;
 			};
-			state.prepass_phase.add(Transparent3d {
-				pipeline: prepass,
-				batch_range: item.batch_range.clone(),
-				extra_index: item.extra_index.clone(),
-				..item
-			});
-			state.accum_phase.add(Transparent3d {
-				pipeline: accum,
-				..item
-			});
-		}
+			let Some(mesh) = mesh_instances.render_mesh_queue_data(item.entity.1) else {
+				return true;
+			};
+			let (vertex_slab, index_slab) = mesh_allocator.mesh_slabs(&mesh.mesh_asset_id);
+			let key = |pipeline, draw_function| Opaque3dBatchSetKey {
+				pipeline,
+				draw_function,
+				material_bind_group_index: Some(mesh.material_bindings_index.group.0),
+				vertex_slab: vertex_slab.unwrap_or_default(),
+				index_slab,
+				lightmap_slab: mesh.lightmap_slab_index.map(|i| *i),
+			};
+			let bin = Opaque3dBinKey {
+				asset_id: mesh.mesh_asset_id.untyped(),
+			};
+			let kind = BinnedRenderPhaseType::mesh(mesh.should_batch(), &support);
+			let index = mesh.current_uniform_index;
+			prepass.add(
+				key(p, pd),
+				bin.clone(),
+				item.entity,
+				index,
+				kind,
+				ticks.this_run(),
+			);
+			accum.add(key(a, ad), bin, item.entity, index, kind, ticks.this_run());
+			false
+		});
 	}
 }
 
@@ -648,7 +695,17 @@ impl ViewNode for WboitNode {
 		let Some(prepass) = state.prepass.as_ref() else {
 			return Ok(());
 		};
-		if state.accum_phase.items.is_empty() {
+		let (Some(prepass_phase), Some(accum_phase)) = (
+			world
+				.resource::<ViewBinnedRenderPhases<WboitItem<Prepass>>>()
+				.get(&view.retained_view_entity),
+			world
+				.resource::<ViewBinnedRenderPhases<WboitItem<Accum>>>()
+				.get(&view.retained_view_entity),
+		) else {
+			return Ok(());
+		};
+		if accum_phase.is_empty() {
 			return Ok(());
 		}
 		let pipelines = world.resource::<WboitPipelines>();
@@ -685,7 +742,7 @@ impl ViewNode for WboitNode {
 				pass.set_camera_viewport(viewport);
 			}
 			pass.set_bind_group(3, prepass, &[]);
-			if let Err(err) = state.prepass_phase.render(&mut pass, world, view_entity) {
+			if let Err(err) = prepass_phase.render(&mut pass, world, view_entity) {
 				error!("error rendering the wboit prepass: {err:?}");
 			}
 		}
@@ -732,7 +789,7 @@ impl ViewNode for WboitNode {
 				pass.set_camera_viewport(viewport);
 			}
 			pass.set_bind_group(3, &state.draw, &[]);
-			if let Err(err) = state.accum_phase.render(&mut pass, world, view_entity) {
+			if let Err(err) = accum_phase.render(&mut pass, world, view_entity) {
 				error!("error rendering the wboit accum phase: {err:?}");
 			}
 		}

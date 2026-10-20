@@ -1,15 +1,22 @@
+mod phase;
 mod render;
+
+pub use phase::WboitMaterialPlugin;
 
 use bevy::{
 	asset::{load_internal_asset, weak_handle},
 	ecs::{component::HookContext, world::DeferredWorld},
-	pbr::{ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline},
+	pbr::{
+		ExtendedMaterial, MaterialExtension, MaterialExtensionKey, MaterialExtensionPipeline,
+		MeshPipeline,
+	},
 	platform::collections::HashMap,
 	prelude::*,
 	render::{
-		RenderApp,
+		ExtractSchedule, RenderApp, RenderDebugFlags,
 		extract_component::{ExtractComponent, ExtractComponentPlugin},
 		mesh::MeshVertexBufferLayoutRef,
+		render_phase::BinnedRenderPhasePlugin,
 		render_resource::{
 			AsBindGroup, RenderPipelineDescriptor, ShaderDefVal, ShaderRef,
 			SpecializedMeshPipelineError, TextureUsages,
@@ -154,9 +161,17 @@ impl Plugin for WboitPlugin {
 		app.register_type::<Wboit>().add_plugins((
 			ExtractComponentPlugin::<Wboit>::default(),
 			MaterialPlugin::<WboitMaterial>::default(),
+			BinnedRenderPhasePlugin::<phase::WboitItem<phase::Prepass>, MeshPipeline>::new(
+				RenderDebugFlags::default(),
+			),
+			BinnedRenderPhasePlugin::<phase::WboitItem<phase::Accum>, MeshPipeline>::new(
+				RenderDebugFlags::default(),
+			),
+			WboitMaterialPlugin::<WboitMaterial>::default(),
 		));
 
 		if let Some(render_app) = app.get_sub_app_mut(RenderApp) {
+			render_app.add_systems(ExtractSchedule, phase::extract_phases);
 			render::build(render_app);
 		}
 	}
