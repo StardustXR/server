@@ -1,5 +1,5 @@
 use crate::nodes::{ProxyExt as _, fields::Field, spatial::SpatialRef};
-use gluon_ipc::{Context, Handler, RefExt};
+use gluon_ipc::{Context, Handler};
 use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
 	query::{QueriedInterface, QueryableId},

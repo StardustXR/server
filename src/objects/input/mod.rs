@@ -168,23 +168,8 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		Ok((node, proxy))
 	}
 
-	pub fn helper(&self) -> &S {
-		&self.helper
-	}
-
 	pub fn cache(&self) -> &QueryCache<S::QueryValue> {
 		&self.cache
-	}
-
-	/// the space this method lives in: what the query is relative to, and what
-	/// [`InputMethodHelper::input_data`] is relative to
-	pub fn spatial(&self) -> &Arc<Spatial> {
-		&self.spatial
-	}
-
-	/// the handler currently winning the capture, if any
-	pub async fn active_capture(&self) -> Option<InputHandler> {
-		self.active_capture.read().await.clone()
 	}
 
 	pub fn active_capture_blocking(&self) -> Option<InputHandler> {
@@ -322,14 +307,19 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		);
 
 		for (handler, spatial, semantic) in dispatch {
-			if added.contains(&handler) {
-				handler.input_gained(method.clone(), time, spatial, semantic);
+			let sent = if added.contains(&handler) {
+				handler.input_gained(method.clone(), time, spatial, semantic)
 			} else {
-				handler.input_updated(method.clone(), time, spatial, semantic);
+				handler.input_updated(method.clone(), time, spatial, semantic)
+			};
+			if let Err(err) = sent {
+				error!("failed to send input to handler: {err}");
 			}
 		}
 		for handler in removed {
-			handler.input_left(method.clone(), time);
+			if let Err(err) = handler.input_left(method.clone(), time) {
+				error!("failed to send input_left to handler: {err}");
+			}
 		}
 	}
 }

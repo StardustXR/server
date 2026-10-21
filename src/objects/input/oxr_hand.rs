@@ -2,7 +2,6 @@ use super::{
 	CachedHandler, DatamapBuilder, FrameDriver, InputMethod as InputMethodNode, InputMethodHelper,
 	order_by_distance, spawn_frame_driver,
 };
-use crate::nodes::ProxyExt;
 use crate::nodes::drawable::model::HoldoutExtension;
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
@@ -20,8 +19,8 @@ use bevy_mod_xr::session::{XrPreDestroySession, XrSessionCreated, session_availa
 use bevy_mod_xr::spaces::{XrPrimaryReferenceSpace, XrSpace, XrSpaceLocationFlags};
 use bevy_sk::hand::GRADIENT_TEXTURE_HANDLE;
 use color_eyre::eyre::Result;
-use glam::{Mat4, Quat, Vec3};
-use gluon_ipc::{Handler, LocalRef, Node, RefExt};
+use glam::{Mat4, Vec3};
+use gluon_ipc::{LocalRef, Node};
 use openxr::sys::Handle as _;
 use openxr::{HandJointLocation, Posef, ReferenceSpaceType, SpaceLocationFlags};
 use serde::{Deserialize, Serialize};
@@ -34,14 +33,10 @@ use stardust_xr_protocol::suis::{
 };
 use stardust_xr_protocol::types::{self, Timestamp};
 use stardust_xr_server_wboit::{WboitExtension, WboitMaterial};
-use std::any::type_name;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
-use std::process;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock, Weak};
 use tokio::sync::RwLock;
-use tracing::Instrument;
 
 type HandHoldoutMaterial = ExtendedMaterial<BevyMaterial, HoldoutExtension>;
 
@@ -76,12 +71,12 @@ fn update_hands(
 	state: Option<Res<OxrFrameState>>,
 	ref_space: Option<Res<XrPrimaryReferenceSpace>>,
 	mut materials: ResMut<Assets<WboitMaterial>>,
-	mut joint_query: Query<(
+	_joint_query: Query<(
 		&mut BevyTransform,
 		&mut XrSpaceLocationFlags,
 		&mut XrHandBoneRadius,
 	)>,
-	joints_query: Query<&XrHandBoneEntities>,
+	_joints_query: Query<&XrHandBoneEntities>,
 	pipelined: Option<Res<Pipelined>>,
 ) {
 	let (Some(session), Some(state), Some(ref_space)) = (session, state, ref_space) else {
@@ -296,14 +291,11 @@ impl OxrHandInputTrackedState {
 
 pub struct OxrHandInput {
 	palm_spatial: LocalRef<SpatialProxy, SpatialObject>,
-	side: HandSide,
 	method: Option<Node<InputMethodNode<HandInputMethod>>>,
 	driver: Option<FrameDriver>,
 	query_handle: Option<Arc<OnceLock<PointsQueryHandle>>>,
-	captured: bool,
 	material: HandMaterial,
 	tracked: Tracked<OxrHandInputTrackedState>,
-	was_enabled: bool,
 }
 
 impl OxrHandInput {
@@ -350,10 +342,7 @@ impl OxrHandInput {
 		.unwrap();
 		Ok(OxrHandInput {
 			palm_spatial,
-			side,
 			material,
-			captured: false,
-			was_enabled: false,
 			method: None,
 			driver: None,
 			query_handle: None,
@@ -424,15 +413,18 @@ impl OxrHandInput {
 		}
 
 		if let HandMaterial::Normal(material_handle) = &self.material {
-			let captured = method.active_capture_blocking().is_some();
-			if captured && !self.captured {
-				materials.get_mut(material_handle).unwrap().base.base_color =
-					Srgba::rgb(0., 1., 0.75).into();
-			} else if self.captured && !captured {
-				materials.get_mut(material_handle).unwrap().base.base_color =
-					Srgba::rgb(1., 1.0, 1.0).into();
+			let color: Color = if method.active_capture_blocking().is_some() {
+				Srgba::rgb(0., 1., 0.75).into()
+			} else {
+				Srgba::rgb(1., 1.0, 1.0).into()
+			};
+			// get_mut marks the asset modified and re-prepares it, so only touch it on change
+			if materials
+				.get(material_handle)
+				.is_some_and(|m| m.base.base_color != color)
+			{
+				materials.get_mut(material_handle).unwrap().base.base_color = color;
 			}
-			self.captured = captured;
 		}
 
 		if let Some(driver) = self.driver.as_ref() {

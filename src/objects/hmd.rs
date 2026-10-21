@@ -1,6 +1,4 @@
-use crate::nodes::ProxyExt;
 use crate::objects::DebugWrapper;
-use crate::openxr_helpers::ConvertTimespec;
 use crate::{PreFrameWait, get_time};
 use crate::{
 	bevy_int::flatscreen_cam::FlatscreenCam, nodes::spatial::SpatialObject, objects::Tracked,
@@ -18,9 +16,7 @@ use bevy_mod_xr::{
 use gluon_ipc::LocalRef;
 use openxr::sys::Handle;
 use openxr::{Posef, ReferenceSpaceType, SpaceLocationFlags};
-use stardust_xr_protocol::spatial::{Spatial, SpatialRef};
-use stardust_xr_protocol::types::Timestamp;
-use std::sync::Arc;
+use stardust_xr_protocol::spatial::Spatial;
 
 pub struct HmdPlugin;
 impl Plugin for HmdPlugin {
@@ -39,7 +35,7 @@ fn setup(mut cmds: Commands) {
 	let hmd = Hmd {
 		tracked: Tracked::new(
 			spatial.get_ref().proxy().clone(),
-			|data, spatial, time| (None, false),
+			|_data, _spatial, _time| (None, false),
 			false,
 			"stardust-hmd",
 			DebugWrapper((None, base_spatial.clone(), None, spatial.clone())),
@@ -51,63 +47,64 @@ fn setup(mut cmds: Commands) {
 	cmds.insert_resource(hmd);
 }
 
-fn dyn_tracking(
-	DebugWrapper((base_space, base_spatial, view_space, spatial)): &DebugWrapper<(
-		Option<openxr::Space>,
-		LocalRef<Spatial, SpatialObject>,
-		Option<openxr::Space>,
-		LocalRef<Spatial, SpatialObject>,
-	)>,
-	reference_spatial: &Spatial,
-	time: Timestamp,
-) -> (Option<stardust_xr_protocol::types::Posef>, bool) {
-	let Some(reference_spatial) = reference_spatial.owned() else {
-		return (None, false);
-	};
-	if let Some(base_space) = base_space.as_ref()
-		&& let Some(view_space) = view_space.as_ref()
-	{
-		let Some(time) = view_space.instance().timestamp_to_xr(time) else {
-			return (None, false);
-		};
-		let Ok(location) = view_space.locate(base_space, time) else {
-			return (None, false);
-		};
-		let valid = location
-			.location_flags
-			.contains(SpaceLocationFlags::POSITION_VALID | SpaceLocationFlags::ORIENTATION_VALID);
-		let tracked = location.location_flags.contains(
-			SpaceLocationFlags::POSITION_TRACKED | SpaceLocationFlags::ORIENTATION_TRACKED,
-		);
-		let mat = crate::nodes::spatial::Spatial::space_to_space_matrix(
-			Some(base_spatial),
-			Some(&reference_spatial),
-		);
-		let (_, rot, _) = mat.to_scale_rotation_translation();
-		let pose = valid.then(|| stardust_xr_protocol::types::Posef {
-			orientation: (rot * location.pose.orientation.to_quat()).into(),
-			position: mat
-				.transform_point3(location.pose.position.to_vec3())
-				.into(),
-		});
-		(pose, tracked)
-	} else {
-		let mat = crate::nodes::spatial::Spatial::space_to_space_matrix(
-			Some(&reference_spatial),
-			Some(spatial),
-		);
-		let (_, rot, pos) = mat.to_scale_rotation_translation();
-		(
-			Some(stardust_xr_protocol::types::Posef {
-				position: pos.into(),
-				orientation: rot.into(),
-			}),
-			true,
-		)
-	}
-}
+// TODO: implement this
+// fn dyn_tracking(
+// 	DebugWrapper((base_space, base_spatial, view_space, spatial)): &DebugWrapper<(
+// 		Option<openxr::Space>,
+// 		LocalRef<Spatial, SpatialObject>,
+// 		Option<openxr::Space>,
+// 		LocalRef<Spatial, SpatialObject>,
+// 	)>,
+// 	reference_spatial: &Spatial,
+// 	time: Timestamp,
+// ) -> (Option<stardust_xr_protocol::types::Posef>, bool) {
+// 	let Some(reference_spatial) = reference_spatial.owned() else {
+// 		return (None, false);
+// 	};
+// 	if let Some(base_space) = base_space.as_ref()
+// 		&& let Some(view_space) = view_space.as_ref()
+// 	{
+// 		let Some(time) = view_space.instance().timestamp_to_xr(time) else {
+// 			return (None, false);
+// 		};
+// 		let Ok(location) = view_space.locate(base_space, time) else {
+// 			return (None, false);
+// 		};
+// 		let valid = location
+// 			.location_flags
+// 			.contains(SpaceLocationFlags::POSITION_VALID | SpaceLocationFlags::ORIENTATION_VALID);
+// 		let tracked = location.location_flags.contains(
+// 			SpaceLocationFlags::POSITION_TRACKED | SpaceLocationFlags::ORIENTATION_TRACKED,
+// 		);
+// 		let mat = crate::nodes::spatial::Spatial::space_to_space_matrix(
+// 			Some(base_spatial),
+// 			Some(&reference_spatial),
+// 		);
+// 		let (_, rot, _) = mat.to_scale_rotation_translation();
+// 		let pose = valid.then(|| stardust_xr_protocol::types::Posef {
+// 			orientation: (rot * location.pose.orientation.to_quat()).into(),
+// 			position: mat
+// 				.transform_point3(location.pose.position.to_vec3())
+// 				.into(),
+// 		});
+// 		(pose, tracked)
+// 	} else {
+// 		let mat = crate::nodes::spatial::Spatial::space_to_space_matrix(
+// 			Some(&reference_spatial),
+// 			Some(spatial),
+// 		);
+// 		let (_, rot, pos) = mat.to_scale_rotation_translation();
+// 		(
+// 			Some(stardust_xr_protocol::types::Posef {
+// 				position: pos.into(),
+// 				orientation: rot.into(),
+// 			}),
+// 			true,
+// 		)
+// 	}
+// }
 
-fn create_view_space(session: Res<OxrSession>, mut hmd: ResMut<Hmd>) {
+fn create_view_space(session: Res<OxrSession>, hmd: ResMut<Hmd>) {
 	let view_space = (**session)
 		.create_reference_space(ReferenceSpaceType::VIEW, Posef::IDENTITY)
 		.inspect_err(|err| error!("failed to create openxr view space: {err}"))
@@ -121,7 +118,7 @@ fn create_view_space(session: Res<OxrSession>, mut hmd: ResMut<Hmd>) {
 	v.2 = view_space;
 	// hmd.view_space = view_space.map(|v| v.0);
 }
-fn destroy_view_space(session: Res<OxrSession>, mut cmds: Commands, mut hmd: ResMut<Hmd>) {
+fn destroy_view_space(_session: Res<OxrSession>, _cmds: Commands, hmd: ResMut<Hmd>) {
 	let mut v = hmd.tracked.get_mut_data_blocking();
 	v.0.0.take();
 	v.2.take();

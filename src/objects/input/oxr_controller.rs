@@ -1,7 +1,8 @@
 use crate::{
-	PreFrameWait, get_time,
+	PreFrameWait,
+	bevy_int::color::ColorConvert,
+	get_time,
 	nodes::{
-		ProxyExt,
 		drawable::model::{Model, ModelPart},
 		fields::Field,
 		spatial::{Spatial, SpatialObject, SpatialRef},
@@ -15,44 +16,44 @@ use crate::{
 	},
 	openxr_helpers::ConvertTimespec,
 };
-use bevy::{asset::Handle, ecs::resource::Resource, tasks::futures::now_or_never};
-use bevy::{math::Affine3, prelude::*};
+use bevy::prelude::*;
+use bevy::{ecs::resource::Resource, tasks::futures::now_or_never};
 use bevy_mod_openxr::{
 	action_binding::{OxrSendActionBindings, OxrSuggestActionBinding},
 	exts::OxrEnabledExtensions,
-	helper_traits::{ToIsometry3d, ToQuat, ToVec2, ToVec3},
+	helper_traits::{ToQuat, ToVec2, ToVec3},
 	resources::{OxrFrameState, OxrInstance, Pipelined, USED_OPENXR_VERSION},
 	session::OxrSession,
 };
 use bevy_mod_xr::{
 	hands::HandSide,
-	session::{XrPreDestroySession, XrSessionCreated, XrSessionCreatedEvent},
-	spaces::{XrPrimaryReferenceSpace, XrReferenceSpace, XrSpace},
+	session::{XrPreDestroySession, XrSessionCreatedEvent},
+	spaces::{XrPrimaryReferenceSpace, XrSpace},
 };
 use color_eyre::eyre::Result;
 use glam::{Affine3A, Mat4, Vec2, Vec3};
-use gluon_ipc::{Handler, LocalRef, Node, RefExt};
+use gluon_ipc::{LocalRef, RefExt};
 use openxr::{Action, ActiveActionSet, ReferenceSpaceType, SpaceLocationFlags, sys::Handle as _};
 use serde::{Deserialize, Serialize};
 use stardust_xr_protocol::{
 	field::FieldSample,
-	model::{MaterialParameter, ModelHandler, ModelLocal, ModelPartLocal},
+	model::{MaterialParameter, ModelLocal},
 	query::QueryableId,
 	spatial::{PartialTransform, Spatial as SpatialProxy, SpatialRef as SpatialRefProxy},
 	spatial_query::{Point, PointsQueryHandle},
 	suis::{Chirality, DatamapData, InputDataType, InputHandler, Tip},
 	types::{self, Posef, Timestamp, rgba_linear},
 };
+use stardust_xr_server_wboit::WboitMaterial;
 use std::{
 	borrow::Cow,
 	collections::{HashMap, HashSet},
 	fs,
-	path::{Path, PathBuf},
+	path::PathBuf,
 	str::FromStr,
 	sync::{Arc, OnceLock, RwLock as SyncRwLock, Weak},
 };
 use tokio::{sync::RwLock, task::JoinHandle};
-use tracing::instrument;
 
 pub struct ControllerPlugin {
 	pub offset_adjust: bool,
@@ -63,12 +64,14 @@ const CURSOR_MODEL_PATH: &str = "/tmp/stardust_server/models/cursor.glb";
 impl Plugin for ControllerPlugin {
 	fn build(&self, app: &mut App) {
 		let cursor = include_bytes!("cursor.glb");
-		fs::create_dir_all(
+		if let Err(err) = fs::create_dir_all(
 			PathBuf::from_str(CURSOR_MODEL_PATH)
 				.unwrap()
 				.parent()
 				.unwrap(),
-		);
+		) {
+			error!("failed to create tmp cursor model dir: {err}");
+		}
 		fs::write(CURSOR_MODEL_PATH, cursor).expect("can't write tmp cursor model file");
 		app.insert_resource(OffsetAdjust(self.offset_adjust));
 		app.add_systems(OxrSendActionBindings, suggest_bindings.run_if(run_once));
@@ -84,7 +87,7 @@ impl Plugin for ControllerPlugin {
 
 // the api is just slightly nicer when using the bevy_mod_openxr solution okay?
 fn suggest_bindings(
-	instance: Res<OxrInstance>,
+	_instance: Res<OxrInstance>,
 	actions: Res<Actions>,
 	mut suggest: EventWriter<OxrSuggestActionBinding>,
 	enabled_exts: Res<OxrEnabledExtensions>,
@@ -362,6 +365,8 @@ fn update(
 	state: Option<Res<OxrFrameState>>,
 	pipelined: Option<Res<Pipelined>>,
 	offset_adjust: Res<OffsetAdjust>,
+	materials: Res<Assets<WboitMaterial>>,
+	mesh_materials: Query<&MeshMaterial3d<WboitMaterial>>,
 ) {
 	let (Some(session), Some(state), Some(ref_space)) = (session, state, ref_space) else {
 		info!("early return from main update");
@@ -394,12 +399,24 @@ fn update(
 		}
 	}
 	let base_spatial = controllers.base_spatial.get_ref().clone();
-	controllers
-		.left
-		.update(&session, &actions, time, &base_spatial, offset_adjust.0);
-	controllers
-		.right
-		.update(&session, &actions, time, &base_spatial, offset_adjust.0);
+	controllers.left.update(
+		&session,
+		&actions,
+		time,
+		&base_spatial,
+		offset_adjust.0,
+		&materials,
+		&mesh_materials,
+	);
+	controllers.right.update(
+		&session,
+		&actions,
+		time,
+		&base_spatial,
+		offset_adjust.0,
+		&materials,
+		&mesh_materials,
+	);
 }
 
 fn create_spaces(
@@ -418,7 +435,9 @@ fn create_spaces(
 	controllers.base_space = Some(base_space.clone());
 	// if we ever need more actions than just these we should fully swith to the
 	// bevy_mod_openxr provided stuff
-	session.attach_action_sets(&[&actions.set]);
+	if let Err(err) = session.attach_action_sets(&[&actions.set]) {
+		error!("failed to attach openxr action sets: {err}");
+	}
 	session
 		.sync_actions(&[ActiveActionSet::new(&actions.set)])
 		.unwrap();
@@ -634,8 +653,6 @@ pub struct OxrControllerInput {
 	method: Option<gluon_ipc::Node<InputMethodNode<ControllerInputMethod>>>,
 	driver: Option<FrameDriver>,
 	query_handle: Option<Arc<OnceLock<PointsQueryHandle>>>,
-	was_enabled: bool,
-	captured: bool,
 
 	profile: Option<String>,
 	/// where the tip got pinned when the offset adjust button went down
@@ -695,7 +712,6 @@ impl OxrControllerInput {
 			side,
 			model: OnceLock::new(),
 			model_part: OnceLock::new(),
-			was_enabled: false,
 			aim,
 			grip,
 			palm,
@@ -703,7 +719,6 @@ impl OxrControllerInput {
 			method: None,
 			driver: None,
 			query_handle: None,
-			captured: false,
 			profile: None,
 			pinned_tip: None,
 		})
@@ -725,13 +740,21 @@ impl OxrControllerInput {
 		time: openxr::Time,
 		base_space: &Arc<SpatialRef>,
 		offset_adjust: bool,
+		materials: &Assets<WboitMaterial>,
+		mesh_materials: &Query<&MeshMaterial3d<WboitMaterial>>,
 	) {
 		if self.model_task.as_ref().is_some_and(|v| v.is_finished()) {
 			let (model, part) = now_or_never(self.model_task.take().unwrap())
 				.unwrap()
 				.unwrap();
-			self.model.set(model);
-			self.model_part.set(part);
+			if let Err(err) = part.set_material_parameter(
+				"roughness".to_string(),
+				MaterialParameter::Float { value: 1.0 },
+			) {
+				error!("failed to set cursor roughness: {err}");
+			}
+			_ = self.model.set(model);
+			_ = self.model_part.set(part);
 		}
 		let Some(method) = self.method.as_ref() else {
 			return;
@@ -780,20 +803,24 @@ impl OxrControllerInput {
 		*method.pose.blocking_write() = aim_pose.map(|pose| (ts, pose));
 		if let Some(pose) = aim_pose {
 			if let Some(part) = self.model_part.get() {
-				part.set_material_parameter(
-					"roughness".to_string(),
-					MaterialParameter::Float { value: 1.0 },
-				);
-				part.set_material_parameter(
-					"color".to_string(),
-					MaterialParameter::Color {
-						value: if method.active_capture_blocking().is_some() {
-							rgba_linear!(0.0, 1.0, 0.75, 1.0)
-						} else {
-							rgba_linear!(1.0, 1.0, 1.0, 1.0)
-						},
-					},
-				);
+				let color = if method.active_capture_blocking().is_some() {
+					rgba_linear!(0.0, 1.0, 0.75, 1.0)
+				} else {
+					rgba_linear!(1.0, 1.0, 1.0, 1.0)
+				};
+				// every set clones and re-registers the material next frame, so only set on change
+				let current = part
+					.mesh_entity()
+					.and_then(|e| mesh_materials.get(e).ok())
+					.and_then(|m| materials.get(&m.0))
+					.map(|m| m.base.base_color);
+				if current != Some(color.to_bevy())
+					&& let Err(err) = part.set_material_parameter(
+						"color".to_string(),
+						MaterialParameter::Color { value: color },
+					) {
+					error!("failed to set cursor color: {err}");
+				}
 			}
 			if let Some(handle) = self.query_handle.as_ref().and_then(|h| h.get()) {
 				_ = handle.update(vec![Point {

@@ -129,7 +129,7 @@ impl Queryable {
 		spatial: LocalRef<Spatial, SpatialObject>,
 		field: LocalRef<Field, FieldObject>,
 	) -> Arc<Queryable> {
-		let queryable = Arc::new(Queryable {
+		Arc::new(Queryable {
 			id: QueryableId {
 				id: NEXT_QUERYABLE_ID.fetch_add(1, Ordering::Relaxed),
 			},
@@ -137,8 +137,7 @@ impl Queryable {
 			spatial,
 			interfaces: RwLock::default(),
 			update_lock: tokio::sync::Mutex::new(()),
-		});
-		queryable
+		})
 	}
 	async fn notify_interface_changes(self: &Arc<Queryable>) {
 		let queries = QUERY_STATE.queries.get_valid_contents();

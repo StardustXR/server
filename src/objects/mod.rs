@@ -1,12 +1,8 @@
-#![allow(unused)]
-
 use std::{
-	any::{Any, type_name},
+	any::type_name,
 	collections::HashSet,
 	fmt::Debug,
-	fs::{File, OpenOptions},
 	marker::PhantomData,
-	path::Path,
 	sync::{
 		Arc,
 		atomic::{AtomicBool, Ordering},
@@ -14,7 +10,7 @@ use std::{
 };
 
 use bevy::prelude::{Deref, DerefMut};
-use gluon_ipc::{Handler, IntoHandler, RefExt, RefFsBinding};
+use gluon_ipc::{Handler, RefExt, RefFsBinding};
 use stardust_xr_protocol::{
 	spatial::SpatialRef,
 	tracked::{TrackedGuardHandler, TrackedHandler, TrackedStateReceiver},
@@ -36,13 +32,13 @@ pub mod stage;
 #[derive(Debug)]
 pub struct Tracked<T: Debug + Send + Sync + 'static> {
 	inner: gluon_ipc::Node<TrackedInner<T>>,
-	binding: RefFsBinding,
+	_binding: RefFsBinding,
 	_type: PhantomData<T>,
 }
 #[derive(Debug, Handler)]
 struct TrackedInner<T: Debug + Send + Sync + 'static> {
 	tracked: AtomicBool,
-	receivers: Arc<RwLock<HashSet<TrackedStateReceiver>>>,
+	receivers: Arc<parking_lot::RwLock<HashSet<TrackedStateReceiver>>>,
 	spatial: SpatialRef,
 	data: RwLock<T>,
 	pose_callback: fn(&T, &Spatial, Timestamp) -> (Option<Posef>, bool),
@@ -76,14 +72,14 @@ impl<T: Debug + Send + Sync + 'static> Tracked<T> {
 		Some(Self {
 			inner,
 			_type: PhantomData,
-			binding,
+			_binding: binding,
 		})
 	}
 	pub fn tracked_blocking(&self, tracked: bool) {
 		let was_tracked = self.inner.tracked.swap(tracked, Ordering::Relaxed);
 		if tracked != was_tracked {
 			// TODO: move this to a task or something to not block a core thread?
-			let receivers = self.inner.receivers.blocking_read();
+			let receivers = self.inner.receivers.read();
 			for recv in receivers.iter() {
 				_ = recv.tracked(tracked);
 			}
@@ -106,12 +102,13 @@ impl<T: Debug + Send + Sync + 'static> TrackedHandler for TrackedInner<T> {
 		stardust_xr_protocol::tracked::TrackedGuard,
 		bool,
 	) {
-		self.receivers.write().await.insert(handler.clone());
+		self.receivers.write().insert(handler.clone());
 		(
 			self.spatial.clone(),
-			stardust_xr_protocol::tracked::TrackedGuard::new_service(
-				(TrackedGuard(handler, self.receivers.clone())),
-			)
+			stardust_xr_protocol::tracked::TrackedGuard::new_service(TrackedGuard(
+				handler,
+				self.receivers.clone(),
+			))
 			// TODO: don't unwrap, maybe don't have this at all?
 			.unwrap()
 			.into_proxy(),
@@ -135,9 +132,14 @@ impl<T: Debug + Send + Sync + 'static> TrackedHandler for TrackedInner<T> {
 #[derive(Debug, Handler)]
 struct TrackedGuard(
 	TrackedStateReceiver,
-	Arc<RwLock<HashSet<TrackedStateReceiver>>>,
+	Arc<parking_lot::RwLock<HashSet<TrackedStateReceiver>>>,
 );
 impl TrackedGuardHandler for TrackedGuard {}
+impl Drop for TrackedGuard {
+	fn drop(&mut self) {
+		self.1.write().remove(&self.0);
+	}
+}
 
 #[derive(Deref, DerefMut)]
 struct DebugWrapper<T>(T);

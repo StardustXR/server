@@ -639,6 +639,9 @@ pub struct ModelPart {
 }
 static ACQUIRE_SEMAPHORES: Mutex<Vec<Semaphore>> = Mutex::new(Vec::new());
 impl ModelPart {
+	pub fn mesh_entity(&self) -> Option<Entity> {
+		self.mesh_entity.get().copied().flatten()
+	}
 	pub fn set_material_parameter(
 		&self,
 		parameter_name: String,

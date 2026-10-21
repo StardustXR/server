@@ -3,10 +3,8 @@ use super::{
 	order_by_distance, spawn_frame_driver,
 };
 use crate::{
-	bevy_int::flatscreen_cam::FlatscreenCam,
-	keymap_store::KEYMAP_STORE,
-	nodes::spatial::{SpatialObject, SpatialRef},
-	query::spatial_query::SpatialQueryInterface,
+	bevy_int::flatscreen_cam::FlatscreenCam, keymap_store::KEYMAP_STORE,
+	nodes::spatial::SpatialObject, query::spatial_query::SpatialQueryInterface,
 };
 use bevy::{
 	input::{
