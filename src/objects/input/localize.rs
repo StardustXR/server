@@ -1,5 +1,5 @@
 use crate::nodes::{
-	fields::{Field, Ray},
+	fields::{Field, FieldInSpace},
 	spatial::Spatial,
 };
 use glam::{Mat4, Quat, Vec3, Vec3A};
@@ -18,11 +18,12 @@ pub fn localize(
 	input: &InputDataType,
 ) -> Option<SpatialData> {
 	let to_handler = Spatial::space_to_space_matrix(Some(from), Some(handler_spatial));
+	let (scale, rotation, _) = to_handler.to_scale_rotation_translation();
 	let ctx = Localize {
-		from,
-		handler_field,
+		field: handler_field.in_space(handler_spatial.global_transform().inverse()),
 		to_handler,
-		rotation: to_handler.to_scale_rotation_translation().1,
+		rotation,
+		scale: scale.max_element(),
 	};
 
 	Some(match input {
@@ -32,13 +33,13 @@ pub fn localize(
 	})
 }
 
-struct Localize<'a> {
-	from: &'a Arc<Spatial>,
-	handler_field: &'a Field,
+struct Localize {
+	field: FieldInSpace,
 	to_handler: Mat4,
 	rotation: Quat,
+	scale: f32,
 }
-impl Localize<'_> {
+impl Localize {
 	fn pose(&self, pose: Posef) -> Posef {
 		Posef {
 			position: self
@@ -49,18 +50,17 @@ impl Localize<'_> {
 		}
 	}
 
-	/// distance is sampled at the untransformed position in the method's own space, which is
-	/// the same point in the world and doesn't lean on the transform being right
+	// sampled in the handler's space so distances scale with the handler like the poses do
 	fn distance(&self, position: impl Into<Vec3A>) -> f32 {
-		self.handler_field
-			.sample(self.from, position.into())
+		self.field
+			.sample(self.to_handler.transform_point3a(position.into()))
 			.distance
 	}
 
 	fn joint(&self, joint: &Joint) -> Joint {
 		Joint {
 			pose: self.pose(joint.pose),
-			radius: joint.radius,
+			radius: joint.radius * self.scale,
 			distance: self.distance(joint.pose.position),
 		}
 	}
@@ -122,11 +122,12 @@ impl Localize<'_> {
 	}
 
 	fn pointer(&self, pointer: &Pointer) -> Option<SpatialData> {
-		let ray = self.handler_field.ray_march(Ray {
-			origin: pointer.pose.position.into(),
-			direction: Vec3::from(pointer.direction()),
-			space: self.from.clone(),
-		});
+		let ray = self.field.ray_march(
+			self.to_handler
+				.transform_point3(pointer.pose.position.into()),
+			self.rotation * Vec3::from(pointer.direction()),
+			f32::INFINITY,
+		);
 		Some(SpatialData {
 			input: InputDataType::Pointer {
 				data: Pointer {
