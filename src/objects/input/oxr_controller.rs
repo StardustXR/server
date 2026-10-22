@@ -307,16 +307,18 @@ fn suggest_bindings(
 			),
 		],
 	);
-	bind_all(
-		"/interaction_profiles/ext/hand_interaction_ext",
-		&[(
-			actions.space.as_raw(),
-			&[
-				"/user/hand/left/input/aim/pose",
-				"/user/hand/right/input/aim/pose",
-			],
-		)],
-	);
+	if enabled_exts.ext_hand_interaction {
+		bind_all(
+			"/interaction_profiles/ext/hand_interaction_ext",
+			&[(
+				actions.space.as_raw(),
+				&[
+					"/user/hand/left/input/aim/pose",
+					"/user/hand/right/input/aim/pose",
+				],
+			)],
+		);
+	}
 	let profiles = [
 		"/interaction_profiles/htc/vive_controller",
 		"/interaction_profiles/valve/index_controller",
