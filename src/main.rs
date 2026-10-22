@@ -397,6 +397,7 @@ fn bevy_loop(
 						exts.khr_convert_timespec_time = true;
 						exts.ext_palm_pose = true;
 						exts.khr_generic_controller = true;
+						exts.ext_hand_interaction = true;
 						exts
 					},
 					..default()

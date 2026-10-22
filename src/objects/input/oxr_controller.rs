@@ -308,7 +308,7 @@ fn suggest_bindings(
 		],
 	);
 	bind_all(
-		"/interaction_profiles/khr/simple_controller",
+		"/interaction_profiles/ext/hand_interaction_ext",
 		&[(
 			actions.space.as_raw(),
 			&[
@@ -320,7 +320,6 @@ fn suggest_bindings(
 	let profiles = [
 		"/interaction_profiles/htc/vive_controller",
 		"/interaction_profiles/valve/index_controller",
-		"/interaction_profiles/khr/simple_controller",
 	];
 	for profile in enabled_exts
 		.khr_generic_controller
@@ -829,7 +828,7 @@ impl OxrControllerInput {
 				}]);
 			}
 		}
-		if profile.as_deref() == Some("/interaction_profiles/khr/simple_controller") {
+		if profile.as_deref() == Some("/interaction_profiles/ext/hand_interaction_ext") {
 			self.set_enabled(false);
 		}
 		let _span = debug_span!("apply datamap").entered();
