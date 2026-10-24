@@ -51,7 +51,10 @@ use std::{
 	fs,
 	path::PathBuf,
 	str::FromStr,
-	sync::{Arc, OnceLock, RwLock as SyncRwLock, Weak},
+	sync::{
+		Arc, OnceLock, RwLock as SyncRwLock, Weak,
+		atomic::{AtomicBool, Ordering},
+	},
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 
@@ -778,6 +781,10 @@ impl OxrControllerInput {
 				profile_aim_offset(profile.as_deref().unwrap_or_default(), self.side);
 			self.profile = profile.clone();
 		}
+		method.hand_interaction.store(
+			profile.as_deref() == Some("/interaction_profiles/ext/hand_interaction_ext"),
+			Ordering::Relaxed,
+		);
 
 		let _span = debug_span!("locate space").entered();
 		let raw_aim = method.locate_pose(&method.space, base_space, time);
@@ -829,9 +836,6 @@ impl OxrControllerInput {
 					margin: 0.5,
 				}]);
 			}
-		}
-		if profile.as_deref() == Some("/interaction_profiles/ext/hand_interaction_ext") {
-			self.set_enabled(false);
 		}
 		let _span = debug_span!("apply datamap").entered();
 		*method.datamap.blocking_write() = ControllerDatamap {
@@ -894,6 +898,8 @@ struct ControllerInputMethod {
 	datamap: RwLock<ControllerDatamap>,
 	/// in aim space, applied on top of the runtime's aim pose
 	aim_offset: SyncRwLock<Affine3A>,
+	/// tracked hands posing as a controller, the hand input method already covers them
+	hand_interaction: AtomicBool,
 }
 impl ControllerInputMethod {
 	fn new(
@@ -914,6 +920,7 @@ impl ControllerInputMethod {
 			pose: RwLock::new(None),
 			datamap: RwLock::new(ControllerDatamap::default()),
 			aim_offset: SyncRwLock::new(Affine3A::IDENTITY),
+			hand_interaction: AtomicBool::new(false),
 		}
 	}
 
@@ -946,6 +953,9 @@ impl ControllerInputMethod {
 		relative_to: &Spatial,
 		time: openxr::Time,
 	) -> Option<Posef> {
+		if self.hand_interaction.load(Ordering::Relaxed) {
+			return None;
+		}
 		let pose = space
 			.locate(&self.base_space, time)
 			.inspect_err(|err| error!("Error while locating controller pose: {err}"))
