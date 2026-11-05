@@ -11,10 +11,14 @@ use crate::{
 	},
 	query::ServerQueryable,
 };
-use bevy::{platform::collections::HashMap, prelude::*, render::primitives::Aabb};
+use bevy::{
+	platform::collections::{HashMap, HashSet},
+	prelude::*,
+	render::primitives::Aabb,
+};
 use bevy_rich_text3d::{
 	Text3d, Text3dBounds, Text3dDimensionOut, Text3dPlugin, Text3dSet, Text3dStyling, TextAlign,
-	TextAnchor, TextAtlas, TextRenderer, TouchTextMaterial3dPlugin, Weight,
+	TextAnchor, TextAtlas, TextRenderer, Weight,
 };
 use cosmic_text::fontdb::Source;
 use gluon_ipc::{Handler, Interface, LocalRef, RefExt, ToRef};
@@ -47,18 +51,39 @@ const GLYPH_PX: f32 = 64.0;
 pub struct TextNodePlugin;
 impl Plugin for TextNodePlugin {
 	fn build(&self, app: &mut App) {
-		app.add_plugins((
-			Text3dPlugin {
-				default_atlas_dimension: (1024, 1024),
-				sync_scale_factor_with_main_window: false,
-				load_system_fonts: true,
-				..default()
-			},
-			TouchTextMaterial3dPlugin::<WboitMaterial>::default(),
-		));
+		app.add_plugins(Text3dPlugin {
+			default_atlas_dimension: (1024, 1024),
+			sync_scale_factor_with_main_window: false,
+			load_system_fonts: true,
+			..default()
+		});
 		app.init_resource::<MaterialRegistry>();
+		app.init_resource::<NewGlyphs>();
 		app.add_systems(Update, update_text);
-		app.add_systems(PostUpdate, rebound_text.after(Text3dSet));
+		app.add_systems(PostUpdate, (rebound_text, rebind_atlas).after(Text3dSet));
+	}
+}
+
+/// glyphs are keyed by font, size and weight, and size and weight are fixed here
+#[derive(Resource, Default)]
+struct NewGlyphs {
+	seen: HashSet<(Arc<str>, char)>,
+	pending: bool,
+}
+
+// bevy 0.16 leaks a texture every time a bindless material is re-prepared, so only
+// rebind the atlas when a glyph gets drawn into it, not on every text change
+fn rebind_atlas(
+	mut glyphs: ResMut<NewGlyphs>,
+	mut materials: ResMut<Assets<WboitMaterial>>,
+	query: Query<&MeshMaterial3d<WboitMaterial>, Changed<Text3dDimensionOut>>,
+) {
+	if !glyphs.pending || query.is_empty() {
+		return;
+	}
+	glyphs.pending = false;
+	for m in &query {
+		let _ = materials.get_mut(m.id());
 	}
 }
 
@@ -67,6 +92,7 @@ fn update_text(
 	renderer: Option<ResMut<TextRenderer>>,
 	mut material_registry: ResMut<MaterialRegistry>,
 	mut materials: ResMut<Assets<WboitMaterial>>,
+	mut glyphs: ResMut<NewGlyphs>,
 	mut families: Local<HashMap<PathBuf, Option<Arc<str>>>>,
 ) {
 	let Some(mut renderer) = renderer else {
@@ -96,6 +122,10 @@ fn update_text(
 					.clone()
 			})
 			.unwrap_or_else(|| "sans-serif".into());
+		let NewGlyphs { seen, pending } = &mut *glyphs;
+		for c in text_string.chars() {
+			*pending |= seen.insert((font.clone(), c));
+		}
 
 		let h = style.character_height;
 		let a = align(style.text_align_x, style.text_align_y);
