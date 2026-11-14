@@ -211,6 +211,7 @@ fn apply_materials(
 					error!("somehow the oneshot channel wasn't empty but also failed to try_recv");
 					continue;
 				};
+                // TODO: don't just discard in this case? should be fine tho?
 				let Some(handle) = tex.try_get_bevy_handle() else {
 					error!("tried to apply dmatex before its bevy handle was created");
 					continue;

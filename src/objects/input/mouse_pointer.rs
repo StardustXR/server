@@ -4,7 +4,8 @@ use super::{
 };
 use crate::{
 	bevy_int::flatscreen_cam::FlatscreenCam, keymap_store::KEYMAP_STORE,
-	nodes::spatial::SpatialObject, query::spatial_query::SpatialQueryInterface,
+	nodes::spatial::SpatialObject, objects::input::CaptureRequest,
+	query::spatial_query::SpatialQueryInterface,
 };
 use bevy::{
 	input::{
@@ -35,7 +36,7 @@ use stardust_xr_protocol::{
 	types::{Posef, Timestamp, Vec3F},
 };
 use std::{
-	collections::{HashMap, HashSet},
+	collections::HashMap,
 	sync::{Arc, Mutex, OnceLock},
 };
 use tokio::sync::RwLock;
@@ -296,7 +297,7 @@ impl InputMethodHelper for MouseMethod {
 	async fn order_handlers_and_captures(
 		&self,
 		handlers: &HashMap<QueryableId, CachedHandler<RayMarchResult>>,
-		capture_requests: &HashSet<InputHandler>,
+		capture_requests: &HashMap<InputHandler, CaptureRequest>,
 		active_capture: Option<&InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		order_by_distance(handlers, capture_requests, active_capture, |e| {
@@ -489,7 +490,7 @@ impl MousePointer {
 				.capture_pids
 				.lock()
 				.unwrap()
-				.retain(|handler, _| requests.contains(handler));
+				.retain(|handler, _| requests.contains_key(handler));
 		}
 	}
 

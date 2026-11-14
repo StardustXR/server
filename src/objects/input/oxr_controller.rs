@@ -10,8 +10,9 @@ use crate::{
 	objects::{
 		DebugWrapper, Tracked,
 		input::{
-			CachedHandler, DatamapBuilder, FrameDriver, InputMethod as InputMethodNode,
-			InputMethodHelper, order_by_distance, spawn_frame_driver,
+			CachedHandler, CaptureRequest, DatamapBuilder, FrameDriver,
+			InputMethod as InputMethodNode, InputMethodHelper, order_by_distance,
+			spawn_frame_driver,
 		},
 	},
 	openxr_helpers::ConvertTimespec,
@@ -47,7 +48,7 @@ use stardust_xr_protocol::{
 use stardust_xr_server_wboit::WboitMaterial;
 use std::{
 	borrow::Cow,
-	collections::{HashMap, HashSet},
+	collections::HashMap,
 	fs,
 	path::PathBuf,
 	str::FromStr,
@@ -1021,7 +1022,7 @@ impl InputMethodHelper for ControllerInputMethod {
 	async fn order_handlers_and_captures(
 		&self,
 		handlers: &HashMap<QueryableId, CachedHandler<FieldSample>>,
-		capture_requests: &HashSet<InputHandler>,
+		capture_requests: &std::collections::HashMap<InputHandler, CaptureRequest>,
 		active_capture: Option<&InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let Some((_, pose)) = *self.pose.read().await else {

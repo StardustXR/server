@@ -5,6 +5,7 @@ use super::{
 use crate::nodes::drawable::model::HoldoutExtension;
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
+use crate::objects::input::CaptureRequest;
 use crate::objects::{DebugWrapper, Tracked};
 use crate::openxr_helpers::ConvertTimespec;
 use crate::{BevyMaterial, PreFrameWait, get_time};
@@ -33,7 +34,7 @@ use stardust_xr_protocol::suis::{
 };
 use stardust_xr_protocol::types::{self, Timestamp};
 use stardust_xr_server_wboit::{WboitExtension, WboitMaterial};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::{Arc, OnceLock, Weak};
 use tokio::sync::RwLock;
@@ -571,7 +572,7 @@ impl InputMethodHelper for HandInputMethod {
 	async fn order_handlers_and_captures(
 		&self,
 		handlers: &HashMap<QueryableId, CachedHandler<FieldSample>>,
-		capture_requests: &HashSet<InputHandler>,
+		capture_requests: &std::collections::HashMap<InputHandler, CaptureRequest>,
 		active_capture: Option<&InputHandler>,
 	) -> (Vec<InputHandler>, Option<InputHandler>) {
 		let Some((_, hand)) = *self.hand.read().await else {

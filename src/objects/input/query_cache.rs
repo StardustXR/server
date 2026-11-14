@@ -1,4 +1,7 @@
-use crate::nodes::{ProxyExt as _, fields::Field, spatial::SpatialRef};
+use crate::{
+	nodes::{ProxyExt as _, fields::Field, spatial::SpatialRef},
+	objects::input::CaptureRequest,
+};
 use gluon_ipc::{Context, Handler};
 use stardust_xr_protocol::{
 	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
@@ -8,7 +11,7 @@ use stardust_xr_protocol::{
 	suis::InputHandler,
 };
 use std::{
-	collections::{HashMap, HashSet},
+	collections::HashMap,
 	fmt::{Debug, Formatter},
 	sync::Arc,
 };
@@ -37,7 +40,7 @@ impl<V: Send + Sync + 'static> Debug for CachedHandler<V> {
 /// adapter and the [`super::InputMethod`] that dispatches to them.
 pub struct QueryCache<V: Send + Sync + 'static> {
 	handlers: Arc<RwLock<HashMap<QueryableId, CachedHandler<V>>>>,
-	capture_requests: Arc<RwLock<HashSet<InputHandler>>>,
+	capture_requests: Arc<RwLock<HashMap<InputHandler, CaptureRequest>>>,
 }
 impl<V: Send + Sync + 'static> Clone for QueryCache<V> {
 	fn clone(&self) -> Self {
@@ -73,13 +76,19 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 	) -> RwLockWriteGuard<'_, HashMap<QueryableId, CachedHandler<V>>> {
 		self.handlers.write().await
 	}
-	pub async fn capture_requests(&self) -> RwLockReadGuard<'_, HashSet<InputHandler>> {
+	pub async fn capture_requests(
+		&self,
+	) -> RwLockReadGuard<'_, HashMap<InputHandler, CaptureRequest>> {
 		self.capture_requests.read().await
 	}
-	pub fn capture_requests_blocking(&self) -> RwLockReadGuard<'_, HashSet<InputHandler>> {
+	pub fn capture_requests_blocking(
+		&self,
+	) -> RwLockReadGuard<'_, HashMap<InputHandler, CaptureRequest>> {
 		self.capture_requests.blocking_read()
 	}
-	pub(super) async fn capture_requests_mut(&self) -> RwLockWriteGuard<'_, HashSet<InputHandler>> {
+	pub(super) async fn capture_requests_mut(
+		&self,
+	) -> RwLockWriteGuard<'_, HashMap<InputHandler, CaptureRequest>> {
 		self.capture_requests.write().await
 	}
 
@@ -153,7 +162,7 @@ impl<V: Send + Sync + 'static> QueryCache<V> {
 		let Some(handler) = handlers.get(obj).map(|e| e.handler.clone()) else {
 			return;
 		};
-		if self.capture_requests.read().await.contains(&handler) {
+		if self.capture_requests.read().await.contains_key(&handler) {
 			if let Some(entry) = handlers.get_mut(obj) {
 				entry.left_query = true;
 			}

@@ -62,7 +62,7 @@ pub trait InputMethodHelper: Send + Sync + 'static {
 	fn order_handlers_and_captures(
 		&self,
 		handlers: &HashMap<QueryableId, CachedHandler<Self::QueryValue>>,
-		capture_requests: &HashSet<InputHandler>,
+		capture_requests: &HashMap<InputHandler, CaptureRequest>,
 		active_capture: Option<&InputHandler>,
 	) -> impl Future<Output = (Vec<InputHandler>, Option<InputHandler>)> + Send + Sync;
 
@@ -185,26 +185,44 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		}
 	}
 
-	async fn grant_capture(&self, handler: InputHandler) -> Option<InputMethodCapture> {
+	pub async fn grant_capture(&self, mut request: CaptureRequest) -> Result<(), NodeError> {
+		let capture = InputMethodCapture::new_service(CaptureGuard {
+			handler: request.handler.clone(),
+			release_tx: self.release_tx.clone(),
+		})?;
+		// the value should only be consumed here or in Drop
+		let sender = request.reply.take().unwrap();
+		let sent = sender.send(Some(capture.into_proxy())).is_ok();
+		if sent {
+			self.helper
+				.capture_granted(&request.request_ctx, &request.handler)
+				.await;
+		}
+		Ok(())
+	}
+
+	async fn request_capture(
+		&self,
+		handler: InputHandler,
+		reply: gluon_ipc::ReplySender<Option<InputMethodCapture>>,
+		request_ctx: gluon_ipc::Context,
+	) {
 		// Hold the handler write lock across the membership check and the capture_requests
 		// insert so on_left, which checks capture_requests under the same lock, can't slip in
 		// and drop this handler's entry on a concurrent field exit.
-		{
-			let handlers = self.cache.handlers_mut().await;
-			if !handlers.values().any(|e| e.handler == handler) {
-				return None;
-			}
-			self.cache
-				.capture_requests_mut()
-				.await
-				.insert(handler.clone());
+
+		let handlers = self.cache.handlers_mut().await;
+		if !handlers.values().any(|e| e.handler == handler) {
+			return;
 		}
-		let capture = InputMethodCapture::new_service(CaptureGuard {
-			handler,
-			release_tx: self.release_tx.clone(),
-		})
-		.ok()?;
-		Some(capture.into_proxy())
+		self.cache.capture_requests_mut().await.insert(
+			handler.clone(),
+			CaptureRequest {
+				reply: Some(reply),
+				handler: handler.clone(),
+				request_ctx,
+			},
+		);
 	}
 
 	async fn drain_released_captures(&self) {
@@ -260,9 +278,9 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		// order, so its first real send is always an input_gained
 		let (capture, targets) = {
 			let handlers = self.cache.handlers().await;
-			let capture_requests = self.cache.capture_requests().await.clone();
+			let mut capture_requests = self.cache.capture_requests_mut().await;
 			let active = self.active_capture.read().await.clone();
-			let (order, capture) = self
+			let (order, mut capture) = self
 				.helper
 				.order_handlers_and_captures(&handlers, &capture_requests, active.as_ref())
 				.await;
@@ -273,6 +291,19 @@ impl<S: InputMethodHelper> InputMethod<S> {
 					Some((handler, entry.spatial.clone()?, entry.field.clone()))
 				})
 				.collect();
+			if let Some(capture_ref) = &capture
+				&& let Some(request) = capture_requests.remove(capture_ref)
+			{
+				if self
+					.grant_capture(request)
+					.await
+					.inspect_err(|err| error!("failed to grant capture: {err}"))
+					.is_err()
+				{
+					capture.take();
+				}
+			}
+			capture_requests.clear();
 			(capture, targets)
 		};
 		*self.active_capture.write().await = capture.clone();
@@ -319,7 +350,9 @@ impl<S: InputMethodHelper> InputMethod<S> {
 			}
 		}
 		for handler in removed {
-			if let Err(err) = handler.input_left(method.clone(), time) {
+			if let Err(err) = handler.input_left(method.clone(), time)
+				&& !matches!(err, gluon_ipc::SendError::Closed)
+			{
 				error!("failed to send input_left to handler: {err}");
 			}
 		}
@@ -410,15 +443,35 @@ impl<S: InputMethodHelper<QueryValue = FieldSample>> InputMethod<S> {
 	}
 }
 
+pub struct CaptureRequest {
+	reply: Option<gluon_ipc::ReplySender<Option<InputMethodCapture>>>,
+	handler: InputHandler,
+	request_ctx: gluon_ipc::Context,
+}
+impl Drop for CaptureRequest {
+	fn drop(&mut self) {
+		if let Some(sender) = self.reply.take() {
+			_ = sender.send(None);
+		}
+	}
+}
+
 impl<S: InputMethodHelper> InputMethodHandler for InputMethod<S> {
+	async fn request_capture_oneway(
+		&self,
+		ctx: gluon_ipc::Context,
+		handler: InputHandler,
+		reply: gluon_ipc::ReplySender<Option<InputMethodCapture>>,
+	) -> Result<(), gluon_ipc::SendError> {
+		self.request_capture(handler, reply, ctx).await;
+		Ok(())
+	}
 	async fn request_capture(
 		&self,
-		ctx: Context,
-		handler: InputHandler,
+		_ctx: Context,
+		_handler: InputHandler,
 	) -> Option<InputMethodCapture> {
-		let capture = self.grant_capture(handler.clone()).await?;
-		self.helper.capture_granted(&ctx, &handler).await;
-		Some(capture)
+		unreachable!()
 	}
 
 	async fn get_spatial_data(
@@ -500,7 +553,7 @@ pub fn spawn_frame_driver<S: InputMethodHelper>(node: &Node<InputMethod<S>>) -> 
 /// query's business and the guard's, not the ordering's.
 pub fn order_by_distance<V: Send + Sync + 'static>(
 	handlers: &HashMap<QueryableId, CachedHandler<V>>,
-	capture_requests: &HashSet<InputHandler>,
+	capture_requests: &HashMap<InputHandler, CaptureRequest>,
 	active_capture: Option<&InputHandler>,
 	distance: impl Fn(&CachedHandler<V>) -> Option<f32>,
 ) -> (Vec<InputHandler>, Option<InputHandler>) {
@@ -517,7 +570,7 @@ pub fn order_by_distance<V: Send + Sync + 'static>(
 		.or_else(|| {
 			order
 				.iter()
-				.find(|(_, h)| capture_requests.contains(h))
+				.find(|(_, h)| capture_requests.contains_key(h))
 				.map(|(_, h)| h.clone())
 		});
 
