@@ -236,8 +236,10 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		{
 			return;
 		}
+		// handlers before capture_requests, same as grant_capture and on_left, or they deadlock
+		let mut handlers = self.cache.handlers_mut().await;
 		let mut capture_requests = self.cache.capture_requests_mut().await;
-		self.cache.handlers_mut().await.retain(|_, e| {
+		handlers.retain(|_, e| {
 			let alive = e.handler.alive();
 			if !alive {
 				capture_requests.remove(&e.handler);
