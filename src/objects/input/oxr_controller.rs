@@ -812,7 +812,7 @@ impl OxrControllerInput {
 		*method.pose.blocking_write() = aim_pose.map(|pose| (ts, pose));
 		if let Some(pose) = aim_pose {
 			if let Some(part) = self.model_part.get() {
-				let color = if method.active_capture_blocking().is_some() {
+				let color = if method.active_capture_handler_blocking().is_some() {
 					rgba_linear!(0.0, 1.0, 0.75, 1.0)
 				} else {
 					rgba_linear!(1.0, 1.0, 1.0, 1.0)

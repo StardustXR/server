@@ -36,7 +36,7 @@ use std::{
 	ops::Deref,
 	sync::{Arc, Mutex, OnceLock},
 };
-use tokio::sync::{RwLock, mpsc, watch};
+use tokio::sync::{RwLock, watch};
 use tracing::error;
 
 fn handler_dependency() -> InterfaceDependency {
@@ -104,25 +104,22 @@ impl ActiveTracker {
 }
 
 #[derive(Debug, Handler)]
-struct CaptureGuard {
+pub struct CaptureGuard {
 	handler: InputHandler,
-	release_tx: mpsc::UnboundedSender<InputHandler>,
 }
-impl InputMethodCaptureHandler for CaptureGuard {}
-impl Drop for CaptureGuard {
-	fn drop(&mut self) {
-		let _ = self.release_tx.send(self.handler.clone());
+impl CaptureGuard {
+	pub fn input_handler(&self) -> &InputHandler {
+		&self.handler
 	}
 }
+impl InputMethodCaptureHandler for CaptureGuard {}
 
 #[derive(Handler)]
 pub struct InputMethod<S: InputMethodHelper> {
 	helper: S,
 	cache: QueryCache<S::QueryValue>,
 	spatial: Arc<Spatial>,
-	active_capture: RwLock<Option<InputHandler>>,
-	release_tx: mpsc::UnboundedSender<InputHandler>,
-	release_rx: Mutex<mpsc::UnboundedReceiver<InputHandler>>,
+	active_capture: RwLock<Option<Node<CaptureGuard>>>,
 	tracker: Mutex<ActiveTracker>,
 	// bare proxy, not a LocalRef: a LocalRef here would be an Arc cycle back into this handler
 	proxy: OnceLock<InputMethodProxy>,
@@ -150,14 +147,11 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		spatial: Arc<Spatial>,
 		query: impl Send + Sync + 'static,
 	) -> Result<(Node<Self>, InputMethodProxy), NodeError> {
-		let (release_tx, release_rx) = mpsc::unbounded_channel();
 		let (node, method) = InputMethodProxy::new_node(Self {
 			helper,
 			cache,
 			spatial,
 			active_capture: RwLock::new(None),
-			release_tx,
-			release_rx: Mutex::new(release_rx),
 			tracker: Mutex::default(),
 			proxy: OnceLock::new(),
 			query: OnceLock::new(),
@@ -172,33 +166,36 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		&self.cache
 	}
 
-	pub fn active_capture_blocking(&self) -> Option<InputHandler> {
-		self.active_capture.blocking_read().clone()
+	pub fn active_capture_handler_blocking(&self) -> Option<InputHandler> {
+		self.active_capture
+			.blocking_read()
+			.as_ref()
+			.map(|v| v.input_handler().clone())
 	}
 
 	/// force-release the active capture, as if the capturing client dropped its guard
 	///
 	/// takes effect on the next [`Self::send`], which is what drains the release channel
-	pub fn stop_active_capture(&self) {
-		if let Some(handler) = self.active_capture_blocking() {
-			let _ = self.release_tx.send(handler);
-		}
+	pub fn stop_active_capture_blocking(&self) {
+		self.active_capture.blocking_write().take();
 	}
 
-	pub async fn grant_capture(&self, mut request: CaptureRequest) -> Result<(), NodeError> {
-		let capture = InputMethodCapture::new_service(CaptureGuard {
+	async fn grant_capture(
+		&self,
+		mut request: CaptureRequest,
+	) -> Result<Node<CaptureGuard>, NodeError> {
+		let (capture, capture_ref) = InputMethodCapture::new_node(CaptureGuard {
 			handler: request.handler.clone(),
-			release_tx: self.release_tx.clone(),
 		})?;
 		// the value should only be consumed here or in Drop
 		let sender = request.reply.take().unwrap();
-		let sent = sender.send(Some(capture.into_proxy())).is_ok();
+		let sent = sender.send(Some(capture_ref.into_proxy())).is_ok();
 		if sent {
 			self.helper
 				.capture_granted(&request.request_ctx, &request.handler)
 				.await;
 		}
-		Ok(())
+		Ok(capture)
 	}
 
 	async fn request_capture(
@@ -226,21 +223,7 @@ impl<S: InputMethodHelper> InputMethod<S> {
 	}
 
 	async fn drain_released_captures(&self) {
-		let released: Vec<InputHandler> = {
-			let mut rx = self.release_rx.lock().unwrap();
-			std::iter::from_fn(|| rx.try_recv().ok()).collect()
-		};
-		for handler in released {
-			self.cache.capture_requests_mut().await.remove(&handler);
-			self.cache
-				.handlers_mut()
-				.await
-				.retain(|_, e| !(e.left_query && e.handler == handler));
-			let mut capture = self.active_capture.write().await;
-			if capture.as_ref() == Some(&handler) {
-				capture.take();
-			}
-		}
+		self.active_capture.write().await.take_if(|v| v.is_dead());
 	}
 
 	/// sweep handlers whose client died without the query ever saying they left
@@ -273,14 +256,24 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		};
 		self.drain_released_captures().await;
 		self.drain_dead_handlers().await;
+		enum CaptureAction {
+			Set(Node<CaptureGuard>),
+			Remove,
+			Keep,
+		}
 
 		// a handler whose get_spatial is still in flight is skipped rather than kept in
 		// order, so its first real send is always an input_gained
 		let (capture, targets) = {
 			let handlers = self.cache.handlers().await;
 			let mut capture_requests = self.cache.capture_requests_mut().await;
-			let active = self.active_capture.read().await.clone();
-			let (order, mut capture) = self
+			let active = self
+				.active_capture
+				.read()
+				.await
+				.as_ref()
+				.map(|v| v.input_handler().clone());
+			let (order, capture) = self
 				.helper
 				.order_handlers_and_captures(&handlers, &capture_requests, active.as_ref())
 				.await;
@@ -291,22 +284,42 @@ impl<S: InputMethodHelper> InputMethod<S> {
 					Some((handler, entry.spatial.clone()?, entry.field.clone()))
 				})
 				.collect();
-			if let Some(capture_ref) = &capture
-				&& let Some(request) = capture_requests.remove(capture_ref)
-			{
-				if self
-					.grant_capture(request)
-					.await
-					.inspect_err(|err| error!("failed to grant capture: {err}"))
-					.is_err()
+			let capture = if let Some(capture_ref) = &capture {
+				if let Some(active) = &active
+					&& active == capture_ref
 				{
-					capture.take();
+					CaptureAction::Keep
+				} else if let Some(request) = capture_requests.remove(capture_ref) {
+					match self
+						.grant_capture(request)
+						.await
+						.inspect_err(|err| error!("failed to grant capture: {err}"))
+					{
+						Ok(v) => CaptureAction::Set(v),
+						Err(_) => CaptureAction::Remove,
+					}
+				} else {
+					CaptureAction::Remove
 				}
-			}
+			} else {
+				CaptureAction::Remove
+			};
 			capture_requests.clear();
 			(capture, targets)
 		};
-		*self.active_capture.write().await = capture.clone();
+		let capture = {
+			let mut active = self.active_capture.write().await;
+			match capture {
+				CaptureAction::Set(node) => {
+					*active = Some(node);
+				}
+				CaptureAction::Remove => {
+					active.take();
+				}
+				CaptureAction::Keep => {}
+			};
+			active.as_ref().map(|v| v.input_handler().clone())
+		};
 
 		let (datamap, input) = tokio::join!(self.helper.datamap(), self.helper.input_data(time));
 
@@ -485,7 +498,7 @@ impl<S: InputMethodHelper> InputMethodHandler for InputMethod<S> {
 			.read()
 			.await
 			.as_ref()
-			.is_some_and(|c| c != &handler)
+			.is_some_and(|c| c.input_handler() != &handler)
 		{
 			return None;
 		}

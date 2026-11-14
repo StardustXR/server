@@ -115,7 +115,7 @@ fn stop_capture_hotkey(
 		return;
 	}
 	if let Some(pointer) = pointer {
-		pointer.method.stop_active_capture();
+		pointer.method.stop_active_capture_blocking();
 	}
 }
 
@@ -497,7 +497,7 @@ impl MousePointer {
 	/// Program name and PID of the client whose handler currently captures the
 	/// pointer, if any.
 	pub fn captured_by(&self) -> Option<(String, i32)> {
-		let capture = self.method.active_capture_blocking()?;
+		let capture = self.method.active_capture_handler_blocking()?;
 		self.method
 			.capture_pids
 			.lock()

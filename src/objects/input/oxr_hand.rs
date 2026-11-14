@@ -414,7 +414,7 @@ impl OxrHandInput {
 		}
 
 		if let HandMaterial::Normal(material_handle) = &self.material {
-			let color: Color = if method.active_capture_blocking().is_some() {
+			let color: Color = if method.active_capture_handler_blocking().is_some() {
 				Srgba::rgb(0., 1., 0.75).into()
 			} else {
 				Srgba::rgb(1., 1.0, 1.0).into()
