@@ -92,7 +92,19 @@ pub fn connection_env() -> FxHashMap<String, String> {
 		"STARDUST_INSTANCE".to_string(),
 		STARDUST_INSTANCE.get().unwrap().clone(),
 	);
-	env.insert("XDG_CURRENT_DESKTOP".to_string(), "Stardust".to_string());
+	// Prepend ourselves to the inherited desktop list (e.g. `Stardust:KDE`) so
+	// clients still resolve the host desktop's `<desktop>-mimeapps.list` etc.
+	let current_desktop = std::iter::once("Stardust".to_string())
+		.chain(
+			std::env::var("XDG_CURRENT_DESKTOP")
+				.unwrap_or_default()
+				.split(':')
+				.filter(|d| !d.is_empty() && *d != "Stardust")
+				.map(str::to_string),
+		)
+		.collect::<Vec<_>>()
+		.join(":");
+	env.insert("XDG_CURRENT_DESKTOP".to_string(), current_desktop);
 
 	if let Some(flat_wayland_display) = std::env::var_os("WAYLAND_DISPLAY") {
 		env.insert(
