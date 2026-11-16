@@ -116,7 +116,7 @@ pub fn enable(descriptor: &mut RenderPipelineDescriptor) {
 
 #[derive(Default, Asset, AsBindGroup, TypePath, Debug, Clone)]
 #[data(50, u32, binding_array(101))]
-#[bindless(index_table(range(50..51), binding(100)))]
+// #[bindless(index_table(range(50..51), binding(100)))]
 pub struct WboitExtension {}
 impl From<&WboitExtension> for u32 {
 	fn from(_: &WboitExtension) -> Self {
