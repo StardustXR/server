@@ -211,7 +211,7 @@ fn apply_materials(
 					error!("somehow the oneshot channel wasn't empty but also failed to try_recv");
 					continue;
 				};
-                // TODO: don't just discard in this case? should be fine tho?
+				// TODO: don't just discard in this case? should be fine tho?
 				let Some(handle) = tex.try_get_bevy_handle() else {
 					error!("tried to apply dmatex before its bevy handle was created");
 					continue;
@@ -408,6 +408,10 @@ impl HashedPbrMaterial {
 		}
 		state.write_u8(mat.double_sided as u8);
 		state.write_u8(mat.unlit as u8);
+		mat.uv_transform
+			.to_cols_array()
+			.iter()
+			.for_each(|v| state.write_u32(v.to_bits()));
 		mat.base_color_texture.hash(state);
 		mat.emissive_texture.hash(state);
 		mat.metallic_roughness_texture.hash(state);
@@ -519,9 +523,15 @@ fn apply_to_material(
 				}
 			}
 		}
-		MaterialParameter::Vec2 { value: _ } => {
-			// nothing uses a Vec2
-		}
+		MaterialParameter::Vec2 { value } => match parameter_name {
+			"uv_offset" => mat.uv_transform.translation = Vec2::new(value.x, value.y),
+			"uv_scale" => {
+				mat.uv_transform.matrix2 = Mat2::from_diagonal(Vec2::new(value.x, value.y))
+			}
+			v => {
+				error!("unknown param_name ({v}) for vec2")
+			}
+		},
 		MaterialParameter::Vec3 { value: _ } => {
 			// nothing uses a Vec3
 		}
