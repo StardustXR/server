@@ -10,9 +10,8 @@ use crate::{
 	objects::{
 		DebugWrapper, Tracked,
 		input::{
-			CachedHandler, CaptureRequest, DatamapBuilder, FrameDriver,
-			InputMethod as InputMethodNode, InputMethodHelper, order_by_distance,
-			spawn_frame_driver,
+			DatamapBuilder, FrameDriver, Hovered, InputMethod as InputMethodNode,
+			InputMethodHelper, order_by_distance, spawn_frame_driver,
 		},
 	},
 	openxr_helpers::ConvertTimespec,
@@ -42,7 +41,7 @@ use stardust_xr_protocol::{
 	query::QueryableId,
 	spatial::{PartialTransform, Spatial as SpatialProxy, SpatialRef as SpatialRefProxy},
 	spatial_query::{Point, PointsQueryHandle},
-	suis::{Chirality, DatamapData, InputDataType, InputHandler, Tip},
+	suis::{Chirality, DatamapData, InputDataType, Tip},
 	types::{self, Posef, Timestamp, rgba_linear},
 };
 use stardust_xr_server_wboit::WboitMaterial;
@@ -1019,19 +1018,14 @@ impl ControllerInputMethod {
 impl InputMethodHelper for ControllerInputMethod {
 	type QueryValue = FieldSample;
 
-	async fn order_handlers_and_captures(
+	async fn order_handlers(
 		&self,
-		handlers: &HashMap<QueryableId, CachedHandler<FieldSample>>,
-		capture_requests: &std::collections::HashMap<InputHandler, CaptureRequest>,
-		active_capture: Option<&InputHandler>,
-	) -> (Vec<InputHandler>, Option<InputHandler>) {
+		hovered: &HashMap<QueryableId, Hovered<FieldSample>>,
+	) -> Vec<QueryableId> {
 		let Some((_, pose)) = *self.pose.read().await else {
-			return (
-				active_capture.cloned().into_iter().collect(),
-				active_capture.cloned(),
-			);
+			return Vec::new();
 		};
-		order_by_distance(handlers, capture_requests, active_capture, |e| {
+		order_by_distance(hovered, |e| {
 			Some(Self::pose_distance(&e.field, &self.base_spatial, pose).abs())
 		})
 	}

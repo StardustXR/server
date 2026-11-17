@@ -12,7 +12,7 @@ use crate::{
 	nodes::{ProxyExt as _, spatial::Spatial},
 	query::spatial_query::SpatialQueryInterface,
 };
-use gluon_ipc::{Context, Handler, Liveness, Node, NodeError, RefExt};
+use gluon_ipc::{Context, Handler, Node, NodeError, RefExt};
 use stardust_xr_protocol::{
 	field::{FieldSample, RayMarchResult},
 	query::InterfaceDependency,
@@ -36,7 +36,7 @@ use std::{
 	ops::Deref,
 	sync::{Arc, Mutex, OnceLock},
 };
-use tokio::sync::{RwLock, watch};
+use tokio::sync::watch;
 use tracing::error;
 
 fn handler_dependency() -> InterfaceDependency {
@@ -55,16 +55,14 @@ pub trait InputMethodHelper: Send + Sync + 'static {
 	/// [`FieldSample`] for points
 	type QueryValue: Send + Sync + 'static;
 
-	/// which handlers get input this cycle, closest first, and which capture requester wins
+	/// the hovered handlers that get input this cycle, closest first
 	///
-	/// runs while the cache is locked for reading, so the query can't add or drop handlers
-	/// until it finishes. [`order_by_distance`] is what all the built-in devices use
-	fn order_handlers_and_captures(
+	/// only asked while nothing holds the capture, and the nearest one that requested a
+	/// capture takes it. [`order_by_distance`] is what all the built-in devices use
+	fn order_handlers(
 		&self,
-		handlers: &HashMap<QueryableId, CachedHandler<Self::QueryValue>>,
-		capture_requests: &HashMap<InputHandler, CaptureRequest>,
-		active_capture: Option<&InputHandler>,
-	) -> impl Future<Output = (Vec<InputHandler>, Option<InputHandler>)> + Send + Sync;
+		hovered: &HashMap<QueryableId, Hovered<Self::QueryValue>>,
+	) -> impl Future<Output = Vec<QueryableId>> + Send + Sync;
 
 	/// this method's shape in its own space, None to send nothing this cycle
 	///
@@ -104,14 +102,7 @@ impl ActiveTracker {
 }
 
 #[derive(Debug, Handler)]
-pub struct CaptureGuard {
-	handler: InputHandler,
-}
-impl CaptureGuard {
-	pub fn input_handler(&self) -> &InputHandler {
-		&self.handler
-	}
-}
+pub struct CaptureGuard;
 impl InputMethodCaptureHandler for CaptureGuard {}
 
 #[derive(Handler)]
@@ -119,7 +110,6 @@ pub struct InputMethod<S: InputMethodHelper> {
 	helper: S,
 	cache: QueryCache<S::QueryValue>,
 	spatial: Arc<Spatial>,
-	active_capture: RwLock<Option<Node<CaptureGuard>>>,
 	tracker: Mutex<ActiveTracker>,
 	// bare proxy, not a LocalRef: a LocalRef here would be an Arc cycle back into this handler
 	proxy: OnceLock<InputMethodProxy>,
@@ -151,7 +141,6 @@ impl<S: InputMethodHelper> InputMethod<S> {
 			helper,
 			cache,
 			spatial,
-			active_capture: RwLock::new(None),
 			tracker: Mutex::default(),
 			proxy: OnceLock::new(),
 			query: OnceLock::new(),
@@ -167,26 +156,22 @@ impl<S: InputMethodHelper> InputMethod<S> {
 	}
 
 	pub fn active_capture_handler_blocking(&self) -> Option<InputHandler> {
-		self.active_capture
-			.blocking_read()
-			.as_ref()
-			.map(|v| v.input_handler().clone())
+		self.cache
+			.read_blocking()
+			.captured()
+			.map(|c| c.target.handler.clone())
 	}
 
 	/// force-release the active capture, as if the capturing client dropped its guard
-	///
-	/// takes effect on the next [`Self::send`], which is what drains the release channel
 	pub fn stop_active_capture_blocking(&self) {
-		self.active_capture.blocking_write().take();
+		self.cache.write_blocking().release();
 	}
 
 	async fn grant_capture(
 		&self,
 		mut request: CaptureRequest,
 	) -> Result<Node<CaptureGuard>, NodeError> {
-		let (capture, capture_ref) = InputMethodCapture::new_node(CaptureGuard {
-			handler: request.handler.clone(),
-		})?;
+		let (capture, capture_ref) = InputMethodCapture::new_node(CaptureGuard)?;
 		// the value should only be consumed here or in Drop
 		let sender = request.reply.take().unwrap();
 		let sent = sender.send(Some(capture_ref.into_proxy())).is_ok();
@@ -198,127 +183,53 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		Ok(capture)
 	}
 
-	async fn request_capture(
-		&self,
-		handler: InputHandler,
-		reply: gluon_ipc::ReplySender<Option<InputMethodCapture>>,
-		request_ctx: gluon_ipc::Context,
-	) {
-		// Hold the handler write lock across the membership check and the capture_requests
-		// insert so on_left, which checks capture_requests under the same lock, can't slip in
-		// and drop this handler's entry on a concurrent field exit.
-
-		let handlers = self.cache.handlers_mut().await;
-		if !handlers.values().any(|e| e.handler == handler) {
-			return;
-		}
-		self.cache.capture_requests_mut().await.insert(
-			handler.clone(),
-			CaptureRequest {
-				reply: Some(reply),
-				handler: handler.clone(),
-				request_ctx,
-			},
-		);
-	}
-
-	async fn drain_released_captures(&self) {
-		self.active_capture.write().await.take_if(|v| v.is_dead());
-	}
-
-	/// sweep handlers whose client died without the query ever saying they left
-	async fn drain_dead_handlers(&self) {
-		if !self
-			.cache
-			.handlers()
-			.await
-			.values()
-			.any(|e| !e.handler.alive())
-		{
-			return;
-		}
-		// handlers before capture_requests, same as grant_capture and on_left, or they deadlock
-		let mut handlers = self.cache.handlers_mut().await;
-		let mut capture_requests = self.cache.capture_requests_mut().await;
-		handlers.retain(|_, e| {
-			let alive = e.handler.alive();
-			if !alive {
-				capture_requests.remove(&e.handler);
-			}
-			alive
-		});
-	}
-
 	/// one dispatch cycle: work out who gets what and send it
 	pub async fn send(&self, time: Timestamp) {
 		let Some(method) = self.proxy.get() else {
 			return;
 		};
-		self.drain_released_captures().await;
-		self.drain_dead_handlers().await;
-		enum CaptureAction {
-			Set(Node<CaptureGuard>),
-			Remove,
-			Keep,
-		}
 
 		// a handler whose get_spatial is still in flight is skipped rather than kept in
 		// order, so its first real send is always an input_gained
 		let (capture, targets) = {
-			let handlers = self.cache.handlers().await;
-			let mut capture_requests = self.cache.capture_requests_mut().await;
-			let active = self
-				.active_capture
-				.read()
-				.await
-				.as_ref()
-				.map(|v| v.input_handler().clone());
-			let (order, capture) = self
-				.helper
-				.order_handlers_and_captures(&handlers, &capture_requests, active.as_ref())
-				.await;
-			let targets: Vec<_> = order
-				.into_iter()
-				.filter_map(|handler| {
-					let entry = handlers.values().find(|e| e.handler == handler)?;
-					Some((handler, entry.spatial.clone()?, entry.field.clone()))
-				})
-				.collect();
-			let capture = if let Some(capture_ref) = &capture {
-				if let Some(active) = &active
-					&& active == capture_ref
-				{
-					CaptureAction::Keep
-				} else if let Some(request) = capture_requests.remove(capture_ref) {
-					match self
-						.grant_capture(request)
-						.await
-						.inspect_err(|err| error!("failed to grant capture: {err}"))
-					{
-						Ok(v) => CaptureAction::Set(v),
-						Err(_) => CaptureAction::Remove,
-					}
-				} else {
-					CaptureAction::Remove
-				}
-			} else {
-				CaptureAction::Remove
+			let mut handlers = self.cache.write().await;
+			handlers.sweep();
+			let order = match handlers.captured() {
+				Some(_) => Vec::new(),
+				None => self.helper.order_handlers(handlers.hovered()).await,
 			};
-			capture_requests.clear();
-			(capture, targets)
-		};
-		let capture = {
-			let mut active = self.active_capture.write().await;
-			match capture {
-				CaptureAction::Set(node) => {
-					*active = Some(node);
-				}
-				CaptureAction::Remove => {
-					active.take();
-				}
-				CaptureAction::Keep => {}
-			};
-			active.as_ref().map(|v| v.input_handler().clone())
+			if let Some((id, request)) = handlers.take_requests(&order)
+				&& let Ok(guard) = self
+					.grant_capture(request)
+					.await
+					.inspect_err(|err| error!("failed to grant capture: {err}"))
+			{
+				handlers.capture(id, guard);
+			}
+			match handlers.captured() {
+				Some(c) => (
+					Some(c.target.handler.clone()),
+					vec![(
+						c.target.handler.clone(),
+						c.spatial.clone(),
+						c.target.field.clone(),
+					)],
+				),
+				None => (
+					None,
+					order
+						.iter()
+						.filter_map(|id| {
+							let h = handlers.hovered().get(id)?;
+							Some((
+								h.target.handler.clone(),
+								h.spatial()?.clone(),
+								h.target.field.clone(),
+							))
+						})
+						.collect(),
+				),
+			}
 		};
 
 		let (datamap, input) = tokio::join!(self.helper.datamap(), self.helper.input_data(time));
@@ -476,7 +387,11 @@ impl<S: InputMethodHelper> InputMethodHandler for InputMethod<S> {
 		handler: InputHandler,
 		reply: gluon_ipc::ReplySender<Option<InputMethodCapture>>,
 	) -> Result<(), gluon_ipc::SendError> {
-		self.request_capture(handler, reply, ctx).await;
+		self.cache.write().await.request(CaptureRequest {
+			reply: Some(reply),
+			handler,
+			request_ctx: ctx,
+		});
 		Ok(())
 	}
 	async fn request_capture(
@@ -493,22 +408,18 @@ impl<S: InputMethodHelper> InputMethodHandler for InputMethod<S> {
 		handler: InputHandler,
 		time: Timestamp,
 	) -> Option<SpatialData> {
-		if self
-			.active_capture
-			.read()
-			.await
-			.as_ref()
-			.is_some_and(|c| c.input_handler() != &handler)
-		{
-			return None;
-		}
-		let cached = self
-			.cache
-			.handlers()
-			.await
-			.values()
-			.find(|e| e.handler == handler)
-			.and_then(|e| Some((e.spatial.clone()?, e.field.clone())));
+		let cached = {
+			let handlers = self.cache.read().await;
+			match handlers.captured() {
+				Some(c) if c.target.handler != handler => return None,
+				Some(c) => Some((c.spatial.clone(), c.target.field.clone())),
+				None => handlers
+					.hovered()
+					.values()
+					.find(|h| h.target.handler == handler)
+					.and_then(|h| Some((h.spatial()?.clone(), h.target.field.clone()))),
+			}
+		};
 		// a handler outside the query can still ask, it just costs two round trips
 		let (spatial, field) = match cached {
 			Some(pair) => pair,
@@ -556,41 +467,21 @@ pub fn spawn_frame_driver<S: InputMethodHelper>(node: &Node<InputMethod<S>>) -> 
 	FrameDriver(tx)
 }
 
-/// Order handlers nearest first by whatever `distance` means for this device, and resolve
-/// the capture: one that's already active keeps it until it leaves the query, otherwise the
-/// nearest requester takes it. A capture is exclusive, so nobody else is in the order.
+/// hovered handlers nearest first, by whatever `distance` means for this device
 ///
 /// `distance` returning None drops that handler from the cycle entirely, which is how a
-/// device says "not a candidate" for its own reasons rather than for being far away. A
-/// handler already holding a capture keeps it either way, since letting go of one is the
-/// query's business and the guard's, not the ordering's.
+/// device says "not a candidate" for its own reasons rather than for being far away
 pub fn order_by_distance<V: Send + Sync + 'static>(
-	handlers: &HashMap<QueryableId, CachedHandler<V>>,
-	capture_requests: &HashMap<InputHandler, CaptureRequest>,
-	active_capture: Option<&InputHandler>,
-	distance: impl Fn(&CachedHandler<V>) -> Option<f32>,
-) -> (Vec<InputHandler>, Option<InputHandler>) {
-	let mut order: Vec<_> = handlers
-		.values()
-		.filter(|e| e.spatial.is_some())
-		.filter_map(|e| Some((distance(e)?, e.handler.clone())))
+	hovered: &HashMap<QueryableId, Hovered<V>>,
+	distance: impl Fn(&Target<V>) -> Option<f32>,
+) -> Vec<QueryableId> {
+	let mut order: Vec<_> = hovered
+		.iter()
+		.filter(|(_, h)| h.spatial().is_some())
+		.filter_map(|(id, h)| Some((distance(&h.target)?, *id)))
 		.collect();
 	order.sort_by(|(a, _), (b, _)| a.total_cmp(b));
-
-	let capture = active_capture
-		.filter(|cap| handlers.values().any(|e| &e.handler == *cap))
-		.cloned()
-		.or_else(|| {
-			order
-				.iter()
-				.find(|(_, h)| capture_requests.contains_key(h))
-				.map(|(_, h)| h.clone())
-		});
-
-	match capture {
-		Some(cap) => (vec![cap.clone()], Some(cap)),
-		None => (order.into_iter().map(|(_, h)| h).collect(), None),
-	}
+	order.into_iter().map(|(_, id)| id).collect()
 }
 
 /// Builds the datamap an [`InputMethodHelper`] hands back.

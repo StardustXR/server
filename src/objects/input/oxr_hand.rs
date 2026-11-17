@@ -1,11 +1,10 @@
 use super::{
-	CachedHandler, DatamapBuilder, FrameDriver, InputMethod as InputMethodNode, InputMethodHelper,
+	DatamapBuilder, FrameDriver, Hovered, InputMethod as InputMethodNode, InputMethodHelper,
 	order_by_distance, spawn_frame_driver,
 };
 use crate::nodes::drawable::model::HoldoutExtension;
 use crate::nodes::fields::Field;
 use crate::nodes::spatial::{Spatial, SpatialObject, SpatialRef};
-use crate::objects::input::CaptureRequest;
 use crate::objects::{DebugWrapper, Tracked};
 use crate::openxr_helpers::ConvertTimespec;
 use crate::{BevyMaterial, PreFrameWait, get_time};
@@ -30,7 +29,7 @@ use stardust_xr_protocol::query::QueryableId;
 use stardust_xr_protocol::spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy};
 use stardust_xr_protocol::spatial_query::{Point, PointsQueryHandle};
 use stardust_xr_protocol::suis::{
-	Chirality, DatamapData, Finger, Hand, InputDataType, InputHandler, Joint, Thumb,
+	Chirality, DatamapData, Finger, Hand, InputDataType, Joint, Thumb,
 };
 use stardust_xr_protocol::types::{self, Timestamp};
 use stardust_xr_server_wboit::{WboitExtension, WboitMaterial};
@@ -569,19 +568,14 @@ impl HandInputMethod {
 impl InputMethodHelper for HandInputMethod {
 	type QueryValue = FieldSample;
 
-	async fn order_handlers_and_captures(
+	async fn order_handlers(
 		&self,
-		handlers: &HashMap<QueryableId, CachedHandler<FieldSample>>,
-		capture_requests: &std::collections::HashMap<InputHandler, CaptureRequest>,
-		active_capture: Option<&InputHandler>,
-	) -> (Vec<InputHandler>, Option<InputHandler>) {
+		hovered: &HashMap<QueryableId, Hovered<FieldSample>>,
+	) -> Vec<QueryableId> {
 		let Some((_, hand)) = *self.hand.read().await else {
-			return (
-				active_capture.cloned().into_iter().collect(),
-				active_capture.cloned(),
-			);
+			return Vec::new();
 		};
-		order_by_distance(handlers, capture_requests, active_capture, |e| {
+		order_by_distance(hovered, |e| {
 			Some(hand_sort_distance(&self.base_spatial, &e.field, &hand).abs())
 		})
 	}

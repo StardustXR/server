@@ -1,11 +1,10 @@
 use super::{
-	CachedHandler, DatamapBuilder, FrameDriver, InputMethod as InputMethodNode, InputMethodHelper,
+	DatamapBuilder, FrameDriver, Hovered, InputMethod as InputMethodNode, InputMethodHelper,
 	order_by_distance, spawn_frame_driver,
 };
 use crate::{
 	bevy_int::flatscreen_cam::FlatscreenCam, keymap_store::KEYMAP_STORE,
-	nodes::spatial::SpatialObject, objects::input::CaptureRequest,
-	query::spatial_query::SpatialQueryInterface,
+	nodes::spatial::SpatialObject, query::spatial_query::SpatialQueryInterface,
 };
 use bevy::{
 	input::{
@@ -286,21 +285,18 @@ impl KeyboardFocus {
 #[derive(Debug)]
 struct MouseMethod {
 	event: RwLock<MouseEvent>,
-	/// Program name + PID of each client that requested a capture, keyed by its
-	/// handler; looked up when that handler's capture becomes active.
-	capture_pids: Mutex<HashMap<InputHandler, (String, i32)>>,
+	/// program name and pid of the client behind the last granted capture
+	captured_by: Mutex<Option<(InputHandler, String, i32)>>,
 }
 
 impl InputMethodHelper for MouseMethod {
 	type QueryValue = RayMarchResult;
 
-	async fn order_handlers_and_captures(
+	async fn order_handlers(
 		&self,
-		handlers: &HashMap<QueryableId, CachedHandler<RayMarchResult>>,
-		capture_requests: &HashMap<InputHandler, CaptureRequest>,
-		active_capture: Option<&InputHandler>,
-	) -> (Vec<InputHandler>, Option<InputHandler>) {
-		order_by_distance(handlers, capture_requests, active_capture, |e| {
+		hovered: &HashMap<QueryableId, Hovered<RayMarchResult>>,
+	) -> Vec<QueryableId> {
+		order_by_distance(hovered, |e| {
 			if e.value.min_distance > 0.0 {
 				None
 			} else {
@@ -332,10 +328,7 @@ impl InputMethodHelper for MouseMethod {
 		let name = std::fs::read_to_string(format!("/proc/{pid}/comm"))
 			.map(|s| s.trim().to_string())
 			.unwrap_or_else(|_| "unknown".to_string());
-		self.capture_pids
-			.lock()
-			.unwrap()
-			.insert(handler.clone(), (name, pid));
+		*self.captured_by.lock().unwrap() = Some((handler.clone(), name, pid));
 	}
 }
 
@@ -361,7 +354,7 @@ impl MousePointer {
 		let (method, _, beam_handle) = InputMethodNode::new_beam(
 			MouseMethod {
 				event: RwLock::new(MouseEvent::default()),
-				capture_pids: Mutex::new(HashMap::new()),
+				captured_by: Mutex::new(None),
 			},
 			(**spatial).clone(),
 			spatial_ref.clone(),
@@ -481,17 +474,6 @@ impl MousePointer {
 		let ctrl_pressed = keyboard_buttons.pressed(KeyCode::ControlLeft)
 			|| keyboard_buttons.pressed(KeyCode::ControlRight);
 		self.send_key_events(key_events, ctrl_pressed);
-
-		// Drop pid entries for handlers whose capture request is gone (released or client
-		// died); the frame driver's send is what sweeps capture_requests.
-		{
-			let requests = self.method.cache().capture_requests_blocking();
-			self.method
-				.capture_pids
-				.lock()
-				.unwrap()
-				.retain(|handler, _| requests.contains_key(handler));
-		}
 	}
 
 	/// Program name and PID of the client whose handler currently captures the
@@ -499,11 +481,12 @@ impl MousePointer {
 	pub fn captured_by(&self) -> Option<(String, i32)> {
 		let capture = self.method.active_capture_handler_blocking()?;
 		self.method
-			.capture_pids
+			.captured_by
 			.lock()
 			.unwrap()
-			.get(&capture)
-			.cloned()
+			.as_ref()
+			.filter(|(handler, ..)| *handler == capture)
+			.map(|(_, name, pid)| (name.clone(), *pid))
 	}
 
 	/// Move the keyboard focus point to the pointer's current beam hit — keyboard
@@ -516,9 +499,8 @@ impl MousePointer {
 		let hit = self
 			.method
 			.cache()
-			.handlers_blocking()
-			.values()
-			.filter(|e| e.spatial.is_some() && !e.left_query)
+			.read_blocking()
+			.in_query()
 			.map(|e| e.value.deepest_point_distance)
 			.min_by(f32::total_cmp);
 		let points = hit
