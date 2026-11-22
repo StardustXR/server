@@ -377,9 +377,14 @@ impl Spatial {
 			self.set_local_transform(transform.to_mat4() * self.local_transform());
 			return;
 		}
+		let parent = self.get_parent();
+		// relative to the parent is just local, and going through the inverse would add float
+		// noise that defeats the unchanged check and NaNs under a zero-scale ancestor
+		let reference_space = reference_space
+			.filter(|reference| !parent.as_deref().is_some_and(|p| ptr::eq(*reference, p)));
 		let reference_to_parent_transform = reference_space
 			.map(|reference_space| {
-				Spatial::space_to_space_matrix(Some(reference_space), self.get_parent().as_deref())
+				Spatial::space_to_space_matrix(Some(reference_space), parent.as_deref())
 			})
 			.unwrap_or(Mat4::IDENTITY);
 		let mut local_transform_in_reference_space =
