@@ -16,7 +16,6 @@ use bevy::{
 };
 use color_eyre::eyre::{Result, eyre};
 use glam::{Mat4, Vec3};
-use gluon_ipc::Context;
 use mint::Vector2;
 use stardust_xr_molecules_protocols::{
 	derezzable::Derezzable as DerezzableProxy,
@@ -28,12 +27,12 @@ use stardust_xr_protocol::{
 	query::QueryableId,
 	spatial::Spatial as SpatialProxy,
 	spatial_query::{BeamQueryHandle, Point},
-	suis::{DatamapData, InputDataType, InputHandler, Pointer},
+	suis::{DatamapData, InputDataType, Pointer},
 	types::{Posef, Timestamp, Vec3F},
 };
 use std::{
 	collections::HashMap,
-	sync::{Arc, Mutex, OnceLock},
+	sync::{Arc, OnceLock},
 };
 use tokio::sync::RwLock;
 use tracing::instrument;
@@ -154,14 +153,30 @@ fn setup_capture_indicator(mut cmds: Commands) {
 fn update_capture_indicator(
 	pointer: Option<Res<MousePointer>>,
 	mut text: Single<&mut Text, With<CaptureIndicator>>,
+	mut shown: Local<Option<Option<i32>>>,
 ) {
-	let label = pointer
-		.and_then(|p| p.captured_by())
-		.map(|(name, pid)| format!("captured by {name}, {pid}"))
-		.unwrap_or_default();
-	if text.0 != label {
-		text.0 = label;
+	let capture = pointer.and_then(|p| p.method.cache().read_blocking().captured().map(|c| c.pid));
+	if *shown == capture {
+		return;
 	}
+	*shown = capture;
+	text.0 = match capture {
+		None => String::new(),
+		Some(None) => "captured by unknown".to_string(),
+		Some(Some(pid)) => {
+			// comm is truncated to 15 bytes by the kernel, so prefer the exe name
+			let name = std::fs::read_link(format!("/proc/{pid}/exe"))
+				.ok()
+				.and_then(|p| Some(p.file_name()?.to_string_lossy().into_owned()))
+				.or_else(|| {
+					std::fs::read_to_string(format!("/proc/{pid}/comm"))
+						.ok()
+						.map(|s| s.trim().to_string())
+				})
+				.unwrap_or_else(|| "unknown".to_string());
+			format!("captured by {name}, {pid}")
+		}
+	};
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -223,8 +238,6 @@ impl KeyboardFocus {
 #[derive(Debug)]
 struct MouseMethod {
 	event: RwLock<MouseEvent>,
-	/// program name and pid of the client behind the last granted capture
-	captured_by: Mutex<Option<(InputHandler, String, i32)>>,
 }
 
 impl InputMethodHelper for MouseMethod {
@@ -260,14 +273,6 @@ impl InputMethodHelper for MouseMethod {
 	async fn datamap(&self) -> HashMap<String, DatamapData> {
 		build_datamap(&*self.event.read().await)
 	}
-
-	async fn capture_granted(&self, ctx: &Context, handler: &InputHandler) {
-		let pid = ctx.sender_pid().unwrap_or(-1);
-		let name = std::fs::read_to_string(format!("/proc/{pid}/comm"))
-			.map(|s| s.trim().to_string())
-			.unwrap_or_else(|_| "unknown".to_string());
-		*self.captured_by.lock().unwrap() = Some((handler.clone(), name, pid));
-	}
 }
 
 // ── MousePointer ──────────────────────────────────────────────────────────────
@@ -295,7 +300,6 @@ impl MousePointer {
 		let (method, _, beam_handle) = InputMethodNode::new_beam(
 			MouseMethod {
 				event: RwLock::new(MouseEvent::default()),
-				captured_by: Mutex::new(None),
 			},
 			(**spatial).clone(),
 			spatial_ref.clone(),
@@ -385,19 +389,6 @@ impl MousePointer {
 			ctrl_pressed,
 			mouse_buttons.pressed(MouseButton::Right),
 		);
-	}
-
-	/// Program name and PID of the client whose handler currently captures the
-	/// pointer, if any.
-	pub fn captured_by(&self) -> Option<(String, i32)> {
-		let capture = self.method.active_capture_handler_blocking()?;
-		self.method
-			.captured_by
-			.lock()
-			.unwrap()
-			.as_ref()
-			.filter(|(handler, ..)| *handler == capture)
-			.map(|(_, name, pid)| (name.clone(), *pid))
 	}
 
 	/// Move the focus point to the pointer's current beam hit — keyboard handlers

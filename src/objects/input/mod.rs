@@ -75,15 +75,6 @@ pub trait InputMethodHelper: Send + Sync + 'static {
 	) -> impl Future<Output = Option<InputDataType>> + Send + Sync;
 
 	fn datamap(&self) -> impl Future<Output = HashMap<String, DatamapData>> + Send + Sync;
-
-	/// a capture was just handed out, with the requesting client's context
-	fn capture_granted(
-		&self,
-		_ctx: &Context,
-		_handler: &InputHandler,
-	) -> impl Future<Output = ()> + Send + Sync {
-		async {}
-	}
 }
 
 #[derive(Default)]
@@ -175,12 +166,7 @@ impl<S: InputMethodHelper> InputMethod<S> {
 		let (capture, capture_ref) = InputMethodCapture::new_node(CaptureGuard)?;
 		// the value should only be consumed here or in Drop
 		let sender = request.reply.take().unwrap();
-		let sent = sender.send(Some(capture_ref.into_proxy())).is_ok();
-		if sent {
-			self.helper
-				.capture_granted(&request.request_ctx, &request.handler)
-				.await;
-		}
+		let _ = sender.send(Some(capture_ref.into_proxy()));
 		Ok(capture)
 	}
 
@@ -200,12 +186,13 @@ impl<S: InputMethodHelper> InputMethod<S> {
 				None => self.helper.order_handlers(handlers.hovered()).await,
 			};
 			if let Some((id, request)) = handlers.take_requests(&order)
+				&& let pid = request.request_ctx.sender_pid()
 				&& let Ok(guard) = self
 					.grant_capture(request)
 					.await
 					.inspect_err(|err| error!("failed to grant capture: {err}"))
 			{
-				handlers.capture(id, guard);
+				handlers.capture(id, guard, pid);
 			}
 			match handlers.captured() {
 				Some(c) => (

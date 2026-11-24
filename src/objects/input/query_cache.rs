@@ -59,6 +59,8 @@ pub struct Captured<V: Send + Sync + 'static> {
 	id: QueryableId,
 	pub target: Target<V>,
 	pub spatial: Arc<SpatialRef>,
+	/// the process that requested the capture, None without peer credentials
+	pub pid: Option<i32>,
 	guard: Node<CaptureGuard>,
 	in_query: bool,
 }
@@ -181,7 +183,7 @@ impl<V: Send + Sync + 'static> Handlers<V> {
 			.collect();
 		order.iter().find_map(|id| requests.remove_entry(id))
 	}
-	pub(super) fn capture(&mut self, id: QueryableId, guard: Node<CaptureGuard>) {
+	pub(super) fn capture(&mut self, id: QueryableId, guard: Node<CaptureGuard>, pid: Option<i32>) {
 		match self.hovered.remove(&id) {
 			Some(Hovered {
 				target,
@@ -192,6 +194,7 @@ impl<V: Send + Sync + 'static> Handlers<V> {
 					id,
 					target,
 					spatial,
+					pid,
 					guard,
 					in_query: true,
 				});
