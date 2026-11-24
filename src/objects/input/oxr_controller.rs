@@ -95,16 +95,16 @@ fn suggest_bindings(
 	mut suggest: EventWriter<OxrSuggestActionBinding>,
 	enabled_exts: Res<OxrEnabledExtensions>,
 ) {
-	let mut bind_all = |interaction_profile: &'static str,
-	                    bindings: &[(openxr::sys::Action, &[&'static str])]| {
-		for (action, bindings) in bindings {
-			suggest.write(OxrSuggestActionBinding {
-				action: *action,
-				interaction_profile: interaction_profile.into(),
-				bindings: bindings.iter().copied().map(Cow::Borrowed).collect(),
-			});
-		}
-	};
+	let mut bind_all =
+		|interaction_profile: &'static str, bindings: &[(openxr::sys::Action, &[&'static str])]| {
+			for (action, bindings) in bindings {
+				suggest.write(OxrSuggestActionBinding {
+					action: *action,
+					interaction_profile: interaction_profile.into(),
+					bindings: bindings.iter().copied().map(Cow::Borrowed).collect(),
+				});
+			}
+		};
 	if enabled_exts.khr_generic_controller {
 		bind_all(
 			"/interaction_profiles/khr/generic_controller",
