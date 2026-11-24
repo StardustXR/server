@@ -87,7 +87,6 @@ tracing-tracy = { version = "0.11.1", optional = true }
 
 # (de)serialization
 serde = { version = "1.0.205", features = ["derive"] }
-serde_repr = "0.1.19"
 toml = "0.9.7"
 
 # mathy stuffs

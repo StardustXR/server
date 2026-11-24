@@ -281,7 +281,7 @@ fn gen_model_parts(
 				&mut |entity, name, transform, parent, children| {
 					let path = parent
 						.as_ref()
-						.map(|p| format!("{}/{}", &p.path, name.as_str()))
+						.map(|p| format!("{}/{}", p.path, name.as_str()))
 						.unwrap_or_else(|| name.to_string());
 					let parent_spatial = parent
 						.as_ref()
