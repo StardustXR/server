@@ -1,5 +1,6 @@
 #![allow(clippy::mutable_key_type)]
 
+mod hit_focus;
 mod localize;
 pub use localize::localize;
 pub mod mouse_pointer;

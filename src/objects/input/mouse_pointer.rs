@@ -1,10 +1,10 @@
 use super::{
 	DatamapBuilder, FrameDriver, Hovered, InputMethod as InputMethodNode, InputMethodHelper,
-	order_by_distance, spawn_frame_driver,
+	hit_focus::HitFocus, order_by_distance, spawn_frame_driver,
 };
 use crate::{
 	bevy_int::flatscreen_cam::FlatscreenCam, keymap_store::KEYMAP_STORE,
-	nodes::spatial::SpatialObject, query::spatial_query::SpatialQueryInterface,
+	nodes::spatial::SpatialObject,
 };
 use bevy::{
 	input::{
@@ -16,21 +16,18 @@ use bevy::{
 };
 use color_eyre::eyre::{Result, eyre};
 use glam::{Mat4, Vec3};
-use gluon_ipc::{Context, Handler, Interface, RefExt};
+use gluon_ipc::Context;
 use mint::Vector2;
-use stardust_xr_molecules_protocols::keyboard_handler::{
-	KeyEvent, KeyboardHandler as KeyboardHandlerProxy, ModifierState,
+use stardust_xr_molecules_protocols::{
+	derezzable::Derezzable as DerezzableProxy,
+	keyboard_handler::{KeyEvent, KeyboardHandler as KeyboardHandlerProxy, ModifierState},
 };
 use stardust_xr_protocol::{
-	field::{FieldRef as FieldRefProxy, FieldSample, RayMarchResult},
+	field::RayMarchResult,
 	keymap::Keymap as KeymapProxy,
-	query::{InterfaceDependency, QueriedInterface, QueryableId},
-	spatial::{Spatial as SpatialProxy, SpatialRef as SpatialRefProxy},
-	spatial_query::{
-		BeamQueryHandle, Point, PointsQuery, PointsQueryHandle as PointsQueryHandleProxy,
-		PointsQueryHandler, PointsQueryHandlerHandler,
-		SpatialQueryInterface as SpatialQueryInterfaceProxy,
-	},
+	query::QueryableId,
+	spatial::Spatial as SpatialProxy,
+	spatial_query::{BeamQueryHandle, Point},
 	suis::{DatamapData, InputDataType, InputHandler, Pointer},
 	types::{Posef, Timestamp, Vec3F},
 };
@@ -47,9 +44,9 @@ use xkbcommon_rs::{
 	xkb_state::{KeyDirection, StateComponent},
 };
 
-/// How close (in meters) a keyboard handler's field must be to the pointer's hit
-/// point to receive keyboard focus.
-const KEYBOARD_FOCUS_MARGIN: f32 = 0.05;
+/// How close (in meters) a keyboard handler or derezzable's field must be to the
+/// pointer's hit point to receive focus.
+const HIT_FOCUS_MARGIN: f32 = 0.05;
 
 pub struct FlatscreenInputPlugin;
 impl Plugin for FlatscreenInputPlugin {
@@ -191,69 +188,10 @@ impl Default for MouseEvent {
 
 // ── Keyboard focus ────────────────────────────────────────────────────────────
 
-/// Tracks keyboard handlers matched by the points query anchored at the pointer's
-/// current hit point. The closest one gets the key events.
-#[derive(Debug, Default, Handler)]
-struct KeyboardQueryCache {
-	handlers: Mutex<HashMap<QueryableId, (KeyboardHandlerProxy, FieldSample)>>,
-}
-
-impl KeyboardQueryCache {
-	fn closest(&self) -> Option<KeyboardHandlerProxy> {
-		self.handlers
-			.lock()
-			.unwrap()
-			.values()
-			.min_by(|(_, s1), (_, s2)| s1.distance.total_cmp(&s2.distance))
-			.map(|(handler, _)| handler.clone())
-	}
-}
-
-impl PointsQueryHandlerHandler for KeyboardQueryCache {
-	async fn entered(
-		&self,
-		_ctx: gluon_ipc::Context,
-		obj: QueryableId,
-		_field: FieldRefProxy,
-		_spatial: SpatialRefProxy,
-		interfaces: Vec<QueriedInterface>,
-		sample: FieldSample,
-	) {
-		let Some(interface) = interfaces.first() else {
-			return;
-		};
-		if interface.interface_id != KeyboardHandlerProxy::ID {
-			return;
-		}
-		let handler = KeyboardHandlerProxy::from_ref(interface.interface.clone());
-		self.handlers.lock().unwrap().insert(obj, (handler, sample));
-	}
-
-	async fn interfaces_changed(
-		&self,
-		_ctx: gluon_ipc::Context,
-		_obj: QueryableId,
-		_interfaces: Vec<QueriedInterface>,
-	) {
-	}
-
-	async fn moved(&self, _ctx: gluon_ipc::Context, obj: QueryableId, sample: FieldSample) {
-		if let Some(entry) = self.handlers.lock().unwrap().get_mut(&obj) {
-			entry.1 = sample;
-		}
-	}
-
-	async fn left(&self, _ctx: gluon_ipc::Context, obj: QueryableId) {
-		self.handlers.lock().unwrap().remove(&obj);
-	}
-}
-
 /// Everything needed to turn bevy key events into `KeyboardHandler.key` calls:
-/// the query cache above, the query's handle (to move the focus point to the
-/// pointer's hit each frame), and xkb state for modifiers + the keymap token.
+/// the hit focus, and xkb state for modifiers + the keymap token.
 struct KeyboardFocus {
-	cache: gluon_ipc::Node<KeyboardQueryCache>,
-	points_handle: Arc<OnceLock<PointsQueryHandleProxy>>,
+	focus: HitFocus<KeyboardHandlerProxy>,
 	xkb_state: XkbState,
 	/// workaround for buggy modifier state on kde plasma (potentially others) with winit
 	super_mod_mask: u32,
@@ -341,6 +279,9 @@ pub struct MousePointer {
 	driver: FrameDriver,
 	_beam_handle: Arc<OnceLock<BeamQueryHandle>>,
 	keyboard: KeyboardFocus,
+	derez: HitFocus<DerezzableProxy>,
+	/// Delete was pressed while right click was held, so it's a derez and not a key
+	swallow_delete_release: bool,
 	/// An Escape press was swallowed as part of the Ctrl+Escape capture-stop
 	/// hotkey; swallow its release too (even if Ctrl is let go first).
 	swallow_escape_release: bool,
@@ -365,41 +306,6 @@ impl MousePointer {
 		)?;
 		let driver = spawn_frame_driver(&method);
 
-		let (keyboard_cache, keyboard_handler_proxy) =
-			PointsQueryHandler::new_node(KeyboardQueryCache::default())?;
-		let points_handle: Arc<OnceLock<PointsQueryHandleProxy>> = Arc::new(OnceLock::new());
-		tokio::spawn({
-			let points_handle = points_handle.clone();
-			async move {
-				let sqi = SpatialQueryInterfaceProxy::new_service(SpatialQueryInterface::new(
-					&Arc::default(),
-				))
-				// TODO: remove the unwrap
-				.unwrap()
-				.into_proxy();
-				// Starts with no points — no keyboard focus until the pointer hits
-				// something; update() moves the point to the beam hit each frame.
-				match sqi
-					.points_query(PointsQuery {
-						handler: keyboard_handler_proxy.into_proxy(),
-						interfaces: vec![InterfaceDependency {
-							id: KeyboardHandlerProxy::ID.into(),
-							optional: false,
-						}],
-						reference_spatial: spatial_ref,
-						points: vec![],
-					})
-					.await
-				{
-					Ok(Ok(handle)) => {
-						points_handle.set(handle).ok();
-					}
-					Ok(Err(e)) => error!("failed to create mouse pointer keyboard query: {e}"),
-					Err(e) => error!("failed to create mouse pointer keyboard query: {e}"),
-				}
-			}
-		});
-
 		let xkb_context = XkbContext::new(ContextFlags::empty())
 			.map_err(|e| eyre!("failed to create xkb context: {e:?}"))?;
 		let xkb_keymap = XkbKeymap::new_from_names(xkb_context, None, CompileFlags::empty())
@@ -413,8 +319,7 @@ impl MousePointer {
 			.map(|v| 1u32 << v)
 			.unwrap_or(0);
 		let keyboard = KeyboardFocus {
-			cache: keyboard_cache,
-			points_handle,
+			focus: HitFocus::new(spatial_ref.clone())?,
 			xkb_state: XkbState::new(xkb_keymap),
 			keymap_string,
 			keymap_proxy: OnceLock::new(),
@@ -427,6 +332,8 @@ impl MousePointer {
 			driver,
 			_beam_handle: beam_handle,
 			keyboard,
+			derez: HitFocus::new(spatial_ref)?,
+			swallow_delete_release: false,
 			swallow_escape_release: false,
 		})
 	}
@@ -470,10 +377,14 @@ impl MousePointer {
 
 		self.driver.frame(Timestamp::now());
 
-		self.update_keyboard_focus();
+		self.update_hit_focus();
 		let ctrl_pressed = keyboard_buttons.pressed(KeyCode::ControlLeft)
 			|| keyboard_buttons.pressed(KeyCode::ControlRight);
-		self.send_key_events(key_events, ctrl_pressed);
+		self.send_key_events(
+			key_events,
+			ctrl_pressed,
+			mouse_buttons.pressed(MouseButton::Right),
+		);
 	}
 
 	/// Program name and PID of the client whose handler currently captures the
@@ -489,13 +400,10 @@ impl MousePointer {
 			.map(|(_, name, pid)| (name.clone(), *pid))
 	}
 
-	/// Move the keyboard focus point to the pointer's current beam hit — keyboard
-	/// handlers within [`KEYBOARD_FOCUS_MARGIN`] of whatever the pointer is aimed at
-	/// become focus candidates. No hit means no points and thus no focus.
-	fn update_keyboard_focus(&self) {
-		let Some(handle) = self.keyboard.points_handle.get() else {
-			return;
-		};
+	/// Move the focus point to the pointer's current beam hit — keyboard handlers
+	/// and derezzables within [`HIT_FOCUS_MARGIN`] of whatever the pointer is aimed
+	/// at become focus candidates. No hit means no points and thus no focus.
+	fn update_hit_focus(&self) {
 		let hit = self
 			.method
 			.cache()
@@ -511,14 +419,20 @@ impl MousePointer {
 						y: 0.0,
 						z: -distance,
 					},
-					margin: KEYBOARD_FOCUS_MARGIN,
+					margin: HIT_FOCUS_MARGIN,
 				}]
 			})
 			.unwrap_or_default();
-		_ = handle.update(points);
+		self.keyboard.focus.update(points.clone());
+		self.derez.update(points);
 	}
 
-	fn send_key_events(&mut self, mut key_events: EventReader<KeyboardInput>, ctrl_pressed: bool) {
+	fn send_key_events(
+		&mut self,
+		mut key_events: EventReader<KeyboardInput>,
+		ctrl_pressed: bool,
+		right_pressed: bool,
+	) {
 		for event in key_events.read() {
 			if event.repeat {
 				continue;
@@ -526,13 +440,30 @@ impl MousePointer {
 			// Ctrl+Escape is the capture-stop hotkey (see stop_capture_hotkey);
 			// swallow the press and its matching release so focused keyboard
 			// handlers never see it.
+			// a release can be dropped while key events are cleared, so every press
+			// resets the swallow state instead of trusting the last release
 			if event.key_code == KeyCode::Escape {
-				if event.state.is_pressed() && ctrl_pressed {
-					self.swallow_escape_release = true;
+				if event.state.is_pressed() {
+					self.swallow_escape_release = ctrl_pressed;
+					if ctrl_pressed {
+						continue;
+					}
+				} else if std::mem::take(&mut self.swallow_escape_release) {
 					continue;
 				}
-				if !event.state.is_pressed() && self.swallow_escape_release {
-					self.swallow_escape_release = false;
+			}
+			if event.key_code == KeyCode::Delete {
+				if event.state.is_pressed() {
+					self.swallow_delete_release = right_pressed;
+					if right_pressed {
+						continue;
+					}
+				} else if std::mem::take(&mut self.swallow_delete_release) {
+					if right_pressed && let Some(derezzable) = self.derez.closest() {
+						_ = derezzable
+							.derez()
+							.inspect_err(|err| error!("failed to derez: {err}"));
+					}
 					continue;
 				}
 			}
@@ -550,33 +481,19 @@ impl MousePointer {
 			};
 			self.keyboard.xkb_state.update_key(keycode + 8, direction);
 
-			let Some(handler) = self.keyboard.cache.closest() else {
+			let Some(handler) = self.keyboard.focus.closest() else {
 				continue;
 			};
 			let Some(keymap) = self.keyboard.keymap_proxy() else {
 				continue;
 			};
-			let mod_mask = self.keyboard.super_mod_mask;
+			let xkb = &self.keyboard.xkb_state;
+			let mods = |c| xkb.serialize_mods(c) & self.keyboard.super_mod_mask;
 			let modifiers = ModifierState {
-				depressed: self
-					.keyboard
-					.xkb_state
-					.serialize_mods(StateComponent::MODS_DEPRESSED)
-					& mod_mask,
-				latched: self
-					.keyboard
-					.xkb_state
-					.serialize_mods(StateComponent::MODS_LATCHED)
-					& mod_mask,
-				locked: self
-					.keyboard
-					.xkb_state
-					.serialize_mods(StateComponent::MODS_LOCKED)
-					& mod_mask,
-				layout_group: self
-					.keyboard
-					.xkb_state
-					.serialize_layout(StateComponent::LAYOUT_EFFECTIVE) as u32,
+				depressed: mods(StateComponent::MODS_DEPRESSED),
+				latched: mods(StateComponent::MODS_LATCHED),
+				locked: mods(StateComponent::MODS_LOCKED),
+				layout_group: xkb.serialize_layout(StateComponent::LAYOUT_EFFECTIVE) as u32,
 			};
 			_ = handler
 				.key(
